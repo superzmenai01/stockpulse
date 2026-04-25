@@ -1,0 +1,20 @@
+# Dependencies
+web/node_modules/
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Build
+web/dist/
