@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
 # Server 配置
-HOST = "127.0.0.1"
+HOST = "0.0.0.0"  # 允許外部訪問
 TRIGGER_PORT = 18792
 FRONTEND_PORT = 3000
 

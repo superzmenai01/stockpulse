@@ -8,8 +8,9 @@ from typing import Dict, Optional
 
 from .manager import connection_manager
 from .session import session_manager
+from .broadcaster import create_broadcaster
 from services.event_bus import event_bus
-from futu_conn import SubscriptionManager
+from futu_conn import SubscriptionManager, create_quote_handler
 from futu import OpenQuoteContext
 from config import FUTU_HOST, FUTU_PORT
 
@@ -17,20 +18,36 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# 全域富途 Context 和 SubscriptionManager
+# 全域變量
 _futu_ctx: Optional[OpenQuoteContext] = None
 _sub_manager: Optional[SubscriptionManager] = None
+_broadcaster = None
 
 
 def get_subscription_manager() -> Optional[SubscriptionManager]:
-    """獲取或初始化 SubscriptionManager"""
+    """
+    獲取或初始化 SubscriptionManager
+    
+    Returns:
+        SubscriptionManager: 配置好的訂閱管理器
+    """
     global _futu_ctx, _sub_manager
     
     if _sub_manager is None:
         try:
+            # 創建富途連接
             _futu_ctx = OpenQuoteContext(host=FUTU_HOST, port=FUTU_PORT)
-            _sub_manager = SubscriptionManager(_futu_ctx, event_bus)
             logger.info(f"[WS] 富途連接成功: {FUTU_HOST}:{FUTU_PORT}")
+            
+            # 創建 QuoteHandler 並設置到 context
+            handler = create_quote_handler(event_bus)
+            _futu_ctx.set_handler(handler)
+            logger.info("[WS] QuoteHandler 已設置")
+            
+            # 創建 SubscriptionManager
+            _sub_manager = SubscriptionManager(_futu_ctx, event_bus)
+            logger.info("[WS] SubscriptionManager 初始化完成")
+            
         except Exception as e:
             logger.error(f"[WS] 富途連接失敗: {e}")
             return None
@@ -38,9 +55,34 @@ def get_subscription_manager() -> Optional[SubscriptionManager]:
     return _sub_manager
 
 
+def get_broadcaster():
+    """
+    獲取或初始化 QuoteBroadcaster
+    
+    Returns:
+        QuoteBroadcaster: 配置好的廣播器
+    """
+    global _broadcaster
+    
+    if _broadcaster is None:
+        _broadcaster = create_broadcaster(event_bus, session_manager, connection_manager)
+        _broadcaster.start()
+        logger.info("[WS] QuoteBroadcaster 已啟動")
+    
+    return _broadcaster
+
+
 def close_futu_connection():
     """關閉富途連接"""
-    global _futu_ctx, _sub_manager
+    global _futu_ctx, _sub_manager, _broadcaster
+    
+    # 停止廣播器
+    if _broadcaster is not None:
+        _broadcaster.stop()
+        _broadcaster = None
+        logger.info("[WS] QuoteBroadcaster 已停止")
+    
+    # 關閉富途連接
     if _futu_ctx:
         try:
             _futu_ctx.close()
@@ -62,6 +104,9 @@ async def websocket_quote(websocket: WebSocket):
     - {"action": "unsubscribe", "codes": ["HK.00700"]}        # 取消訂閱（個別）
     - {"action": "unsubscribe_all"}                            # 取消所有訂閱
     """
+    # 確保廣播器已啟動
+    get_broadcaster()
+    
     # 創建新 Session
     session = session_manager.create_session()
     
@@ -158,7 +203,7 @@ async def handle_init(session, data: dict):
         if not success:
             logger.warning(f"[WS][INIT] 取消舊訂閱未完全成功，繼續...")
     
-    # Step 2: 訂閱新股票
+    # Step 2: 訂閱新股
     success = sub_manager.subscribe(codes)
     
     if success:
@@ -236,8 +281,6 @@ async def handle_unsubscribe(session, data: dict):
     for code in codes:
         session.remove_subscription(code)
     
-    # 注意：富途 unsubscribe 也有冷卻問題，這裡先不做詳細實現
-    # 實際應該像 unsubscribe_all 一樣處理
     await connection_manager.send_to(session.id, {
         "type": "unsubscribed",
         "codes": codes
@@ -265,46 +308,31 @@ async def handle_unsubscribe_all(session):
     logger.info(f"[WS][UNSUB_ALL] Session {session.id} 訂閱了: {codes_to_cancel}")
     
     # 執行取消
-    success = sub_manager.cancel_all_with_confirm(timeout=120)
+    success, err_msg = sub_manager.cancel_all_with_confirm(timeout=120)
     
-    # 清除 session 狀態
+    # 清除 session 狀態（即使取消失敗也清除本地狀態）
     session.clear_subscriptions()
     
-    await connection_manager.send_to(session.id, {
-        "type": "all_unsubscribed",
-        "success": success,
-        "codes": codes_to_cancel
-    })
-    
-    logger.info(f"[WS][UNSUB_ALL] 完成, success={success}")
-
-
-# 廣播器 - 訂閱事件總線的 quote 事件
-def setup_broadcaster():
-    """初始化廣播器，訂閱事件總線"""
-    
-    def handle_quote_event(event):
-        """收到 quote 事件，廣播俾相關 Session"""
-        code = event.data.get("code")
-        if not code:
-            return
+    if success:
+        await connection_manager.send_to(session.id, {
+            "type": "all_unsubscribed",
+            "success": True,
+            "codes": codes_to_cancel
+        })
+    else:
+        # 取消失敗，可能係未滿1分鐘
+        logger.warning(f"[WS][UNSUB_ALL] 取消失敗: {err_msg}")
         
-        # 找出所有訂閱了呢個股票的 Session
-        session_ids = session_manager.broadcast_to_subscribed(code, event.data)
+        # 嘗試解析剩餘冷卻時間
+        cooldown = 60  # 預設60秒
+        if "1分鐘" in err_msg or "1 minute" in err_msg.lower():
+            cooldown = 60
         
-        if session_ids:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            loop.create_task(
-                connection_manager.broadcast_to_sessions(session_ids, {
-                    "type": "quote",
-                    **event.data
-                })
-            )
+        await connection_manager.send_to(session.id, {
+            "type": "unsubscribe_failed",
+            "message": err_msg,
+            "cooldown": cooldown,
+            "codes": codes_to_cancel
+        })
     
-    event_bus.on("quote", handle_quote_event)
-    logger.info("[Broadcaster] 訂閱事件總線 'quote' 事件")
-
-
-# 啟動時設置
-setup_broadcaster()
+    logger.info(f"[WS][UNSUB_ALL] 完成, success={success}, err={err_msg}")
