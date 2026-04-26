@@ -1,8 +1,9 @@
 .sidebar {
   height: 100vh;
-  background: #001529;
+  background: #fff;
   display: flex;
   flex-direction: column;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
 }
 
 .logo {
@@ -10,7 +11,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #f0f0f0;
+  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
 }
 
 .logoText {
@@ -20,16 +22,31 @@
 }
 
 .menu {
-  background: transparent !important;
+  background: #fff !important;
   border-right: none !important;
   flex: 1;
+  padding: 8px 0;
 }
 
 .menu :global(.ant-menu-item) {
   margin: 4px 8px !important;
   border-radius: 8px !important;
+  color: #333 !important;
+  height: 48px !important;
+  line-height: 48px !important;
+}
+
+.menu :global(.ant-menu-item:hover) {
+  color: #1890ff !important;
+  background: #e6f7ff !important;
 }
 
 .menu :global(.ant-menu-item-selected) {
   background: #1890ff !important;
+  color: #fff !important;
+}
+
+.menu :global(.ant-menu-item-selected:hover) {
+  background: #40a9ff !important;
+  color: #fff !important;
 }

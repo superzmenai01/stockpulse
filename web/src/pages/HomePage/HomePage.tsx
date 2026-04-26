@@ -1,18 +1,19 @@
 // HomePage - 首頁（組別列表）
 
-import React, { useState, useEffect, useRef } from 'react'
-import { Button, Empty, Spin, message } from 'antd'
+import React, { useState, useEffect } from 'react'
+import { Button, Empty, message } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { AppLayout } from '../../components/layout'
 import GroupCard from '../../components/group/GroupCard'
 import AddGroupModal from '../../components/group/AddGroupModal'
-import { useWebSocket } from '../../hooks/useWebSocket'
+import EditGroupModal from '../../components/group/EditGroupModal'
+import { useWebSocketContext } from '../../context'
 import styles from './HomePage.module.css'
 
 // 預設股票列表
 const DEFAULT_STOCKS = ['HK.00700', 'HK.00981', 'HK.00005', 'HK.01810', 'HK.02382']
 
-// Mock 組別數據（TODO: 替換為真實 API）
+// Mock 組別數據
 const mockGroups = [
   {
     id: '1',
@@ -44,19 +45,22 @@ function HomePage() {
     init,
     unsubscribeAll,
     subscribeStatus,
-  } = useWebSocket()
+  } = useWebSocketContext()
 
   const [groups, setGroups] = useState(mockGroups)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; color: string } | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['1']))
-  const initMessageShown = useRef(false)
+  const [hasInitialized, setHasInitialized] = useState(false)
 
-  // 初始化訂閱
+  // 初始化訂閱（只執行一次）
   useEffect(() => {
-    if (connected && !initMessageShown.current) {
+    if (connected && !hasInitialized) {
       init(DEFAULT_STOCKS)
+      setHasInitialized(true)
     }
-  }, [connected, init])
+  }, [connected, hasInitialized, init])
 
   // 顯示訂閱狀態通知
   useEffect(() => {
@@ -105,6 +109,26 @@ function HomePage() {
     setGroups(prev => prev.filter(g => g.id !== groupId))
   }
 
+  // 編輯組別 - 打開編輯彈窗
+  const handleEditGroup = (groupId: string) => {
+    const group = groups.find(g => g.id === groupId)
+    if (group) {
+      setEditingGroup({ id: group.id, name: group.name, color: group.color })
+      setShowEditModal(true)
+    }
+  }
+
+  // 保存編輯
+  const handleSaveEdit = (name: string, color: string) => {
+    if (editingGroup) {
+      setGroups(prev => prev.map(g => 
+        g.id === editingGroup.id ? { ...g, name, color } : g
+      ))
+    }
+    setShowEditModal(false)
+    setEditingGroup(null)
+  }
+
   // 添加股票到組別（TODO）
   const handleAddStock = (groupId: string) => {
     console.log('添加股票到組別:', groupId)
@@ -123,7 +147,6 @@ function HomePage() {
           pctChange: quote.pct_change,
         }
       }
-      // 如果沒有實時報價，返回基本信息（價格為0表示等待數據）
       return {
         code,
         name: quote?.name || code,
@@ -172,6 +195,7 @@ function HomePage() {
                 expanded={expandedGroups.has(group.id)}
                 onToggle={() => toggleGroup(group.id)}
                 onAddStock={() => handleAddStock(group.id)}
+                onEdit={() => handleEditGroup(group.id)}
                 onDelete={() => handleDeleteGroup(group.id)}
               />
             ))
@@ -184,6 +208,19 @@ function HomePage() {
         onClose={() => setShowAddModal(false)}
         onAdd={handleAddGroup}
       />
+
+      {editingGroup && (
+        <EditGroupModal
+          open={showEditModal}
+          name={editingGroup.name}
+          color={editingGroup.color}
+          onClose={() => {
+            setShowEditModal(false)
+            setEditingGroup(null)
+          }}
+          onSave={handleSaveEdit}
+        />
+      )}
     </AppLayout>
   )
 }
