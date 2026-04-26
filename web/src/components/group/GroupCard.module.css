@@ -1,0 +1,47 @@
+.card {
+  border-radius: 12px;
+  border-left: 4px solid #1890ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.toggleIcon {
+  color: #999;
+  font-size: 12px;
+}
+
+.colorTag {
+  font-weight: bold;
+}
+
+.stockCount {
+  color: #999;
+  font-size: 12px;
+}
+
+.stockList {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty {
+  text-align: center;
+  color: #999;
+  padding: 24px;
+  background: #fafafa;
+  border-radius: 8px;
+}

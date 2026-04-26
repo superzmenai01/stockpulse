@@ -1,0 +1,32 @@
+.layout {
+  min-height: 100vh;
+}
+
+.sider {
+  background: #001529 !important;
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  overflow: auto;
+}
+
+.content {
+  margin-left: 200px;
+  padding: 24px;
+  min-height: 100vh;
+  background: #f0f2f5;
+}
+
+/* Mobile */
+@media (max-width: 767px) {
+  .sider {
+    display: none;
+  }
+  
+  .content {
+    margin-left: 0;
+    padding: 16px;
+    padding-bottom: 80px; /* 給底部導航留空間 */
+  }
+}
