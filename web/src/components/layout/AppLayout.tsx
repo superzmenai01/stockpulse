@@ -13,9 +13,21 @@ const { Content, Sider } = Layout
 
 interface AppLayoutProps {
   children: React.ReactNode
+  connected?: boolean
+  subscribed?: boolean
+  waitingCancel?: boolean
+  cancelCooldown?: number
+  onUnsubscribe?: () => void
 }
 
-function AppLayout({ children }: AppLayoutProps) {
+function AppLayout({
+  children,
+  connected = false,
+  subscribed = false,
+  waitingCancel = false,
+  cancelCooldown = 0,
+  onUnsubscribe,
+}: AppLayoutProps) {
   const [isMobile, setIsMobile] = React.useState(false)
 
   React.useEffect(() => {
@@ -33,7 +45,13 @@ function AppLayout({ children }: AppLayoutProps) {
       {isMobile ? (
         // Mobile: 只有 Header + Content + 底部導航
         <>
-          <Header />
+          <Header
+            connected={connected}
+            subscribed={subscribed}
+            waitingCancel={waitingCancel}
+            cancelCooldown={cancelCooldown}
+            onUnsubscribe={onUnsubscribe}
+          />
           <Content className={styles.content}>
             {children}
           </Content>
@@ -46,7 +64,13 @@ function AppLayout({ children }: AppLayoutProps) {
             <Sidebar />
           </Sider>
           <Layout>
-            <Header />
+            <Header
+              connected={connected}
+              subscribed={subscribed}
+              waitingCancel={waitingCancel}
+              cancelCooldown={cancelCooldown}
+              onUnsubscribe={onUnsubscribe}
+            />
             <Content className={styles.content}>
               {children}
             </Content>

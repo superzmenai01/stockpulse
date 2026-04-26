@@ -23,6 +23,8 @@ function StockCard({
   compact = false,
   onClick,
 }: StockCardProps) {
+  // 如果沒有價格數據，顯示 "--"
+  const hasPrice = price !== undefined && price !== null && price > 0
   const isPositive = change >= 0
   const changeColor = isPositive ? '#f5222d' : '#52c41a' // 紅升綠降
 
@@ -35,10 +37,16 @@ function StockCard({
           <span className={styles.name}>{name}</span>
         </div>
         <div className={styles.right}>
-          <span className={styles.price}>{price.toFixed(2)}</span>
-          <Tag color={changeColor} className={styles.tag}>
-            {isPositive ? '+' : ''}{pctChange.toFixed(2)}%
-          </Tag>
+          <span className={styles.price}>
+            {hasPrice ? price.toFixed(2) : '--'}
+          </span>
+          {hasPrice ? (
+            <Tag color={changeColor} className={styles.tag}>
+              {isPositive ? '+' : ''}{pctChange.toFixed(2)}%
+            </Tag>
+          ) : (
+            <Tag className={styles.tag}>等待...</Tag>
+          )}
         </div>
       </div>
     )
@@ -53,10 +61,16 @@ function StockCard({
           <div className={styles.codeSmall}>{code}</div>
         </div>
         <div className={styles.priceSection}>
-          <div className={styles.priceLarge}>{price.toFixed(2)}</div>
-          <Tag color={changeColor} className={styles.tagLarge}>
-            {isPositive ? '+' : ''}{change.toFixed(3)} ({pctChange.toFixed(2)}%)
-          </Tag>
+          <div className={styles.priceLarge}>
+            {hasPrice ? price.toFixed(2) : '--'}
+          </div>
+          {hasPrice ? (
+            <Tag color={changeColor} className={styles.tagLarge}>
+              {isPositive ? '+' : ''}{change.toFixed(3)} ({pctChange.toFixed(2)}%)
+            </Tag>
+          ) : (
+            <Tag className={styles.tagLarge}>等待...</Tag>
+          )}
         </div>
       </div>
     </Card>

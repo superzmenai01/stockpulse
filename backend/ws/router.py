@@ -168,11 +168,16 @@ async def handle_init(session, data: dict):
     處理初始化訂閱（登入後首次）
     
     流程：
-    1. 查詢當前訂閱狀態
-    2. 如有舊訂閱，先取消並等待確認
-    3. 訂閱新的初始股票
-    4. 記錄到 session
+    1. 直接取消所有訂閱（cancel_all + 等待確認）
+       - 如果取消失敗，返回失敗信息，結束
+    2. 停 1 秒（等取消完成）
+    3. 直接訂閱所需的股票
+    4. 檢查訂閱狀態
+    5. 如果訂閱失敗，返回失敗信息
+    6. 如果訂閱成功，返回成功信息和股票，記錄到 session
     """
+    import asyncio
+    
     codes = data.get("codes", [])
     
     if not codes:
@@ -195,36 +200,48 @@ async def handle_init(session, data: dict):
         })
         return
     
-    # Step 1: 查詢並取消所有舊訂閱
-    old_codes = sub_manager.get_subscribed_codes()
-    if old_codes:
-        logger.info(f"[WS][INIT] 發現舊訂閱: {old_codes}，先取消...")
-        success = sub_manager.cancel_all_with_confirm(timeout=120)
-        if not success:
-            logger.warning(f"[WS][INIT] 取消舊訂閱未完全成功，繼續...")
+    # Step 1: 直接取消所有訂閱（等待確認）
+    logger.info(f"[WS][INIT] 取消所有訂閱...")
+    success, err_msg = sub_manager.cancel_all_with_confirm(timeout=120)
     
-    # Step 2: 訂閱新股
-    success = sub_manager.subscribe(codes)
-    
-    if success:
-        # 更新 session 訂閱狀態
-        for code in codes:
-            session.add_subscription(code)
-        
-        logger.info(f"[WS][INIT] 初始化成功: {codes}")
+    # 如果取消失敗，立即返回失敗
+    if not success:
+        logger.warning(f"[WS][INIT] 取消失敗: {err_msg}")
         await connection_manager.send_to(session.id, {
             "type": "init_result",
-            "success": True,
-            "codes": codes,
-            "message": "初始化成功"
+            "success": False,
+            "message": "取消訂閱失敗，需要等待一分鐘"
         })
-    else:
-        logger.error(f"[WS][INIT] 初始化失敗")
+        return
+    
+    # Step 2: 停 1 秒（等取消完成）
+    await asyncio.sleep(1)
+    
+    # Step 3: 直接訂閱
+    logger.info(f"[WS][INIT] 開始訂閱: {codes}")
+    success = sub_manager.subscribe(codes)
+    
+    # Step 4 & 5: 檢查結果
+    if not success:
+        logger.error(f"[WS][INIT] 訂閱失敗")
         await connection_manager.send_to(session.id, {
             "type": "init_result",
             "success": False,
             "message": "訂閱失敗"
         })
+        return
+    
+    # Step 6: 訂閱成功
+    for code in codes:
+        session.add_subscription(code)
+    
+    logger.info(f"[WS][INIT] 初始化成功: {codes}")
+    await connection_manager.send_to(session.id, {
+        "type": "init_result",
+        "success": True,
+        "codes": codes,
+        "message": "初始化成功"
+    })
 
 
 async def handle_subscribe(session, data: dict):
