@@ -36,10 +36,10 @@
 
 ## 📂 目錄結構
 
-### 後端 (trigger/)
+### 後端 (backend/)
 
 ```
-trigger/
+backend/
 ├── main.py                    # 入口，只負責啟動
 ├── config.py                  # 配置模組
 │

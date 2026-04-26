@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 # 添加項目路徑
-sys.path.insert(0, str(Path(__file__).parent / "trigger"))
+sys.path.insert(0, str(Path(__file__).parent / "backend"))
 
 from futu import OpenQuoteContext, SubType, StockQuoteHandlerBase, RET_OK
 

@@ -36,7 +36,7 @@ npm install
 
 **終端 1 - 後端：**
 ```bash
-cd stockpulse/trigger
+cd stockpulse/backend
 ~/.futu_venv/bin/python3 main.py
 ```
 
@@ -59,7 +59,7 @@ http://localhost:3000
 stockpulse/
 ├── README.md              # 本文件
 ├── PROJECT_SPEC.md        # 完整項目規格（詳細設計）
-├── trigger/               # 後端（Python FastAPI）
+├── backend/               # 後端（Python FastAPI）
 │   ├── main.py           # 入口
 │   ├── config.py         # 配置
 │   ├── futu_conn/        # 富途連接
@@ -82,7 +82,7 @@ stockpulse/
 
 | 服務 | Port | 說明 |
 |------|------|------|
-| Backend (trigger) | 18792 | FastAPI 後端 |
+| Backend (backend) | 18792 | FastAPI 後端 |
 | Frontend (web) | 3000 | Vite 開發服務器 |
 | 富途 OpenD | 11111 | 行情數據源 |
 
@@ -119,7 +119,7 @@ stockpulse/
 ### 啟動服務
 ```bash
 # 終端 1 - 後端
-cd stockpulse/trigger
+cd stockpulse/backend
 ~/.futu_venv/bin/python3 main.py
 
 # 終端 2 - 前端
