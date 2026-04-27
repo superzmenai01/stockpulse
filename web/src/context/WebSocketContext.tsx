@@ -42,6 +42,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   
   const wsRef = useRef<WebSocket | null>(null)
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const initSentRef = useRef(false)  // 防止重複發送 init
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -154,9 +155,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   // 設置要初始化的股票列表
   const init = useCallback((codes: string[]) => {
+    // 如果已經訂閱過，或者已經發送過 init，唔再發送
+    if (subscribed || initSentRef.current) {
+      console.log('[WS] 已訂閱或已發送 init，跳過')
+      return
+    }
     console.log('[WS] init 被調用，設置股票列表:', codes)
+    initSentRef.current = true
     setInitCodes(codes)
-  }, [])
+  }, [subscribed])
 
   // 當連接成功且有股票列表時，發送 init
   useEffect(() => {
