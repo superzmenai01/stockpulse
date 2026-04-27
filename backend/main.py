@@ -1,6 +1,12 @@
 # StockPulse 主入口
 # 只負責啟動，唔好寫具體邏輯
 
+import sys
+from pathlib import Path
+
+# 確保 backend 目錄在 sys.path 中
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

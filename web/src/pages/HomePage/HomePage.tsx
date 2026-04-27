@@ -8,32 +8,11 @@ import GroupCard from '../../components/group/GroupCard'
 import AddGroupModal from '../../components/group/AddGroupModal'
 import EditGroupModal from '../../components/group/EditGroupModal'
 import { useWebSocketContext } from '../../context'
+import { groupApi, Group } from '../../services/groupApi'
 import styles from './HomePage.module.css'
 
 // 預設股票列表
 const DEFAULT_STOCKS = ['HK.00700', 'HK.00981', 'HK.00005', 'HK.01810', 'HK.02382']
-
-// Mock 組別數據
-const mockGroups = [
-  {
-    id: '1',
-    name: '科技股',
-    color: '#1890ff',
-    stockCodes: ['HK.00700', 'HK.01810'],
-  },
-  {
-    id: '2',
-    name: '收息股',
-    color: '#52c41a',
-    stockCodes: ['HK.00005'],
-  },
-  {
-    id: '3',
-    name: '長線持有',
-    color: '#722ed1',
-    stockCodes: [],
-  },
-]
 
 function HomePage() {
   const {
@@ -47,12 +26,34 @@ function HomePage() {
     subscribeStatus,
   } = useWebSocketContext()
 
-  const [groups, setGroups] = useState(mockGroups)
+  const [groups, setGroups] = useState<Group[]>([])
+  const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; color: string } | null>(null)
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['1']))
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [hasCalledInit, setHasCalledInit] = useState(false)
+
+  // 從 API 載入組別
+  useEffect(() => {
+    loadGroups()
+  }, [])
+
+  const loadGroups = async () => {
+    try {
+      const data = await groupApi.list()
+      setGroups(data)
+      // 預設展開第一個組
+      if (data.length > 0) {
+        setExpandedGroups(new Set([data[0].id]))
+      }
+    } catch (err) {
+      console.error('載入組別失敗:', err)
+      message.error('載入組別失敗')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // 初始化訂閱（連接成功後調用一次）
   useEffect(() => {
@@ -94,20 +95,28 @@ function HomePage() {
   }
 
   // 添加新組別
-  const handleAddGroup = (name: string, color: string) => {
-    const newGroup = {
-      id: Date.now().toString(),
-      name,
-      color,
-      stockCodes: [],
+  const handleAddGroup = async (name: string, color: string) => {
+    try {
+      const newGroup = await groupApi.create({ name, color })
+      setGroups(prev => [...prev, newGroup])
+      setShowAddModal(false)
+      message.success('組別已創建')
+    } catch (err) {
+      console.error('創建組別失敗:', err)
+      message.error('創建組別失敗')
     }
-    setGroups(prev => [...prev, newGroup])
-    setShowAddModal(false)
   }
 
   // 刪除組別
-  const handleDeleteGroup = (groupId: string) => {
-    setGroups(prev => prev.filter(g => g.id !== groupId))
+  const handleDeleteGroup = async (groupId: string) => {
+    try {
+      await groupApi.delete(groupId)
+      setGroups(prev => prev.filter(g => g.id !== groupId))
+      message.success('組別已刪除')
+    } catch (err) {
+      console.error('刪除組別失敗:', err)
+      message.error('刪除組別失敗')
+    }
   }
 
   // 編輯組別
@@ -120,11 +129,18 @@ function HomePage() {
   }
 
   // 保存編輯
-  const handleSaveEdit = (name: string, color: string) => {
+  const handleSaveEdit = async (name: string, color: string) => {
     if (editingGroup) {
-      setGroups(prev => prev.map(g => 
-        g.id === editingGroup.id ? { ...g, name, color } : g
-      ))
+      try {
+        const updated = await groupApi.update(editingGroup.id, { name, color })
+        setGroups(prev => prev.map(g => 
+          g.id === editingGroup.id ? updated : g
+        ))
+        message.success('組別已更新')
+      } catch (err) {
+        console.error('更新組別失敗:', err)
+        message.error('更新組別失敗')
+      }
     }
     setShowEditModal(false)
     setEditingGroup(null)
@@ -136,8 +152,9 @@ function HomePage() {
   }
 
   // 將 stockCodes 轉換為帶報價的股票列表
-  const getStocksWithQuotes = (stockCodes: string[]) => {
-    return stockCodes.map(code => {
+  // TODO: 組別和股票的關聯尚未實現，目前使用空數組
+  const getStocksWithQuotes = (_stockCodes: string[] = []) => {
+    return _stockCodes.map(code => {
       const quote = quotes[code]
       if (quote && quote.last_price > 0) {
         return {
@@ -192,7 +209,7 @@ function HomePage() {
                 id={group.id}
                 name={group.name}
                 color={group.color}
-                stocks={getStocksWithQuotes(group.stockCodes)}
+                stocks={getStocksWithQuotes(group.stockCodes || [])}
                 expanded={expandedGroups.has(group.id)}
                 onToggle={() => toggleGroup(group.id)}
                 onAddStock={() => handleAddStock(group.id)}
