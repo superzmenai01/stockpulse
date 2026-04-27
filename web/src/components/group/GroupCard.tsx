@@ -1,16 +1,17 @@
-// GroupCard - 組別卡片組件
+// GroupCard - 組別卡片組件（可拖動排序）
 
 import React from 'react'
 import { Card, Button, Space, Dropdown, Tag } from 'antd'
 import {
   DownOutlined,
-  UpOutlined,
-  PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   MoreOutlined,
+  HolderOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import StockCard from '../stock/StockCard'
 import styles from './GroupCard.module.css'
 
@@ -28,6 +29,7 @@ interface GroupCardProps {
   color: string
   stocks: Stock[]
   expanded: boolean
+  draggable?: boolean
   onToggle: () => void
   onAddStock: () => void
   onEdit: () => void
@@ -40,11 +42,28 @@ function GroupCard({
   color,
   stocks,
   expanded,
+  draggable = false,
   onToggle,
   onAddStock,
   onEdit,
   onDelete,
 }: GroupCardProps) {
+  // dnd-kit sortable
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled: !draggable })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
   // 右鍵菜單
   const menuItems: MenuProps['items'] = [
     {
@@ -63,56 +82,67 @@ function GroupCard({
   ]
 
   return (
-    <Card className={styles.card} style={{ borderLeftColor: color }}>
-      {/* 組別 Header */}
-      <div className={styles.header}>
-        <div className={styles.headerLeft} onClick={onToggle}>
-          <span className={styles.toggleIcon}>
-            {expanded ? <DownOutlined /> : <RightOutlined />}
-          </span>
-          <Tag color={color} className={styles.colorTag}>
-            {name}
-          </Tag>
-          <span className={styles.stockCount}>
-            {stocks.length} 隻股票
-          </span>
+    <div ref={setNodeRef} style={style}>
+      <Card className={styles.card} style={{ borderLeftColor: color }}>
+        {/* 組別 Header */}
+        <div className={styles.header}>
+          <div className={styles.headerLeft}>
+            {draggable && (
+              <span 
+                className={styles.dragHandle}
+                {...attributes}
+                {...listeners}
+              >
+                <HolderOutlined />
+              </span>
+            )}
+            <span className={styles.toggleIcon} onClick={onToggle}>
+              {expanded ? <DownOutlined /> : <RightOutlined />}
+            </span>
+            <Tag color={color} className={styles.colorTag} onClick={onToggle}>
+              {name}
+            </Tag>
+            <span className={styles.stockCount}>
+              {stocks.length} 隻股票
+            </span>
+          </div>
+
+          <Space>
+            <Button
+              size="small"
+              icon={<MoreOutlined />}
+              onClick={onAddStock}
+            >
+              加入股票
+            </Button>
+            <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+              <Button size="small" icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
         </div>
 
-        <Space>
-          <Button
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={onAddStock}
-          >
-            加入股票
-          </Button>
-          <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-            <Button size="small" icon={<MoreOutlined />} />
-          </Dropdown>
-        </Space>
-      </div>
-
-      {/* 股票列表 */}
-      {expanded && (
-        <div className={styles.stockList}>
-          {stocks.length === 0 ? (
-            <div className={styles.empty}>暫時沒有股票</div>
-          ) : (
-            stocks.map(stock => (
-              <StockCard
-                key={stock.code}
-                code={stock.code}
-                name={stock.name}
-                price={stock.price}
-                change={stock.change}
-                pctChange={stock.pctChange}
-                compact
-              />
-            ))
-          )}
-        </div>
-      )}
-    </Card>
+        {/* 股票列表 */}
+        {expanded && (
+          <div className={styles.stockList}>
+            {stocks.length === 0 ? (
+              <div className={styles.empty}>暫時沒有股票</div>
+            ) : (
+              stocks.map(stock => (
+                <StockCard
+                  key={stock.code}
+                  code={stock.code}
+                  name={stock.name}
+                  price={stock.price}
+                  change={stock.change}
+                  pctChange={stock.pctChange}
+                  compact
+                />
+              ))
+            )}
+          </div>
+        )}
+      </Card>
+    </div>
   )
 }
 

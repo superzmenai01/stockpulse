@@ -3,6 +3,21 @@
 import React, { useState, useEffect } from 'react'
 import { Button, Empty, message } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { AppLayout } from '../../components/layout'
 import GroupCard from '../../components/group/GroupCard'
 import AddGroupModal from '../../components/group/AddGroupModal'
@@ -33,6 +48,14 @@ function HomePage() {
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; color: string } | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [hasCalledInit, setHasCalledInit] = useState(false)
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   // 從 API 載入組別
   useEffect(() => {
@@ -80,6 +103,30 @@ function HomePage() {
       }
     }
   }, [subscribeStatus])
+
+  // DnD: 拖結束後處理排序
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = groups.findIndex(g => g.id === active.id)
+      const newIndex = groups.findIndex(g => g.id === over.id)
+      
+      // 本地更新順序
+      const newGroups = arrayMove(groups, oldIndex, newIndex)
+      setGroups(newGroups)
+
+      // 發送 reorder 請求到 backend
+      try {
+        await groupApi.reorder(newGroups.map(g => g.id))
+      } catch (err) {
+        console.error('保存排序失敗:', err)
+        message.error('保存排序失敗')
+        // 回滾
+        setGroups(groups)
+      }
+    }
+  }
 
   // 切換組別展開/折疊
   const toggleGroup = (groupId: string) => {
@@ -195,30 +242,42 @@ function HomePage() {
           </Button>
         </div>
 
-        <div className={styles.groupList}>
-          {groups.length === 0 ? (
-            <Empty description="暫時沒有組別" className={styles.empty}>
-              <Button type="primary" onClick={() => setShowAddModal(true)}>
-                創建第一個組別
-              </Button>
-            </Empty>
-          ) : (
-            groups.map(group => (
-              <GroupCard
-                key={group.id}
-                id={group.id}
-                name={group.name}
-                color={group.color}
-                stocks={getStocksWithQuotes(group.stockCodes || [])}
-                expanded={expandedGroups.has(group.id)}
-                onToggle={() => toggleGroup(group.id)}
-                onAddStock={() => handleAddStock(group.id)}
-                onEdit={() => handleEditGroup(group.id)}
-                onDelete={() => handleDeleteGroup(group.id)}
-              />
-            ))
-          )}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={groups.map(g => g.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className={styles.groupList}>
+              {groups.length === 0 ? (
+                <Empty description="暫時沒有組別" className={styles.empty}>
+                  <Button type="primary" onClick={() => setShowAddModal(true)}>
+                    創建第一個組別
+                  </Button>
+                </Empty>
+              ) : (
+                groups.map(group => (
+                  <GroupCard
+                    key={group.id}
+                    id={group.id}
+                    name={group.name}
+                    color={group.color}
+                    stocks={getStocksWithQuotes(group.stockCodes || [])}
+                    expanded={expandedGroups.has(group.id)}
+                    onToggle={() => toggleGroup(group.id)}
+                    onAddStock={() => handleAddStock(group.id)}
+                    onEdit={() => handleEditGroup(group.id)}
+                    onDelete={() => handleDeleteGroup(group.id)}
+                    draggable
+                  />
+                ))
+              )}
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
 
       <AddGroupModal

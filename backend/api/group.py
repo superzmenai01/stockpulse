@@ -12,6 +12,7 @@ from backend.models.group import (
     get_group,
     update_group,
     delete_group,
+    reorder_groups,
 )
 
 router = APIRouter(prefix='/groups', tags=['groups'])
@@ -25,6 +26,11 @@ class GroupCreate(BaseModel):
 class GroupUpdate(BaseModel):
     name: str
     color: str
+
+
+class GroupReorder(BaseModel):
+    """重新排序組別"""
+    group_ids: list[str]
 
 
 class GroupResponse(BaseModel):
@@ -75,3 +81,10 @@ def delete(group_id: str):
     if not success:
         raise HTTPException(status_code=404, detail='組別不存在')
     return {'success': True}
+
+
+@router.post('/reorder', response_model=list[GroupResponse])
+def reorder(data: GroupReorder):
+    """重新排序組別"""
+    groups = reorder_groups(data.group_ids)
+    return [GroupResponse(**g.to_dict()) for g in groups]

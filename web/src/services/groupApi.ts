@@ -9,6 +9,7 @@ export interface Group {
   name: string
   color: string
   user_id: string
+  position: number
   created_at?: string
   updated_at?: string
   stockCodes?: string[]  // TODO: 組別和股票的關聯尚未實現
@@ -75,6 +76,14 @@ export const groupApi = {
   delete: (id: string): Promise<{ success: boolean }> => {
     return request<{ success: boolean }>(`${API_BASE}/groups/${id}`, {
       method: 'DELETE',
+    })
+  },
+
+  /** 重新排序組別 */
+  reorder: (groupIds: string[]): Promise<Group[]> => {
+    return request<Group[]>(`${API_BASE}/groups/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ group_ids: groupIds }),
     })
   },
 }

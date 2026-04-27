@@ -18,6 +18,7 @@ class Group:
     name: str
     color: str
     user_id: str = 'default'
+    position: int = 0
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     
@@ -27,6 +28,7 @@ class Group:
             'name': self.name,
             'color': self.color,
             'user_id': self.user_id,
+            'position': self.position,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
         }
@@ -46,14 +48,20 @@ def init_group_table():
                 name TEXT NOT NULL,
                 color TEXT NOT NULL DEFAULT '#1890ff',
                 user_id TEXT NOT NULL DEFAULT 'default',
+                position INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
+        # 如果 position 欄位不存在，則添加（遷移）
+        try:
+            conn.execute("ALTER TABLE `groups` ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+        except:
+            pass
         conn.commit()
 
 
-def create_group(name: str, color: str = '#1890ff', user_id: str = 'default') -> Group:
+def create_group(name: str, color: str = '#1890ff', user_id: str = 'default', position: int = 0) -> Group:
     """創建組別"""
     import uuid
     now = datetime.now().isoformat()
@@ -62,14 +70,15 @@ def create_group(name: str, color: str = '#1890ff', user_id: str = 'default') ->
         name=name,
         color=color,
         user_id=user_id,
+        position=position,
         created_at=now,
         updated_at=now,
     )
     
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO `groups` (id, name, color, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (group.id, group.name, group.color, group.user_id, group.created_at, group.updated_at)
+            "INSERT INTO `groups` (id, name, color, user_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (group.id, group.name, group.color, group.user_id, group.position, group.created_at, group.updated_at)
         )
         conn.commit()
     
@@ -77,11 +86,11 @@ def create_group(name: str, color: str = '#1890ff', user_id: str = 'default') ->
 
 
 def get_groups(user_id: str = 'default') -> list[Group]:
-    """獲取所有組別"""
+    """獲取所有組別（按 position 排序）"""
     with get_connection() as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
-            "SELECT * FROM `groups` WHERE user_id = ? ORDER BY created_at ASC",
+            "SELECT * FROM `groups` WHERE user_id = ? ORDER BY position ASC, created_at DESC",
             (user_id,)
         )
         rows = cursor.fetchall()
@@ -123,6 +132,21 @@ def delete_group(group_id: str, user_id: str = 'default') -> bool:
         )
         conn.commit()
         return cursor.rowcount > 0
+
+
+def reorder_groups(group_ids: list[str], user_id: str = 'default') -> list[Group]:
+    """
+    重新排序組別
+    group_ids: 新的順序列表
+    """
+    with get_connection() as conn:
+        for position, group_id in enumerate(group_ids):
+            conn.execute(
+                "UPDATE `groups` SET position = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+                (position, datetime.now().isoformat(), group_id, user_id)
+            )
+        conn.commit()
+    return get_groups(user_id)
 
 
 # 初始化表
