@@ -2,35 +2,21 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { AutoComplete, Input } from 'antd'
+import { stockApi, StockSearchResult } from '../../services/stockApi'
 import styles from './StockSearch.module.css'
-
-interface Stock {
-  code: string
-  name: string
-}
 
 interface StockSearchProps {
   placeholder?: string
-  onSelect: (stock: Stock) => void
+  onSelect: (stock: StockSearchResult) => void
   autoFocus?: boolean
+  market?: string  // 'HK' or 'US' or undefined for all
 }
 
-// Mock 股票數據（TODO: 替換為 API）
-const mockStocks: Stock[] = [
-  { code: 'HK.00700', name: '騰訊控股' },
-  { code: 'HK.00981', name: '中芯國際' },
-  { code: 'HK.00005', name: '滙豐控股' },
-  { code: 'HK.01810', name: '小米集團' },
-  { code: 'HK.02382', name: '比亞迪' },
-  { code: 'HK.09988', name: '阿里巴巴' },
-  { code: 'HK.03690', name: '美團點評' },
-  { code: 'HK.09660', name: '地平線機器人' },
-]
-
-function StockSearch({ placeholder = '搜索股票...', onSelect, autoFocus }: StockSearchProps) {
-  const [options, setOptions] = useState<Stock[]>([])
+function StockSearch({ placeholder = '搜索股票...', onSelect, autoFocus, market }: StockSearchProps) {
+  const [options, setOptions] = useState<StockSearchResult[]>([])
   const [searchValue, setSearchValue] = useState('')
   const debounceRef = useRef<NodeJS.Timeout>()
+  const abortControllerRef = useRef<AbortController>()
 
   // 搜索股票
   const handleSearch = (value: string) => {
@@ -41,27 +27,33 @@ function StockSearch({ placeholder = '搜索股票...', onSelect, autoFocus }: S
       clearTimeout(debounceRef.current)
     }
 
-    // 0.5 秒防抖
-    debounceRef.current = setTimeout(() => {
+    // 取消之前的請求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // 0.3 秒防抖
+    debounceRef.current = setTimeout(async () => {
       if (!value.trim()) {
         setOptions([])
         return
       }
 
-      // TODO: 調用真實 API
-      // 模擬搜索：過濾股票代碼或名稱
-      const filtered = mockStocks.filter(
-        stock =>
-          stock.code.toLowerCase().includes(value.toLowerCase()) ||
-          stock.name.includes(value)
-      )
-      setOptions(filtered.slice(0, 10)) // 最多顯示 10 個
-    }, 500)
+      try {
+        abortControllerRef.current = new AbortController()
+        const results = await stockApi.search(value, market)
+        setOptions(results.slice(0, 10)) // 最多顯示 10 個
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error('搜索失敗:', err)
+        }
+      }
+    }, 300)
   }
 
   // 選擇股票
   const handleSelect = (value: string) => {
-    const stock = mockStocks.find(s => s.code === value)
+    const stock = options.find(s => s.code === value)
     if (stock) {
       onSelect(stock)
       setSearchValue('')
@@ -70,12 +62,13 @@ function StockSearch({ placeholder = '搜索股票...', onSelect, autoFocus }: S
   }
 
   // 渲染選項
-  const renderOption = (stock: Stock) => ({
+  const renderOption = (stock: StockSearchResult) => ({
     value: stock.code,
     label: (
       <div className={styles.option}>
         <span className={styles.optionCode}>{stock.code}</span>
         <span className={styles.optionName}>{stock.name}</span>
+        <span className={styles.optionMarket}>{stock.market}</span>
       </div>
     ),
   })
