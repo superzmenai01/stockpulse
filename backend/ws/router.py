@@ -2,6 +2,7 @@
 # 處理客戶端的訂閱/取消訂閱請求
 
 import logging
+import asyncio
 import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, Optional
@@ -22,6 +23,7 @@ router = APIRouter()
 _futu_ctx: Optional[OpenQuoteContext] = None
 _sub_manager: Optional[SubscriptionManager] = None
 _broadcaster = None
+_main_loop: Optional[asyncio.AbstractEventLoop] = None  # 保存主 event loop
 
 
 def get_subscription_manager() -> Optional[SubscriptionManager]:
@@ -62,10 +64,14 @@ def get_broadcaster():
     Returns:
         QuoteBroadcaster: 配置好的廣播器
     """
-    global _broadcaster
+    global _broadcaster, _main_loop
     
     if _broadcaster is None:
-        _broadcaster = create_broadcaster(event_bus, session_manager, connection_manager)
+        # 保存當前 event loop（ FastAPI 的主 loop）
+        _main_loop = asyncio.get_running_loop()
+        logger.info(f"[WS] 保存主 event loop: {_main_loop}")
+        
+        _broadcaster = create_broadcaster(event_bus, session_manager, connection_manager, _main_loop)
         _broadcaster.start()
         logger.info("[WS] QuoteBroadcaster 已啟動")
     
@@ -115,9 +121,24 @@ async def websocket_quote(websocket: WebSocket):
     
     try:
         while True:
-            data = await websocket.receive_json()
-            await handle_client_message(session.id, data)
-            
+            try:
+                # 使用 wait_for 加超時，避免永久阻塞
+                data = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=30.0
+                )
+                await handle_client_message(session.id, data)
+            except asyncio.TimeoutError:
+                # 每 30 秒檢查一次 session 是否仲在
+                current_session = session_manager.get_session(session.id)
+                if not current_session:
+                    logger.info(f"[WS] Session 已移除: session={session.id}")
+                    break
+                continue
+            except Exception as e:
+                logger.error(f"[WS] 接收消息錯誤 session={session.id}: {e}")
+                break
+                
     except WebSocketDisconnect:
         logger.info(f"[WS] 客戶端斷開: session={session.id}")
     except Exception as e:
@@ -132,6 +153,7 @@ async def websocket_quote(websocket: WebSocket):
 async def handle_client_message(session_id: str, data: dict):
     """處理客戶端消息"""
     action = data.get("action")
+    logger.info(f"[WS] ★ 收到 action={action} from session={session_id}, data={data}")
     session = session_manager.get_session(session_id)
     
     if not session:
@@ -235,7 +257,8 @@ async def handle_init(session, data: dict):
     for code in codes:
         session.add_subscription(code)
     
-    logger.info(f"[WS][INIT] 初始化成功: {codes}")
+    logger.info(f"[WS][INIT] ★ 初始化成功，session={session.id} 已訂閱: {codes}")
+    logger.info(f"[WS][INIT] ★ 檢查：broadcaster={_broadcaster}, _broadcaster._running={_broadcaster._running if _broadcaster else 'N/A'}")
     await connection_manager.send_to(session.id, {
         "type": "init_result",
         "success": True,

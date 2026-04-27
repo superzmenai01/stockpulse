@@ -26,7 +26,7 @@ class Session:
         """添加訂閱"""
         self.subscriptions.add(code)
         self.last_active = datetime.now()
-        logger.info(f"Session {self.id} 訂閱: {code}")
+        logger.info(f"Session {self.id} ★ add_subscription({code}), current_subs={self.subscriptions}")
     
     def remove_subscription(self, code: str):
         """移除訂閱"""
@@ -42,7 +42,9 @@ class Session:
     
     def is_subscribed(self, code: str) -> bool:
         """檢查是否已訂閱"""
-        return code in self.subscriptions
+        result = code in self.subscriptions
+        logger.info(f"Session {self.id} ★ is_subscribed({code})={result}, subscriptions={self.subscriptions}")
+        return result
 
 
 class SessionManager:
@@ -88,6 +90,7 @@ class SessionManager:
             sid for sid, s in self._sessions.items()
             if s.is_subscribed(code)
         ]
+        logger.info(f"SessionManager ★ broadcast_to_subscribed({code}) -> sessions={subscribed_sessions}, all_sessions={dict(self._sessions)}")
         return subscribed_sessions
 
 

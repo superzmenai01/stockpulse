@@ -38,14 +38,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [cancelCooldown, setCancelCooldown] = useState(0)
   const [subscribeStatus, setSubscribeStatus] = useState<'success' | 'failed' | 'waiting' | null>(null)
   const [quotes, setQuotes] = useState<Record<string, QuoteData>>({})
+  const [initCodes, setInitCodes] = useState<string[] | null>(null)
   
   const wsRef = useRef<WebSocket | null>(null)
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const hasInitialized = useRef(false)
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return // 已經連接
+      return
     }
 
     const wsUrl = `ws://${window.location.hostname}:18792/ws/quote`
@@ -60,7 +60,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       const data = JSON.parse(event.data)
       console.log('[WS] 收到:', data)
 
-      // 處理 quote
       if (data.type === 'quote') {
         setQuotes(prev => ({
           ...prev,
@@ -81,7 +80,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         }))
       }
 
-      // 處理 init_result
       if (data.type === 'init_result') {
         if (data.success) {
           setSubscribed(true)
@@ -97,11 +95,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             setSubscribeStatus('failed')
           }
         }
-        // 3秒後清除狀態
         setTimeout(() => setSubscribeStatus(null), 3000)
       }
 
-      // 處理取消訂閱結果
       if (data.type === 'all_unsubscribed') {
         if (data.success) {
           setSubscribed(false)
@@ -111,7 +107,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 處理取消失敗
       if (data.type === 'unsubscribe_failed') {
         setWaitingCancel(true)
         setSubscribeStatus('waiting')
@@ -130,7 +125,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       setConnected(false)
       setSubscribed(false)
       console.log('[WS] 已斷開')
-      // 清除計時器
       if (cooldownTimerRef.current) {
         clearInterval(cooldownTimerRef.current)
         cooldownTimerRef.current = null
@@ -140,7 +134,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     wsRef.current = ws
   }, [])
 
-  // 啟動取消冷卻倒計時
   const startCooldownTimer = (seconds: number) => {
     if (cooldownTimerRef.current) {
       clearInterval(cooldownTimerRef.current)
@@ -159,22 +152,21 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }, 1000)
   }
 
-  // 初始化訂閱（只執行一次）
+  // 設置要初始化的股票列表
   const init = useCallback((codes: string[]) => {
-    if (hasInitialized.current) {
-      console.log('[WS] 已初始化，跳過')
-      return
-    }
-    
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      hasInitialized.current = true
-      setSubscribeStatus(null)
-      wsRef.current.send(JSON.stringify({ action: 'init', codes }))
-      console.log('[WS] 發送 init:', codes)
-    }
+    console.log('[WS] init 被調用，設置股票列表:', codes)
+    setInitCodes(codes)
   }, [])
 
-  // 取消所有訂閱
+  // 當連接成功且有股票列表時，發送 init
+  useEffect(() => {
+    if (connected && initCodes && wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('[WS] 發送 init:', initCodes)
+      wsRef.current.send(JSON.stringify({ action: 'init', codes: initCodes }))
+      setInitCodes(null) // 清除，避免重複發送
+    }
+  }, [connected, initCodes])
+
   const unsubscribeAll = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       setWaitingCancel(true)
@@ -184,11 +176,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   // 連接（只在首次 mount 時）
   useEffect(() => {
+    console.log('[WS] WebSocketProvider mounted，開始連接')
     connect()
-    
-    return () => {
-      // 不在 unmount 時關閉連接，保持連接狀態
-    }
   }, [connect])
 
   const value: WebSocketContextValue = {
@@ -209,7 +198,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Hook 來使用 WebSocket Context
 export function useWebSocketContext() {
   const context = useContext(WebSocketContext)
   if (!context) {

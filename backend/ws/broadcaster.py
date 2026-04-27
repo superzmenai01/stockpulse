@@ -25,7 +25,7 @@ class QuoteBroadcaster:
     - 可靈活開關
     """
     
-    def __init__(self, event_bus, session_manager, connection_manager):
+    def __init__(self, event_bus, session_manager, connection_manager, main_loop=None):
         """
         初始化廣播器
         
@@ -33,10 +33,12 @@ class QuoteBroadcaster:
             event_bus: 事件總線實例
             session_manager: Session 管理器
             connection_manager: WebSocket 連接管理器
+            main_loop: FastAPI 的主 event loop（用於線程安全地發送到 WebSocket）
         """
         self.event_bus = event_bus
         self.session_manager = session_manager
         self.connection_manager = connection_manager
+        self._main_loop = main_loop
         self._handler = None
         self._queue = Queue()
         self._running = False
@@ -74,7 +76,7 @@ class QuoteBroadcaster:
         def handle_quote_event(event):
             """收到 quote 事件，放入佇列"""
             self._queue.put(event.data)
-            logger.debug(f"[BROADCASTER] 事件已放入佇列: {event.data.get('code')}")
+            logger.info(f"[BROADCASTER] ★ 收到 quote 事件 -> 放入佇列: code={event.data.get('code')}")
         
         return handle_quote_event
     
@@ -110,8 +112,10 @@ class QuoteBroadcaster:
         session_ids = self.session_manager.broadcast_to_subscribed(code, quote_data)
         
         if not session_ids:
-            logger.debug(f"[BROADCASTER] 沒有 Session 訂閱 {code}")
+            logger.info(f"[BROADCASTER] ★ 廣播失敗，沒有 Session 訂閱 {code}")
             return
+        
+        logger.info(f"[BROADCASTER] ★ 廣播俾 {len(session_ids)} 個 Session: {session_ids}")
         
         # 構建消息
         message = {
@@ -120,11 +124,23 @@ class QuoteBroadcaster:
         }
         
         # 廣播給所有相關 Session
-        # 注意：這是在佇列處理線程中，需要用 asyncio.run() 包裝
+        # 使用主 loop 的 run_coroutine_threadsafe 避免 asyncio.run() 創建新 loop 的問題
         for session_id in session_ids:
             try:
-                asyncio.run(self._send_to_session(session_id, message))
-                logger.debug(f"[BROADCASTER] 已發送給 {session_id}")
+                if self._main_loop is not None:
+                    # run_coroutine_threadsafe 會自動處理線程安全，唔需要 get_event_loop()
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._send_to_session(session_id, message),
+                        self._main_loop
+                    )
+                    # 等待結果（可選，超時則放棄）
+                    try:
+                        future.result(timeout=1.0)
+                    except Exception:
+                        pass
+                    logger.info(f"[BROADCASTER] ★ 已發送俾 {session_id}: code={code}")
+                else:
+                    logger.warning(f"[BROADCASTER] 主 loop 未設置，跳過發送俾 {session_id}")
             except Exception as e:
                 logger.error(f"[BROADCASTER] 發送給 {session_id} 失敗: {e}")
     
@@ -139,7 +155,7 @@ class QuoteBroadcaster:
         await self.connection_manager.send_to(session_id, message)
 
 
-def create_broadcaster(event_bus, session_manager, connection_manager) -> QuoteBroadcaster:
+def create_broadcaster(event_bus, session_manager, connection_manager, main_loop=None) -> QuoteBroadcaster:
     """
     工廠函數：創建 QuoteBroadcaster
     
@@ -147,8 +163,9 @@ def create_broadcaster(event_bus, session_manager, connection_manager) -> QuoteB
         event_bus: 事件總線
         session_manager: Session 管理器
         connection_manager: WebSocket 連接管理器
+        main_loop: FastAPI 的主 event loop
         
     Returns:
         QuoteBroadcaster: 配置好的廣播器
     """
-    return QuoteBroadcaster(event_bus, session_manager, connection_manager)
+    return QuoteBroadcaster(event_bus, session_manager, connection_manager, main_loop)

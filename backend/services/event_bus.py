@@ -56,7 +56,7 @@ class EventBus:
     def emit(self, event_type: str, data: dict):
         """發送事件"""
         event = Event(type=event_type, data=data)
-        logger.debug(f"發送事件: {event_type} -> {data}")
+        logger.info(f"[EVENT_BUS] emit '{event_type}' -> data={data}")
         
         if event_type in self._subscribers:
             for callback in self._subscribers[event_type]:

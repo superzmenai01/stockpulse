@@ -52,15 +52,16 @@ function HomePage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; color: string } | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['1']))
-  const [hasInitialized, setHasInitialized] = useState(false)
+  const [hasCalledInit, setHasCalledInit] = useState(false)
 
-  // 初始化訂閱（只執行一次）
+  // 初始化訂閱（連接成功後調用一次）
   useEffect(() => {
-    if (connected && !hasInitialized) {
+    if (connected && !hasCalledInit) {
+      console.log('[HomePage] 連接成功，調用 init')
       init(DEFAULT_STOCKS)
-      setHasInitialized(true)
+      setHasCalledInit(true)
     }
-  }, [connected, hasInitialized, init])
+  }, [connected, hasCalledInit, init])
 
   // 顯示訂閱狀態通知
   useEffect(() => {
@@ -109,7 +110,7 @@ function HomePage() {
     setGroups(prev => prev.filter(g => g.id !== groupId))
   }
 
-  // 編輯組別 - 打開編輯彈窗
+  // 編輯組別
   const handleEditGroup = (groupId: string) => {
     const group = groups.find(g => g.id === groupId)
     if (group) {
@@ -129,7 +130,7 @@ function HomePage() {
     setEditingGroup(null)
   }
 
-  // 添加股票到組別（TODO）
+  // 添加股票到組別
   const handleAddStock = (groupId: string) => {
     console.log('添加股票到組別:', groupId)
   }

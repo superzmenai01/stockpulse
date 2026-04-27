@@ -55,7 +55,7 @@ class QuoteHandler(StockQuoteHandlerBase):
                 if quote_data:
                     # 發送到事件總線
                     self.event_bus.emit('quote', quote_data)
-                    logger.debug(f"[QUOTE_HANDLER] 發送報價: {quote_data.get('code')}")
+                    logger.info(f"[QUOTE_HANDLER] ★ 收到報價 -> 發送到事件總線: code={quote_data.get('code')}, price={quote_data.get('last_price')}")
         
         return RET_OK, content
     
