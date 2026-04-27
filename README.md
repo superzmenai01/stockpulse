@@ -130,7 +130,13 @@ npm run dev
 ### 測試 WebSocket
 ```bash
 cd stockpulse
-~/.futu_venv/bin/python3 test_ws_client.py
+~/.futu_venv/bin/python3 test_ws_debug.py
+```
+
+### 運行後端測試
+```bash
+cd stockpulse
+~/.futu_venv/bin/python3 -m pytest backend/tests/ -v
 ```
 
 ### Git 操作
@@ -171,4 +177,4 @@ A: 確保使用正確的 Python：`~/.futu_venv/bin/python3`
 
 ---
 
-_最後更新：2026-04-26_
+_最後更新：2026-04-27_
