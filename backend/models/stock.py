@@ -46,8 +46,14 @@ def search_stocks(keyword: str, market: str = None, limit: int = 20) -> list[dic
     Returns:
         股票列表
     """
+    # 移除 HK. 或 US. 前綴，方便用戶直接輸入數字或字母
+    clean_keyword = keyword.replace('HK.', '').replace('US.', '')
+    
     with get_connection() as conn:
         conn.row_factory = sqlite3.Row
+        
+        # 使用 %keyword% 匹配，這樣 HK.00700 可以被 00700 匹配到
+        pattern = f'%{clean_keyword}%'
         
         if market:
             cursor = conn.execute("""
@@ -58,7 +64,7 @@ def search_stocks(keyword: str, market: str = None, limit: int = 20) -> list[dic
                     CASE WHEN code LIKE ? THEN 0 ELSE 1 END,
                     name
                 LIMIT ?
-            """, (market, f'{keyword}%', f'%{keyword}%', f'{keyword}%', limit))
+            """, (market, pattern, pattern, f'%{clean_keyword}%', limit))
         else:
             cursor = conn.execute("""
                 SELECT code, name, lot_size, stock_type, exchange_type, market
@@ -68,7 +74,7 @@ def search_stocks(keyword: str, market: str = None, limit: int = 20) -> list[dic
                     CASE WHEN code LIKE ? THEN 0 ELSE 1 END,
                     name
                 LIMIT ?
-            """, (f'{keyword}%', f'%{keyword}%', f'{keyword}%', limit))
+            """, (pattern, pattern, f'%{clean_keyword}%', limit))
         
         return [dict(row) for row in cursor.fetchall()]
 

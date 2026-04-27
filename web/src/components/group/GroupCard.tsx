@@ -4,6 +4,7 @@ import React from 'react'
 import { Card, Button, Space, Dropdown, Tag } from 'antd'
 import {
   DownOutlined,
+  PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   MoreOutlined,
@@ -31,7 +32,7 @@ interface GroupCardProps {
   expanded: boolean
   draggable?: boolean
   onToggle: () => void
-  onAddStock: () => void
+  onAddStock: (groupId: string, groupName: string) => void
   onEdit: () => void
   onDelete: () => void
 }
@@ -110,8 +111,8 @@ function GroupCard({
           <Space>
             <Button
               size="small"
-              icon={<MoreOutlined />}
-              onClick={onAddStock}
+              icon={<PlusOutlined />}
+              onClick={() => onAddStock(id, name)}
             >
               加入股票
             </Button>

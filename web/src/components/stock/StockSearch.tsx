@@ -1,6 +1,6 @@
 // StockSearch - 股票搜索自動完成組件
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useRef } from 'react'
 import { AutoComplete, Input } from 'antd'
 import { stockApi, StockSearchResult } from '../../services/stockApi'
 import styles from './StockSearch.module.css'
@@ -9,22 +9,36 @@ interface StockSearchProps {
   placeholder?: string
   onSelect: (stock: StockSearchResult) => void
   autoFocus?: boolean
-  market?: string  // 'HK' or 'US' or undefined for all
 }
 
-function StockSearch({ placeholder = '搜索股票...', onSelect, autoFocus, market }: StockSearchProps) {
+function StockSearch({ placeholder = '搜索股票...', onSelect, autoFocus }: StockSearchProps) {
   const [options, setOptions] = useState<StockSearchResult[]>([])
   const [searchValue, setSearchValue] = useState('')
-  const debounceRef = useRef<NodeJS.Timeout>()
   const abortControllerRef = useRef<AbortController>()
 
-  // 搜索股票
-  const handleSearch = (value: string) => {
-    setSearchValue(value)
+  // 根據輸入內容判斷市場
+  const getMarket = (value: string): string | undefined => {
+    // 如果包含英文字母，搜尋美股
+    if (/[a-zA-Z]/.test(value)) {
+      return 'US'
+    }
+    // 如果純數字，搜尋港股
+    if (/^\d+$/.test(value)) {
+      return 'HK'
+    }
+    // 混合內容或中文，不指定市場
+    return undefined
+  }
 
-    // 清除之前的計時器
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current)
+  // 搜索股票（直接搜索，無防抖）
+  const handleSearch = async (value: string) => {
+    setSearchValue(value)
+    console.log('[StockSearch] handleSearch called with:', value)
+
+    if (!value.trim()) {
+      console.log('[StockSearch] Empty value, clearing options')
+      setOptions([])
+      return
     }
 
     // 取消之前的請求
@@ -32,23 +46,22 @@ function StockSearch({ placeholder = '搜索股票...', onSelect, autoFocus, mar
       abortControllerRef.current.abort()
     }
 
-    // 0.3 秒防抖
-    debounceRef.current = setTimeout(async () => {
-      if (!value.trim()) {
-        setOptions([])
-        return
+    try {
+      abortControllerRef.current = new AbortController()
+      const market = getMarket(value)
+      console.log('[StockSearch] Calling API with market:', market)
+      const results = await stockApi.search(value, market)
+      console.log('[StockSearch] Got results:', results.length, results.slice(0, 3))
+      // 確保是最新輸入的結果
+      if (!abortControllerRef.current.signal.aborted) {
+        setOptions(results.slice(0, 10))
       }
-
-      try {
-        abortControllerRef.current = new AbortController()
-        const results = await stockApi.search(value, market)
-        setOptions(results.slice(0, 10)) // 最多顯示 10 個
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          console.error('搜索失敗:', err)
-        }
+    } catch (err) {
+      console.log('[StockSearch] Error:', err)
+      if ((err as Error).name !== 'AbortError') {
+        console.error('搜索失敗:', err)
       }
-    }, 300)
+    }
   }
 
   // 選擇股票

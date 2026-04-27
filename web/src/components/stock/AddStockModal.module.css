@@ -1,0 +1,31 @@
+.content {
+  padding: 16px 0;
+}
+
+.preview {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+.previewLabel {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.previewStock {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.code {
+  font-weight: bold;
+  color: #1890ff;
+}
+
+.name {
+  color: #333;
+}

@@ -22,6 +22,7 @@ import { AppLayout } from '../../components/layout'
 import GroupCard from '../../components/group/GroupCard'
 import AddGroupModal from '../../components/group/AddGroupModal'
 import EditGroupModal from '../../components/group/EditGroupModal'
+import AddStockModal from '../../components/stock/AddStockModal'
 import { useWebSocketContext } from '../../context'
 import { groupApi, Group } from '../../services/groupApi'
 import styles from './HomePage.module.css'
@@ -46,6 +47,8 @@ function HomePage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; color: string } | null>(null)
+  const [showAddStockModal, setShowAddStockModal] = useState(false)
+  const [addStockToGroup, setAddStockToGroup] = useState<{ id: string; name: string } | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [hasCalledInit, setHasCalledInit] = useState(false)
 
@@ -194,8 +197,18 @@ function HomePage() {
   }
 
   // 添加股票到組別
-  const handleAddStock = (groupId: string) => {
-    console.log('添加股票到組別:', groupId)
+  const handleAddStock = (groupId: string, groupName: string) => {
+    setAddStockToGroup({ id: groupId, name: groupName })
+    setShowAddStockModal(true)
+  }
+
+  // 確認添加股票
+  const handleConfirmAddStock = (code: string, name: string) => {
+    if (addStockToGroup) {
+      console.log(`添加 ${code} 到組別 ${addStockToGroup.name}`)
+      // TODO: 保存到數據庫
+      // 目前只係 log，未實現持久化
+    }
   }
 
   // 將 stockCodes 轉換為帶報價的股票列表
@@ -296,6 +309,19 @@ function HomePage() {
             setEditingGroup(null)
           }}
           onSave={handleSaveEdit}
+        />
+      )}
+
+      {addStockToGroup && (
+        <AddStockModal
+          open={showAddStockModal}
+          groupId={addStockToGroup.id}
+          groupName={addStockToGroup.name}
+          onClose={() => {
+            setShowAddStockModal(false)
+            setAddStockToGroup(null)
+          }}
+          onAdd={handleConfirmAddStock}
         />
       )}
     </AppLayout>
