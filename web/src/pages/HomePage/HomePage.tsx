@@ -27,8 +27,8 @@ import { useWebSocketContext } from '../../context'
 import { groupApi, Group } from '../../services/groupApi'
 import styles from './HomePage.module.css'
 
-// 預設股票列表
-const DEFAULT_STOCKS = ['HK.00700', 'HK.00981', 'HK.00005', 'HK.01810', 'HK.02382']
+// 預設股票列表（已移除，只訂閱組別入面的股票）
+// const DEFAULT_STOCKS = ['HK.00700', 'HK.00981', 'HK.00005', 'HK.01810', 'HK.02382']
 
 function HomePage() {
   const {
@@ -38,6 +38,7 @@ function HomePage() {
     cancelCooldown,
     quotes,
     init,
+    subscribe,
     unsubscribeAll,
     subscribeStatus,
   } = useWebSocketContext()
@@ -51,6 +52,7 @@ function HomePage() {
   const [addStockToGroup, setAddStockToGroup] = useState<{ id: string; name: string } | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [hasCalledInit, setHasCalledInit] = useState(false)
+  const [pendingInitCodes, setPendingInitCodes] = useState<string[] | null>(null)
 
   // DnD sensors
   const sensors = useSensors(
@@ -68,10 +70,41 @@ function HomePage() {
   const loadGroups = async () => {
     try {
       const data = await groupApi.list()
-      setGroups(data)
+      // 為每個組別載入股票
+      const groupsWithStocks = await Promise.all(
+        data.map(async (g) => {
+          try {
+            const stocks = await groupApi.getStocks(g.id)
+            return { ...g, stockCodes: stocks.map(s => s.stock_code) }
+          } catch {
+            return { ...g, stockCodes: [] }
+          }
+        })
+      )
+      setGroups(groupsWithStocks)
+
+      // 收集所有組別的股票（只訂閱組別入面的）
+      const allStockCodes = new Set<string>()
+      groupsWithStocks.forEach(g => {
+        if (g.stockCodes) {
+          g.stockCodes.forEach(c => allStockCodes.add(c))
+        }
+      })
+      const allCodes = Array.from(allStockCodes)
+
+      // 更新訂閱（只在連接後）
+      if (connected) {
+        console.log('[HomePage] 更新訂閱:', allCodes)
+        init(allCodes)
+      } else {
+        // 等待連接後再init
+        console.log('[HomePage] WS 未連接，設置 pendingInitCodes:', allCodes)
+        setPendingInitCodes(allCodes)
+      }
+
       // 預設展開第一個組
-      if (data.length > 0) {
-        setExpandedGroups(new Set([data[0].id]))
+      if (groupsWithStocks.length > 0) {
+        setExpandedGroups(new Set([groupsWithStocks[0].id]))
       }
     } catch (err) {
       console.error('載入組別失敗:', err)
@@ -81,14 +114,13 @@ function HomePage() {
     }
   }
 
-  // 初始化訂閱（連接成功後調用一次）
+  // 當 pendingInitCodes 改變時，如果已連接，調用 init（force）
   useEffect(() => {
-    if (connected && !hasCalledInit) {
-      console.log('[HomePage] 連接成功，調用 init')
-      init(DEFAULT_STOCKS)
-      setHasCalledInit(true)
+    if (pendingInitCodes && connected) {
+      console.log('[HomePage] pendingInitCodes 已更新，強制 init:', pendingInitCodes)
+      init(pendingInitCodes, true)  // force=true 強制重新初始化
     }
-  }, [connected, hasCalledInit, init])
+  }, [pendingInitCodes, connected, init])
 
   // 顯示訂閱狀態通知
   useEffect(() => {
@@ -203,11 +235,29 @@ function HomePage() {
   }
 
   // 確認添加股票
-  const handleConfirmAddStock = (code: string, name: string) => {
+  const handleConfirmAddStock = async (code: string, name: string) => {
     if (addStockToGroup) {
-      console.log(`添加 ${code} 到組別 ${addStockToGroup.name}`)
-      // TODO: 保存到數據庫
-      // 目前只係 log，未實現持久化
+      try {
+        // 1. 保存到 DB
+        await groupApi.addStock(addStockToGroup.id, code)
+        
+        // 2. 只訂閱新加的股票
+        console.log('[HomePage] 追加訂閱:', [code])
+        subscribe([code])
+        
+        // 3. 更新 UI state（把新股票放到最上面）
+        setGroups(prev => prev.map(g => {
+          if (g.id === addStockToGroup.id) {
+            return { ...g, stockCodes: [code, ...(g.stockCodes || [])] }
+          }
+          return g
+        }))
+        
+        message.success(`已添加 ${name} 到 ${addStockToGroup.name}`)
+      } catch (err) {
+        console.error('添加股票失敗:', err)
+        message.error('添加股票失敗')
+      }
     }
   }
 

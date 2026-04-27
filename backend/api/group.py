@@ -88,3 +88,34 @@ def reorder(data: GroupReorder):
     """重新排序組別"""
     groups = reorder_groups(data.group_ids)
     return [GroupResponse(**g.to_dict()) for g in groups]
+
+
+@router.get('/{group_id}/stocks')
+def get_group_stocks(group_id: str):
+    """獲取組別的所有股票"""
+    from backend.models.group_stock import get_group_stocks as _get_group_stocks
+    stocks = _get_group_stocks(group_id)
+    return stocks
+
+
+@router.post('/{group_id}/stocks')
+def add_stock_to_group(group_id: str, data: dict):
+    """添加股票到組別"""
+    from backend.models.group_stock import add_stock_to_group as _add_stock_to_group
+    stock_code = data.get('stock_code')
+    if not stock_code:
+        raise HTTPException(status_code=400, detail='stock_code is required')
+    success = _add_stock_to_group(group_id, stock_code)
+    if not success:
+        raise HTTPException(status_code=500, detail='Failed to add stock')
+    return {'success': True, 'stock_code': stock_code}
+
+
+@router.delete('/{group_id}/stocks/{stock_code}')
+def remove_stock_from_group(group_id: str, stock_code: str):
+    """從組別移除股票"""
+    from backend.models.group_stock import remove_stock_from_group as _remove_stock_from_group
+    success = _remove_stock_from_group(group_id, stock_code)
+    if not success:
+        raise HTTPException(status_code=404, detail='Stock not found in group')
+    return {'success': True}

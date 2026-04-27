@@ -12,7 +12,7 @@ export interface Group {
   position: number
   created_at?: string
   updated_at?: string
-  stockCodes?: string[]  // TODO: 組別和股票的關聯尚未實現
+  stockCodes?: string[]
 }
 
 export interface CreateGroupRequest {
@@ -23,6 +23,14 @@ export interface CreateGroupRequest {
 export interface UpdateGroupRequest {
   name: string
   color: string
+}
+
+export interface GroupStock {
+  stock_code: string
+  name: string
+  market: string
+  exchange_type: string
+  added_at: string
 }
 
 async function request<T>(
@@ -84,6 +92,28 @@ export const groupApi = {
     return request<Group[]>(`${API_BASE}/groups/reorder`, {
       method: 'POST',
       body: JSON.stringify({ group_ids: groupIds }),
+    })
+  },
+
+  // ============ 組別-股票關聯 ============
+
+  /** 獲取組別的股票 */
+  getStocks: (groupId: string): Promise<GroupStock[]> => {
+    return request<GroupStock[]>(`${API_BASE}/groups/${groupId}/stocks`)
+  },
+
+  /** 添加股票到組別 */
+  addStock: (groupId: string, stockCode: string): Promise<{ success: boolean }> => {
+    return request<{ success: boolean }>(`${API_BASE}/groups/${groupId}/stocks`, {
+      method: 'POST',
+      body: JSON.stringify({ stock_code: stockCode }),
+    })
+  },
+
+  /** 從組別移除股票 */
+  removeStock: (groupId: string, stockCode: string): Promise<{ success: boolean }> => {
+    return request<{ success: boolean }>(`${API_BASE}/groups/${groupId}/stocks/${stockCode}`, {
+      method: 'DELETE',
     })
   },
 }
