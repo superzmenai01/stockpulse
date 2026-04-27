@@ -81,7 +81,7 @@ def get_groups(user_id: str = 'default') -> list[Group]:
     with get_connection() as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
-            "SELECT * FROM `groups` WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM `groups` WHERE user_id = ? ORDER BY created_at ASC",
             (user_id,)
         )
         rows = cursor.fetchall()
