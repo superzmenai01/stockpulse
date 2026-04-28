@@ -1,7 +1,7 @@
 // StockCard - 股票卡片組件
 
 import React from 'react'
-import { Dropdown, type MenuProps } from 'antd'
+import { Dropdown, Modal, type MenuProps } from 'antd'
 import styles from './StockCard.module.css'
 
 interface StockCardProps {
@@ -70,7 +70,16 @@ function StockCard({
       key: 'remove',
       label: '刪除',
       danger: true,
-      onClick: onRemove,
+      onClick: () => {
+        Modal.confirm({
+          title: '確認刪除',
+          content: `確定要從組別刪除「${name}」嗎？`,
+          okText: '刪除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => onRemove?.(),
+        })
+      },
     },
   ]
 

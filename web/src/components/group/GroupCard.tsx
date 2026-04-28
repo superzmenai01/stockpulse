@@ -1,7 +1,7 @@
 // GroupCard - 組別卡片組件
 
 import React from 'react'
-import { Card, Button, Space, Dropdown, Tag } from 'antd'
+import { Card, Button, Space, Dropdown, Tag, Modal } from 'antd'
 import {
   DownOutlined,
   PlusOutlined,
@@ -116,7 +116,16 @@ function GroupCard({
       icon: <DeleteOutlined />,
       label: '刪除',
       danger: true,
-      onClick: onDelete,
+      onClick: () => {
+        Modal.confirm({
+          title: '確認刪除組別',
+          content: `確定要刪除「${name}」組別嗎？組別內的股票也會被移除。`,
+          okText: '刪除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: onDelete,
+        })
+      },
     },
   ]
 
