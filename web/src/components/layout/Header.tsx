@@ -1,8 +1,9 @@
 // Header - 頂部導航
 
 import React from 'react'
-import { Space, Tag, Button } from 'antd'
+import { Space, Tag, Button, Switch } from 'antd'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '../../context/ThemeContext'
 import styles from './Header.module.css'
 
 interface HeaderProps {
@@ -21,6 +22,7 @@ function Header({
   onUnsubscribe,
 }: HeaderProps) {
   const navigate = useNavigate()
+  const { mode, toggleTheme } = useTheme()
 
   const handleLogout = () => {
     if (onUnsubscribe) {
@@ -37,6 +39,13 @@ function Header({
       
       <div className={styles.right}>
         <Space>
+          <Switch
+            checked={mode === 'dark'}
+            onChange={toggleTheme}
+            checkedChildren="🌙"
+            unCheckedChildren="☀️"
+            size="small"
+          />
           <Tag color={connected ? 'green' : 'red'}>
             {connected ? '已連接' : '未連接'}
           </Tag>

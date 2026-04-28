@@ -39,7 +39,8 @@ function StockCard({
 }: StockCardProps) {
   const hasPrice = price !== undefined && price !== null && price > 0
   const isPositive = change >= 0
-  const changeColor = isPositive ? '#f5222d' : '#52c41a'
+  // 富途風格：綠升紅跌
+  const changeColor = isPositive ? '#26BA75' : '#EE5151'
 
   // 格式化數字
   const formatVolume = (v?: number) => {

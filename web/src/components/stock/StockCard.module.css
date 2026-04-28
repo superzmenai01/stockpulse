@@ -1,26 +1,28 @@
-/* 簡潔模式：組別內的股票行 */
+/* 簡潔模式：組別內的股票行（暗色模式） */
 .compactRow {
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  background: #fff;
-  border-radius: 8px;
+  background: #0D1114;
+  border-radius: 6px;
   gap: 8px;
   font-size: 13px;
+  color: #fff;
 }
 
 .compactRow:hover {
-  background: #fafafa;
+  background: #191C1F;
 }
 
 .code {
   font-weight: bold;
   min-width: 50px;
+  color: #D1D1D1;
 }
 
 .name {
   flex: 1;
-  color: #666;
+  color: #D1D1D1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -28,7 +30,7 @@
 
 .price {
   font-weight: bold;
-  color: #1890ff;
+  color: #fff;
   min-width: 60px;
   text-align: right;
 }
@@ -37,28 +39,30 @@
   min-width: 55px;
   text-align: right;
   font-size: 12px;
+  font-weight: bold;
 }
 
 .open, .high, .low {
   min-width: 50px;
   text-align: right;
-  color: #333;
+  color: #8A8A8A;
   font-size: 12px;
 }
 
 .volume {
   min-width: 50px;
   text-align: right;
-  color: #666;
+  color: #8A8A8A;
   font-size: 12px;
 }
 
 /* 完整模式 */
 .card {
   padding: 16px;
-  background: #fff;
+  background: #0D1114;
   border-radius: 12px;
   margin-bottom: 8px;
+  color: #fff;
 }
 
 .row {
@@ -70,11 +74,12 @@
 .nameLarge {
   font-weight: bold;
   font-size: 16px;
+  color: #fff;
 }
 
 .price {
   margin-left: auto;
   font-size: 20px;
   font-weight: bold;
-  color: #1890ff;
+  color: #fff;
 }

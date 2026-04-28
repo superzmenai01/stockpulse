@@ -1,6 +1,6 @@
 .header {
   height: 64px;
-  background: #fff;
+  background: var(--bg-container) !important;
   padding: 0 24px;
   display: flex;
   align-items: center;
@@ -9,6 +9,7 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .left {
@@ -19,7 +20,7 @@
 .title {
   font-size: 18px;
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .right {

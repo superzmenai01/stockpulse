@@ -2,6 +2,7 @@
 
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { WebSocketProvider } from './context'
+import { ThemeProvider } from './context/ThemeContext'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import WatchlistPage from './pages/WatchlistPage'
@@ -10,16 +11,18 @@ import CalendarPage from './pages/CalendarPage'
 
 function App() {
   return (
-    <WebSocketProvider>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<HomePage />} />
-        <Route path="/watchlist" element={<WatchlistPage />} />
-        <Route path="/strategy" element={<StrategyPage />} />
-        <Route path="/calendar" element={<CalendarPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </WebSocketProvider>
+    <ThemeProvider>
+      <WebSocketProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/watchlist" element={<WatchlistPage />} />
+          <Route path="/strategy" element={<StrategyPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </WebSocketProvider>
+    </ThemeProvider>
   )
 }
 

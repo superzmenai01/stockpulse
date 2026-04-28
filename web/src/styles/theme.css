@@ -1,0 +1,47 @@
+/* 全局 Theme CSS Variables */
+:root {
+  /* Light Mode */
+  --bg-base: #ffffff;
+  --bg-container: #f0f2f5;
+  --bg-elevated: #ffffff;
+  --bg-layout: #f0f2f5;
+  --bg-sider: #001529;
+  --text-primary: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.65);
+  --text-tertiary: rgba(0, 0, 0, 0.45);
+  --border-color: #d9d9d9;
+  --border-secondary: #f0f0f0;
+  --card-bg: #ffffff;
+  --hover-bg: #f5f5f5;
+  --sidebar-bg: #001529;
+  --sidebar-text: rgba(255, 255, 255, 0.85);
+  --sidebar-hover: rgba(255, 255, 255, 0.15);
+  --sidebar-selected: #1890ff;
+}
+
+[data-theme="dark"] {
+  /* Dark Mode - 富途風格 */
+  --bg-base: #0D1114;
+  --bg-container: #191C1F;
+  --bg-elevated: #24292E;
+  --bg-layout: #0D1114;
+  --bg-sider: #0D1114;
+  --text-primary: #D1D1D1;
+  --text-secondary: #8A8A8A;
+  --text-tertiary: #6E6E6E;
+  --border-color: #30363D;
+  --border-secondary: #21262D;
+  --card-bg: #191C1F;
+  --hover-bg: #24292E;
+  --sidebar-bg: #0D1114;
+  --sidebar-text: #D1D1D1;
+  --sidebar-hover: #191C1F;
+  --sidebar-selected: #F9A11B;
+}
+
+/* 應用到全局 */
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  transition: background-color 0.3s, color 0.3s;
+}
