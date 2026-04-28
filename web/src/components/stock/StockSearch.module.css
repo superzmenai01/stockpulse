@@ -17,7 +17,7 @@
 }
 
 .optionName {
-  color: #333;
+  color: var(--text-primary);
   flex: 1;
 }
 
