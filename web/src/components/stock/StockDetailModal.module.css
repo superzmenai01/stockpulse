@@ -1,0 +1,16 @@
+.modal :global(.ant-modal-content) {
+  background: var(--bg-container);
+}
+
+.modal :global(.ant-modal-header) {
+  background: var(--bg-container);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal :global(.ant-modal-title) {
+  color: var(--text-primary);
+}
+
+.content {
+  height: 100%;
+}

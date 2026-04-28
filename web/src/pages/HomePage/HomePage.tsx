@@ -24,6 +24,7 @@ import AddGroupModal from '../../components/group/AddGroupModal'
 import EditGroupModal from '../../components/group/EditGroupModal'
 import MoveStockModal from '../../components/group/MoveStockModal'
 import AddStockModal from '../../components/stock/AddStockModal'
+import StockDetailModal from '../../components/stock/StockDetailModal'
 import { useWebSocketContext } from '../../context'
 import { groupApi, Group } from '../../services/groupApi'
 import styles from './HomePage.module.css'
@@ -58,6 +59,10 @@ function HomePage() {
   // 移動股票 Modal state
   const [showMoveStockModal, setShowMoveStockModal] = useState(false)
   const [movingStock, setMovingStock] = useState<{ code: string; name: string; fromGroupId: string } | null>(null)
+
+  // 圖表 Modal state
+  const [showChartModal, setShowChartModal] = useState(false)
+  const [chartStock, setChartStock] = useState<{ code: string; name: string } | null>(null)
 
   // DnD sensors
   const sensors = useSensors(
@@ -337,6 +342,12 @@ function HomePage() {
     console.log('[HomePage] 關注股票:', code, stockName)
   }
 
+  // 處理查看圖表
+  const handleChartClick = (code: string, name: string) => {
+    setChartStock({ code, name })
+    setShowChartModal(true)
+  }
+
   // 將 stockCodes 轉換為帶報價的股票列表
   // TODO: 組別和股票的關聯尚未實現，目前使用空數組
   const getStocksWithQuotes = (_stockCodes: string[] = []) => {
@@ -426,6 +437,7 @@ function HomePage() {
                     onMoveStock={handleMoveStock}
                     onReorderStocks={handleReorderStocks}
                     onWatchStock={handleWatchStock}
+                    onChartClick={handleChartClick}
                     draggable
                   />
                 ))
@@ -481,6 +493,15 @@ function HomePage() {
           onMove={handleConfirmAddToGroup}
         />
       )}
+
+      <StockDetailModal
+        open={showChartModal}
+        stock={chartStock}
+        onClose={() => {
+          setShowChartModal(false)
+          setChartStock(null)
+        }}
+      />
     </AppLayout>
   )
 }

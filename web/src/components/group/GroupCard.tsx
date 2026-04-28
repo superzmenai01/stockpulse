@@ -58,6 +58,7 @@ interface GroupCardProps {
   onMoveStock?: (code: string, stockName: string) => void
   onReorderStocks?: (groupId: string, oldIndex: number, newIndex: number) => void
   onWatchStock?: (code: string, stockName: string) => void
+  onChartClick?: (code: string, name: string) => void
 }
 
 function GroupCard({
@@ -74,6 +75,7 @@ function GroupCard({
   onRemoveStock,
   onMoveStock,
   onWatchStock,
+  onChartClick,
 }: GroupCardProps) {
   // dnd-kit sensors - 只用於組別拖動
   const sensors = useSensors(
@@ -202,6 +204,7 @@ function GroupCard({
                   onRemove={() => onRemoveStock?.(id, stock.code)}
                   onMoveToGroup={() => onMoveStock?.(stock.code, stock.name)}
                   onWatch={() => onWatchStock?.(stock.code, stock.name)}
+                  onChartClick={() => onChartClick?.(stock.code, stock.name)}
                 />
               ))
             )}

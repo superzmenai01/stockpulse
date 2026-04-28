@@ -20,6 +20,7 @@ interface StockCardProps {
   onRemove?: () => void
   onMoveToGroup?: () => void
   onWatch?: () => void
+  onChartClick?: () => void
 }
 
 function StockCard({
@@ -38,6 +39,7 @@ function StockCard({
   onRemove,
   onMoveToGroup,
   onWatch,
+  onChartClick,
 }: StockCardProps) {
   const hasPrice = price !== undefined && price !== null && price > 0
   const isPositive = change >= 0
@@ -55,6 +57,11 @@ function StockCard({
 
   // 構建選項菜單
   const menuItems: MenuProps['items'] = [
+    {
+      key: 'chart',
+      label: '查看圖表',
+      onClick: onChartClick,
+    },
     {
       key: 'add',
       label: '增加到其他組別',
