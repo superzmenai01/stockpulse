@@ -1,6 +1,6 @@
 // ChartContainer - K線圖主容器
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time } from 'lightweight-charts'
 import { useWebSocketContext } from '../../context'
 import ChartToolbar from './ChartToolbar'
@@ -58,7 +58,10 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
   useEffect(() => {
     if (!chartContainerRef.current) return
 
-    const chart = createChart(chartContainerRef.current, {
+    const container = chartContainerRef.current
+    const chart = createChart(container, {
+      width: container.clientWidth || 800,
+      height: container.clientHeight || 450,
       layout: {
         background: { color: '#0D1114' },
         textColor: '#D1D1D1',
@@ -109,10 +112,10 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
 
     // 響應窗口大小變化
     const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
+      if (container && chartRef.current) {
         chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-          height: chartContainerRef.current.clientHeight,
+          width: container.clientWidth || 800,
+          height: container.clientHeight || 450,
         })
       }
     }
@@ -122,18 +125,19 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     return () => {
       window.removeEventListener('resize', handleResize)
       chart.remove()
+      chartRef.current = null
     }
   }, [])
 
   // 載入K線數據
-  const loadKlineData = async (code: string, period: string) => {
+  const loadKlineData = useCallback(async (code: string, period: string) => {
     setLoading(true)
     try {
       const res = await fetch(`http://${window.location.hostname}:18792/api/kline?code=${code}&period=${period}&count=100`)
       const data: ChartData = await res.json()
       setChartData(data)
 
-      if (candlestickSeriesRef.current && volumeSeriesRef.current) {
+      if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
         // 設置K線數據
         const candleData: CandlestickData<Time>[] = data.klines.map(k => ({
           time: k.time as Time,
@@ -153,19 +157,19 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
         volumeSeriesRef.current.setData(volumeData)
 
         // 讓圖表自動調整時間範圍
-        chartRef.current?.timeScale().fitContent()
+        chartRef.current.timeScale().fitContent()
       }
     } catch (err) {
       console.error('[Chart] 載入K線失敗:', err)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   // 初始載入 + period 改變時重新載入
   useEffect(() => {
     loadKlineData(stock.code, currentPeriod)
-  }, [stock.code, currentPeriod])
+  }, [stock.code, currentPeriod, loadKlineData])
 
   // 實時更新最後一根蠟燭
   useEffect(() => {
@@ -183,7 +187,7 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
       low: Math.min(lastKline.low, quote.last_price),
       close: quote.last_price,
     })
-  }, [quotes[stock.code]])
+  }, [quotes[stock.code], chartData, stock.code])
 
   const handlePeriodChange = (period: string) => {
     setCurrentPeriod(period)

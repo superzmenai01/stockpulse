@@ -1,7 +1,7 @@
 .container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 500px;
   background: var(--bg-base);
 }
 
@@ -29,12 +29,13 @@
 .chartWrapper {
   flex: 1;
   position: relative;
-  min-height: 400px;
+  height: 450px;
+  min-height: 450px;
 }
 
 .chart {
   width: 100%;
-  height: 100%;
+  height: 450px;
 }
 
 .loading {
