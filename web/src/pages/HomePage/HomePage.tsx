@@ -294,33 +294,28 @@ function HomePage() {
     }
   }
 
-  // 確認移動股票到其他組別
-  const handleConfirmMoveStock = async (targetGroupId: string) => {
+  // 確認增加到其他組別（複製，不刪除原本）
+  const handleConfirmAddToGroup = async (targetGroupId: string) => {
     if (!movingStock) return
     
     try {
-      // 1. 從原組別移除
-      await groupApi.removeStock(movingStock.fromGroupId, movingStock.code)
-      // 2. 添加到新組別
+      // 只需要添加到新組別，不刪除原本的
       await groupApi.addStock(targetGroupId, movingStock.code)
       
-      // 3. 更新 UI
+      // 更新 UI：目標組別加上股票
       setGroups(prev => prev.map(g => {
-        if (g.id === movingStock.fromGroupId) {
-          return { ...g, stockCodes: (g.stockCodes || []).filter(c => c !== movingStock.code) }
-        }
-        if (g.id === targetGroupId) {
+        if (g.id === targetGroupId && !g.stockCodes?.includes(movingStock.code)) {
           return { ...g, stockCodes: [movingStock.code, ...(g.stockCodes || [])] }
         }
         return g
       }))
       
-      message.success(`已移動 ${movingStock.name}`)
+      message.success(`已將 ${movingStock.name} 增加到目標組別`)
       setShowMoveStockModal(false)
       setMovingStock(null)
     } catch (err) {
-      console.error('移動股票失敗:', err)
-      message.error('移動股票失敗')
+      console.error('增加到其他組別失敗:', err)
+      message.error('增加到其他組別失敗')
     }
   }
 
@@ -483,7 +478,7 @@ function HomePage() {
             setShowMoveStockModal(false)
             setMovingStock(null)
           }}
-          onMove={handleConfirmMoveStock}
+          onMove={handleConfirmAddToGroup}
         />
       )}
     </AppLayout>
