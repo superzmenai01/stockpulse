@@ -1,6 +1,6 @@
 // ThemeContext - 日夜主題切換（富途風格）
 
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState } from 'react'
 import { ConfigProvider, theme } from 'antd'
 
 type ThemeMode = 'light' | 'dark'
@@ -64,11 +64,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       return next
     })
   }
-
-  // 切換 body 的 class 來控制 CSS 變量
-  useEffect(() => {
-    document.body.setAttribute('data-theme', mode)
-  }, [mode])
 
   const antTheme = mode === 'dark'
     ? { algorithm: theme.darkAlgorithm, token: futuDarkTokens }

@@ -2,7 +2,7 @@
  * StockPulse 股票 API 服務
  */
 
-const API_BASE = `http://${window.location.hostname}:18792/api`
+import { API_BASE } from '../config'
 
 export interface Stock {
   code: string

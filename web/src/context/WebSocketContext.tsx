@@ -2,6 +2,7 @@
 // 確保頁面導航時連接不會中斷
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
+import { WS_BASE } from '../config'
 
 interface QuoteData {
   code: string
@@ -43,22 +44,19 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   
   const wsRef = useRef<WebSocket | null>(null)
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const initSentRef = useRef(false)  // 防止重複發送 init
-  const pendingInitRef = useRef<string[] | null>(null)  // 儲存pending的init codes
+  const initSentRef = useRef(false)
+  const pendingInitRef = useRef<string[] | null>(null)
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return
     }
 
-    const wsUrl = `ws://${window.location.hostname}:18792/ws/quote`
-    const ws = new WebSocket(wsUrl)
+    const ws = new WebSocket(`${WS_BASE}/quote`)
 
     ws.onopen = () => {
       setConnected(true)
       console.log('[WS] 已連接, readyState=', ws.readyState)
-      // 在 onopen 中直接檢查並發送 pending init
-      // 這個時候 readyState 一定是 OPEN
       if (pendingInitRef.current) {
         console.log('[WS] onopen 發送 pending init:', pendingInitRef.current)
         ws.send(JSON.stringify({ action: 'init', codes: pendingInitRef.current }))
@@ -163,15 +161,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }, 1000)
   }
 
-  // 設置要初始化的股票列表
   const init = useCallback((codes: string[], force: boolean = false) => {
     console.log('[WS] init 被調用, initSentRef.current=', initSentRef.current, 'subscribed=', subscribed, 'force=', force, 'wsReady=', wsRef.current?.readyState)
-    // 如果已經訂閱過，唔再發送
     if (subscribed) {
       console.log('[WS] 已訂閱，跳過')
       return
     }
-    // 如果已經發送過 init，且不是強制模式，唔再發送
     if (initSentRef.current && !force) {
       console.log('[WS] 已發送過 init（無 force），跳過')
       return
@@ -182,7 +177,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     pendingInitRef.current = codes
     setInitCodes(codes)
 
-    // 如果 WS 已經連接，立即發送
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[WS] WS 已是 OPEN，直接發送 init:', codes)
       wsRef.current.send(JSON.stringify({ action: 'init', codes }))
@@ -192,17 +186,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [subscribed])
 
-  // 當連接成功且有股票列表時，發送 init
   useEffect(() => {
     console.log('[WS] initCodes effect: connected=', connected, 'initCodes=', initCodes, 'wsState=', wsRef.current?.readyState)
     if (connected && initCodes && wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[WS] 發送 init:', initCodes)
       wsRef.current.send(JSON.stringify({ action: 'init', codes: initCodes }))
-      setInitCodes(null) // 清除，避免重複發送
+      setInitCodes(null)
     }
   }, [connected, initCodes])
 
-  // 當 WebSocket 打開時，檢查是否有 pending 的 init
   useEffect(() => {
     if (connected && pendingInitRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[WS] WS opened with pending init:', pendingInitRef.current)
@@ -226,7 +218,6 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 連接（只在首次 mount 時）
   useEffect(() => {
     console.log('[WS] WebSocketProvider mounted，開始連接')
     connect()
