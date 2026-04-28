@@ -336,6 +336,12 @@ function HomePage() {
     // TODO: 保存位置到 DB
   }
 
+  // 處理關注股票（預留功能）
+  const handleWatchStock = (code: string, stockName: string) => {
+    message.info(`已關注 ${stockName}（功能待實現）`)
+    console.log('[HomePage] 關注股票:', code, stockName)
+  }
+
   // 將 stockCodes 轉換為帶報價的股票列表
   // TODO: 組別和股票的關聯尚未實現，目前使用空數組
   const getStocksWithQuotes = (_stockCodes: string[] = []) => {
@@ -424,6 +430,7 @@ function HomePage() {
                     onRemoveStock={handleRemoveStock}
                     onMoveStock={handleMoveStock}
                     onReorderStocks={handleReorderStocks}
+                    onWatchStock={handleWatchStock}
                     draggable
                   />
                 ))

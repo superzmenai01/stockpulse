@@ -1,7 +1,7 @@
 // StockCard - 股票卡片組件
 
 import React from 'react'
-import { Tag } from 'antd'
+import { Dropdown, type MenuProps } from 'antd'
 import styles from './StockCard.module.css'
 
 interface StockCardProps {
@@ -19,6 +19,7 @@ interface StockCardProps {
   compact?: boolean
   onRemove?: () => void
   onMoveToGroup?: () => void
+  onWatch?: () => void
 }
 
 function StockCard({
@@ -36,6 +37,7 @@ function StockCard({
   compact = false,
   onRemove,
   onMoveToGroup,
+  onWatch,
 }: StockCardProps) {
   const hasPrice = price !== undefined && price !== null && price > 0
   const isPositive = change >= 0
@@ -51,6 +53,27 @@ function StockCard({
     return v.toString()
   }
 
+  // 構建選項菜單
+  const menuItems: MenuProps['items'] = [
+    {
+      key: 'move',
+      label: '移動到其他組別',
+      onClick: onMoveToGroup,
+    },
+    {
+      key: 'watch',
+      label: '關注',
+      onClick: onWatch,
+    },
+    { type: 'divider' },
+    {
+      key: 'remove',
+      label: '刪除',
+      danger: true,
+      onClick: onRemove,
+    },
+  ]
+
   if (compact) {
     // 簡潔模式：顯示喺組別入面
     return (
@@ -65,6 +88,9 @@ function StockCard({
         <span className={styles.high}>{high?.toFixed(2) ?? '--'}</span>
         <span className={styles.low}>{low?.toFixed(2) ?? '--'}</span>
         <span className={styles.volume}>{formatVolume(volume)}</span>
+        <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+          <span className={styles.moreBtn}>⋮</span>
+        </Dropdown>
       </div>
     )
   }
@@ -79,6 +105,9 @@ function StockCard({
         <span style={{ color: changeColor }}>
           {hasPrice ? `${isPositive ? '+' : ''}${change.toFixed(3)} (${pctChange.toFixed(2)}%)` : '--'}
         </span>
+        <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+          <span className={styles.moreBtn}>⋮</span>
+        </Dropdown>
       </div>
     </div>
   )
