@@ -22,6 +22,7 @@ import { AppLayout } from '../../components/layout'
 import GroupCard from '../../components/group/GroupCard'
 import AddGroupModal from '../../components/group/AddGroupModal'
 import EditGroupModal from '../../components/group/EditGroupModal'
+import MoveStockModal from '../../components/group/MoveStockModal'
 import AddStockModal from '../../components/stock/AddStockModal'
 import { useWebSocketContext } from '../../context'
 import { groupApi, Group } from '../../services/groupApi'
@@ -53,6 +54,10 @@ function HomePage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [hasCalledInit, setHasCalledInit] = useState(false)
   const [pendingInitCodes, setPendingInitCodes] = useState<string[] | null>(null)
+  
+  // 移動股票 Modal state
+  const [showMoveStockModal, setShowMoveStockModal] = useState(false)
+  const [movingStock, setMovingStock] = useState<{ code: string; name: string; fromGroupId: string } | null>(null)
 
   // DnD sensors
   const sensors = useSensors(
@@ -261,6 +266,76 @@ function HomePage() {
     }
   }
 
+  // 處理移除股票
+  const handleRemoveStock = async (groupId: string, code: string) => {
+    try {
+      await groupApi.removeStock(groupId, code)
+      // 從 UI 移除
+      setGroups(prev => prev.map(g => {
+        if (g.id === groupId) {
+          return { ...g, stockCodes: (g.stockCodes || []).filter(c => c !== code) }
+        }
+        return g
+      }))
+      message.success('股票已從組別移除')
+    } catch (err) {
+      console.error('移除股票失敗:', err)
+      message.error('移除股票失敗')
+    }
+  }
+
+  // 處理移動股票（顯示 Modal）
+  const handleMoveStock = (code: string, stockName: string) => {
+    // 找到股票所在的組別
+    const group = groups.find(g => (g.stockCodes || []).includes(code))
+    if (group) {
+      setMovingStock({ code, name: stockName, fromGroupId: group.id })
+      setShowMoveStockModal(true)
+    }
+  }
+
+  // 確認移動股票到其他組別
+  const handleConfirmMoveStock = async (targetGroupId: string) => {
+    if (!movingStock) return
+    
+    try {
+      // 1. 從原組別移除
+      await groupApi.removeStock(movingStock.fromGroupId, movingStock.code)
+      // 2. 添加到新組別
+      await groupApi.addStock(targetGroupId, movingStock.code)
+      
+      // 3. 更新 UI
+      setGroups(prev => prev.map(g => {
+        if (g.id === movingStock.fromGroupId) {
+          return { ...g, stockCodes: (g.stockCodes || []).filter(c => c !== movingStock.code) }
+        }
+        if (g.id === targetGroupId) {
+          return { ...g, stockCodes: [movingStock.code, ...(g.stockCodes || [])] }
+        }
+        return g
+      }))
+      
+      message.success(`已移動 ${movingStock.name}`)
+      setShowMoveStockModal(false)
+      setMovingStock(null)
+    } catch (err) {
+      console.error('移動股票失敗:', err)
+      message.error('移動股票失敗')
+    }
+  }
+
+  // 處理組別內股票排序
+  const handleReorderStocks = (groupId: string, oldIndex: number, newIndex: number) => {
+    setGroups(prev => prev.map(g => {
+      if (g.id === groupId && g.stockCodes) {
+        const newStockCodes = arrayMove(g.stockCodes, oldIndex, newIndex)
+        return { ...g, stockCodes: newStockCodes }
+      }
+      return g
+    }))
+    // TODO: 保存位置到 DB
+  }
+
   // 將 stockCodes 轉換為帶報價的股票列表
   // TODO: 組別和股票的關聯尚未實現，目前使用空數組
   const getStocksWithQuotes = (_stockCodes: string[] = []) => {
@@ -273,6 +348,12 @@ function HomePage() {
           price: quote.last_price,
           change: quote.change,
           pctChange: quote.pct_change,
+          open: quote.open_price,
+          high: quote.high_price,
+          low: quote.low_price,
+          prevClose: quote.prev_close,
+          volume: quote.volume,
+          turnover: quote.turnover,
         }
       }
       return {
@@ -281,6 +362,12 @@ function HomePage() {
         price: 0,
         change: 0,
         pctChange: 0,
+        open: 0,
+        high: 0,
+        low: 0,
+        prevClose: 0,
+        volume: 0,
+        turnover: 0,
       }
     })
   }
@@ -334,6 +421,9 @@ function HomePage() {
                     onAddStock={() => handleAddStock(group.id)}
                     onEdit={() => handleEditGroup(group.id)}
                     onDelete={() => handleDeleteGroup(group.id)}
+                    onRemoveStock={handleRemoveStock}
+                    onMoveStock={handleMoveStock}
+                    onReorderStocks={handleReorderStocks}
                     draggable
                   />
                 ))
@@ -372,6 +462,21 @@ function HomePage() {
             setAddStockToGroup(null)
           }}
           onAdd={handleConfirmAddStock}
+        />
+      )}
+
+      {movingStock && (
+        <MoveStockModal
+          open={showMoveStockModal}
+          stockCode={movingStock.code}
+          stockName={movingStock.name}
+          currentGroupId={movingStock.fromGroupId}
+          groups={groups}
+          onClose={() => {
+            setShowMoveStockModal(false)
+            setMovingStock(null)
+          }}
+          onMove={handleConfirmMoveStock}
         />
       )}
     </AppLayout>

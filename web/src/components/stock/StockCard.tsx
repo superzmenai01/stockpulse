@@ -1,7 +1,7 @@
 // StockCard - 股票卡片組件
 
 import React from 'react'
-import { Tag, Card } from 'antd'
+import { Tag } from 'antd'
 import styles from './StockCard.module.css'
 
 interface StockCardProps {
@@ -10,8 +10,15 @@ interface StockCardProps {
   price: number
   change: number
   pctChange: number
+  volume?: number
+  turnover?: number
+  high?: number
+  low?: number
+  open?: number
+  prevClose?: number
   compact?: boolean
-  onClick?: () => void
+  onRemove?: () => void
+  onMoveToGroup?: () => void
 }
 
 function StockCard({
@@ -20,60 +27,59 @@ function StockCard({
   price,
   change,
   pctChange,
+  volume,
+  turnover,
+  high,
+  low,
+  open,
+  prevClose,
   compact = false,
-  onClick,
+  onRemove,
+  onMoveToGroup,
 }: StockCardProps) {
-  // 如果沒有價格數據，顯示 "--"
   const hasPrice = price !== undefined && price !== null && price > 0
   const isPositive = change >= 0
-  const changeColor = isPositive ? '#f5222d' : '#52c41a' // 紅升綠降
+  const changeColor = isPositive ? '#f5222d' : '#52c41a'
+
+  // 格式化數字
+  const formatVolume = (v?: number) => {
+    if (!v) return '--'
+    if (v >= 1000000000) return (v / 1000000000).toFixed(1) + 'B'
+    if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M'
+    if (v >= 1000) return (v / 1000).toFixed(1) + 'K'
+    return v.toString()
+  }
 
   if (compact) {
-    // 簡潔模式：用於組別內的列表
+    // 簡潔模式：顯示喺組別入面
     return (
-      <div className={styles.compact} onClick={onClick}>
-        <div className={styles.left}>
-          <span className={styles.code}>{code.replace('HK.', '')}</span>
-          <span className={styles.name}>{name}</span>
-        </div>
-        <div className={styles.right}>
-          <span className={styles.price}>
-            {hasPrice ? price.toFixed(2) : '--'}
-          </span>
-          {hasPrice ? (
-            <Tag color={changeColor} className={styles.tag}>
-              {isPositive ? '+' : ''}{pctChange.toFixed(2)}%
-            </Tag>
-          ) : (
-            <Tag className={styles.tag}>等待...</Tag>
-          )}
-        </div>
+      <div className={styles.compactRow}>
+        <span className={styles.code}>{code.replace('HK.', '').replace('US.', '')}</span>
+        <span className={styles.name}>{name}</span>
+        <span className={styles.price}>{hasPrice ? price.toFixed(2) : '--'}</span>
+        <span className={styles.tag} style={{ color: changeColor }}>
+          {hasPrice ? `${isPositive ? '+' : ''}${pctChange.toFixed(2)}%` : '--'}
+        </span>
+        <span className={styles.open}>{open?.toFixed(2) ?? '--'}</span>
+        <span className={styles.high}>{high?.toFixed(2) ?? '--'}</span>
+        <span className={styles.low}>{low?.toFixed(2) ?? '--'}</span>
+        <span className={styles.volume}>{formatVolume(volume)}</span>
       </div>
     )
   }
 
   // 完整模式
   return (
-    <Card className={styles.card} onClick={onClick} hoverable>
-      <div className={styles.header}>
-        <div>
-          <div className={styles.nameLarge}>{name}</div>
-          <div className={styles.codeSmall}>{code}</div>
-        </div>
-        <div className={styles.priceSection}>
-          <div className={styles.priceLarge}>
-            {hasPrice ? price.toFixed(2) : '--'}
-          </div>
-          {hasPrice ? (
-            <Tag color={changeColor} className={styles.tagLarge}>
-              {isPositive ? '+' : ''}{change.toFixed(3)} ({pctChange.toFixed(2)}%)
-            </Tag>
-          ) : (
-            <Tag className={styles.tagLarge}>等待...</Tag>
-          )}
-        </div>
+    <div className={styles.card}>
+      <div className={styles.row}>
+        <span className={styles.nameLarge}>{name}</span>
+        <span className={styles.code}>{code}</span>
+        <span className={styles.price}>{hasPrice ? price.toFixed(2) : '--'}</span>
+        <span style={{ color: changeColor }}>
+          {hasPrice ? `${isPositive ? '+' : ''}${change.toFixed(3)} (${pctChange.toFixed(2)}%)` : '--'}
+        </span>
       </div>
-    </Card>
+    </div>
   )
 }
 
