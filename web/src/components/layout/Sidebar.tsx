@@ -14,7 +14,7 @@ import styles from './Sidebar.module.css'
 // 導航項目
 const navItems = [
   { key: '/', icon: <HomeOutlined />, label: '首頁' },
-  { key: '/watchlist', icon: <StarOutlined />, label: '關注股票' },
+  { key: '/watchlist', icon: <StarOutlined />, label: '策略關注' },
   { key: '/strategy', icon: <BarChartOutlined />, label: '策略' },
   { key: '/calendar', icon: <CalendarOutlined />, label: '日曆' },
 ]

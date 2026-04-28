@@ -56,13 +56,13 @@ function StockCard({
   // 構建選項菜單
   const menuItems: MenuProps['items'] = [
     {
-      key: 'move',
-      label: '移動到其他組別',
+      key: 'add',
+      label: '增加到其他組別',
       onClick: onMoveToGroup,
     },
     {
-      key: 'watch',
-      label: '關注',
+      key: 'strategy',
+      label: '增加到策略關注',
       onClick: onWatch,
     },
     { type: 'divider' },
