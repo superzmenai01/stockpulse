@@ -1,11 +1,8 @@
 // ChartToolbar - K線圖工具列
 
 import React from 'react'
-import { Button, Space, DatePicker } from 'antd'
-import dayjs from 'dayjs'
+import { Button, Space, Input } from 'antd'
 import styles from './ChartToolbar.module.css'
-
-const { RangePicker } = DatePicker
 
 interface Period {
   label: string
@@ -22,6 +19,15 @@ interface ChartToolbarProps {
   onDateChange: (start: string, end: string) => void
 }
 
+// 快捷按鈕
+const PRESETS = [
+  { label: '1M', days: 30 },
+  { label: '3M', days: 90 },
+  { label: '6M', days: 180 },
+  { label: '1Y', days: 365 },
+  { label: 'ALL', days: 9999 },
+]
+
 export default function ChartToolbar({
   periods,
   currentPeriod,
@@ -31,28 +37,50 @@ export default function ChartToolbar({
   endDate,
   onDateChange,
 }: ChartToolbarProps) {
-  // 格式化日期為 YYYY-MM-DD（用於 DatePicker 顯示）
-  const startDayjs = startDate ? dayjs(startDate) : null
-  const endDayjs = endDate ? dayjs(endDate) : null
+  const today = new Date().toISOString().split('T')[0]
+
+  // 快捷按鈕點擊
+  const handlePreset = (days: number) => {
+    const end = today
+    const start = days >= 9999 
+      ? '2010-01-01'  // ALL 的起始
+      : new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    onDateChange(start, end)
+  }
 
   return (
     <div className={styles.toolbar}>
       <div className={styles.stockInfo}>
         <span className={styles.stockName}>{stockName}</span>
       </div>
-      <Space size="middle">
-        {/* 日期範圍選擇 */}
-        <RangePicker
-          value={[startDayjs, endDayjs]}
-          onChange={(dates) => {
-            if (dates && dates[0] && dates[1]) {
-              onDateChange(dates[0].format('YYYY-MM-DD'), dates[1].format('YYYY-MM-DD'))
-            }
-          }}
-          allowClear={false}
+      <Space size="middle" wrap>
+        {/* 日期輸入 */}
+        <Input
+          placeholder="開始日期"
+          value={startDate}
+          onChange={e => onDateChange(e.target.value, endDate)}
+          style={{ width: 110 }}
           size="small"
-          format="YYYY-MM-DD"
         />
+        <span style={{ color: '#666' }}>至</span>
+        <Input
+          placeholder="結束日期"
+          value={endDate}
+          onChange={e => onDateChange(startDate, e.target.value)}
+          style={{ width: 110 }}
+          size="small"
+        />
+        {/* 快捷按鈕 */}
+        {PRESETS.map(p => (
+          <Button
+            key={p.label}
+            type="text"
+            size="small"
+            onClick={() => handlePreset(p.days)}
+          >
+            {p.label}
+          </Button>
+        ))}
         {/* 週期按鈕 */}
         {periods.map(p => (
           <Button
