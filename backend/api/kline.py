@@ -37,7 +37,7 @@ def get_kline_type(period: str) -> KLType:
 
 
 @router.get("/kline")
-async def get_kline(code: str, period: str = "1d", count: int = 100):
+async def get_kline(code: str, period: str = "1d", count: int = 100, start: Optional[str] = None, end: Optional[str] = None):
     """
     獲取 K線數據
     
@@ -45,10 +45,12 @@ async def get_kline(code: str, period: str = "1d", count: int = 100):
         code: 股票代碼 (如 HK.00700, US.INTC)
         period: 週期 (1m, 5m, 15m, 30m, 1h, 1d, 1w, 1M)
         count: 獲取多少根 K線
+        start: 開始日期 (YYYY-MM-DD)，可選
+        end: 結束日期 (YYYY-MM-DD)，預設今天
     """
     from backend.futu_conn import get_quote_ctx
     
-    logger.info(f"[KLine] 獲取 {code} {period} K線，count={count}")
+    logger.info(f"[KLine] 獲取 {code} {period} K線，count={count}, start={start}, end={end}")
     
     # ========================================
     # 1. 前置檢查
@@ -84,23 +86,23 @@ async def get_kline(code: str, period: str = "1d", count: int = 100):
                 'error': '富途未連接，請確保 FutuOpenD 已開啟',
             }
         
-        # 1c. 處理 1m 週期的日期範圍
+        # 1c. 處理日期範圍
         import datetime
-        start_date = None
-        end_date = None
-        if period == '1m':
-            # 港股1分鐘K：需要包含昨天才能取到今日數據（富途限制）
-            yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-            today = datetime.date.today().isoformat()
-            start_date = yesterday
-            end_date = today
+        # 如果用戶有指定 start/end，就用戶的；否則用自動計算的
+        start_date = start
+        end_date = end
         
-        # 1d. 美股日K：需要更大範圍
-        if code.startswith('US.') and period == '1d':
+        # 1m 自動需要昨天（用戶指定時以用戶為準）
+        if period == '1m' and not start:
+            yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+            start_date = yesterday
+            end_date = end_date or datetime.date.today().isoformat()
+        
+        # 美股日K：需要更大範圍（用戶指定時以用戶為準）
+        if code.startswith('US.') and period == '1d' and not start:
             week_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
-            today = datetime.date.today().isoformat()
             start_date = week_ago
-            end_date = today
+            end_date = end_date or datetime.date.today().isoformat()
         
         ret, data, page_key = ctx.request_history_kline(
             code=code,

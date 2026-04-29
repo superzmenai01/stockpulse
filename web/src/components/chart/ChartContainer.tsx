@@ -129,7 +129,13 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
   // 追蹤當前載入的 period（避免 race condition）
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
+  
+  // 日期範圍 state
+  const today = new Date().toISOString().split('T')[0]
   const [currentPeriod, setCurrentPeriod] = useState(period)
+  const [startDate, setStartDate] = useState<string>(today)
+  const [endDate, setEndDate] = useState<string>(today)
+  
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -165,7 +171,7 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
   }, [])
 
   // 載入K線數據
-  const loadKlineData = useCallback(async (code: string, period: string) => {
+  const loadKlineData = useCallback(async (code: string, period: string, start?: string, end?: string) => {
     // 標記當前正在載入的 period
     loadingPeriodRef.current = period
     
@@ -175,7 +181,17 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     try {
       // 時段越大需要的數據越多：1m用500(港股一天390支)，其餘用1000
       const reqCount = period === '1m' ? 500 : 1000
-      const res = await fetch(`http://${window.location.hostname}:18792/api/kline?code=${code}&period=${period}&count=${reqCount}`)
+      
+      // 構建 URL（加入 start/end 參數）
+      const params = new URLSearchParams({
+        code,
+        period,
+        count: String(reqCount),
+      })
+      if (start) params.set('start', start)
+      if (end) params.set('end', end)
+      
+      const res = await fetch(`http://${window.location.hostname}:18792/api/kline?${params}`)
       const data: ChartData = await res.json()
       
       // 檢查是否係過時的請求（用戶可能已切換到另一個 period）
@@ -250,8 +266,8 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
   useEffect(() => {
     // period 改變時清除 data period，確保舊數據不會被用於更新
     dataPeriodRef.current = ''
-    loadKlineData(stock.code, currentPeriod)
-  }, [stock.code, currentPeriod, loadKlineData])
+    loadKlineData(stock.code, currentPeriod, startDate, endDate)
+  }, [stock.code, currentPeriod, startDate, endDate, loadKlineData])
 
   // 實時更新最後一根蠟燭
   useEffect(() => {
@@ -287,6 +303,11 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     setCurrentPeriod(period)
   }
 
+  const handleDateChange = (start: string, end: string) => {
+    setStartDate(start)
+    setEndDate(end)
+  }
+
   return (
     <div className={styles.container}>
       <ChartToolbar
@@ -294,6 +315,9 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
         currentPeriod={currentPeriod}
         onPeriodChange={handlePeriodChange}
         stockName={stock.name}
+        startDate={startDate}
+        endDate={endDate}
+        onDateChange={handleDateChange}
       />
       <div className={styles.chartWrapper}>
         {loading && <div className={styles.loading}>載入中...</div>}
