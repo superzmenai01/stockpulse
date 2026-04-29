@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Button, Space, DatePicker } from 'antd'
-import type { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
 import styles from './ChartToolbar.module.css'
 
 const { RangePicker } = DatePicker
@@ -32,8 +32,8 @@ export default function ChartToolbar({
   onDateChange,
 }: ChartToolbarProps) {
   // 格式化日期為 YYYY-MM-DD（用於 DatePicker 顯示）
-  const startDayjs = startDate ? Dayjs(startDate) : null
-  const endDayjs = endDate ? Dayjs(endDate) : null
+  const startDayjs = startDate ? dayjs(startDate) : null
+  const endDayjs = endDate ? dayjs(endDate) : null
 
   return (
     <div className={styles.toolbar}>
