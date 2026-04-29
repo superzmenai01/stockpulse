@@ -1,7 +1,7 @@
 # WebSocket 模組
 from .manager import connection_manager
 from .session import session_manager, Session, SessionManager
-from .router import router
+from .router import router, init_futu_connection
 from .broadcaster import QuoteBroadcaster, create_broadcaster
 
 __all__ = [
@@ -12,4 +12,5 @@ __all__ = [
     "router",
     "QuoteBroadcaster",
     "create_broadcaster",
+    "init_futu_connection",
 ]

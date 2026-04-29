@@ -8,12 +8,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import HOST, BACKEND_PORT, LOG_DIR, LOG_LEVEL
 from api import router as api_router
-from ws import router as ws_router
+from ws import router as ws_router, init_futu_connection
 
 # 確保日誌目錄存在
 LOG_DIR.mkdir(exist_ok=True)
@@ -30,8 +31,16 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 啟動時初始化富途連接
+    logger.info("[Startup] 初始化富途連接...")
+    init_futu_connection()
+    yield
+    # 關閉時清理（如果有的話）
+
 # 創建 FastAPI app
-app = FastAPI(title="StockPulse", version="0.1.0")
+app = FastAPI(title="StockPulse", version="0.1.0", lifespan=lifespan)
 
 # CORS - 允許前端訪問
 app.add_middleware(

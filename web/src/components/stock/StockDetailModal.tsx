@@ -12,21 +12,21 @@ interface StockDetailModalProps {
 }
 
 export default function StockDetailModal({ open, stock, onClose }: StockDetailModalProps) {
-  if (!stock) return null
-
   return (
     <Modal
       open={open}
       onCancel={onClose}
-      title={stock.name}
+      title={stock?.name || ''}
       width={900}
       footer={null}
       className={styles.modal}
-      bodyStyle={{ padding: 0, height: '500px' }}
+      styles={{ body: { padding: 0, height: 500 } }}
     >
-      <div className={styles.content}>
-        <ChartContainer stock={stock} />
-      </div>
+      {stock && (
+        <div className={styles.content}>
+          <ChartContainer stock={stock} />
+        </div>
+      )}
     </Modal>
   )
 }

@@ -191,8 +191,11 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
       if (start) params.set('start', start)
       if (end) params.set('end', end)
       
-      const res = await fetch(`http://${window.location.hostname}:18792/api/kline?${params}`)
+      const url = `http://${window.location.hostname}:18792/api/kline?${params}`
+      console.log('[Chart] URL:', url)
+      const res = await fetch(url)
       const data: ChartData = await res.json()
+      console.log('[Chart] Data:', data.klines.length, 'klines, error:', data.error)
       
       // 檢查是否係過時的請求（用戶可能已切換到另一個 period）
       if (loadingPeriodRef.current !== period) {
@@ -320,9 +323,9 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
         onDateChange={handleDateChange}
       />
       <div className={styles.chartWrapper}>
+        <div ref={chartContainerRef} className={styles.chart} />
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
-        {!errorMessage && <div ref={chartContainerRef} className={styles.chart} />}
       </div>
     </div>
   )

@@ -26,6 +26,20 @@ _broadcaster = None
 _main_loop: Optional[asyncio.AbstractEventLoop] = None  # 保存主 event loop
 
 
+def init_futu_connection():
+    """
+    在 FastAPI 啟動時初始化富途連接
+    這樣 K線 API 就可以直接訪問富途
+    """
+    global _futu_ctx
+    if _futu_ctx is None:
+        try:
+            _futu_ctx = OpenQuoteContext(host=FUTU_HOST, port=FUTU_PORT)
+            logger.info(f"[Startup] 富途連接成功: {FUTU_HOST}:{FUTU_PORT}")
+        except Exception as e:
+            logger.error(f"[Startup] 富途連接失敗: {e}")
+            _futu_ctx = None
+
 def get_subscription_manager() -> Optional[SubscriptionManager]:
     """
     獲取或初始化 SubscriptionManager
