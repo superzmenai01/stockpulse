@@ -146,6 +146,13 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     if (!chartContainerRef.current) return
 
     const container = chartContainerRef.current
+
+    // 如果已經有 chart 實例，說明係 modal 重新打開，先移除舊的
+    if (chartRef.current) {
+      chartRef.current.remove()
+      chartRef.current = null
+    }
+
     const { chart, candlestickSeries, volumeSeries } = createChartInstance(container)
 
     chartRef.current = chart
@@ -165,8 +172,8 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
 
     return () => {
       window.removeEventListener('resize', handleResize)
-      chart.remove()
-      chartRef.current = null
+      //唔調用 chart.remove()，因為 chart DOM 始終掛載
+      //下次 mount 時再處理
     }
   }, [])
 
