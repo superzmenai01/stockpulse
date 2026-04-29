@@ -13,13 +13,9 @@ router = APIRouter()
 # 富途週期映射
 PERIOD_MAP = {
     '1m': KLType.K_1M,
-    '5m': KLType.K_5M,
-    '15m': KLType.K_15M,
-    '30m': KLType.K_30M,
-    '1h': KLType.K_60M,
     '1d': KLType.K_DAY,
-    '1w': KLType.K_WEEK,
     '1M': KLType.K_MON,
+    '1y': KLType.K_YEAR,
 }
 
 
@@ -32,7 +28,9 @@ class KlineResponse(BaseModel):
 
 def get_kline_type(period: str) -> KLType:
     """將字串轉換為富途 KLType"""
-    ktype = PERIOD_MAP.get(period.lower())
+    # 注意：1M 和 1m 不同，1M 是月K，1m 是分鐘K
+    # 所以唔好用 lower()，直接精確匹配
+    ktype = PERIOD_MAP.get(period)
     if ktype is None:
         raise HTTPException(status_code=400, detail=f"不支援的週期: {period}")
     return ktype
@@ -52,32 +50,77 @@ async def get_kline(code: str, period: str = "1d", count: int = 100):
     
     logger.info(f"[KLine] 獲取 {code} {period} K線，count={count}")
     
+    # ========================================
+    # 1. 前置檢查
+    # ========================================
+    
+    # 1a. 美股不支援分鐘K
+    if code.startswith('US.') and period in ('1m', '5m', '15m', '30m', '60m'):
+        logger.warning(f"[KLine] 美股不支援分鐘K: {code} {period}")
+        return {
+            'code': code,
+            'name': code,
+            'period': period,
+            'klines': [],
+            'mock': False,
+            'error': '美股不支援分鐘K',
+        }
+    
     try:
         ktype = get_kline_type(period)
         ctx = get_quote_ctx()
         
-        if ctx is None or ctx.context is None:
-            logger.warning(f"[KLine] 富途未連接，返回 mock 數據")
-            # 返回 mock 數據方便測試
+        logger.info(f"[KLine] period={period} -> ktype={ktype}")
+        
+        # 1b. 富途未連接 → 直接告知前端
+        if ctx is None:
+            logger.error(f"[KLine] 富途未連接，請檢查 FutuOpenD 是否運行")
             return {
                 'code': code,
                 'name': code,
                 'period': period,
-                'klines': _get_mock_klines(code, count),
-                'mock': True,
+                'klines': [],
+                'mock': False,
+                'error': '富途未連接，請確保 FutuOpenD 已開啟',
             }
         
-        # 拉取歷史 K線
+        # 1c. 處理 1m 週期的日期範圍
+        import datetime
+        start_date = None
+        end_date = None
+        if period == '1m':
+            # 港股1分鐘K：需要包含昨天才能取到今日數據（富途限制）
+            yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+            today = datetime.date.today().isoformat()
+            start_date = yesterday
+            end_date = today
+        
+        # 1d. 美股日K：需要更大範圍
+        if code.startswith('US.') and period == '1d':
+            week_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+            today = datetime.date.today().isoformat()
+            start_date = week_ago
+            end_date = today
+        
         ret, data, page_key = ctx.request_history_kline(
             code=code,
             ktype=ktype,
             autype='qfq',  # 前復權
             max_count=count,
+            start=start_date,
+            end=end_date,
         )
         
         if ret != 0:
             logger.error(f"[KLine] 富途錯誤: {data}")
-            raise HTTPException(status_code=500, detail=f"富途錯誤: {data}")
+            return {
+                'code': code,
+                'name': code,
+                'period': period,
+                'klines': [],
+                'mock': False,
+                'error': f'富途錯誤: {data}',
+            }
         
         # 轉換為我們需要的格式
         klines = []
@@ -108,22 +151,55 @@ async def get_kline(code: str, period: str = "1d", count: int = 100):
         raise
     except Exception as e:
         logger.error(f"[KLine] 錯誤: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            'code': code,
+            'name': code,
+            'period': period,
+            'klines': [],
+            'mock': False,
+            'error': str(e),
+        }
 
 
-def _get_mock_klines(code: str, count: int) -> list:
+def _get_mock_klines(code: str, count: int, period: str = '1d') -> list:
     """返回 Mock K線數據（方便測試前端）"""
     import datetime
+    import random
     klines = []
     base_price = 400.0 if 'HK.00700' in code else 100.0
+    current_price = base_price
+    
+    now = datetime.datetime.now()
+    
     for i in range(count):
-        t = datetime.datetime.now() - datetime.timedelta(days=count-i-1)
+        # 根據週期計算時間
+        if period == '1m':
+            t = now - datetime.timedelta(minutes=(count-i-1))
+            time_str = t.strftime('%Y-%m-%d %H:%M:%S')
+        elif period == '1M':
+            t = now - datetime.timedelta(days=30*(count-i-1))
+            time_str = t.strftime('%Y-%m')
+        elif period == '1y':
+            t = now - datetime.timedelta(days=365*(count-i-1))
+            time_str = t.strftime('%Y')
+        else:  # 1d
+            t = now - datetime.timedelta(days=(count-i-1))
+            time_str = t.strftime('%Y-%m-%d')
+        
+        # 隨機波動
+        change = random.uniform(-5, 5)
+        open_price = current_price
+        close_price = current_price + change
+        high_price = max(open_price, close_price) + abs(random.uniform(0, 2))
+        low_price = min(open_price, close_price) - abs(random.uniform(0, 2))
+        volume = random.randint(500000, 2000000)
         klines.append({
-            'time': t.strftime('%Y-%m-%d %H:%M:%S'),
-            'open': base_price + i * 0.5,
-            'high': base_price + i * 0.5 + 2,
-            'low': base_price + i * 0.5 - 1,
-            'close': base_price + i * 0.5 + 1,
-            'volume': 1000000 + i * 10000,
+            'time': time_str,
+            'open': round(open_price, 2),
+            'high': round(high_price, 2),
+            'low': round(low_price, 2),
+            'close': round(close_price, 2),
+            'volume': volume,
         })
+        current_price = close_price
     return klines

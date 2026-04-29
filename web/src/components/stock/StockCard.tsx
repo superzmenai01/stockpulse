@@ -91,9 +91,9 @@ function StockCard({
   ]
 
   if (compact) {
-    // 簡潔模式：顯示喺組別入面
+    // 簡潔模式：顯示喺組別入面，點擊整行打開圖表
     return (
-      <div className={styles.compactRow}>
+      <div className={styles.compactRow} onClick={() => onChartClick?.()}>
         <span className={styles.code}>{code.replace('HK.', '').replace('US.', '')}</span>
         <span className={styles.name}>{name}</span>
         <span className={styles.price}>{hasPrice ? price.toFixed(2) : '--'}</span>
@@ -105,7 +105,7 @@ function StockCard({
         <span className={styles.low}>{low?.toFixed(2) ?? '--'}</span>
         <span className={styles.volume}>{formatVolume(volume)}</span>
         <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-          <span className={styles.moreBtn}>⋮</span>
+          <span className={styles.moreBtn} onClick={(e) => e.stopPropagation()}>⋮</span>
         </Dropdown>
       </div>
     )
