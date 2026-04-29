@@ -173,8 +173,8 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     setLoading(true)
     
     try {
-      // 1m 週期需要更多數據（港股交易時間 09:30-16:00 约 390 分鐘）
-      const reqCount = period === '1m' ? 500 : 100
+      // 時段越大需要的數據越多：1m用500(港股一天390支)，其餘用1000
+      const reqCount = period === '1m' ? 500 : 1000
       const res = await fetch(`http://${window.location.hostname}:18792/api/kline?code=${code}&period=${period}&count=${reqCount}`)
       const data: ChartData = await res.json()
       
