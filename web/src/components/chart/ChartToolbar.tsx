@@ -73,7 +73,7 @@ export default function ChartToolbar({
         {/* 快捷按鈕 */}
         {PRESETS.map(p => (
           <Button
-            key={p.label}
+            key={`preset-${p.label}`}
             type="text"
             size="small"
             onClick={() => handlePreset(p.days)}
@@ -84,7 +84,7 @@ export default function ChartToolbar({
         {/* 週期按鈕 */}
         {periods.map(p => (
           <Button
-            key={p.value}
+            key={`period-${p.value}`}
             type={currentPeriod === p.value ? 'primary' : 'text'}
             size="small"
             onClick={() => onPeriodChange(p.value)}
