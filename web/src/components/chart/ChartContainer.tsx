@@ -208,8 +208,8 @@ export default function ChartContainer({
   
   // 圖表是否已創建
   const [chartCreated, setChartCreated] = useState(false)
-  // SubChart 用標記是否已同步
-  const [subChartReady, setSubChartReady] = useState(false)
+  // SubChart 用 state 控制（，因為 ref喺 effect 後先set，JSX喺effect前執行）
+  const [subChartVisible, setSubChartVisible] = useState(false)
   
   // 日期範圍 state：默认 3 个月
   const today = new Date().toISOString().split('T')[0]
@@ -268,12 +268,11 @@ export default function ChartContainer({
     handleResize()
 
     setChartCreated(true)
-    setSubChartReady(true)
 
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [chartCreated])
+  }, [])
 
   // 載入K線數據
   const loadKlineData = useCallback(async (code: string, period: string, start?: string, end?: string) => {
@@ -450,7 +449,7 @@ export default function ChartContainer({
   }
   const handleShowSubChart = (show: boolean) => {
     onShowSubChartChange?.(show)
-    if (!show) setSubChartReady(false)
+    setSubChartVisible(show)
   }
 
   return (
@@ -472,12 +471,11 @@ export default function ChartContainer({
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
       </div>
-      {showSubChart && mainChartRef.current && (
+      {showSubChart && (
         <SubChartPanel
-          code={stock.code}
           klines={klineData}
           type="MACD"
-          mainChart={mainChartRef.current}
+          mainChart={chartRef.current!}
         />
       )}
     </div>
