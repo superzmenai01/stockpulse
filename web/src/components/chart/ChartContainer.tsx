@@ -480,7 +480,6 @@ export default function ChartContainer({
       color: '#FFD700',
       lineWidth: 1,
       priceLineVisible: false,
-      priceScaleId: '',
     })
     zigzagSeries.setData(zigzagData)
     zigzagSeriesRef.current = zigzagSeries
