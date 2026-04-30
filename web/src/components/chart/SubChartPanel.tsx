@@ -125,17 +125,17 @@ export default function SubChartPanel({ klines, type, mainChart }: SubChartPanel
     })
     chartRef.current = chart
     
-    // 同步主圖的 pan/zoom
+    // 同步主圖的 pan/zoom (lightweight-charts v5 API)
     const syncHandler = () => {
       const mainRange = mainChart.timeScale().getVisibleLogicalRange()
       if (mainRange && chartRef.current) {
         chartRef.current.timeScale().setVisibleLogicalRange(mainRange)
       }
     }
-    mainChart.timeScale().onVisibleLogicalRangeChanged().subscribe(syncHandler)
+    mainChart.timeScale().subscribeVisibleLogicalRangeChange(syncHandler)
     
-    // Crosshair 同步
-    mainChart.onCrosshairMove().subscribe((param) => {
+    // Crosshair 同步 (lightweight-charts v5 API)
+    mainChart.subscribeCrosshairMove((param) => {
       if (chartRef.current) {
         chartRef.current.moveCrosshair(param.point)
       }
