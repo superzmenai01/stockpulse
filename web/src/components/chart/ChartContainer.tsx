@@ -204,7 +204,13 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
     result.push({ time: lastTime, value: klines[lastSwingIdx].close })
   }
 
-  return result
+  // 過濾重複時間點
+  const filtered = result.filter((point, idx) => {
+    if (idx === 0) return true
+    return point.time !== result[idx - 1].time
+  })
+
+  return filtered
 }
 
 // ============ 創建圖表實例 ============
