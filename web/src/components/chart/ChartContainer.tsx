@@ -222,14 +222,6 @@ const createChartInstance = (container: HTMLDivElement) => {
       timeVisible: true,
       secondsVisible: false,
     },
-    priceScales: {
-      overlay: {
-        scales: {
-          MACD: { visible: true, autoScale: true },
-          MACD_HIST: { visible: true, autoScale: true },
-        },
-      },
-    },
   })
 
   const candlestickSeries = chart.addSeries(CandlestickSeries, {
@@ -330,48 +322,38 @@ export default function ChartContainer({
 
     if (dif.length === 0) return
 
-    // 添加 DIF 線
+    // 添加 DIF 線 (使用 overlay price scale)
     const difSeries = chart.addSeries(LineSeries, {
       color: '#26BA75',
       lineWidth: 1,
       priceLineVisible: false,
-      priceScaleId: 'macd',
+      priceScaleId: '',
     })
     difSeries.setData(dif)
     macdSeriesRefs.current.DIF = difSeries
 
-    // 添加 DEA 線
+    // 添加 DEA 線 (使用相同 overlay price scale)
     const deaSeries = chart.addSeries(LineSeries, {
       color: '#EE5151',
       lineWidth: 1,
       priceLineVisible: false,
-      priceScaleId: 'macd',
+      priceScaleId: '',
     })
     deaSeries.setData(dea)
     macdSeriesRefs.current.DEA = deaSeries
 
-    // 添加 MACD 柱子 (Histogram) - 使用單獨的 price scale 作為 overlay
+    // 添加 MACD 柱子 (Histogram) - 使用單獨的 overlay price scale
     const histSeries = chart.addSeries(HistogramSeries, {
       color: '#26BA75',
       priceFormat: { type: 'price', precision: 4 },
-      priceScaleId: 'macd_hist',
+      priceScaleId: '',
     })
     histSeries.setData(histogram.map(h => ({ time: h.time, value: h.value, color: h.color })))
     macdSeriesRefs.current.HIST = histSeries
 
-    // 配置 MACD 的 price scale
-    // 主圖: 3% - 52%
-    // MACD: 50% - 80%
-    // MACD Histogram: 78% - 92%
-    // Volume: 93% - 100%
-    chart.priceScale('macd').applyOptions({
-      scaleMargins: { top: 0.50, bottom: 0.32 },
-      borderVisible: true,
-      borderColor: '#30363D',
-    })
-    chart.priceScale('macd_hist').applyOptions({
-      scaleMargins: { top: 0.78, bottom: 0.08 },
-      borderVisible: false,
+    // 配置 overlay price scale - 將 MACD 放在中部位置
+    difSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.52, bottom: 0.25 },
     })
   }, [indicatorConfig.MACD.enabled, klineData, chartCreated, currentPeriod])
 
