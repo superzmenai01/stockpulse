@@ -577,8 +577,6 @@ export default function ChartContainer({
         startDate={startDate}
         endDate={endDate}
         onDateChange={handleDateChange}
-        showSubChart={showSubChart || showSubChartLocal}
-        onShowSubChartChange={handleShowSubChart}
       />
       <IndicatorPanel
         config={indicatorConfig}
