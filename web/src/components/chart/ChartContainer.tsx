@@ -198,9 +198,9 @@ export default function ChartContainer({
   const [chartCreated, setChartCreated] = useState(false)
   
   const today = new Date().toISOString().split('T')[0]
-  const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [currentPeriod, setCurrentPeriod] = useState(period)
-  const [startDate, setStartDate] = useState<string>(threeMonthsAgo)
+  const [startDate, setStartDate] = useState<string>(sixMonthsAgo)
   const [endDate, setEndDate] = useState<string>(today)
   
   const [loading, setLoading] = useState(false)
