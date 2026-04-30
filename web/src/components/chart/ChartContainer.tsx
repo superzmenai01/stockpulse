@@ -132,7 +132,7 @@ interface ZigZagPoint {
   price: number
 }
 
-function calculateZigZag(klines: KLine[], thresholdPercent: number = 10): Array<{ time: Time; value: number }> {
+function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period: string = '1d'): Array<{ time: Time; value: number }> {
   if (klines.length < 2) return []
 
   const result: Array<{ time: Time; value: number }> = []
@@ -147,7 +147,7 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10): Array<
     const change = (klines[i].close - basePrice) / basePrice
     if (Math.abs(change) >= threshold) {
       result.push({
-        time: parseTime(klines[i].time, '1d'),
+        time: parseTime(klines[i].time, period),
         value: klines[i].close,
       })
       basePrice = klines[i].close
@@ -171,7 +171,7 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10): Array<
       baseIdx = i
     } else if (Math.abs(change) >= threshold) {
       // 轉向：記錄新轉向點
-      const newTime = parseTime(klines[i].time, '1d')
+      const newTime = parseTime(klines[i].time, period)
       if (result.length === 0 || result[result.length - 1].time !== newTime) {
         result.push({ time: newTime, value: klines[i].close })
       }
@@ -181,7 +181,7 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10): Array<
   }
 
   // 添加最後一個base作爲終點
-  const lastTime = parseTime(klines[baseIdx].time, '1d')
+  const lastTime = parseTime(klines[baseIdx].time, period)
   if (result.length > 0 && result[result.length - 1].time !== lastTime) {
     result.push({ time: lastTime, value: klines[baseIdx].close })
   }
@@ -473,7 +473,7 @@ export default function ChartContainer({
 
     if (!enabled) return
 
-    const zigzagData = calculateZigZag(klineData, threshold)
+    const zigzagData = calculateZigZag(klineData, threshold, currentPeriod)
     if (zigzagData.length === 0) return
 
     const zigzagSeries = chart.addSeries(LineSeries, {
