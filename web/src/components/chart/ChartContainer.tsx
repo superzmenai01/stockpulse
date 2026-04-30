@@ -163,8 +163,6 @@ const createChartInstance = (container: HTMLDivElement) => {
     wickUpColor: '#26BA75',
     wickDownColor: '#EE5151',
   })
-  // Enable autoScale so price scale doesn't start from 0
-  candlestickSeries.priceScale().applyOptions({ autoScale: true })
 
   const volumeSeries = chart.addSeries(HistogramSeries, {
     color: '#26BA75',

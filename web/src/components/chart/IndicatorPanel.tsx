@@ -49,7 +49,7 @@ interface IndicatorPanelProps {
 }
 
 export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
 
   const updateMA = (key: keyof Omit<IndicatorConfig, 'BOLL'>, updates: Partial<MAConfig>) => {
     onChange({
