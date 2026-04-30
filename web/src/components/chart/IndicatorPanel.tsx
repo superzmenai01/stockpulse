@@ -47,7 +47,7 @@ export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = {
   EMA10: { enabled: false, period: 10, color: '#4ECDC4' },
   EMA20: { enabled: false, period: 20, color: '#45B7D1' },
   BOLL: { enabled: false, period: 20, stdDev: 2, color: '#FFB347' },
-  ZigZag: { enabled: false, threshold: 10 },
+  ZigZag: { enabled: true, threshold: 10 },
 }
 
 interface IndicatorPanelProps {
@@ -129,6 +129,32 @@ export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps
 
       {!collapsed && (
         <div className={styles.content}>
+          {/* ZigZag */}
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>ZigZag 折線</div>
+            <div className={styles.indicatorRow}>
+              <label className={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  checked={config.ZigZag.enabled}
+                  onChange={() => onChange({ ...config, ZigZag: { ...config.ZigZag, enabled: !config.ZigZag.enabled } })}
+                />
+                <span>ZigZag</span>
+              </label>
+              <div className={styles.controls}>
+                <span className={styles.label}>阈值%</span>
+                <InputNumber
+                  size="small"
+                  min={5}
+                  max={20}
+                  value={config.ZigZag.threshold}
+                  onChange={(val) => onChange({ ...config, ZigZag: { ...config.ZigZag, threshold: val || 10 } })}
+                  disabled={!config.ZigZag.enabled}
+                  className={styles.numberInput}
+                />
+              </div>
+            </div>
+          </div>
           {/* MA 系列 */}
           <div className={styles.section}>
             <div className={styles.sectionTitle}>MA 移動平均線</div>
@@ -192,32 +218,6 @@ export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps
                     className={styles.colorInput}
                   />
                 </div>
-              </div>
-            </div>
-          </div>
-          {/* ZigZag */}
-          <div className={styles.section}>
-            <div className={styles.sectionTitle}>ZigZag 折線</div>
-            <div className={styles.indicatorRow}>
-              <label className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  checked={config.ZigZag.enabled}
-                  onChange={() => onChange({ ...config, ZigZag: { ...config.ZigZag, enabled: !config.ZigZag.enabled } })}
-                />
-                <span>ZigZag</span>
-              </label>
-              <div className={styles.controls}>
-                <span className={styles.label}>阈值%</span>
-                <InputNumber
-                  size="small"
-                  min={5}
-                  max={20}
-                  value={config.ZigZag.threshold}
-                  onChange={(val) => onChange({ ...config, ZigZag: { ...config.ZigZag, threshold: val || 10 } })}
-                  disabled={!config.ZigZag.enabled}
-                  className={styles.numberInput}
-                />
               </div>
             </div>
           </div>
