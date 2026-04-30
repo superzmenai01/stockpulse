@@ -131,7 +131,7 @@ interface MACDResult {
   histogram: Array<{ time: Time; value: number; color: string }>
 }
 
-function calculateMACD(klines: KLine[]): MACDResult {
+function calculateMACD(klines: KLine[], period: string): MACDResult {
   const fastPeriod = 12
   const slowPeriod = 26
   const signalPeriod = 9
@@ -152,7 +152,7 @@ function calculateMACD(klines: KLine[]): MACDResult {
     const d = fastEMA[fastIdx].value - slowEMA[i - startIdx].value
     difValues.push(d)
     dif.push({
-      time: parseTime(klines[i].time, '1d'),
+      time: parseTime(klines[i].time, period),
       value: parseFloat(d.toFixed(4)),
     })
   }
@@ -215,7 +215,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     },
     rightPriceScale: {
       borderColor: '#30363D',
-      scaleMargins: { top: 0.05, bottom: 0.45 },
+      scaleMargins: { top: 0.03, bottom: 0.55 },
     },
     timeScale: {
       borderColor: '#30363D',
@@ -239,7 +239,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     priceScaleId: '',
   })
   volumeSeries.priceScale().applyOptions({
-    scaleMargins: { top: 0.88, bottom: 0 },
+    scaleMargins: { top: 0.93, bottom: 0 },
   })
 
   return { chart, candlestickSeries, volumeSeries }
@@ -318,7 +318,7 @@ export default function ChartContainer({
     if (!enabled) return
 
     // 計算 MACD 數據
-    const { dif, dea, histogram } = calculateMACD(klineData)
+    const { dif, dea, histogram } = calculateMACD(klineData, currentPeriod)
 
     if (dif.length === 0) return
 
@@ -352,9 +352,12 @@ export default function ChartContainer({
     macdSeriesRefs.current.HIST = histSeries
 
     // 配置 MACD 的 price scale
-    // MACD 佔據中間區域 (48% - 78%)，不與 volume 底部重疊
+    // 主圖: 3% - 52%
+    // MACD: 50% - 80%
+    // MACD Histogram: 78% - 92%
+    // Volume: 93% - 100%
     chart.priceScale('macd').applyOptions({
-      scaleMargins: { top: 0.48, bottom: 0.22 },
+      scaleMargins: { top: 0.50, bottom: 0.32 },
       borderVisible: true,
       borderColor: '#30363D',
     })
@@ -362,7 +365,7 @@ export default function ChartContainer({
       scaleMargins: { top: 0.78, bottom: 0.08 },
       borderVisible: false,
     })
-  }, [indicatorConfig.MACD.enabled, klineData, chartCreated])
+  }, [indicatorConfig.MACD.enabled, klineData, chartCreated, currentPeriod])
 
   // 初始化圖表（只在 mount 時執行一次）
   useEffect(() => {
