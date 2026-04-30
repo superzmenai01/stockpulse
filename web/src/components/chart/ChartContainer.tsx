@@ -1,9 +1,10 @@
 // ChartContainer - K線圖主容器
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries } from 'lightweight-charts'
+import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts'
 import { useWebSocketContext } from '../../context'
 import ChartToolbar from './ChartToolbar'
+import IndicatorPanel, { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorPanel'
 import styles from './ChartContainer.module.css'
 
 interface StockInfo {
@@ -23,6 +24,8 @@ interface KLine {
 interface ChartContainerProps {
   stock: StockInfo
   period?: string
+  indicatorConfig?: IndicatorConfig
+  onIndicatorChange?: (config: IndicatorConfig) => void
 }
 
 interface ChartData {
@@ -43,34 +46,90 @@ const PERIODS = [
 // 將時間字串轉換為 lightweight-charts 的 Time 格式
 const parseTime = (timeStr: string, period: string): Time => {
   if (period === '1m') {
-    // 分鐘K: 2026-04-28 09:30:00 (HKT) -> Unix timestamp
-    // JS new Date() 將字串解析為本地時間(HKT)後轉UTC，導致顯示時間偏早8小時
-    // 修復：timestamp + 8小時，讓 lightweight-charts 顯示正確的 HKT 時間
     const date = new Date(timeStr)
     const ts = Math.floor(date.getTime() / 1000)
     return (ts + 8 * 3600) as Time
   }
-  if (period === '1d') {
-    // 日K: 2025-05-01 00:00:00 -> 2025-05-01
-    return timeStr.substring(0, 10) as Time
-  }
+  if (period === '1d') return timeStr.substring(0, 10) as Time
   if (period === '1M') {
-    // 月K: 2025-05-01 00:00:00 -> 2025-05-01
-    // 如果已經係 YYYY-MM-DD 格式就直接返回
-    if (timeStr.includes('-') && timeStr.length >= 10) {
-      return timeStr.substring(0, 10) as Time
-    }
-    // 否則用舊方法 YYYY-MM -> YYYY-MM-01
+    if (timeStr.includes('-') && timeStr.length >= 10) return timeStr.substring(0, 10) as Time
     return (timeStr.substring(0, 7) + '-01') as Time
   }
-  if (period === '1y') {
-    // 年K: 2026-01-01 00:00:00 -> 2026-01-01
-    return timeStr.substring(0, 10) as Time
-  }
+  if (period === '1y') return timeStr.substring(0, 10) as Time
   return timeStr.substring(0, 10) as Time
 }
 
-// 創建圖表的工廠函數
+// ============ 指標計算函數 ============
+
+// 計算 MA
+function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
+  const result: Array<{ time: Time; value: number }> = []
+  for (let i = period - 1; i < klines.length; i++) {
+    let sum = 0
+    for (let j = 0; j < period; j++) {
+      sum += klines[i - j].close
+    }
+    result.push({
+      time: parseTime(klines[i].time, '1d'),
+      value: parseFloat((sum / period).toFixed(4)),
+    })
+  }
+  return result
+}
+
+// 計算 EMA
+function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
+  const result: Array<{ time: Time; value: number }> = []
+  const multiplier = 2 / (period + 1)
+  
+  // 先用 SMA 計算第一個值
+  let sum = 0
+  for (let i = 0; i < period; i++) {
+    sum += klines[i].close
+  }
+  let prevEMA = sum / period
+  
+  for (let i = period - 1; i < klines.length; i++) {
+    const ema = (klines[i].close - prevEMA) * multiplier + prevEMA
+    result.push({
+      time: parseTime(klines[i].time, '1d'),
+      value: parseFloat(ema.toFixed(4)),
+    })
+    prevEMA = ema
+  }
+  return result
+}
+
+// 計算 BOLL
+function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper: Array<{ time: Time; value: number }>; middle: Array<{ time: Time; value: number }>; lower: Array<{ time: Time; value: number }> } {
+  const upper: Array<{ time: Time; value: number }> = []
+  const middle: Array<{ time: Time; value: number }> = []
+  const lower: Array<{ time: Time; value: number }> = []
+  
+  for (let i = period - 1; i < klines.length; i++) {
+    let sum = 0
+    for (let j = 0; j < period; j++) {
+      sum += klines[i - j].close
+    }
+    const sma = sum / period
+    
+    let variance = 0
+    for (let j = 0; j < period; j++) {
+      variance += Math.pow(klines[i - j].close - sma, 2)
+    }
+    const std = Math.sqrt(variance / period)
+    
+    const time = parseTime(klines[i].time, '1d')
+    upper.push({ time, value: parseFloat((sma + stdDev * std).toFixed(4)) })
+    middle.push({ time, value: parseFloat(sma.toFixed(4)) })
+    lower.push({ time, value: parseFloat((sma - stdDev * std).toFixed(4)) })
+  }
+  
+  return { upper, middle, lower }
+}
+
+// ============ 創建圖表實例 ============
+
 const createChartInstance = (container: HTMLDivElement) => {
   const chart = createChart(container, {
     width: container.clientWidth || 800,
@@ -120,15 +179,29 @@ const createChartInstance = (container: HTMLDivElement) => {
   return { chart, candlestickSeries, volumeSeries }
 }
 
-export default function ChartContainer({ stock, period = '1d' }: ChartContainerProps) {
+// ============ 指標配置默認值 ============
+
+// ============ Component ============
+
+export default function ChartContainer({
+  stock,
+  period = '1d',
+  indicatorConfig: externalConfig,
+  onIndicatorChange,
+}: ChartContainerProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const lineSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
+  const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   
   // 追蹤當前載入的 period（避免 race condition）
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
+  
+  // 圖表是否已創建
+  const [chartCreated, setChartCreated] = useState(false)
   
   // 日期範圍 state：默认 3 个月
   const today = new Date().toISOString().split('T')[0]
@@ -139,16 +212,29 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
   
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  
+  // 指標配置
+  const [indicatorConfig, setIndicatorConfig] = useState<IndicatorConfig>(
+    externalConfig || DEFAULT_INDICATOR_CONFIG
+  )
+  
+  // K線數據（用於計算指標）
+  const [klineData, setKlineData] = useState<KLine[]>([])
 
   const { quotes } = useWebSocketContext()
 
-  // 初始化圖表（只在組件 mount 時）
+  // 處理指標配置變化
+  const handleIndicatorChange = useCallback((newConfig: IndicatorConfig) => {
+    setIndicatorConfig(newConfig)
+    onIndicatorChange?.(newConfig)
+  }, [onIndicatorChange])
+
+  // 初始化圖表
   useEffect(() => {
-    if (!chartContainerRef.current) return
+    if (!chartContainerRef.current || chartCreated) return
 
     const container = chartContainerRef.current
 
-    // 如果已經有 chart 實例，說明係 modal 重新打開，先移除舊的
     if (chartRef.current) {
       chartRef.current.remove()
       chartRef.current = null
@@ -171,114 +257,153 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     window.addEventListener('resize', handleResize)
     handleResize()
 
+    setChartCreated(true)
+
     return () => {
       window.removeEventListener('resize', handleResize)
-      //唔調用 chart.remove()，因為 chart DOM 始終掛載
-      //下次 mount 時再處理
     }
-  }, [])
+  }, [chartCreated])
 
   // 載入K線數據
   const loadKlineData = useCallback(async (code: string, period: string, start?: string, end?: string) => {
-    // 標記當前正在載入的 period
     loadingPeriodRef.current = period
-    
-    // 直接設置 loading，不延遲（避免閃爍）
     setLoading(true)
     
     try {
-      // 時段越大需要的數據越多：1m用500(港股一天390支)，其餘用1000
       const reqCount = period === '1m' ? 500 : 1000
-      
-      // 構建 URL（加入 start/end 參數）
-      const params = new URLSearchParams({
-        code,
-        period,
-        count: String(reqCount),
-      })
+      const params = new URLSearchParams({ code, period, count: String(reqCount) })
       if (start) params.set('start', start)
       if (end) params.set('end', end)
       
       const url = `http://${window.location.hostname}:18792/api/kline?${params}`
-      console.log('[Chart] URL:', url)
       const res = await fetch(url)
       const data: ChartData = await res.json()
-      console.log('[Chart] Data:', data.klines.length, 'klines, error:', data.error)
       
-      // 檢查是否係過時的請求（用戶可能已切換到另一個 period）
-      if (loadingPeriodRef.current !== period) {
-        console.log('[Chart] 請求已過時，忽略')
-        return
-      }
+      if (loadingPeriodRef.current !== period) return
       
-      // 檢查 API 返回的錯誤
       if (data.error) {
-        console.warn('[Chart] API 返回錯誤:', data.error)
         setErrorMessage(data.error)
         setLoading(false)
         return
       }
       
-      // 清除錯誤訊息
       setErrorMessage(null)
-      
-      // 設置 data 所屬的 period
       dataPeriodRef.current = period
+      setKlineData(data.klines)
       
       if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
-        // 去重：過濾相同時間的K線（富途返回的數據可能有重複）
         const candleMap = new Map<string, CandlestickData<Time>>()
         for (const k of data.klines) {
           const t = parseTime(k.time, period)
           const tStr = String(t)
           if (!candleMap.has(tStr)) {
-            candleMap.set(tStr, {
-              time: t,
-              open: k.open,
-              high: k.high,
-              low: k.low,
-              close: k.close,
-            })
+            candleMap.set(tStr, { time: t, open: k.open, high: k.high, low: k.low, close: k.close })
           }
         }
-        const candleData = Array.from(candleMap.values())
+        candlestickSeriesRef.current.setData(Array.from(candleMap.values()))
         
-        // 成交量的去重
         const volumeMap = new Map<string, HistogramData<Time>>()
         for (const k of data.klines) {
           const t = parseTime(k.time, period)
           const tStr = String(t)
           if (!volumeMap.has(tStr)) {
-            volumeMap.set(tStr, {
-              time: t,
-              value: k.volume,
-              color: k.close >= k.open ? '#26BA7544' : '#EE515144',
-            })
+            volumeMap.set(tStr, { time: t, value: k.volume, color: k.close >= k.open ? '#26BA7544' : '#EE515144' })
           }
         }
-        const volumeData = Array.from(volumeMap.values())
-        
-        candlestickSeriesRef.current.setData(candleData)
-        volumeSeriesRef.current.setData(volumeData)
-
+        volumeSeriesRef.current.setData(Array.from(volumeMap.values()))
         chartRef.current.timeScale().fitContent()
       }
     } catch (err) {
       console.error('[Chart] 載入K線失敗:', err)
     } finally {
-      // 只有當這個請求還係最新的時候先清除 loading
       if (loadingPeriodRef.current === period) {
         setLoading(false)
       }
     }
   }, [])
 
-  // 處理 period 改變
+  // chartCreated 後載入數據
   useEffect(() => {
-    // period 改變時清除 data period，確保舊數據不會被用於更新
-    dataPeriodRef.current = ''
-    loadKlineData(stock.code, currentPeriod, startDate, endDate)
-  }, [stock.code, currentPeriod, startDate, endDate, loadKlineData])
+    if (chartCreated) {
+      loadKlineData(stock.code, currentPeriod, startDate, endDate)
+    }
+  }, [chartCreated, stock.code, currentPeriod, startDate, endDate, loadKlineData])
+
+  // 更新指標線
+  useEffect(() => {
+    if (!chartRef.current || klineData.length === 0) return
+    
+    const chart = chartRef.current
+    const periodType = currentPeriod === '1m' ? '1m' : '1d'
+    
+    // 清除舊的 MA/EMA series
+    Object.entries(lineSeriesRefs.current).forEach(([key, series]) => {
+      chart.removeSeries(series)
+    })
+    lineSeriesRefs.current = {}
+    
+    // 清除舊的 BOLL series
+    Object.entries(bollSeriesRefs.current).forEach(([key, series]) => {
+      chart.removeSeries(series)
+    })
+    bollSeriesRefs.current = {}
+    
+    // MA 指標
+    const maKeys: (keyof Pick<IndicatorConfig, 'MA5' | 'MA10' | 'MA20' | 'MA60' | 'MA120' | 'MA250'>)[] = ['MA5', 'MA10', 'MA20', 'MA60', 'MA120', 'MA250']
+    for (const key of maKeys) {
+      const config = indicatorConfig[key]
+      if (config.enabled) {
+        const data = calculateMA(klineData, config.period)
+        if (data.length > 0) {
+          const series = chart.addSeries(LineSeries, {
+            color: config.color,
+            lineWidth: 1,
+            priceLineVisible: false,
+          })
+          series.setData(data)
+          lineSeriesRefs.current[key] = series
+        }
+      }
+    }
+    
+    // EMA 指標
+    const emaKeys: (keyof Pick<IndicatorConfig, 'EMA5' | 'EMA10' | 'EMA20'>)[] = ['EMA5', 'EMA10', 'EMA20']
+    for (const key of emaKeys) {
+      const config = indicatorConfig[key]
+      if (config.enabled) {
+        const data = calculateEMA(klineData, config.period)
+        if (data.length > 0) {
+          const series = chart.addSeries(LineSeries, {
+            color: config.color,
+            lineWidth: 1,
+            priceLineVisible: false,
+          })
+          series.setData(data)
+          lineSeriesRefs.current[key] = series
+        }
+      }
+    }
+    
+    // BOLL 指標
+    if (indicatorConfig.BOLL.enabled) {
+      const { upper, middle, lower } = calculateBOLL(klineData, indicatorConfig.BOLL.period, indicatorConfig.BOLL.stdDev)
+      const color = indicatorConfig.BOLL.color
+      
+      if (upper.length > 0) {
+        const upperSeries = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, priceLineVisible: false })
+        upperSeries.setData(upper)
+        bollSeriesRefs.current['BOLL_UPPER'] = upperSeries
+        
+        const middleSeries = chart.addSeries(LineSeries, { color, lineWidth: 1, priceLineVisible: false })
+        middleSeries.setData(middle)
+        bollSeriesRefs.current['BOLL_MIDDLE'] = middleSeries
+        
+        const lowerSeries = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: 2, priceLineVisible: false })
+        lowerSeries.setData(lower)
+        bollSeriesRefs.current['BOLL_LOWER'] = lowerSeries
+      }
+    }
+  }, [klineData, currentPeriod, indicatorConfig])
 
   // 實時更新最後一根蠟燭
   useEffect(() => {
@@ -286,18 +411,15 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     if (!quote || !candlestickSeriesRef.current || loading) return
     if (dataPeriodRef.current !== currentPeriod) return
     
-    // 1m 週期：只在交易時間內更新（港股 09:30-16:00 HKT）
     if (currentPeriod === '1m') {
       const now = new Date()
       const hktHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Hong_Kong', hour12: false }))
       const hktMinute = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Hong_Kong', minute: '2-digit', hour12: false }))
       const dayOfWeek = now.getDay()
-      // 排除周末（0=周日，6=周六）和非交易時段
       if (dayOfWeek === 0 || dayOfWeek === 6) return
       if (hktHour < 9 || (hktHour === 9 && hktMinute < 30) || hktHour >= 16) return
     }
     
-    // 從 quotes 取得實時數據來更新
     const lastKlineTime = quote.last_price ? parseTime(new Date().toISOString(), currentPeriod) : null
     if (!lastKlineTime) return
 
@@ -310,10 +432,7 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
     })
   }, [quotes[stock.code], stock.code, currentPeriod, loading])
 
-  const handlePeriodChange = (period: string) => {
-    setCurrentPeriod(period)
-  }
-
+  const handlePeriodChange = (period: string) => setCurrentPeriod(period)
   const handleDateChange = (start: string, end: string) => {
     setStartDate(start)
     setEndDate(end)
@@ -330,6 +449,7 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
         endDate={endDate}
         onDateChange={handleDateChange}
       />
+      <IndicatorPanel config={indicatorConfig} onChange={handleIndicatorChange} />
       <div className={styles.chartWrapper}>
         <div ref={chartContainerRef} className={styles.chart} />
         {loading && <div className={styles.loading}>載入中...</div>}
