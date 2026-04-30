@@ -138,52 +138,70 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
   const result: Array<{ time: Time; value: number }> = []
   const threshold = thresholdPercent / 100
 
-  // 追蹤基準點
-  let basePrice = klines[0].close
-  let baseIdx = 0
+  // 找到第一個顯著轉向點作為初始參考
+  let lastSwingPrice = klines[0].close
+  let lastSwingIdx = 0
+  let inUptrend = klines[1].close > klines[0].close
 
-  // 找到第一個顯著轉向點
+  // 找到第一個顯著高/低點
   for (let i = 1; i < klines.length; i++) {
-    const change = (klines[i].close - basePrice) / basePrice
+    const change = (klines[i].close - lastSwingPrice) / lastSwingPrice
     if (Math.abs(change) >= threshold) {
       result.push({
         time: parseTime(klines[i].time, period),
         value: klines[i].close,
       })
-      basePrice = klines[i].close
-      baseIdx = i
+      lastSwingPrice = klines[i].close
+      lastSwingIdx = i
+      inUptrend = change > 0
       break
     }
   }
 
   if (result.length === 0) return []
 
-  // 繼續追蹤每個轉向點 - 從 baseIdx + 1 開始
-  for (let i = baseIdx + 1; i < klines.length; i++) {
-    const change = (klines[i].close - basePrice) / basePrice
+  // 繼續追蹤轉向點
+  for (let i = lastSwingIdx + 1; i < klines.length; i++) {
+    const price = klines[i].close
+    const change = (price - lastSwingPrice) / lastSwingPrice
 
-    // 持續朝同一方向移動，更新base
-    if (change > 0 && klines[i].close > basePrice) {
-      basePrice = klines[i].close
-      baseIdx = i
-    } else if (change < 0 && klines[i].close < basePrice) {
-      basePrice = klines[i].close
-      baseIdx = i
-    } else if (Math.abs(change) >= threshold) {
-      // 轉向：記錄新轉向點
-      const newTime = parseTime(klines[i].time, period)
-      if (result.length === 0 || result[result.length - 1].time !== newTime) {
-        result.push({ time: newTime, value: klines[i].close })
+    if (inUptrend) {
+      // 上升趨勢：更新 high
+      if (price > lastSwingPrice) {
+        lastSwingPrice = price
+        lastSwingIdx = i
+      } else if (change <= -threshold) {
+        // 轉向下跌：記錄當前 high 作轉向點
+        result.push({
+          time: parseTime(klines[lastSwingIdx].time, period),
+          value: lastSwingPrice,
+        })
+        inUptrend = false
+        lastSwingPrice = price
+        lastSwingIdx = i
       }
-      basePrice = klines[i].close
-      baseIdx = i
+    } else {
+      // 下跌趨勢：更新 low
+      if (price < lastSwingPrice) {
+        lastSwingPrice = price
+        lastSwingIdx = i
+      } else if (change >= threshold) {
+        // 轉向上漲：記錄當前 low 作轉向點
+        result.push({
+          time: parseTime(klines[lastSwingIdx].time, period),
+          value: lastSwingPrice,
+        })
+        inUptrend = true
+        lastSwingPrice = price
+        lastSwingIdx = i
+      }
     }
   }
 
-  // 添加最後一個base作爲終點
-  const lastTime = parseTime(klines[baseIdx].time, period)
+  // 添加最後一個有效轉向點
+  const lastTime = parseTime(klines[lastSwingIdx].time, period)
   if (result.length > 0 && result[result.length - 1].time !== lastTime) {
-    result.push({ time: lastTime, value: klines[baseIdx].close })
+    result.push({ time: lastTime, value: klines[lastSwingIdx].close })
   }
 
   return result
