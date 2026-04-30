@@ -125,8 +125,7 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
   
   return { upper, middle, lower }
 }
-
-// ============ ZigZag 計算 ============
+// ============ ZigZag 計算（使用 High/Low）===========
 
 interface ZigZagPoint {
   time: Time
@@ -139,28 +138,60 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
   const result: Array<{ time: Time; value: number }> = []
   const threshold = thresholdPercent / 100
 
-  // ZigZag 永遠從第一支竹開始
+  // ZigZag 永遠從第一支竹的 low 開始
   result.push({
     time: parseTime(klines[0].time, period),
-    value: klines[0].close,
+    value: klines[0].low,  // 用 low 作為起始點
   })
 
-  let lastSwingPrice = klines[0].close
+  let lastSwingHigh = klines[0].high
+  let lastSwingLow = klines[0].low
   let lastSwingIdx = 0
   let inUptrend = klines[1].close > klines[0].close
 
   // 找到第一個顯著高/低點
   for (let i = 1; i < klines.length; i++) {
-    const change = (klines[i].close - lastSwingPrice) / lastSwingPrice
-    if (Math.abs(change) >= threshold) {
-      result.push({
-        time: parseTime(klines[i].time, period),
-        value: klines[i].close,
-      })
-      lastSwingPrice = klines[i].close
-      lastSwingIdx = i
-      inUptrend = change > 0
-      break
+    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
+    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
+
+    if (inUptrend) {
+      // 上升趨勢：更新 high
+      if (klines[i].high > lastSwingHigh) {
+        lastSwingHigh = klines[i].high
+        lastSwingLow = klines[i].low
+        lastSwingIdx = i
+      }
+      // 從 high 下跌超過 threshold = 轉向
+      if (changeFromHigh <= -threshold) {
+        result.push({
+          time: parseTime(klines[lastSwingIdx].time, period),
+          value: lastSwingHigh,  // 記錄峰值 high
+        })
+        inUptrend = false
+        lastSwingLow = klines[i].low
+        lastSwingHigh = klines[i].high
+        lastSwingIdx = i
+        break
+      }
+    } else {
+      // 下跌趨勢：更新 low
+      if (klines[i].low < lastSwingLow) {
+        lastSwingLow = klines[i].low
+        lastSwingHigh = klines[i].high
+        lastSwingIdx = i
+      }
+      // 從 low 上升超過 threshold = 轉向
+      if (changeFromLow >= threshold) {
+        result.push({
+          time: parseTime(klines[lastSwingIdx].time, period),
+          value: lastSwingLow,  // 記錄谷底 low
+        })
+        inUptrend = true
+        lastSwingLow = klines[i].low
+        lastSwingHigh = klines[i].high
+        lastSwingIdx = i
+        break
+      }
     }
   }
 
@@ -171,46 +202,51 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
 
   // 繼續追蹤轉向點
   for (let i = lastSwingIdx + 1; i < klines.length; i++) {
-    const price = klines[i].close
-    const change = (price - lastSwingPrice) / lastSwingPrice
+    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
+    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
 
     if (inUptrend) {
       // 上升趨勢：更新 high
-      if (price > lastSwingPrice) {
-        lastSwingPrice = price
+      if (klines[i].high > lastSwingHigh) {
+        lastSwingHigh = klines[i].high
         lastSwingIdx = i
-      } else if (change <= -threshold) {
-        // 轉向下跌：記錄當前 high 作轉向點
+      }
+      // 從 high 下跌超過 threshold = 轉向下跌
+      if (changeFromHigh <= -threshold) {
         result.push({
           time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingPrice,
+          value: lastSwingHigh,
         })
         inUptrend = false
-        lastSwingPrice = price
+        lastSwingLow = klines[i].low
         lastSwingIdx = i
       }
     } else {
       // 下跌趨勢：更新 low
-      if (price < lastSwingPrice) {
-        lastSwingPrice = price
+      if (klines[i].low < lastSwingLow) {
+        lastSwingLow = klines[i].low
         lastSwingIdx = i
-      } else if (change >= threshold) {
-        // 轉向上漲：記錄當前 low 作轉向點
+      }
+      // 從 low 上升超過 threshold = 轉向上漲
+      if (changeFromLow >= threshold) {
         result.push({
           time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingPrice,
+          value: lastSwingLow,
         })
         inUptrend = true
-        lastSwingPrice = price
+        lastSwingHigh = klines[i].high
         lastSwingIdx = i
       }
     }
   }
 
-  // 添加最後一個有效轉向點
+  // 添加最後一個有效轉向點（峰值或谷底）
   const lastTime = parseTime(klines[lastSwingIdx].time, period)
   if (result.length > 0 && result[result.length - 1].time !== lastTime) {
-    result.push({ time: lastTime, value: klines[lastSwingIdx].close })
+    result.push({
+      time: lastTime,
+      value: inUptrend ? lastSwingHigh : lastSwingLow,
+    })
   }
 
   // 過濾並確保時間严格遞增
