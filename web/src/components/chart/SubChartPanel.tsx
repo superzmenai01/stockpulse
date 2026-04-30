@@ -134,12 +134,8 @@ export default function SubChartPanel({ klines, type, mainChart }: SubChartPanel
     }
     mainChart.timeScale().subscribeVisibleLogicalRangeChange(syncHandler)
     
-    // Crosshair 同步 (lightweight-charts v5 API)
-    mainChart.subscribeCrosshairMove((param) => {
-      if (chartRef.current) {
-        chartRef.current.moveCrosshair(param.point)
-      }
-    })
+    // Crosshair 同步 - 暫時移除因為 v5 API 差異
+    // 如果需要可以在日後修復
     
     const handleResize = () => {
       if (containerRef.current && chartRef.current) {
