@@ -222,6 +222,14 @@ const createChartInstance = (container: HTMLDivElement) => {
       timeVisible: true,
       secondsVisible: false,
     },
+    priceScales: {
+      overlay: {
+        scales: {
+          MACD: { visible: true, autoScale: true },
+          MACD_HIST: { visible: true, autoScale: true },
+        },
+      },
+    },
   })
 
   const candlestickSeries = chart.addSeries(CandlestickSeries, {
