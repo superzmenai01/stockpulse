@@ -4,10 +4,6 @@ import React, { useState } from 'react'
 import { Button, InputNumber } from 'antd'
 import styles from './IndicatorPanel.module.css'
 
-interface MACDConfig {
-  enabled: boolean
-}
-
 interface MAConfig {
   enabled: boolean
   period: number
@@ -32,7 +28,6 @@ export interface IndicatorConfig {
   EMA10: MAConfig
   EMA20: MAConfig
   BOLL: BOLLConfig
-  MACD: MACDConfig
 }
 
 export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = {
@@ -46,7 +41,6 @@ export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = {
   EMA10: { enabled: false, period: 10, color: '#4ECDC4' },
   EMA20: { enabled: false, period: 20, color: '#45B7D1' },
   BOLL: { enabled: false, period: 20, stdDev: 2, color: '#FFB347' },
-  MACD: { enabled: false },
 }
 
 interface IndicatorPanelProps {
@@ -71,17 +65,11 @@ export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps
     })
   }
 
-  const toggleMACD = () => {
-    onChange({ ...config, MACD: { ...config.MACD, enabled: !config.MACD.enabled } })
-  }
-
   const toggleIndicator = (key: keyof IndicatorConfig) => {
     if (key === 'BOLL') {
       updateBOLL({ enabled: !config.BOLL.enabled })
-    } else if (key === 'MACD') {
-      toggleMACD()
     } else {
-      updateMA(key as keyof Omit<IndicatorConfig, 'BOLL' | 'MACD'>, { enabled: !(config[key] as MAConfig).enabled })
+      updateMA(key as keyof Omit<IndicatorConfig, 'BOLL'>, { enabled: !(config[key] as MAConfig).enabled })
     }
   }
 
@@ -198,20 +186,6 @@ export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps
                   />
                 </div>
               </div>
-            </div>
-          </div>
-          {/* MACD */}
-          <div className={styles.section}>
-            <div className={styles.sectionTitle}>MACD 指數平滑異同移動平均線</div>
-            <div className={styles.indicatorRow}>
-              <label className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  checked={config.MACD.enabled}
-                  onChange={toggleMACD}
-                />
-                <span>MACD (12, 26, 9)</span>
-              </label>
             </div>
           </div>
         </div>

@@ -75,22 +75,22 @@ function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value
   return result
 }
 
-function calculateEMA(klines: KLine[], period: number, timePeriod: string = '1d'): Array<{ time: Time; value: number }> {
+function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
   if (klines.length < period) return []
-  
+
   const result: Array<{ time: Time; value: number }> = []
   const multiplier = 2 / (period + 1)
-  
+
   let sum = 0
   for (let i = 0; i < period; i++) {
     sum += klines[i].close
   }
   let prevEMA = sum / period
-  
+
   for (let i = period - 1; i < klines.length; i++) {
     const ema = (klines[i].close - prevEMA) * multiplier + prevEMA
     result.push({
-      time: parseTime(klines[i].time, timePeriod),
+      time: parseTime(klines[i].time, '1d'),
       value: parseFloat(ema.toFixed(4)),
     })
     prevEMA = ema
@@ -125,81 +125,6 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
   return { upper, middle, lower }
 }
 
-// ============ MACD 計算 ============
-
-interface MACDResult {
-  dif: Array<{ time: Time; value: number }>
-  dea: Array<{ time: Time; value: number }>
-  histogram: Array<{ time: Time; value: number; color: string }>
-}
-
-function calculateMACD(klines: KLine[], period: string): MACDResult {
-  const fastPeriod = 12
-  const slowPeriod = 26
-  const signalPeriod = 9
-
-  if (klines.length < slowPeriod) {
-    return { dif: [], dea: [], histogram: [] }
-  }
-
-  const closes = klines.map(k => k.close)
-  const fastEMA = calculateEMA(klines, fastPeriod, period)
-  const slowEMA = calculateEMA(klines, slowPeriod, period)
-
-  const dif: Array<{ time: Time; value: number }> = []
-  const dea: Array<{ time: Time; value: number }> = []
-  const histogram: Array<{ time: Time; value: number; color: string }> = []
-
-  const startIdx = slowPeriod - 1
-  const difValues: number[] = []
-
-  for (let i = startIdx; i < klines.length; i++) {
-    const fastIdx = i - (slowPeriod - fastPeriod)
-    const d = fastEMA[fastIdx].value - slowEMA[i - startIdx].value
-    difValues.push(d)
-    dif.push({
-      time: parseTime(klines[i].time, period),
-      value: parseFloat(d.toFixed(4)),
-    })
-  }
-
-  const deaValues = calculateEMAWithValues(difValues, signalPeriod)
-  for (let i = 0; i < deaValues.length; i++) {
-    dea.push({
-      time: dif[i + signalPeriod - 1].time,
-      value: parseFloat(deaValues[i].toFixed(4)),
-    })
-  }
-
-  for (let i = 0; i < deaValues.length; i++) {
-    const difIdx = i + signalPeriod - 1
-    const histValue = (difValues[difIdx] - deaValues[i]) * 2
-    histogram.push({
-      time: dif[difIdx].time,
-      value: parseFloat(histValue.toFixed(4)),
-      color: histValue >= 0 ? '#26BA75' : '#EE5151',
-    })
-  }
-
-  return { dif, dea, histogram }
-}
-
-function calculateEMAWithValues(values: number[], period: number): number[] {
-  const multiplier = 2 / (period + 1)
-  const ema: number[] = []
-
-  let sum = 0
-  for (let i = 0; i < period; i++) {
-    sum += values[i]
-  }
-  ema.push(sum / period)
-
-  for (let i = period; i < values.length; i++) {
-    ema.push((values[i] - ema[ema.length - 1]) * multiplier + ema[ema.length - 1])
-  }
-  return ema
-}
-
 // ============ 創建圖表實例 ============
 
 const createChartInstance = (container: HTMLDivElement) => {
@@ -221,7 +146,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     },
     rightPriceScale: {
       borderColor: '#30363D',
-      scaleMargins: { top: 0.03, bottom: 0.55 },
+      scaleMargins: { top: 0.03, bottom: 0.70 },
     },
     timeScale: {
       borderColor: '#30363D',
@@ -242,10 +167,10 @@ const createChartInstance = (container: HTMLDivElement) => {
   const volumeSeries = chart.addSeries(HistogramSeries, {
     color: '#26BA75',
     priceFormat: { type: 'volume' },
-    priceScaleId: 'volume',
+    priceScaleId: '',
   })
   volumeSeries.priceScale().applyOptions({
-    scaleMargins: { top: 0.88, bottom: 0 },
+    scaleMargins: { top: 0.92, bottom: 0 },
   })
 
   return { chart, candlestickSeries, volumeSeries }
@@ -284,13 +209,8 @@ export default function ChartContainer({
     externalConfig || DEFAULT_INDICATOR_CONFIG
   )
 
-  // MACD overlay series refs
-  const macdSeriesRefs = useRef<{
-    DIF: ISeriesApi<'Line'> | null
-    DEA: ISeriesApi<'Line'> | null
-    HIST: ISeriesApi<'Histogram'> | null
-  }>({ DIF: null, DEA: null, HIST: null })
-  
+  // MACD overlay refs removed
+
   const [klineData, setKlineData] = useState<KLine[]>([])
 
   const { quotes } = useWebSocketContext()
@@ -299,69 +219,6 @@ export default function ChartContainer({
     setIndicatorConfig(newConfig)
     onIndicatorChange?.(newConfig)
   }, [onIndicatorChange])
-
-  // MACD Overlay useEffect - 在主圖上以 overlay 方式顯示
-  useEffect(() => {
-    if (!chartRef.current || !chartCreated || klineData.length === 0) return
-
-    const chart = chartRef.current
-    const enabled = indicatorConfig.MACD.enabled
-
-    // 移除舊的 MACD series
-    if (macdSeriesRefs.current.DIF) {
-      try { chart.removeSeries(macdSeriesRefs.current.DIF) } catch {}
-      macdSeriesRefs.current.DIF = null
-    }
-    if (macdSeriesRefs.current.DEA) {
-      try { chart.removeSeries(macdSeriesRefs.current.DEA) } catch {}
-      macdSeriesRefs.current.DEA = null
-    }
-    if (macdSeriesRefs.current.HIST) {
-      try { chart.removeSeries(macdSeriesRefs.current.HIST) } catch {}
-      macdSeriesRefs.current.HIST = null
-    }
-
-    if (!enabled) return
-
-    // 計算 MACD 數據
-    const { dif, dea, histogram } = calculateMACD(klineData, currentPeriod)
-
-    if (dif.length === 0) return
-
-    // 添加 DIF 線 (使用獨立 overlay price scale)
-    const difSeries = chart.addSeries(LineSeries, {
-      color: '#26BA75',
-      lineWidth: 1,
-      priceLineVisible: false,
-      priceScaleId: 'macd',
-    })
-    difSeries.setData(dif)
-    macdSeriesRefs.current.DIF = difSeries
-
-    // 添加 DEA 線 (使用相同 overlay price scale)
-    const deaSeries = chart.addSeries(LineSeries, {
-      color: '#EE5151',
-      lineWidth: 1,
-      priceLineVisible: false,
-      priceScaleId: 'macd',
-    })
-    deaSeries.setData(dea)
-    macdSeriesRefs.current.DEA = deaSeries
-
-    // 添加 MACD 柱子 (Histogram) - 使用相同 overlay price scale
-    const histSeries = chart.addSeries(HistogramSeries, {
-      color: '#26BA75',
-      priceFormat: { type: 'price', precision: 4 },
-      priceScaleId: 'macd',
-    })
-    histSeries.setData(histogram.map(h => ({ time: h.time, value: h.value, color: h.color })))
-    macdSeriesRefs.current.HIST = histSeries
-
-    // 配置 MACD overlay price scale - 放在成交量下方 (65% - 85%)
-    chart.priceScale('macd').applyOptions({
-      scaleMargins: { top: 0.65, bottom: 0.15 },
-    })
-  }, [indicatorConfig.MACD.enabled, klineData, chartCreated, currentPeriod])
 
   // 初始化圖表（只在 mount 時執行一次）
   useEffect(() => {
