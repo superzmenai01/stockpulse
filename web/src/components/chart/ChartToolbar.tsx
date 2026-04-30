@@ -17,6 +17,8 @@ interface ChartToolbarProps {
   startDate: string
   endDate: string
   onDateChange: (start: string, end: string) => void
+  showSubChart?: boolean
+  onShowSubChartChange?: (show: boolean) => void
 }
 
 // 快捷按鈕
@@ -39,6 +41,8 @@ export default function ChartToolbar({
   startDate,
   endDate,
   onDateChange,
+  showSubChart = false,
+  onShowSubChartChange,
 }: ChartToolbarProps) {
   const today = new Date().toISOString().split('T')[0]
 
@@ -96,6 +100,14 @@ export default function ChartToolbar({
             {p.label}
           </Button>
         ))}
+        <Button
+          type={showSubChart ? 'primary' : 'text'}
+          size="small"
+          onClick={() => onShowSubChartChange?.(!showSubChart)}
+          className={showSubChart ? styles.activeBtn : ''}
+        >
+          MACD
+        </Button>
       </Space>
     </div>
   )

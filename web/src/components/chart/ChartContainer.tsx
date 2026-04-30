@@ -5,6 +5,7 @@ import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Tim
 import { useWebSocketContext } from '../../context'
 import ChartToolbar from './ChartToolbar'
 import IndicatorPanel, { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorPanel'
+import SubChartPanel from './SubChartPanel'
 import styles from './ChartContainer.module.css'
 
 interface StockInfo {
@@ -26,6 +27,8 @@ interface ChartContainerProps {
   period?: string
   indicatorConfig?: IndicatorConfig
   onIndicatorChange?: (config: IndicatorConfig) => void
+  showSubChart?: boolean
+  onShowSubChartChange?: (show: boolean) => void
 }
 
 interface ChartData {
@@ -188,6 +191,8 @@ export default function ChartContainer({
   period = '1d',
   indicatorConfig: externalConfig,
   onIndicatorChange,
+  showSubChart = false,
+  onShowSubChartChange,
 }: ChartContainerProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -195,6 +200,7 @@ export default function ChartContainer({
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const lineSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
+  const mainChartRef = useRef<IChartApi | null>(null)
   
   // 追蹤當前載入的 period（避免 race condition）
   const loadingPeriodRef = useRef<string>('')
@@ -202,6 +208,8 @@ export default function ChartContainer({
   
   // 圖表是否已創建
   const [chartCreated, setChartCreated] = useState(false)
+  // SubChart 用標記是否已同步
+  const [subChartReady, setSubChartReady] = useState(false)
   
   // 日期範圍 state：默认 3 个月
   const today = new Date().toISOString().split('T')[0]
@@ -246,6 +254,8 @@ export default function ChartContainer({
     candlestickSeriesRef.current = candlestickSeries
     volumeSeriesRef.current = volumeSeries
 
+    mainChartRef.current = chart
+    
     const handleResize = () => {
       if (container && chartRef.current) {
         chartRef.current.applyOptions({
@@ -258,6 +268,7 @@ export default function ChartContainer({
     handleResize()
 
     setChartCreated(true)
+    setSubChartReady(true)
 
     return () => {
       window.removeEventListener('resize', handleResize)
@@ -437,6 +448,10 @@ export default function ChartContainer({
     setStartDate(start)
     setEndDate(end)
   }
+  const handleShowSubChart = (show: boolean) => {
+    onShowSubChartChange?.(show)
+    if (!show) setSubChartReady(false)
+  }
 
   return (
     <div className={styles.container}>
@@ -448,6 +463,8 @@ export default function ChartContainer({
         startDate={startDate}
         endDate={endDate}
         onDateChange={handleDateChange}
+        showSubChart={showSubChart}
+        onShowSubChartChange={handleShowSubChart}
       />
       <IndicatorPanel config={indicatorConfig} onChange={handleIndicatorChange} />
       <div className={styles.chartWrapper}>
@@ -455,6 +472,14 @@ export default function ChartContainer({
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
       </div>
+      {showSubChart && mainChartRef.current && (
+        <SubChartPanel
+          code={stock.code}
+          klines={klineData}
+          type="MACD"
+          mainChart={mainChartRef.current}
+        />
+      )}
     </div>
   )
 }
