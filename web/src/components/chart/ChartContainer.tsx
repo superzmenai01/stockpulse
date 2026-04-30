@@ -76,6 +76,8 @@ function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value
 }
 
 function calculateEMA(klines: KLine[], period: number, timePeriod: string = '1d'): Array<{ time: Time; value: number }> {
+  if (klines.length < period) return []
+  
   const result: Array<{ time: Time; value: number }> = []
   const multiplier = 2 / (period + 1)
   
@@ -135,6 +137,10 @@ function calculateMACD(klines: KLine[], period: string): MACDResult {
   const fastPeriod = 12
   const slowPeriod = 26
   const signalPeriod = 9
+
+  if (klines.length < slowPeriod) {
+    return { dif: [], dea: [], histogram: [] }
+  }
 
   const closes = klines.map(k => k.close)
   const fastEMA = calculateEMA(klines, fastPeriod, period)
