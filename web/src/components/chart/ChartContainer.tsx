@@ -138,7 +138,12 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
   const result: Array<{ time: Time; value: number }> = []
   const threshold = thresholdPercent / 100
 
-  // 找到第一個顯著轉向點作為初始參考
+  // ZigZag 永遠從第一支竹開始
+  result.push({
+    time: parseTime(klines[0].time, period),
+    value: klines[0].close,
+  })
+
   let lastSwingPrice = klines[0].close
   let lastSwingIdx = 0
   let inUptrend = klines[1].close > klines[0].close
@@ -158,7 +163,10 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
     }
   }
 
-  if (result.length === 0) return []
+  if (result.length <= 1) {
+    // 沒有找到顯著轉向點，只返回第一個點
+    return result
+  }
 
   // 繼續追蹤轉向點
   for (let i = lastSwingIdx + 1; i < klines.length; i++) {
