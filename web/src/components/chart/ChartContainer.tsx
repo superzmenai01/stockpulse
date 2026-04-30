@@ -5,7 +5,6 @@ import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Tim
 import { useWebSocketContext } from '../../context'
 import ChartToolbar from './ChartToolbar'
 import IndicatorPanel, { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorPanel'
-import SubChartPanel from './SubChartPanel'
 import styles from './ChartContainer.module.css'
 
 interface StockInfo {
@@ -27,8 +26,6 @@ interface ChartContainerProps {
   period?: string
   indicatorConfig?: IndicatorConfig
   onIndicatorChange?: (config: IndicatorConfig) => void
-  showSubChart?: boolean
-  onShowSubChartChange?: (show: boolean) => void
 }
 
 interface ChartData {
@@ -126,6 +123,77 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
   return { upper, middle, lower }
 }
 
+// ============ MACD 計算 ============
+
+interface MACDResult {
+  dif: Array<{ time: Time; value: number }>
+  dea: Array<{ time: Time; value: number }>
+  histogram: Array<{ time: Time; value: number; color: string }>
+}
+
+function calculateMACD(klines: KLine[]): MACDResult {
+  const fastPeriod = 12
+  const slowPeriod = 26
+  const signalPeriod = 9
+
+  const closes = klines.map(k => k.close)
+  const fastEMA = calculateEMA(klines, fastPeriod)
+  const slowEMA = calculateEMA(klines, slowPeriod)
+
+  const dif: Array<{ time: Time; value: number }> = []
+  const dea: Array<{ time: Time; value: number }> = []
+  const histogram: Array<{ time: Time; value: number; color: string }> = []
+
+  const startIdx = slowPeriod - 1
+  const difValues: number[] = []
+
+  for (let i = startIdx; i < klines.length; i++) {
+    const fastIdx = i - (slowPeriod - fastPeriod)
+    const d = fastEMA[fastIdx].value - slowEMA[i - startIdx].value
+    difValues.push(d)
+    dif.push({
+      time: parseTime(klines[i].time, '1d'),
+      value: parseFloat(d.toFixed(4)),
+    })
+  }
+
+  const deaValues = calculateEMAWithValues(difValues, signalPeriod)
+  for (let i = 0; i < deaValues.length; i++) {
+    dea.push({
+      time: dif[i + signalPeriod - 1].time,
+      value: parseFloat(deaValues[i].toFixed(4)),
+    })
+  }
+
+  for (let i = 0; i < deaValues.length; i++) {
+    const difIdx = i + signalPeriod - 1
+    const histValue = (difValues[difIdx] - deaValues[i]) * 2
+    histogram.push({
+      time: dif[difIdx].time,
+      value: parseFloat(histValue.toFixed(4)),
+      color: histValue >= 0 ? '#26BA75' : '#EE5151',
+    })
+  }
+
+  return { dif, dea, histogram }
+}
+
+function calculateEMAWithValues(values: number[], period: number): number[] {
+  const multiplier = 2 / (period + 1)
+  const ema: number[] = []
+
+  let sum = 0
+  for (let i = 0; i < period; i++) {
+    sum += values[i]
+  }
+  ema.push(sum / period)
+
+  for (let i = period; i < values.length; i++) {
+    ema.push((values[i] - ema[ema.length - 1]) * multiplier + ema[ema.length - 1])
+  }
+  return ema
+}
+
 // ============ 創建圖表實例 ============
 
 const createChartInstance = (container: HTMLDivElement) => {
@@ -184,8 +252,6 @@ export default function ChartContainer({
   period = '1d',
   indicatorConfig: externalConfig,
   onIndicatorChange,
-  showSubChart = false,
-  onShowSubChartChange,
 }: ChartContainerProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -199,9 +265,6 @@ export default function ChartContainer({
   
   const [chartCreated, setChartCreated] = useState(false)
   
-  // SubChart toggle state (internal)
-  const [showSubChartLocal, setShowSubChartLocal] = useState(false)
-  
   const today = new Date().toISOString().split('T')[0]
   const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [currentPeriod, setCurrentPeriod] = useState(period)
@@ -214,6 +277,13 @@ export default function ChartContainer({
   const [indicatorConfig, setIndicatorConfig] = useState<IndicatorConfig>(
     externalConfig || DEFAULT_INDICATOR_CONFIG
   )
+
+  // MACD overlay series refs
+  const macdSeriesRefs = useRef<{
+    DIF: ISeriesApi<'Line'> | null
+    DEA: ISeriesApi<'Line'> | null
+    HIST: ISeriesApi<'Histogram'> | null
+  }>({ DIF: null, DEA: null, HIST: null })
   
   const [klineData, setKlineData] = useState<KLine[]>([])
 
@@ -223,6 +293,75 @@ export default function ChartContainer({
     setIndicatorConfig(newConfig)
     onIndicatorChange?.(newConfig)
   }, [onIndicatorChange])
+
+  // MACD Overlay useEffect - 在主圖上以 overlay 方式顯示
+  useEffect(() => {
+    if (!chartRef.current || !chartCreated || klineData.length === 0) return
+
+    const chart = chartRef.current
+    const enabled = indicatorConfig.MACD.enabled
+
+    // 移除舊的 MACD series
+    if (macdSeriesRefs.current.DIF) {
+      try { chart.removeSeries(macdSeriesRefs.current.DIF) } catch {}
+      macdSeriesRefs.current.DIF = null
+    }
+    if (macdSeriesRefs.current.DEA) {
+      try { chart.removeSeries(macdSeriesRefs.current.DEA) } catch {}
+      macdSeriesRefs.current.DEA = null
+    }
+    if (macdSeriesRefs.current.HIST) {
+      try { chart.removeSeries(macdSeriesRefs.current.HIST) } catch {}
+      macdSeriesRefs.current.HIST = null
+    }
+
+    if (!enabled) return
+
+    // 計算 MACD 數據
+    const { dif, dea, histogram } = calculateMACD(klineData)
+
+    if (dif.length === 0) return
+
+    // 添加 DIF 線
+    const difSeries = chart.addSeries(LineSeries, {
+      color: '#26BA75',
+      lineWidth: 1,
+      priceLineVisible: false,
+      priceScaleId: 'macd',
+    })
+    difSeries.setData(dif)
+    macdSeriesRefs.current.DIF = difSeries
+
+    // 添加 DEA 線
+    const deaSeries = chart.addSeries(LineSeries, {
+      color: '#EE5151',
+      lineWidth: 1,
+      priceLineVisible: false,
+      priceScaleId: 'macd',
+    })
+    deaSeries.setData(dea)
+    macdSeriesRefs.current.DEA = deaSeries
+
+    // 添加 MACD 柱子 (Histogram) - 使用單獨的 price scale 作為 overlay
+    const histSeries = chart.addSeries(HistogramSeries, {
+      color: '#26BA75',
+      priceFormat: { type: 'price', precision: 4 },
+      priceScaleId: 'macd_hist',
+    })
+    histSeries.setData(histogram.map(h => ({ time: h.time, value: h.value, color: h.color })))
+    macdSeriesRefs.current.HIST = histSeries
+
+    // 配置 MACD 的 price scale（在左側，與主圖分開）
+    chart.priceScale('macd').applyOptions({
+      scaleMargins: { top: 0.7, bottom: 0.1 },
+      borderVisible: true,
+      borderColor: '#30363D',
+    })
+    chart.priceScale('macd_hist').applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+      borderVisible: false,
+    })
+  }, [indicatorConfig.MACD.enabled, klineData, chartCreated])
 
   // 初始化圖表（只在 mount 時執行一次）
   useEffect(() => {
@@ -427,11 +566,6 @@ export default function ChartContainer({
     setStartDate(start)
     setEndDate(end)
   }
-  const handleShowSubChart = (show: boolean) => {
-    console.log('[ChartContainer] handleShowSubChart called with:', show)
-    setShowSubChartLocal(show)
-    onShowSubChartChange?.(show)
-  }
 
   return (
     <div className={styles.container}>
@@ -446,24 +580,15 @@ export default function ChartContainer({
         showSubChart={showSubChart || showSubChartLocal}
         onShowSubChartChange={handleShowSubChart}
       />
-      <IndicatorPanel config={indicatorConfig} onChange={handleIndicatorChange} />
+      <IndicatorPanel
+        config={indicatorConfig}
+        onChange={handleIndicatorChange}
+      />
       <div className={styles.chartWrapper}>
         <div ref={chartContainerRef} className={styles.chart} />
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
       </div>
-      {showSubChart && chartRef.current && (
-        <div style={{background:'red',color:'white',padding:'4px',fontSize:'12px'}}>
-          DEBUG: SubChart rendering! showSubChart={String(showSubChart || showSubChartLocal)}, klineData.length={klineData.length}
-        </div>
-      )}
-      {(showSubChart || showSubChartLocal) && chartRef.current && (
-        <SubChartPanel
-          klines={klineData}
-          type="MACD"
-          mainChart={chartRef.current}
-        />
-      )}
     </div>
   )
 }
