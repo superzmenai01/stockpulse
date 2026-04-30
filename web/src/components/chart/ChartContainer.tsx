@@ -215,7 +215,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     },
     rightPriceScale: {
       borderColor: '#30363D',
-      scaleMargins: { top: 0.1, bottom: 0.2 },
+      scaleMargins: { top: 0.05, bottom: 0.45 },
     },
     timeScale: {
       borderColor: '#30363D',
@@ -239,7 +239,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     priceScaleId: '',
   })
   volumeSeries.priceScale().applyOptions({
-    scaleMargins: { top: 0.85, bottom: 0 },
+    scaleMargins: { top: 0.88, bottom: 0 },
   })
 
   return { chart, candlestickSeries, volumeSeries }
@@ -351,14 +351,15 @@ export default function ChartContainer({
     histSeries.setData(histogram.map(h => ({ time: h.time, value: h.value, color: h.color })))
     macdSeriesRefs.current.HIST = histSeries
 
-    // 配置 MACD 的 price scale（在左側，與主圖分開）
+    // 配置 MACD 的 price scale
+    // MACD 佔據中間區域 (48% - 78%)，不與 volume 底部重疊
     chart.priceScale('macd').applyOptions({
-      scaleMargins: { top: 0.7, bottom: 0.1 },
+      scaleMargins: { top: 0.48, bottom: 0.22 },
       borderVisible: true,
       borderColor: '#30363D',
     })
     chart.priceScale('macd_hist').applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
+      scaleMargins: { top: 0.78, bottom: 0.08 },
       borderVisible: false,
     })
   }, [indicatorConfig.MACD.enabled, klineData, chartCreated])
