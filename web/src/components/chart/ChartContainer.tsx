@@ -146,7 +146,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     },
     rightPriceScale: {
       borderColor: '#30363D',
-      scaleMargins: { top: 0.03, bottom: 0.70 },
+      scaleMargins: { top: 0.03, bottom: 0.50 },
     },
     timeScale: {
       borderColor: '#30363D',
@@ -170,7 +170,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     priceScaleId: '',
   })
   volumeSeries.priceScale().applyOptions({
-    scaleMargins: { top: 0.92, bottom: 0 },
+    scaleMargins: { top: 0.85, bottom: 0 },
   })
 
   return { chart, candlestickSeries, volumeSeries }
