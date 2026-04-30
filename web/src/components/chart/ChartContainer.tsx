@@ -125,6 +125,92 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
   return { upper, middle, lower }
 }
 
+// ============ ZigZag 計算 ============
+
+interface ZigZagPoint {
+  time: Time
+  price: number
+}
+
+function calculateZigZag(klines: KLine[], thresholdPercent: number = 10): Array<{ time: Time; value: number }> {
+  if (klines.length < 2) return []
+
+  const result: Array<{ time: Time; value: number }> = []
+  const threshold = thresholdPercent / 100
+
+  // 找到第一個顯著高低點作為初始點
+  let lastSwingTime = klines[0].time
+  let lastSwingPrice = klines[0].close
+  let direction: 'up' | 'down' | null = null
+
+  // 初始化：找第一個明顯的高點或低點
+  for (let i = 1; i < klines.length; i++) {
+    const price = klines[i].close
+    const change = Math.abs((price - lastSwingPrice) / lastSwingPrice)
+
+
+    if (change >= threshold) {
+      // 找到第一個顯著轉向點
+      result.push({
+        time: parseTime(klines[i].time, '1d'),
+        value: price,
+      })
+      direction = price > lastSwingPrice ? 'up' : 'down'
+      lastSwingTime = klines[i].time
+      lastSwingPrice = price
+      break
+    }
+  }
+
+  if (direction === null) return []
+
+  // 繼續追蹤轉向點
+  for (let i = 1; i < klines.length; i++) {
+    const price = klines[i].close
+    const change = (price - lastSwingPrice) / lastSwingPrice
+
+    if (direction === 'up') {
+      // 上升趨勢：更新 high，如果跌破 threshold% 则记录新点
+      if (price > lastSwingPrice) {
+        lastSwingPrice = price
+        lastSwingTime = klines[i].time
+      } else if (change <= -threshold) {
+        // 轉向下跌
+        result.push({
+          time: parseTime(lastSwingTime, '1d'),
+          value: lastSwingPrice,
+        })
+        direction = 'down'
+        lastSwingPrice = price
+        lastSwingTime = klines[i].time
+      }
+    } else {
+      // 下跌趨勢：更新 low，如果漲超 threshold% 则记录新点
+      if (price < lastSwingPrice) {
+        lastSwingPrice = price
+        lastSwingTime = klines[i].time
+      } else if (change >= threshold) {
+        // 轉向上涨
+        result.push({
+          time: parseTime(lastSwingTime, '1d'),
+          value: lastSwingPrice,
+        })
+        direction = 'up'
+        lastSwingPrice = price
+        lastSwingTime = klines[i].time
+      }
+    }
+  }
+
+  // 添加最後一個點
+  result.push({
+    time: parseTime(lastSwingTime, '1d'),
+    value: lastSwingPrice,
+  })
+
+  return result
+}
+
 // ============ 創建圖表實例 ============
 
 const createChartInstance = (container: HTMLDivElement) => {
@@ -191,6 +277,7 @@ export default function ChartContainer({
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const lineSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
+  const zigzagSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
@@ -391,6 +478,35 @@ export default function ChartContainer({
       }
     }
   }, [klineData, currentPeriod, indicatorConfig])
+
+  // ZigZag Indicator
+  useEffect(() => {
+    if (!chartRef.current || !chartCreated || klineData.length === 0) return
+
+    const chart = chartRef.current
+    const enabled = indicatorConfig.ZigZag.enabled
+    const threshold = indicatorConfig.ZigZag.threshold
+
+    // 移除舊的 ZigZag series（如果存在）
+    if (zigzagSeriesRef.current) {
+      try { chart.removeSeries(zigzagSeriesRef.current) } catch {}
+      zigzagSeriesRef.current = null
+    }
+
+    if (!enabled) return
+
+    const zigzagData = calculateZigZag(klineData, threshold)
+    if (zigzagData.length === 0) return
+
+    const zigzagSeries = chart.addSeries(LineSeries, {
+      color: '#FFD700',
+      lineWidth: 1,
+      priceLineVisible: false,
+      priceScaleId: '',
+    })
+    zigzagSeries.setData(zigzagData)
+    zigzagSeriesRef.current = zigzagSeries
+  }, [indicatorConfig.ZigZag, klineData, chartCreated])
 
   // 實時更新最後一根蠟燭
   useEffect(() => {
