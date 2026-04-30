@@ -236,10 +236,10 @@ const createChartInstance = (container: HTMLDivElement) => {
   const volumeSeries = chart.addSeries(HistogramSeries, {
     color: '#26BA75',
     priceFormat: { type: 'volume' },
-    priceScaleId: '',
+    priceScaleId: 'volume',
   })
   volumeSeries.priceScale().applyOptions({
-    scaleMargins: { top: 0.93, bottom: 0 },
+    scaleMargins: { top: 0.88, bottom: 0 },
   })
 
   return { chart, candlestickSeries, volumeSeries }
@@ -322,12 +322,12 @@ export default function ChartContainer({
 
     if (dif.length === 0) return
 
-    // 添加 DIF 線 (使用 overlay price scale)
+    // 添加 DIF 線 (使用獨立 overlay price scale)
     const difSeries = chart.addSeries(LineSeries, {
       color: '#26BA75',
       lineWidth: 1,
       priceLineVisible: false,
-      priceScaleId: '',
+      priceScaleId: 'macd',
     })
     difSeries.setData(dif)
     macdSeriesRefs.current.DIF = difSeries
@@ -337,23 +337,23 @@ export default function ChartContainer({
       color: '#EE5151',
       lineWidth: 1,
       priceLineVisible: false,
-      priceScaleId: '',
+      priceScaleId: 'macd',
     })
     deaSeries.setData(dea)
     macdSeriesRefs.current.DEA = deaSeries
 
-    // 添加 MACD 柱子 (Histogram) - 使用單獨的 overlay price scale
+    // 添加 MACD 柱子 (Histogram) - 使用相同 overlay price scale
     const histSeries = chart.addSeries(HistogramSeries, {
       color: '#26BA75',
       priceFormat: { type: 'price', precision: 4 },
-      priceScaleId: '',
+      priceScaleId: 'macd',
     })
     histSeries.setData(histogram.map(h => ({ time: h.time, value: h.value, color: h.color })))
     macdSeriesRefs.current.HIST = histSeries
 
-    // 配置 overlay price scale - 將 MACD 放在中部位置
-    difSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.52, bottom: 0.25 },
+    // 配置 MACD overlay price scale - 放在成交量下方 (65% - 85%)
+    chart.priceScale('macd').applyOptions({
+      scaleMargins: { top: 0.65, bottom: 0.15 },
     })
   }, [indicatorConfig.MACD.enabled, klineData, chartCreated, currentPeriod])
 
