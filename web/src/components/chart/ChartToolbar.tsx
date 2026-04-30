@@ -25,6 +25,9 @@ const PRESETS = [
   { label: '3M', days: 90 },
   { label: '6M', days: 180 },
   { label: '1Y', days: 365 },
+  { label: '3Y', days: 1095 },
+  { label: '6Y', days: 2190 },
+  { label: '10Y', days: 3650 },
   { label: 'ALL', days: 9999 },
 ]
 
