@@ -75,7 +75,7 @@ function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value
   return result
 }
 
-function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
+function calculateEMA(klines: KLine[], period: number, timePeriod: string = '1d'): Array<{ time: Time; value: number }> {
   const result: Array<{ time: Time; value: number }> = []
   const multiplier = 2 / (period + 1)
   
@@ -88,7 +88,7 @@ function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; valu
   for (let i = period - 1; i < klines.length; i++) {
     const ema = (klines[i].close - prevEMA) * multiplier + prevEMA
     result.push({
-      time: parseTime(klines[i].time, '1d'),
+      time: parseTime(klines[i].time, timePeriod),
       value: parseFloat(ema.toFixed(4)),
     })
     prevEMA = ema
@@ -137,8 +137,8 @@ function calculateMACD(klines: KLine[], period: string): MACDResult {
   const signalPeriod = 9
 
   const closes = klines.map(k => k.close)
-  const fastEMA = calculateEMA(klines, fastPeriod)
-  const slowEMA = calculateEMA(klines, slowPeriod)
+  const fastEMA = calculateEMA(klines, fastPeriod, period)
+  const slowEMA = calculateEMA(klines, slowPeriod, period)
 
   const dif: Array<{ time: Time; value: number }> = []
   const dea: Array<{ time: Time; value: number }> = []
