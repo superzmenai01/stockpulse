@@ -31,7 +31,7 @@ async def get_indicator_settings():
             "EMA10": {"enabled": False, "period": 10, "color": "#4ECDC4"},
             "EMA20": {"enabled": False, "period": 20, "color": "#45B7D1"},
             "BOLL": {"enabled": False, "period": 20, "stdDev": 2, "color": "#FFB347"},
-            "ZigZag": {"enabled": True, "threshold": 10},
+            "ZigZag": {"enabled": true, "threshold": 5},
         }
     return settings
 
