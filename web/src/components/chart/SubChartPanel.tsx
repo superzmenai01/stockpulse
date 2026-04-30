@@ -132,12 +132,12 @@ export default function SubChartPanel({ klines, type, mainChart }: SubChartPanel
         chartRef.current.timeScale().setVisibleLogicalRange(mainRange)
       }
     }
-    mainChart.timeScale().subscribe('visibleLogicalRangeChanged', syncHandler)
+    mainChart.timeScale().onVisibleLogicalRangeChanged().subscribe(syncHandler)
     
     // Crosshair 同步
-    mainChart.subscribeCrosshairMove((param: unknown) => {
+    mainChart.onCrosshairMove().subscribe((param) => {
       if (chartRef.current) {
-        chartRef.current.moveCrosshair((param as { point?: { x: number; y: number } }).point)
+        chartRef.current.moveCrosshair(param.point)
       }
     })
     
