@@ -103,7 +103,10 @@ export default function ChartToolbar({
         <Button
           type={showSubChart ? 'primary' : 'text'}
           size="small"
-          onClick={() => onShowSubChartChange?.(!showSubChart)}
+          onClick={() => {
+            console.log('[ChartToolbar] MACD button clicked, current showSubChart:', showSubChart)
+            onShowSubChartChange?.(!showSubChart)
+          }}
           className={showSubChart ? styles.activeBtn : ''}
         >
           MACD

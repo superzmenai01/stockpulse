@@ -199,6 +199,9 @@ export default function ChartContainer({
   
   const [chartCreated, setChartCreated] = useState(false)
   
+  // SubChart toggle state (internal)
+  const [showSubChartLocal, setShowSubChartLocal] = useState(false)
+  
   const today = new Date().toISOString().split('T')[0]
   const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [currentPeriod, setCurrentPeriod] = useState(period)
@@ -425,6 +428,8 @@ export default function ChartContainer({
     setEndDate(end)
   }
   const handleShowSubChart = (show: boolean) => {
+    console.log('[ChartContainer] handleShowSubChart called with:', show)
+    setShowSubChartLocal(show)
     onShowSubChartChange?.(show)
   }
 
@@ -438,7 +443,7 @@ export default function ChartContainer({
         startDate={startDate}
         endDate={endDate}
         onDateChange={handleDateChange}
-        showSubChart={showSubChart}
+        showSubChart={showSubChart || showSubChartLocal}
         onShowSubChartChange={handleShowSubChart}
       />
       <IndicatorPanel config={indicatorConfig} onChange={handleIndicatorChange} />
@@ -448,6 +453,11 @@ export default function ChartContainer({
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
       </div>
       {showSubChart && chartRef.current && (
+        <div style={{background:'red',color:'white',padding:'4px',fontSize:'12px'}}>
+          DEBUG: SubChart rendering! showSubChart={String(showSubChart || showSubChartLocal)}, klineData.length={klineData.length}
+        </div>
+      )}
+      {(showSubChart || showSubChartLocal) && chartRef.current && (
         <SubChartPanel
           klines={klineData}
           type="MACD"
