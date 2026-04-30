@@ -130,10 +130,11 @@ export default function ChartContainer({ stock, period = '1d' }: ChartContainerP
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
   
-  // 日期範圍 state
+  // 日期範圍 state：默认 3 个月
   const today = new Date().toISOString().split('T')[0]
+  const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [currentPeriod, setCurrentPeriod] = useState(period)
-  const [startDate, setStartDate] = useState<string>(today)
+  const [startDate, setStartDate] = useState<string>(threeMonthsAgo)
   const [endDate, setEndDate] = useState<string>(today)
   
   const [loading, setLoading] = useState(false)
