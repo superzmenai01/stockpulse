@@ -46,7 +46,6 @@ const PERIODS = [
   { label: '年K', value: '1y' },
 ]
 
-// 將時間字串轉換為 lightweight-charts 的 Time 格式
 const parseTime = (timeStr: string, period: string): Time => {
   if (period === '1m') {
     const date = new Date(timeStr)
@@ -64,7 +63,6 @@ const parseTime = (timeStr: string, period: string): Time => {
 
 // ============ 指標計算函數 ============
 
-// 計算 MA
 function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
   const result: Array<{ time: Time; value: number }> = []
   for (let i = period - 1; i < klines.length; i++) {
@@ -80,12 +78,10 @@ function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value
   return result
 }
 
-// 計算 EMA
 function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
   const result: Array<{ time: Time; value: number }> = []
   const multiplier = 2 / (period + 1)
   
-  // 先用 SMA 計算第一個值
   let sum = 0
   for (let i = 0; i < period; i++) {
     sum += klines[i].close
@@ -103,7 +99,6 @@ function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; valu
   return result
 }
 
-// 計算 BOLL
 function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper: Array<{ time: Time; value: number }>; middle: Array<{ time: Time; value: number }>; lower: Array<{ time: Time; value: number }> } {
   const upper: Array<{ time: Time; value: number }> = []
   const middle: Array<{ time: Time; value: number }> = []
@@ -182,8 +177,6 @@ const createChartInstance = (container: HTMLDivElement) => {
   return { chart, candlestickSeries, volumeSeries }
 }
 
-// ============ 指標配置默認值 ============
-
 // ============ Component ============
 
 export default function ChartContainer({
@@ -200,18 +193,12 @@ export default function ChartContainer({
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const lineSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
-  const mainChartRef = useRef<IChartApi | null>(null)
   
-  // 追蹤當前載入的 period（避免 race condition）
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
   
-  // 圖表是否已創建
   const [chartCreated, setChartCreated] = useState(false)
-  // SubChart 用 state 控制（，因為 ref喺 effect 後先set，JSX喺effect前執行）
-  const [subChartVisible, setSubChartVisible] = useState(false)
   
-  // 日期範圍 state：默认 3 个月
   const today = new Date().toISOString().split('T')[0]
   const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [currentPeriod, setCurrentPeriod] = useState(period)
@@ -221,40 +208,33 @@ export default function ChartContainer({
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   
-  // 指標配置
   const [indicatorConfig, setIndicatorConfig] = useState<IndicatorConfig>(
     externalConfig || DEFAULT_INDICATOR_CONFIG
   )
   
-  // K線數據（用於計算指標）
   const [klineData, setKlineData] = useState<KLine[]>([])
 
   const { quotes } = useWebSocketContext()
 
-  // 處理指標配置變化
   const handleIndicatorChange = useCallback((newConfig: IndicatorConfig) => {
     setIndicatorConfig(newConfig)
     onIndicatorChange?.(newConfig)
   }, [onIndicatorChange])
 
-  // 初始化圖表
+  // 初始化圖表（只在 mount 時執行一次）
   useEffect(() => {
-    if (!chartContainerRef.current || chartCreated) return
+    if (!chartContainerRef.current) return
 
     const container = chartContainerRef.current
-
-    if (chartRef.current) {
-      chartRef.current.remove()
-      chartRef.current = null
-    }
+    console.log('[Chart] Creating chart')
 
     const { chart, candlestickSeries, volumeSeries } = createChartInstance(container)
 
     chartRef.current = chart
     candlestickSeriesRef.current = candlestickSeries
     volumeSeriesRef.current = volumeSeries
-
-    mainChartRef.current = chart
+    setChartCreated(true)
+    console.log('[Chart] Chart created')
     
     const handleResize = () => {
       if (container && chartRef.current) {
@@ -267,10 +247,13 @@ export default function ChartContainer({
     window.addEventListener('resize', handleResize)
     handleResize()
 
-    setChartCreated(true)
-
     return () => {
       window.removeEventListener('resize', handleResize)
+      console.log('[Chart] Cleanup')
+      if (chartRef.current) {
+        chartRef.current.remove()
+        chartRef.current = null
+      }
     }
   }, [])
 
@@ -344,21 +327,17 @@ export default function ChartContainer({
     if (!chartRef.current || klineData.length === 0) return
     
     const chart = chartRef.current
-    const periodType = currentPeriod === '1m' ? '1m' : '1d'
     
-    // 清除舊的 MA/EMA series
     Object.entries(lineSeriesRefs.current).forEach(([key, series]) => {
-      chart.removeSeries(series)
+      try { chart.removeSeries(series) } catch {}
     })
     lineSeriesRefs.current = {}
     
-    // 清除舊的 BOLL series
     Object.entries(bollSeriesRefs.current).forEach(([key, series]) => {
-      chart.removeSeries(series)
+      try { chart.removeSeries(series) } catch {}
     })
     bollSeriesRefs.current = {}
     
-    // MA 指標
     const maKeys: (keyof Pick<IndicatorConfig, 'MA5' | 'MA10' | 'MA20' | 'MA60' | 'MA120' | 'MA250'>)[] = ['MA5', 'MA10', 'MA20', 'MA60', 'MA120', 'MA250']
     for (const key of maKeys) {
       const config = indicatorConfig[key]
@@ -376,7 +355,6 @@ export default function ChartContainer({
       }
     }
     
-    // EMA 指標
     const emaKeys: (keyof Pick<IndicatorConfig, 'EMA5' | 'EMA10' | 'EMA20'>)[] = ['EMA5', 'EMA10', 'EMA20']
     for (const key of emaKeys) {
       const config = indicatorConfig[key]
@@ -394,7 +372,6 @@ export default function ChartContainer({
       }
     }
     
-    // BOLL 指標
     if (indicatorConfig.BOLL.enabled) {
       const { upper, middle, lower } = calculateBOLL(klineData, indicatorConfig.BOLL.period, indicatorConfig.BOLL.stdDev)
       const color = indicatorConfig.BOLL.color
@@ -449,7 +426,6 @@ export default function ChartContainer({
   }
   const handleShowSubChart = (show: boolean) => {
     onShowSubChartChange?.(show)
-    setSubChartVisible(show)
   }
 
   return (
@@ -471,11 +447,11 @@ export default function ChartContainer({
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
       </div>
-      {showSubChart && (
+      {showSubChart && chartRef.current && (
         <SubChartPanel
           klines={klineData}
           type="MACD"
-          mainChart={chartRef.current!}
+          mainChart={chartRef.current}
         />
       )}
     </div>
