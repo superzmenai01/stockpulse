@@ -146,7 +146,7 @@ const createChartInstance = (container: HTMLDivElement) => {
     },
     rightPriceScale: {
       borderColor: '#30363D',
-      scaleMargins: { top: 0.03, bottom: 0.50 },
+      scaleMargins: { top: 0.03, bottom: 0.80 },
     },
     timeScale: {
       borderColor: '#30363D',
