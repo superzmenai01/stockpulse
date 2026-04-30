@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts'
 import { useWebSocketContext } from '../../context'
+import { useIndicatorSettings } from '../../context/IndicatorSettingsContext'
 import ChartToolbar from './ChartToolbar'
 import IndicatorPanel, { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorPanel'
 import styles from './ChartContainer.module.css'
@@ -314,8 +315,10 @@ export default function ChartContainer({
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   
+  // 使用 context 的設置（如果有的話）
+  const { config: contextConfig, setConfig: setContextConfig } = useIndicatorSettings()
   const [indicatorConfig, setIndicatorConfig] = useState<IndicatorConfig>(
-    externalConfig || DEFAULT_INDICATOR_CONFIG
+    externalConfig || contextConfig || DEFAULT_INDICATOR_CONFIG
   )
 
   // MACD overlay refs removed
@@ -326,8 +329,9 @@ export default function ChartContainer({
 
   const handleIndicatorChange = useCallback((newConfig: IndicatorConfig) => {
     setIndicatorConfig(newConfig)
+    setContextConfig(newConfig)  // 保存到後端
     onIndicatorChange?.(newConfig)
-  }, [onIndicatorChange])
+  }, [setContextConfig, onIndicatorChange])
 
   // 初始化圖表（只在 mount 時執行一次）
   useEffect(() => {
