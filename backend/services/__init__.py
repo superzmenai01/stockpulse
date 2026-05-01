@@ -1,5 +1,5 @@
-# Services 模組
-from .event_bus import event_bus, EventBus, Event
-from .group_service import GroupService
+# StockPulse Services Module
 
-__all__ = ["event_bus", "EventBus", "Event", "GroupService"]
+from .event_bus import EventBus, Event, event_bus
+
+__all__ = ["event_bus", "EventBus", "Event"]

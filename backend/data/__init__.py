@@ -1,18 +1,7 @@
 # StockPulse Data Module
-from .database import (
-    init_database,
-    get_connection,
-    get_cursor,
-    get_database_info,
-    drop_all_tables,
-    DB_PATH,
-)
 
-__all__ = [
-    "init_database",
-    "get_connection", 
-    "get_cursor",
-    "get_database_info",
-    "drop_all_tables",
-    "DB_PATH",
-]
+# Note: database.py has been removed.
+# Each model (models/stock.py, models/group.py, etc.) has its own get_connection()
+# pointing to stocks.db. This avoids circular imports and keeps modules independent.
+
+__all__ = []
