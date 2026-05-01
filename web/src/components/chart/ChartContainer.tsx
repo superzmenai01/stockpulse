@@ -279,18 +279,15 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
     })
   }
 
-  // 過濾並確保時間严格遞增
-  const seen = new Set<Time>()
-  const filtered: Array<{ time: Time; value: number }> = []
+  // 過濾並確保時間严格遞增（去重 + 排序）
+  // 使用 Map 確保每個 timestamp 只有一個點（保留最後一個）
+  const timeMap = new Map<Time, { time: Time; value: number }>()
   for (const point of result) {
-    if (!seen.has(point.time)) {
-      seen.add(point.time)
-      filtered.push(point)
-    }
+    timeMap.set(point.time, point)  // 相同 time 的後者覆蓋前者
   }
-
-  // 確保嚴格遞增（按時間排序）
-  filtered.sort((a, b) => {
+  
+  // 轉為數組並確保嚴格遞增排序
+  const filtered: Array<{ time: Time; value: number }> = Array.from(timeMap.values()).sort((a, b) => {
     if (a.time < b.time) return -1
     if (a.time > b.time) return 1
     return 0
