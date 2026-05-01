@@ -54,7 +54,14 @@ class EventBus:
             logger.debug(f"取消訂閱: {event_type} -> {callback.__name__}")
     
     def emit(self, event_type: str, data: dict):
-        """發送事件"""
+        """
+        發送事件到所有訂閱者
+        
+        注意：此方法在富途回調線程中調用，因此：
+        1. 回調函數應盡快返回，不要阻塞
+        2. 如果需要操作 WebSocket，應該放到 Queue 中由主線程處理
+        3. QuoteBroadcaster 就是這樣做的：將事件放入 Queue，由独立线程处理
+        """
         event = Event(type=event_type, data=data)
         logger.info(f"[EVENT_BUS] emit '{event_type}' -> data={data}")
         

@@ -10,12 +10,14 @@ from futu import KLType
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# 富途週期映射
+# 富途週期映射表
+# Key: 前端使用的週期字串
+# Value: 富途的 KLType 枚舉
 PERIOD_MAP = {
-    '1m': KLType.K_1M,
-    '1d': KLType.K_DAY,
-    '1M': KLType.K_MON,
-    '1y': KLType.K_YEAR,
+    '1m': KLType.K_1M,   # 1分鐘K
+    '1d': KLType.K_DAY,  # 日K
+    '1M': KLType.K_MON,  # 月K
+    '1y': KLType.K_YEAR, # 年K
 }
 
 

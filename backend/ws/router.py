@@ -81,6 +81,12 @@ def get_broadcaster():
     """
     獲取或初始化 QuoteBroadcaster
     
+    QuoteBroadcaster 負責將富途報價廣播給 WebSocket 客戶端。
+    它訂閱事件總線的 'quote' 事件，通過 Queue 安全地在线程間傳遞事件，
+    最終在主 asyncio loop 中發送給客戶端。
+    
+    注意：一個 WebSocket 連接只需要一個 broadcaster 實例。
+    
     Returns:
         QuoteBroadcaster: 配置好的廣播器
     """
@@ -99,7 +105,14 @@ def get_broadcaster():
 
 
 def close_futu_connection():
-    """關閉富途連接"""
+    """
+    關閉富途連接並清理資源
+    
+    在 FastAPI 關閉時調用，負責：
+    1. 停止 QuoteBroadcaster
+    2. 關閉富途 OpenQuoteContext
+    3. 重置全域變量
+    """
     global _futu_ctx, _sub_manager, _broadcaster
     
     # 停止廣播器
@@ -171,7 +184,16 @@ async def websocket_quote(websocket: WebSocket):
 
 
 async def handle_client_message(session_id: str, data: dict):
-    """處理客戶端消息"""
+    """
+    處理客戶端消息，分發到具體的 handler
+    
+    支持的 action：
+    - init: 初始化訂閱（登入後首次）
+    - subscribe: 追加訂閱
+    - unsubscribe: 取消個別訂閱
+    - unsubscribe_all: 取消所有訂閱
+    - ping: 心跳
+    """
     action = data.get("action")
     logger.info(f"[WS] ★ 收到 action={action} from session={session_id}, data={data}")
     session = session_manager.get_session(session_id)
