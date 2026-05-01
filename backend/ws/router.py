@@ -44,6 +44,9 @@ def get_subscription_manager() -> Optional[SubscriptionManager]:
     """
     獲取或初始化 SubscriptionManager
     
+    注意：如果全域 _futu_ctx 已存在（由 init_futu_connection() 創建），直接重用，
+    避免創建多個富途連接導致衝突。
+    
     Returns:
         SubscriptionManager: 配置好的訂閱管理器
     """
@@ -51,9 +54,12 @@ def get_subscription_manager() -> Optional[SubscriptionManager]:
     
     if _sub_manager is None:
         try:
-            # 創建富途連接
-            _futu_ctx = OpenQuoteContext(host=FUTU_HOST, port=FUTU_PORT)
-            logger.info(f"[WS] 富途連接成功: {FUTU_HOST}:{FUTU_PORT}")
+            # 如果全域 _futu_ctx 不存在，才創建新連接
+            if _futu_ctx is None:
+                _futu_ctx = OpenQuoteContext(host=FUTU_HOST, port=FUTU_PORT)
+                logger.info(f"[WS] 富途連接成功: {FUTU_HOST}:{FUTU_PORT}")
+            else:
+                logger.info("[WS] 重用既有的富途連接: _futu_ctx")
             
             # 創建 QuoteHandler 並設置到 context
             handler = create_quote_handler(event_bus)
