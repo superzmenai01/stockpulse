@@ -47,6 +47,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const initSentRef = useRef(false)
   const pendingInitRef = useRef<string[] | null>(null)
 
+  /**
+   * 初始化 WebSocket 連接
+   * 
+   * 連接流程：
+   * 1. 創建 WebSocket 連接到 /quote
+   * 2. 設置各類事件處理（onopen/onmessage/onerror/onclose）
+   * 3. 如果有 pendingInitRef，連接後自動發送 init
+   */
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return
@@ -143,6 +151,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     wsRef.current = ws
   }, [])
 
+  /**
+   * 啟動取消冷卻計時器
+   * 
+   * 富途要求取消訂閱後至少等待 1 分鐘才能再次訂閱。
+   * 這個計時器每秒倒數，歸零時允許重新訂閱。
+   * 
+   * @param seconds 冷卻秒數（通常是 60）
+   */
   const startCooldownTimer = (seconds: number) => {
     if (cooldownTimerRef.current) {
       clearInterval(cooldownTimerRef.current)

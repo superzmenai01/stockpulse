@@ -61,6 +61,12 @@ const parseTime = (timeStr: string, period: string): Time => {
 
 // ============ 指標計算函數 ============
 
+/**
+ * 計算移動平均線 (MA)
+ * @param klines K線數據
+ * @param period 週期（如 5、10、20）
+ * @returns 包含 time 和 value 的數組
+ */
 function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
   const result: Array<{ time: Time; value: number }> = []
   for (let i = period - 1; i < klines.length; i++) {
@@ -76,6 +82,12 @@ function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value
   return result
 }
 
+/**
+ * 計算指數移動平均線 (EMA)
+ * @param klines K線數據
+ * @param period 週期（如 5、10、20）
+ * @returns 包含 time 和 value 的數組
+ */
 function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
   if (klines.length < period) return []
 
@@ -99,6 +111,13 @@ function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; valu
   return result
 }
 
+/**
+ * 計算布林帶 (Bollinger Bands)
+ * @param klines K線數據
+ * @param period 週期（預設20）
+ * @param stdDev 標準差倍數（預設2）
+ * @returns 上軌、中軌、下軌三組數據
+ */
 function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper: Array<{ time: Time; value: number }>; middle: Array<{ time: Time; value: number }>; lower: Array<{ time: Time; value: number }> } {
   const upper: Array<{ time: Time; value: number }> = []
   const middle: Array<{ time: Time; value: number }> = []
@@ -127,6 +146,17 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
 }
 // ============ ZigZag 計算（使用 High/Low）===========
 
+/**
+ * ZigZag 轉向點識別
+ * 
+ * 使用 high/low 追蹤價格峰值和谷底，
+ * 當 close 偏離峰值/谷底超過 threshold% 時判定為轉向。
+ * 
+ * @param klines K線數據
+ * @param thresholdPercent 轉向阈值（預設5%）
+ * @param period 週期字串（用於時間解析）
+ * @returns 轉向點數組 [{time, value}]
+ */
 interface ZigZagPoint {
   time: Time
   price: number

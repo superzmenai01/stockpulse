@@ -29,9 +29,6 @@ import { useWebSocketContext } from '../../context'
 import { groupApi, Group } from '../../services/groupApi'
 import styles from './HomePage.module.css'
 
-// 預設股票列表（已移除，只訂閱組別入面的股票）
-// const DEFAULT_STOCKS = ['HK.00700', 'HK.00981', 'HK.00005', 'HK.01810', 'HK.02382']
-
 function HomePage() {
   const {
     connected,
@@ -53,7 +50,6 @@ function HomePage() {
   const [showAddStockModal, setShowAddStockModal] = useState(false)
   const [addStockToGroup, setAddStockToGroup] = useState<{ id: string; name: string } | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-  const [hasCalledInit, setHasCalledInit] = useState(false)
   const [pendingInitCodes, setPendingInitCodes] = useState<string[] | null>(null)
   
   // 移動股票 Modal state
@@ -349,7 +345,7 @@ function HomePage() {
   }
 
   // 將 stockCodes 轉換為帶報價的股票列表
-  // TODO: 組別和股票的關聯尚未實現，目前使用空數組
+  // 備注：目前 getStocksWithQuotes 只接收 stockCodes，未使用 groupId 以後預留擴展
   const getStocksWithQuotes = (_stockCodes: string[] = []) => {
     return _stockCodes.map(code => {
       const quote = quotes[code]
