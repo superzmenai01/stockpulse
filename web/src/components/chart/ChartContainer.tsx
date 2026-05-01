@@ -517,15 +517,24 @@ export default function ChartContainer({
     for (const key of maKeys) {
       const config = indicatorConfig[key]
       if (config.enabled) {
-        const data = calculateMA(klineData, config.period)
-        if (data.length > 0) {
-          const series = chart.addSeries(LineSeries, {
-            color: config.color,
-            lineWidth: 1,
-            priceLineVisible: false,
-          })
-          series.setData(data)
-          lineSeriesRefs.current[key] = series
+        const rawData = calculateMA(klineData, config.period)
+        if (rawData.length > 0) {
+          // 去重：確保時間嚴格遞增
+          const seen = new Set<Time>()
+          const data = rawData.filter(p => {
+            if (seen.has(p.time)) return false
+            seen.add(p.time)
+            return true
+          }).sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0)
+          if (data.length > 0) {
+            const series = chart.addSeries(LineSeries, {
+              color: config.color,
+              lineWidth: 1,
+              priceLineVisible: false,
+            })
+            series.setData(data)
+            lineSeriesRefs.current[key] = series
+          }
         }
       }
     }
@@ -534,15 +543,24 @@ export default function ChartContainer({
     for (const key of emaKeys) {
       const config = indicatorConfig[key]
       if (config.enabled) {
-        const data = calculateEMA(klineData, config.period)
-        if (data.length > 0) {
-          const series = chart.addSeries(LineSeries, {
-            color: config.color,
-            lineWidth: 1,
-            priceLineVisible: false,
-          })
-          series.setData(data)
-          lineSeriesRefs.current[key] = series
+        const rawData = calculateEMA(klineData, config.period)
+        if (rawData.length > 0) {
+          // 去重：確保時間嚴格遞增
+          const seen = new Set<Time>()
+          const data = rawData.filter(p => {
+            if (seen.has(p.time)) return false
+            seen.add(p.time)
+            return true
+          }).sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0)
+          if (data.length > 0) {
+            const series = chart.addSeries(LineSeries, {
+              color: config.color,
+              lineWidth: 1,
+              priceLineVisible: false,
+            })
+            series.setData(data)
+            lineSeriesRefs.current[key] = series
+          }
         }
       }
     }
