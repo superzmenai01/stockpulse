@@ -375,6 +375,37 @@ export default function ChartContainer({
   const [startDate, setStartDate] = useState<string>(sixMonthsAgo)
   const [endDate, setEndDate] = useState<string>(today)
   
+  // 當 currentPeriod 改變時，自動調整 startDate
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0]
+    let newStartDate: string
+    
+    if (currentPeriod === '1M') {
+      // 月K：自動向前取 10 年（120個月）
+      const d = new Date()
+      d.setFullYear(d.getFullYear() - 10)
+      newStartDate = d.toISOString().split('T')[0]
+    } else if (currentPeriod === '1y') {
+      // 年K：自動向前取 120 年（全部歷史）
+      const d = new Date()
+      d.setFullYear(d.getFullYear() - 120)
+      newStartDate = d.toISOString().split('T')[0]
+    } else if (currentPeriod === '1d') {
+      // 日K：維持現有的 6 個月 logic
+      const d = new Date()
+      d.setDate(d.getDate() - 180)
+      newStartDate = d.toISOString().split('T')[0]
+    } else {
+      // 1m, 5m, 15m 等分鐘K：不需要 startDate
+      newStartDate = ''
+    }
+    
+    if (newStartDate !== startDate) {
+      setStartDate(newStartDate)
+      setEndDate(today)
+    }
+  }, [currentPeriod])
+  
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   

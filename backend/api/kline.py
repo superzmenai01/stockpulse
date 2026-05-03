@@ -106,6 +106,29 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
             start_date = week_ago
             end_date = end_date or datetime.date.today().isoformat()
         
+        # 日K：默認前6個月（用戶指定時以用戶為準）
+        if period == '1d' and not start:
+            six_months_ago = (datetime.date.today() - datetime.timedelta(days=180)).isoformat()
+            start_date = six_months_ago
+            end_date = end_date or datetime.date.today().isoformat()
+        
+        # 月K：默認前72個月 = 6年（用戶指定時以用戶為準）
+        if period == '1M' and not start:
+            from dateutil.relativedelta import relativedelta
+            six_years_ago = datetime.date.today() - relativedelta(months=72)
+            # 月K的start需要使用月份的第一天，否則會漏掉該月的K線
+            start_date = six_years_ago.replace(day=1).isoformat()
+            end_date = end_date or datetime.date.today().isoformat()
+        
+        # 年K：默認所有歷史數據（用戶指定時以用戶為準）
+        # 富途預設行為當 start/end 都為 None 時只返回最近一年，
+        # 所以我們用一個很早的日期確保拿到所有歷史數據
+        if period == '1y' and not start:
+            start_date = '1990-01-01'
+            end_date = end_date or datetime.date.today().isoformat()
+        elif period == '1y' and start and not end:
+            end_date = datetime.date.today().isoformat()
+        
         ret, data, page_key = ctx.request_history_kline(
             code=code,
             ktype=ktype,
