@@ -1,0 +1,43 @@
+.card {
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.refreshBtn {
+  margin-left: 8px;
+}
+
+.empty {
+  padding: 40px 0;
+}
+
+.table :global(.ant-table-row) {
+  transition: background-color 0.2s;
+}
+
+.table :global(.ant-table-row:hover) {
+  background-color: #f0f0f0 !important;
+}
+
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tagList :global(.ant-tag) {
+  font-size: 11px;
+  margin: 0;
+}

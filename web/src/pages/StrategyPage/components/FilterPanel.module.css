@@ -1,0 +1,33 @@
+.card {
+  margin-bottom: 12px;
+}
+
+.header {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section {
+  margin-bottom: 8px;
+}
+
+.checkboxGroup {
+  margin-top: 8px;
+}
+
+.checkboxGroup :global(.ant-checkbox-wrapper) {
+  margin-left: 0;
+  font-size: 13px;
+}
+
+.select {
+  margin-top: 8px;
+}
+
+.divider {
+  margin: 12px 0;
+}

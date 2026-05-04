@@ -1,14 +1,41 @@
 .container {
-  max-width: 800px;
-  margin: 0 auto;
+  display: flex;
+  height: calc(100vh - 60px);
+  padding: 16px;
+  gap: 16px;
+  overflow: hidden;
 }
 
-.title {
-  margin-bottom: 24px;
-  font-size: 24px;
-  font-weight: bold;
+.leftPanel {
+  width: 400px;
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 8px;
 }
 
-.card {
-  border-radius: 12px;
+.leftPanel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.leftPanel::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
+.executeBtn {
+  margin-top: auto;
+  height: 48px;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.rightPanel {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
 }
