@@ -6,6 +6,7 @@ import { useWebSocketContext } from '../../context'
 import { useIndicatorSettings } from '../../context/IndicatorSettingsContext'
 import ChartToolbar from './ChartToolbar'
 import IndicatorPanel, { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorPanel'
+import { calculateElliottWave } from '../../utils/elliottWave'
 import styles from './ChartContainer.module.css'
 
 interface StockInfo {
@@ -363,6 +364,8 @@ export default function ChartContainer({
   const lineSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const zigzagSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const ewSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const ewLabelsRef = useRef<ISeriesApi<'Line'> | null>(null)
   
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
@@ -643,6 +646,78 @@ export default function ChartContainer({
     zigzagSeries.setData(zigzagData)
     zigzagSeriesRef.current = zigzagSeries
   }, [indicatorConfig.ZigZag, klineData, chartCreated])
+
+  // Elliott Wave Indicator
+  useEffect(() => {
+    if (!chartRef.current || !chartCreated || klineData.length === 0) return
+
+    const chart = chartRef.current
+    const enabled = indicatorConfig.ElliottWave?.enabled
+    const showLines = indicatorConfig.ElliottWave?.showLines ?? true
+    const showLabels = indicatorConfig.ElliottWave?.showLabels ?? true
+    const ewColor = indicatorConfig.ElliottWave?.color ?? '#00CED1'
+
+    // 移除舊的 EW series
+    if (ewSeriesRef.current) {
+      try { chart.removeSeries(ewSeriesRef.current) } catch {}
+      ewSeriesRef.current = null
+    }
+    if (ewLabelsRef.current) {
+      try { chart.removeSeries(ewLabelsRef.current) } catch {}
+      ewLabelsRef.current = null
+    }
+
+    if (!enabled) return
+
+    // 先計算 ZigZag 轉向點
+    const zigzagData = calculateZigZag(klineData, indicatorConfig.ZigZag.threshold, currentPeriod)
+    if (zigzagData.length < 4) return
+
+    // 計算 Elliott Wave
+    const ewResult = calculateElliottWave(zigzagData)
+    console.log('[EW] Result:', ewResult)
+
+    // 繪製 EW 連線
+    if (showLines && ewResult.connections.length > 0) {
+      const ewLineData = ewResult.connections.map(conn => ({
+        time: conn.from,
+        value: conn.priceFrom,
+      }))
+      // 添加最後一個點到收盤
+      const lastConn = ewResult.connections[ewResult.connections.length - 1]
+      ewLineData.push({ time: lastConn.to, value: lastConn.priceTo })
+
+      const ewSeries = chart.addSeries(LineSeries, {
+        color: ewColor,
+        lineWidth: 2,
+        priceLineVisible: false,
+      })
+      ewSeries.setData(ewLineData)
+      ewSeriesRef.current = ewSeries
+    }
+
+    // 繪製 EW 標記（用極端點）
+    if (showLabels && ewResult.waves.length > 0) {
+      // 找出關鍵轉向點（wave > 0 或 wave === 0 當作 A）
+      const labelPoints = ewResult.waves
+        .filter(w => w.wave > 0 || w.wave === 0)
+        .map(w => ({
+          time: w.time,
+          value: w.price,
+        }))
+
+      if (labelPoints.length > 0) {
+        const ewLabelSeries = chart.addSeries(LineSeries, {
+          color: ewColor,
+          lineWidth: 0,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        })
+        ewLabelSeries.setData(labelPoints)
+        ewLabelsRef.current = ewLabelSeries
+      }
+    }
+  }, [indicatorConfig.ElliottWave, indicatorConfig.ZigZag, klineData, chartCreated, currentPeriod])
 
   // 實時更新最後一根蠟燭
   useEffect(() => {

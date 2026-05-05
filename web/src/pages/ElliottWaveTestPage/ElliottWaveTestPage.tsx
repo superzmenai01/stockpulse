@@ -2,7 +2,7 @@
 // 複製 ChartContainer 的 K線圖功能，用於測試 Elliott Wave 指標
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts'
+import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts'
 import { useWebSocketContext } from '../../context'
 import { useIndicatorSettings } from '../../context/IndicatorSettingsContext'
 import { calculateElliottWave } from '../../utils/elliottWave'
@@ -34,6 +34,12 @@ interface ChartData {
   error?: string
 }
 
+// User adjustment for a single EW point
+interface EWUserAdjustment {
+  time: Time        // Identify point by time
+  wave: number      // User-chosen wave number
+}
+
 // ============ Constants ============
 
 const PERIODS = [
@@ -54,6 +60,30 @@ const WAVE_COLORS: Record<number, string> = {
   [-1]: '#3498DB', // Blue (B)
   [-2]: '#E74C3C', // Red (C)
 }
+
+// Wave label text
+const WAVE_LABEL_MAP: Record<number, string> = {
+  1: '1',
+  2: '2',
+  3: '3',
+  4: '4',
+  5: '5',
+  0: 'A',
+  [-1]: 'B',
+  [-2]: 'C',
+}
+
+// All available wave labels for the popup selector
+const ALL_WAVE_OPTIONS = [
+  { value: 1, label: '1', color: WAVE_COLORS[1] },
+  { value: 2, label: '2', color: WAVE_COLORS[2] },
+  { value: 3, label: '3', color: WAVE_COLORS[3] },
+  { value: 4, label: '4', color: WAVE_COLORS[4] },
+  { value: 5, label: '5', color: WAVE_COLORS[5] },
+  { value: 0, label: 'A', color: WAVE_COLORS[0] },
+  { value: -1, label: 'B', color: WAVE_COLORS[-1] },
+  { value: -2, label: 'C', color: WAVE_COLORS[-2] },
+]
 
 // ============ Time Parsing ============
 
@@ -311,7 +341,60 @@ const createChartInstance = (container: HTMLDivElement) => {
 
 // ============ Component ============
 
-const TEST_STOCK: StockInfo = { code: 'HK.00700', name: '騰訊控股' }
+// ChartClickHandler - right-click handler for EW point editing
+interface ChartClickHandlerProps {
+  chartRef: React.RefObject<IChartApi | null>
+  ewResult: ReturnType<typeof calculateElliottWave> | null
+  ewEnabled: boolean
+  onEWPointClick: (time: Time, wave: number, price: number) => void
+}
+
+function ChartClickHandler({ chartRef, ewResult, ewEnabled, onEWPointClick }: ChartClickHandlerProps) {
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart || !ewEnabled || !ewResult) return
+
+    const handleContextMenu = (param: any) => {
+      if (!ewResult || ewResult.labels.length === 0) return
+      
+      const point = param.point
+      if (!point) return
+      
+      // Get time at click position
+      const time = chart.timeScale().coordinateToTime(point.x)
+      if (!time) return
+      
+      // Find nearest EW label
+      let nearestLabel: typeof ewResult.labels[0] | null = null
+      let nearestDist = Infinity
+      
+      for (const label of ewResult.labels) {
+        const labelTimeCoord = chart.timeScale().timeToCoordinate(label.time)
+        if (labelTimeCoord === null) continue
+        
+        // Simple distance in screen coords
+        const dist = Math.abs(labelTimeCoord - point.x) 
+        if (dist < nearestDist && dist < 50) {
+          nearestDist = dist
+          nearestLabel = label
+        }
+      }
+      
+      if (nearestLabel) {
+        onEWPointClick(nearestLabel.time, nearestLabel.wave, nearestLabel.price)
+      }
+    }
+
+    chart.subscribeClick(handleContextMenu)
+    return () => {
+      try { chart.unsubscribeClick(handleContextMenu) } catch {}
+    }
+  }, [chartRef, ewResult, ewEnabled, onEWPointClick])
+
+  return null
+}
+
+const TEST_STOCK: StockInfo = { code: 'HK.00981', name: '中芯國際' }
 
 export default function ElliottWaveTestPage() {
   const chartContainerRef = useRef<HTMLDivElement>(null)
@@ -322,6 +405,7 @@ export default function ElliottWaveTestPage() {
   const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const zigzagSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const ewConnectionRefs = useRef<ISeriesApi<'Line'>[]>([])
+  const ewMarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null)
   
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
@@ -362,13 +446,53 @@ export default function ElliottWaveTestPage() {
   
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [ewEnabled, setEwEnabled] = useState(true)
   const [ewResult, setEwResult] = useState<ReturnType<typeof calculateElliottWave> | null>(null)
   
   const { config: contextConfig, setConfig: setContextConfig } = useIndicatorSettings()
   const [indicatorConfig, setIndicatorConfig] = useState<IndicatorConfig>(
     contextConfig || DEFAULT_INDICATOR_CONFIG
   )
+  
+  // EW enabled state 直接來自 indicatorConfig.ElliottWave.enabled
+  const ewEnabled = indicatorConfig.ElliottWave?.enabled ?? false
+
+  // Semi-auto: user adjustments keyed by time
+  const [ewUserAdjustments, setEwUserAdjustments] = useState<EWUserAdjustment[]>([])
+
+  // Semi-auto: popup state for editing wave label
+  const [ewEditPopup, setEwEditPopup] = useState<{
+    visible: boolean
+    time: Time | null
+    currentWave: number
+    price: number
+  }>({ visible: false, time: null, currentWave: 0, price: 0 })
+
+  // Get wave number considering user adjustments
+  const getWaveNumber = useCallback((time: Time, defaultWave: number): number => {
+    const adj = ewUserAdjustments.find(a => a.time === time)
+    return adj ? adj.wave : defaultWave
+  }, [ewUserAdjustments])
+
+  // Handle clicking an EW marker to change its label
+  const handleEWMarkerClick = useCallback((time: Time, wave: number, price: number) => {
+    setEwEditPopup({
+      visible: true,
+      time,
+      currentWave: wave,
+      price,
+    })
+  }, [])
+
+  // Confirm wave label change
+  const confirmEWLabelChange = useCallback((newWave: number) => {
+    if (ewEditPopup.time !== null) {
+      setEwUserAdjustments(prev => {
+        const filtered = prev.filter(a => a.time !== ewEditPopup.time)
+        return [...filtered, { time: ewEditPopup.time!, wave: newWave }]
+      })
+    }
+    setEwEditPopup({ visible: false, time: null, currentWave: 0, price: 0 })
+  }, [ewEditPopup.time])
 
   const [klineData, setKlineData] = useState<KLine[]>([])
 
@@ -447,8 +571,21 @@ export default function ElliottWaveTestPage() {
       const ew = calculateElliottWave(zigzagPoints)
       setEwResult(ew)
       
+      // DEBUG: 打印完整 EW 結果
+      console.log('[EW Test] === DEBUG START ===')
+      console.log('[EW Test] K-lines count:', data.klines.length)
+      console.log('[EW Test] ZigZag threshold:', indicatorConfig.ZigZag.threshold)
       console.log('[EW Test] ZigZag points:', zigzagPoints.length)
-      console.log('[EW Test] EW result:', ew.labels.length, 'labels', ew.connections.length, 'connections')
+      zigzagPoints.forEach((p, i) => {
+        console.log(`  [${i}] ${p.time}: ${p.value}`)
+      })
+      console.log('[EW Test] EW result:', JSON.stringify({
+        labelsCount: ew.labels.length,
+        wavesCount: ew.waves.length,
+        connectionsCount: ew.connections.length,
+        labels: ew.labels.slice(0, 5).map(l => ({ t: l.text, w: l.wave, p: l.price }))
+      }))
+      console.log('[EW Test] === DEBUG END ===')
       
       if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
         const candleMap = new Map<string, CandlestickData<Time>>()
@@ -633,6 +770,62 @@ export default function ElliottWaveTestPage() {
     console.log('[EW Test] Drew', ewResult.connections.length, 'wave connections')
   }, [ewResult, ewEnabled, chartCreated, klineData])
 
+  // Elliott Wave Markers (wave labels on chart)
+  useEffect(() => {
+    if (!chartRef.current || !chartCreated || klineData.length === 0) return
+
+    const series = candlestickSeriesRef.current
+    if (!series) return
+
+    // Clear markers when EW is disabled
+    if (!ewEnabled || !ewResult || !ewResult.labels || ewResult.labels.length === 0) {
+      if (ewMarkersRef.current) {
+        ewMarkersRef.current.setMarkers([])
+      }
+      return
+    }
+
+    // Remove old markers
+    if (ewMarkersRef.current) {
+      ewMarkersRef.current.setMarkers([])
+    }
+
+    // Build marker data from EW labels
+    const markers = ewResult.labels.map(label => {
+      // Apply user adjustment
+      const waveNum = getWaveNumber(label.time, label.wave)
+      
+      // Find corresponding wave in ewResult.waves to get the type (high/low)
+      const waveInfo = ewResult.waves.find(w => 
+        w.time === label.time && w.price === label.price
+      )
+      const isHighPoint = waveInfo?.type === 'high'
+      
+      // Position: aboveBar for highs, belowBar for lows
+      const position: 'aboveBar' | 'belowBar' = isHighPoint ? 'aboveBar' : 'belowBar'
+      
+      // Shape: arrowUp for highs (push up), arrowDown for lows (push down)
+      const shape: 'arrowUp' | 'arrowDown' = isHighPoint ? 'arrowUp' : 'arrowDown'
+      
+      return {
+        time: label.time,
+        position,
+        shape,
+        color: WAVE_COLORS[waveNum] || '#FFD700',
+        text: WAVE_LABEL_MAP[waveNum] || String(waveNum),
+        textColor: '#FFFFFF',
+        size: 1,
+      }
+    })
+
+    console.log('[EW Test] Setting', markers.length, 'EW markers')
+    const markersPlugin = createSeriesMarkers(series, markers)
+    ewMarkersRef.current = markersPlugin
+    
+    // Subscribe to marker clicks for semi-auto editing
+    // Note: lightweight-charts markers don't have click events, using right-click instead
+  }, [ewResult, ewEnabled, chartCreated, klineData, ewUserAdjustments, getWaveNumber])
+
   // 實時更新最後一根蠟燭
   useEffect(() => {
     const quote = quotes[TEST_STOCK.code]
@@ -676,20 +869,16 @@ export default function ElliottWaveTestPage() {
         <div className={styles.stockInfo}>
           <span className={styles.stockCode}>{TEST_STOCK.code}</span>
           <span className={styles.stockName}>{TEST_STOCK.name}</span>
-          <label className={styles.ewToggle}>
-            <input
-              type="checkbox"
-              checked={ewEnabled}
-              onChange={(e) => setEwEnabled(e.target.checked)}
-            />
-            Elliott Wave
-          </label>
+          <span className={styles.ewStatus}>{ewEnabled ? '✓ EW On' : '✗ EW Off'}</span>
         </div>
         {ewResult && (
           <div className={styles.ewStats}>
             <span>ZigZag 點: {ewResult.waves.length}</span>
             <span>標記: {ewResult.labels.length}</span>
             <span>連線: {ewResult.connections.length}</span>
+            <span style={{ color: ewResult.valid ? '#26BA75' : '#F39C12' }}>
+              {ewResult.valid ? '✓ 規則驗證通過' : '⚠ ' + ewResult.message}
+            </span>
           </div>
         )}
       </div>
@@ -719,7 +908,45 @@ export default function ElliottWaveTestPage() {
         <div ref={chartContainerRef} className={styles.chart} />
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
+        
+        {/* Semi-auto EW Edit Popup */}
+        {ewEditPopup.visible && (
+          <div className={styles.ewEditPopup}>
+            <div className={styles.ewEditPopupTitle}>🌊 選擇波浪標記</div>
+            <div className={styles.ewEditPopupPrice}>價格: ${ewEditPopup.price.toFixed(2)}</div>
+            <div className={styles.ewEditPopupButtons}>
+              {ALL_WAVE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  className={styles.ewWaveButton}
+                  style={{ 
+                    backgroundColor: opt.value === ewEditPopup.currentWave ? opt.color : '#333',
+                    color: opt.value === ewEditPopup.currentWave ? '#000' : '#FFF'
+                  }}
+                  onClick={() => confirmEWLabelChange(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <div className={styles.ewEditPopupHint}>點擊波浪編號以更改標記</div>
+            <button 
+              className={styles.ewEditPopupCancel}
+              onClick={() => setEwEditPopup({ visible: false, time: null, currentWave: 0, price: 0 })}
+            >
+              取消
+            </button>
+          </div>
+        )}
       </div>
+      
+      {/* Right-click on chart to edit EW label */}
+      <ChartClickHandler
+        chartRef={chartRef}
+        ewResult={ewResult}
+        ewEnabled={ewEnabled}
+        onEWPointClick={handleEWMarkerClick}
+      />
     </div>
   )
 }

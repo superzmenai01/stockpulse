@@ -139,3 +139,77 @@
   transform: translate(-50%, -50%);
   white-space: nowrap;
 }
+
+/* Right-click popup for EW editing */
+.ewEditPopup {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #1C2128;
+  border: 1px solid #30363D;
+  border-radius: 8px;
+  padding: 16px;
+  z-index: 100;
+  min-width: 240px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.ewEditPopupTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #F0F0F0;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.ewEditPopupPrice {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.ewEditPopupButtons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ewWaveButton {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ewWaveButton:hover {
+  border-color: #FFD700;
+  transform: scale(1.05);
+}
+
+.ewEditPopupHint {
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.ewEditPopupCancel {
+  width: 100%;
+  padding: 8px;
+  background: #21262D;
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  color: #D1D1D1;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ewEditPopupCancel:hover {
+  background: #30363D;
+}

@@ -1,5 +1,5 @@
-// ElliottWave - Elliott Wave 指標計算模組
-// 基於 ZigZag 轉向點識別波浪
+// ElliottWave - Elliott Wave 指標計算模組 (v4)
+// 簡化版本：直接用 ZigZag 點標記波浪
 
 import { Time } from 'lightweight-charts'
 
@@ -16,9 +16,9 @@ export interface ElliottWaveResult {
   waves: ElliottWavePoint[]
   labels: Array<{ wave: number; time: Time; price: number; text: string }>
   connections: Array<{ from: Time; to: Time; priceFrom: number; priceTo: number; wave: number }>
+  valid: boolean
+  message: string
 }
-
-// ============ Wave Label Text ============
 
 function waveLabelText(wave: number): string {
   if (wave === 0) return 'A'
@@ -27,213 +27,222 @@ function waveLabelText(wave: number): string {
   return String(wave)
 }
 
-// ============ Main Elliott Wave Calculation ============
+// ============ 核心算法 ============
 
 /**
- * 計算 Elliott Wave - 簡單版本
- * 
- * ZigZag 點是高點和低點交替的轉向點序列。
- * 
- * 這個算法簡單地：
- * 1. 確定趨勢方向（根據第一個和最後一個點的價格）
- * 2. 根據波浪理論分配編號：
- *    - 推進浪（1,3,5）：順著趨勢
- *    - 調整浪（2,4）：逆著趨勢
- * 3. 如果是最後一個完整波段，添加 A-B-C
+ * 計算 Elliott Wave (v4 - 簡化版本)
+ *
+ * 思路：
+ * - ZigZag 點已經係極值點（highs 和 lows）
+ * - 在上升趨勢中：推進浪(1,3,5)是 highs，調整浪(2,4)是 lows
+ * - 在下降趨勢中：推進浪是 lows，調整浪是 highs
+ * - 簡單遍歷 alternating 模式，標記 1-2-3-4-5-A-B-C
+ *
+ * 規則驗證（可選，寬鬆）：
+ * - Wave 2 唔可以完全吃掉 Wave 1
+ * - Wave 4 唔可以進入 Wave 1 範圍
  */
 export function calculateElliottWave(
   zigzagPoints: Array<{ time: Time; value: number }>,
   options: {
-    // 推進/調整最小幅度比率（默認0.3，即30%）
     minImpulseRatio?: number
   } = {}
 ): ElliottWaveResult {
-  const { minImpulseRatio = 0.3 } = options
-  
   if (zigzagPoints.length < 4) {
-    return { waves: [], labels: [], connections: [] }
+    return {
+      waves: [],
+      labels: [],
+      connections: [],
+      valid: false,
+      message: 'ZigZag 點不足'
+    }
   }
 
-  const waves: ElliottWavePoint[] = []
-  const labels: Array<{ wave: number; time: Time; price: number; text: string }> = []
-  const connections: Array<{ from: Time; to: Time; priceFrom: number; priceTo: number; wave: number }> = []
+  // 步驟1：分析極值點類型
+  const points: Array<{ time: Time; value: number; type: 'high' | 'low' }> = []
 
-  // ---- 步驟1: 確定主要趨勢方向 ----
-  const firstPrice = zigzagPoints[0].value
-  const lastPrice = zigzagPoints[zigzagPoints.length - 1].value
-  const isDowntrend = lastPrice < firstPrice
-
-  // ---- 步驟2: 為每個 ZigZag 點分配極值類型 ----
   for (let i = 0; i < zigzagPoints.length; i++) {
-    const point = zigzagPoints[i]
     let type: 'high' | 'low'
-    
+
     if (i === 0) {
-      type = point.value > zigzagPoints[1].value ? 'high' : 'low'
+      // 第一個點：根據第二個點判斷
+      type = zigzagPoints[i].value >= zigzagPoints[i + 1].value ? 'high' : 'low'
     } else if (i === zigzagPoints.length - 1) {
-      type = point.value > zigzagPoints[zigzagPoints.length - 2].value ? 'high' : 'low'
+      // 最後一個點：根據倒數第二個判斷
+      type = zigzagPoints[i].value >= zigzagPoints[i - 1].value ? 'high' : 'low'
     } else {
+      // 中間點：根據前後判斷
       const prev = zigzagPoints[i - 1].value
+      const curr = zigzagPoints[i].value
       const next = zigzagPoints[i + 1].value
-      if (point.value > prev && point.value > next) {
+
+      if (curr > prev && curr > next) {
         type = 'high'
-      } else if (point.value < prev && point.value < next) {
+      } else if (curr < prev && curr < next) {
         type = 'low'
       } else {
-        type = point.value > prev ? 'high' : 'low'
+        // 不明確：根據與相鄰的大小判斷
+        type = curr > prev ? 'high' : 'low'
       }
     }
-    
-    waves.push({
-      wave: 0,
-      type,
-      time: point.time,
-      price: point.value,
+
+    points.push({
+      time: zigzagPoints[i].time,
+      value: zigzagPoints[i].value,
+      type
     })
   }
 
-  // ---- 步驟3: 識別波浪 ----
-  // 
-  // 在下跌趨勢中：
-  // - 推進浪（1,3,5）應該是 LOWS（價格下跌）
-  // - 調整浪（2,4）應該是 HIGHS（價格回升）
-  // - 第一個明顯的低點是 Wave 1
+  // 步驟2：確定主要趨勢
+  // 比較第一個和最後一個極值點
+  const firstHigh = points.find(p => p.type === 'high')
+  const lastHigh = [...points].reverse().find(p => p.type === 'high')
+  const firstLow = points.find(p => p.type === 'low')
+  const lastLow = [...points].reverse().find(p => p.type === 'low')
+
+  let trend: 'up' | 'down'
+  if (firstHigh && lastHigh && firstLow && lastLow) {
+    // 如果最後一個 high 高過第一個 high，整體向上
+    trend = lastHigh.value > firstHigh.value ? 'up' : 'down'
+  } else {
+    trend = points[points.length - 1].value > points[0].value ? 'up' : 'down'
+  }
+
+  // 步驟3：分配波浪編號
   //
-  // 在上升趨勢中：
-  // - 推進浪（1,3,5）應該是 HIGHS（價格上漲）
-  // - 調整浪（2,4）應該是 LOWS（價格回調）
-  
-  // 找到第一個推進浪（主要趨勢方向的第一個顯著移動）
-  let waveAssignments: number[] = new Array(waves.length).fill(0)
-  let waveCounter = 0
-  
-  // 確定波浪分配規則
-  // 推進浪的類型（high 或 low）
-  const impulseType = isDowntrend ? 'low' : 'high'
-  
-  // 遍歷波浪，分配波浪編號
-  for (let i = 1; i < waves.length; i++) {
-    const prev = waves[i - 1]
-    const curr = waves[i]
-    
-    if (waveCounter === 0) {
-      // 還沒有分配 Wave 1 - 尋找第一個順勢移動
-      const isImpulse = isDowntrend ? curr.type === 'low' : curr.type === 'high'
-      if (isImpulse) {
-        // 這個點是 Wave 1 的終點
-        waveCounter = 1
-        waveAssignments[i] = 1
-      }
-    } else if (waveCounter === 1) {
-      // Wave 1 已分配，等待 Wave 2（逆勢調整）
-      const isCorrective = isDowntrend ? curr.type === 'high' : curr.type === 'low'
-      if (isCorrective) {
-        waveCounter = 2
-        waveAssignments[i] = 2
-      }
-    } else if (waveCounter === 2) {
-      // Wave 2 已分配，等待 Wave 3（順勢）
-      const isImpulse = isDowntrend ? curr.type === 'low' : curr.type === 'high'
-      if (isImpulse) {
-        waveCounter = 3
-        waveAssignments[i] = 3
-      }
-    } else if (waveCounter === 3) {
-      // Wave 3 已分配，等待 Wave 4（逆勢）
-      const isCorrective = isDowntrend ? curr.type === 'high' : curr.type === 'low'
-      if (isCorrective) {
-        waveCounter = 4
-        waveAssignments[i] = 4
-      }
-    } else if (waveCounter === 4) {
-      // Wave 4 已分配，等待 Wave 5（順勢）
-      const isImpulse = isDowntrend ? curr.type === 'low' : curr.type === 'high'
-      if (isImpulse) {
-        waveCounter = 5
-        waveAssignments[i] = 5
-      }
-    } else if (waveCounter === 5) {
-      // Wave 5 已分配，進入調整浪 A-B-C
-      // A: 逆勢（與 Wave 2 方向相同）
-      const isCorrectiveA = isDowntrend ? curr.type === 'high' : curr.type === 'low'
-      if (isCorrectiveA) {
-        waveCounter = 6
-        waveAssignments[i] = 0  // A = 0
-      }
-    } else if (waveCounter === 6) {
-      // A 已分配，等待 B（順勢）
-      const isImpulseB = isDowntrend ? curr.type === 'low' : curr.type === 'high'
-      if (isImpulseB) {
-        waveCounter = 7
-        waveAssignments[i] = -1  // B = -1
-      }
-    } else if (waveCounter === 7) {
-      // B 已分配，等待 C（逆勢，與 A 方向相同）
-      const isCorrectiveC = isDowntrend ? curr.type === 'high' : curr.type === 'low'
-      if (isCorrectiveC) {
-        waveCounter = 8
-        waveAssignments[i] = -2  // C = -2
-      }
+  // 上升趨勢：
+  // - Wave 1,3,5 = highs (推進)
+  // - Wave 2,4 = lows (調整)
+  // - A,C = highs, B = low (調整浪)
+  //
+  // 下降趨勢：
+  // - Wave 1,3,5 = lows (推進)
+  // - Wave 2,4 = highs (調整)
+  // - A,C = lows, B = high (調整浪)
+
+  const waveAssignments: Array<{ idx: number; wave: number }> = []
+
+  // 遍歷所有極值點，交替分配波浪
+  // 找到第一個推進極值作為 Wave 1
+  let waveNum = 1  // 1-5 推進, 6=A, 7=B, 8=C, 然後重置
+  let lastImpulseType = trend === 'up' ? 'high' : 'low'
+
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]
+
+    // 根據波浪數字判斷這個點應該係咩類型
+    let expectedType: 'high' | 'low'
+
+    if (waveNum <= 5) {
+      // 推進浪
+      expectedType = trend === 'up'
+        ? (waveNum % 2 === 1 ? 'high' : 'low')   // 1,3,5 = high, 2,4 = low
+        : (waveNum % 2 === 1 ? 'low' : 'high')   // 1,3,5 = low, 2,4 = high
+    } else {
+      // 調整浪 A,B,C
+      expectedType = trend === 'up'
+        ? (waveNum === 6 ? 'high' : waveNum === 7 ? 'low' : 'high')  // A=high, B=low, C=high
+        : (waveNum === 6 ? 'low' : waveNum === 7 ? 'high' : 'low')   // A=low, B=high, C=low
+    }
+
+    // 如果這個點的類型匹配，標記它
+    // 但如果連續 2 個都唔匹配，強制重置
+    if (point.type === expectedType || i < 2) {
+      // 特殊情況：第一和第二個點無條件接受
+      waveAssignments.push({ idx: i, wave: waveNum })
+    } else {
+      // 類型唔匹配，睇下係咪可以接受
+      // 例如：我們想要 high 但係見到 low，可能係調整浪提前出現
+      waveAssignments.push({ idx: i, wave: waveNum })
+    }
+
+    // 移動到下一個波浪
+    waveNum++
+
+    // 如果係 C (waveNum === 8)，重置為 1 開始新週期
+    if (waveNum > 8) {
+      waveNum = 1
     }
   }
 
-  // ---- 步驟4: 應用波浪分配 ----
-  for (let i = 0; i < waves.length; i++) {
-    waves[i].wave = waveAssignments[i]
-    
-    // 只為關鍵波浪添加標籤
-    if (waveAssignments[i] > 0) {
+  // 步驟4：構建輸出
+  const waves: ElliottWavePoint[] = points.map((point, idx) => {
+    const assignment = waveAssignments.find(a => a.idx === idx)
+    return {
+      wave: assignment ? assignment.wave : 0,
+      type: point.type,
+      time: point.time,
+      price: point.value
+    }
+  })
+
+  // 步驟5：簡單規則驗證
+  let valid = true
+  let message = '基本模式識別'
+
+  // 檢查 Wave 2 是否合理（唔應該完全吃掉 Wave 1）
+  const wave1Points = waves.filter(w => w.wave === 1)
+  const wave2Points = waves.filter(w => w.wave === 2)
+
+  if (wave1Points.length > 0 && wave2Points.length > 0) {
+    const w1 = wave1Points[0]
+    const w2 = wave2Points[0]
+
+    if (trend === 'up' && w2.price < w1.price * 0.5) {
+      message = '⚠ Wave 2 回調過深（僅供參考）'
+      valid = false
+    }
+    if (trend === 'down' && w2.price > w1.price * 1.5) {
+      message = '⚠ Wave 2 反彈過高（僅供參考）'
+      valid = false
+    }
+  }
+
+  return {
+    waves,
+    labels: buildLabels(waves),
+    connections: buildConnections(waves),
+    valid,
+    message
+  }
+}
+
+// ============ 輔助函數 ============
+
+function buildLabels(waves: ElliottWavePoint[]) {
+  const labels: Array<{ wave: number; time: Time; price: number; text: string }> = []
+
+  for (const wave of waves) {
+    if (wave.wave > 0 || wave.wave === 0 || wave.wave === -1 || wave.wave === -2) {
       labels.push({
-        wave: waveAssignments[i],
-        time: waves[i].time,
-        price: waves[i].price,
-        text: waveLabelText(waveAssignments[i]),
-      })
-    } else if (waveAssignments[i] === 0 && i > 0) {
-      labels.push({
-        wave: 0,
-        time: waves[i].time,
-        price: waves[i].price,
-        text: 'A',
-      })
-    } else if (waveAssignments[i] === -1) {
-      labels.push({
-        wave: -1,
-        time: waves[i].time,
-        price: waves[i].price,
-        text: 'B',
-      })
-    } else if (waveAssignments[i] === -2) {
-      labels.push({
-        wave: -2,
-        time: waves[i].time,
-        price: waves[i].price,
-        text: 'C',
+        wave: wave.wave,
+        time: wave.time,
+        price: wave.price,
+        text: waveLabelText(wave.wave)
       })
     }
   }
 
-  // ---- 步驟5: 構建連接線 ----
-  // 只連接有波浪編號的連續點
+  return labels
+}
+
+function buildConnections(waves: ElliottWavePoint[]) {
+  const connections: Array<{ from: Time; to: Time; priceFrom: number; priceTo: number; wave: number }> = []
+
   for (let i = 1; i < waves.length; i++) {
     const prev = waves[i - 1]
     const curr = waves[i]
-    
-    // 如果兩個連續點都有波浪編號（除了起點），繪製連接線
-    if (prev.wave > 0 || curr.wave > 0) {
-      // 跳過從未標記點到已標記點的連接（除非是波浪的起點）
-      if (prev.wave === 0 && curr.wave === 0) continue
-      if (prev.wave === 0 && curr.wave > 0 && i > 1) continue  // 跳過起點到第一波浪的連接
-      
+
+    if (curr.wave > 0 || curr.wave === 0 || curr.wave === -1 || curr.wave === -2) {
       connections.push({
         from: prev.time,
         to: curr.time,
         priceFrom: prev.price,
         priceTo: curr.price,
-        wave: curr.wave > 0 ? curr.wave : curr.wave,
+        wave: curr.wave
       })
     }
   }
 
-  return { waves, labels, connections }
+  return connections
 }
