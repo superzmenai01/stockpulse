@@ -456,8 +456,17 @@ export default function ElliottWaveTestPage() {
   // EW enabled state 直接來自 indicatorConfig.ElliottWave.enabled
   const ewEnabled = indicatorConfig.ElliottWave?.enabled ?? false
 
-  // Semi-auto: user adjustments keyed by time
-  const [ewUserAdjustments, setEwUserAdjustments] = useState<EWUserAdjustment[]>([])
+  // Semi-auto: user adjustments - load from persisted config
+  const [ewUserAdjustments, setEwUserAdjustments] = useState<EWUserAdjustment[]>(() => {
+    const saved = contextConfig?.ElliottWave?.adjustments
+    if (saved && typeof saved === 'object') {
+      return Object.entries(saved).map(([time, wave]) => ({
+        time: time as Time,
+        wave: wave as number,
+      }))
+    }
+    return []
+  })
 
   // Semi-auto: popup state for editing wave label
   const [ewEditPopup, setEwEditPopup] = useState<{
@@ -483,16 +492,35 @@ export default function ElliottWaveTestPage() {
     })
   }, [])
 
-  // Confirm wave label change
+  // Confirm wave label change and persist
   const confirmEWLabelChange = useCallback((newWave: number) => {
     if (ewEditPopup.time !== null) {
+      const timeStr = String(ewEditPopup.time)
+      
+      // Update local state
       setEwUserAdjustments(prev => {
         const filtered = prev.filter(a => a.time !== ewEditPopup.time)
         return [...filtered, { time: ewEditPopup.time!, wave: newWave }]
       })
+      
+      // Persist to backend via indicatorConfig
+      const newAdjustments = { ...(indicatorConfig.ElliottWave?.adjustments || {}) }
+      newAdjustments[timeStr] = newWave
+      
+      const newEwConfig = {
+        ...(indicatorConfig.ElliottWave || DEFAULT_INDICATOR_CONFIG.ElliottWave),
+        adjustments: newAdjustments,
+      }
+      
+      const newConfig: IndicatorConfig = {
+        ...indicatorConfig,
+        ElliottWave: newEwConfig,
+      }
+      setIndicatorConfig(newConfig)
+      setContextConfig(newConfig)
     }
     setEwEditPopup({ visible: false, time: null, currentWave: 0, price: 0 })
-  }, [ewEditPopup.time])
+  }, [ewEditPopup.time, indicatorConfig, setContextConfig])
 
   const [klineData, setKlineData] = useState<KLine[]>([])
 

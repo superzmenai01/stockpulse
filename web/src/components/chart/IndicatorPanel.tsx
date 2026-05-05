@@ -27,6 +27,10 @@ interface ElliottWaveConfig {
   showLabels: boolean
   showLines: boolean
   color: string
+  // Semi-auto: user adjustments keyed by time -> wave number
+  // Format: { [time: string]: waveNumber }
+  // waveNumber: 1-5, 0=A, -1=B, -2=C
+  adjustments?: Record<string, number>
 }
 
 export interface IndicatorConfig {
