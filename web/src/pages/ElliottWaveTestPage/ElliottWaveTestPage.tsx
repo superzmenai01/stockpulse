@@ -56,9 +56,15 @@ const WAVE_COLORS: Record<number, string> = {
   3: '#FF6B6B',  // Red
   4: '#4ECDC4',  // Teal
   5: '#9B59B6',  // Purple
+  6: '#FF8C00',  // Dark Orange
+  7: '#8B4513',  // Saddle Brown
+  8: '#00CED1',  // Dark Cyan
+  9: '#DC143C',  // Crimson
   0: '#F39C12',  // Orange (A)
   [-1]: '#3498DB', // Blue (B)
   [-2]: '#E74C3C', // Red (C)
+  [-3]: '#9B59B6', // Purple (D)
+  [-4]: '#2ECC71', // Emerald (E)
 }
 
 // Wave label text
@@ -68,9 +74,15 @@ const WAVE_LABEL_MAP: Record<number, string> = {
   3: '3',
   4: '4',
   5: '5',
+  6: '6',
+  7: '7',
+  8: '8',
+  9: '9',
   0: 'A',
   [-1]: 'B',
   [-2]: 'C',
+  [-3]: 'D',
+  [-4]: 'E',
 }
 
 // All available wave labels for the popup selector
@@ -80,9 +92,15 @@ const ALL_WAVE_OPTIONS = [
   { value: 3, label: '3', color: WAVE_COLORS[3] },
   { value: 4, label: '4', color: WAVE_COLORS[4] },
   { value: 5, label: '5', color: WAVE_COLORS[5] },
+  { value: 6, label: '6', color: WAVE_COLORS[6] },
+  { value: 7, label: '7', color: WAVE_COLORS[7] },
+  { value: 8, label: '8', color: WAVE_COLORS[8] },
+  { value: 9, label: '9', color: WAVE_COLORS[9] },
   { value: 0, label: 'A', color: WAVE_COLORS[0] },
   { value: -1, label: 'B', color: WAVE_COLORS[-1] },
   { value: -2, label: 'C', color: WAVE_COLORS[-2] },
+  { value: -3, label: 'D', color: WAVE_COLORS[-3] },
+  { value: -4, label: 'E', color: WAVE_COLORS[-4] },
 ]
 
 // ============ Time Parsing ============
