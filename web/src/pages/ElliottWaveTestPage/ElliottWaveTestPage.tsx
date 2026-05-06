@@ -87,6 +87,31 @@ const ALL_WAVE_OPTIONS = [
 
 // ============ Time Parsing ============
 
+// LocalStorage key for EW adjustments
+const EW_ADJUSTMENTS_KEY = 'stockpulse_ew_adjustments'
+
+// Load adjustments from localStorage
+function loadEWAdjustments(): EWUserAdjustment[] {
+  try {
+    const saved = localStorage.getItem(EW_ADJUSTMENTS_KEY)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (e) {
+    console.error('[EW] Failed to load adjustments from localStorage:', e)
+  }
+  return []
+}
+
+// Save adjustments to localStorage
+function saveEWAdjustments(adjustments: EWUserAdjustment[]): void {
+  try {
+    localStorage.setItem(EW_ADJUSTMENTS_KEY, JSON.stringify(adjustments))
+  } catch (e) {
+    console.error('[EW] Failed to save adjustments to localStorage:', e)
+  }
+}
+
 const parseTime = (timeStr: string, period: string): Time => {
   if (period === '1m') {
     const date = new Date(timeStr)
@@ -456,17 +481,10 @@ export default function ElliottWaveTestPage() {
   // EW enabled state 直接來自 indicatorConfig.ElliottWave.enabled
   const ewEnabled = indicatorConfig.ElliottWave?.enabled ?? false
 
-  // Semi-auto: user adjustments - load from persisted config
-  const [ewUserAdjustments, setEwUserAdjustments] = useState<EWUserAdjustment[]>(() => {
-    const saved = contextConfig?.ElliottWave?.adjustments
-    if (saved && typeof saved === 'object') {
-      return Object.entries(saved).map(([time, wave]) => ({
-        time: time as Time,
-        wave: wave as number,
-      }))
-    }
-    return []
-  })
+  // Semi-auto: user adjustments - load from localStorage
+  const [ewUserAdjustments, setEwUserAdjustments] = useState<EWUserAdjustment[]>(
+    () => loadEWAdjustments()
+  )
 
   // Semi-auto: popup state for editing wave label
   const [ewEditPopup, setEwEditPopup] = useState<{
@@ -492,35 +510,18 @@ export default function ElliottWaveTestPage() {
     })
   }, [])
 
-  // Confirm wave label change and persist
+  // Confirm wave label change and persist to localStorage
   const confirmEWLabelChange = useCallback((newWave: number) => {
     if (ewEditPopup.time !== null) {
-      const timeStr = String(ewEditPopup.time)
-      
-      // Update local state
       setEwUserAdjustments(prev => {
         const filtered = prev.filter(a => a.time !== ewEditPopup.time)
-        return [...filtered, { time: ewEditPopup.time!, wave: newWave }]
+        const next = [...filtered, { time: ewEditPopup.time!, wave: newWave }]
+        saveEWAdjustments(next)
+        return next
       })
-      
-      // Persist to backend via indicatorConfig
-      const newAdjustments = { ...(indicatorConfig.ElliottWave?.adjustments || {}) }
-      newAdjustments[timeStr] = newWave
-      
-      const newEwConfig = {
-        ...(indicatorConfig.ElliottWave || DEFAULT_INDICATOR_CONFIG.ElliottWave),
-        adjustments: newAdjustments,
-      }
-      
-      const newConfig: IndicatorConfig = {
-        ...indicatorConfig,
-        ElliottWave: newEwConfig,
-      }
-      setIndicatorConfig(newConfig)
-      setContextConfig(newConfig)
     }
     setEwEditPopup({ visible: false, time: null, currentWave: 0, price: 0 })
-  }, [ewEditPopup.time, indicatorConfig, setContextConfig])
+  }, [ewEditPopup.time])
 
   const [klineData, setKlineData] = useState<KLine[]>([])
 
