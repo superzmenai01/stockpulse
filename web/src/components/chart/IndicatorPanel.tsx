@@ -168,6 +168,50 @@ export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps
               </div>
             </div>
           </div>
+          {/* Elliott Wave */}
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Elliott Wave</div>
+            <div className={styles.indicatorRow}>
+              <label className={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  checked={config.ElliottWave.enabled}
+                  onChange={() => onChange({ ...config, ElliottWave: { ...config.ElliottWave, enabled: !config.ElliottWave.enabled } })}
+                />
+                <span style={{ color: config.ElliottWave.color }}>EW</span>
+              </label>
+              <div className={styles.controls}>
+                <label className={styles.checkbox}>
+                  <input
+                    type="checkbox"
+                    checked={config.ElliottWave.showLabels}
+                    onChange={() => onChange({ ...config, ElliottWave: { ...config.ElliottWave, showLabels: !config.ElliottWave.showLabels } })}
+                    disabled={!config.ElliottWave.enabled}
+                  />
+                  <span>標記</span>
+                </label>
+                <label className={styles.checkbox}>
+                  <input
+                    type="checkbox"
+                    checked={config.ElliottWave.showLines}
+                    onChange={() => onChange({ ...config, ElliottWave: { ...config.ElliottWave, showLines: !config.ElliottWave.showLines } })}
+                    disabled={!config.ElliottWave.enabled}
+                  />
+                  <span>連線</span>
+                </label>
+                <div className={styles.colorPicker}>
+                  <span className={styles.label}>顏色</span>
+                  <input
+                    type="color"
+                    value={config.ElliottWave.color}
+                    onChange={(e) => onChange({ ...config, ElliottWave: { ...config.ElliottWave, color: e.target.value } })}
+                    disabled={!config.ElliottWave.enabled}
+                    className={styles.colorInput}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
           {/* MA 系列 */}
           <div className={styles.section}>
             <div className={styles.sectionTitle}>MA 移動平均線</div>
@@ -228,51 +272,6 @@ export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps
                     value={config.BOLL.color}
                     onChange={(e) => updateBOLL({ color: e.target.value })}
                     disabled={!config.BOLL.enabled}
-                    className={styles.colorInput}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Elliott Wave */}
-          <div className={styles.section}>
-            <div className={styles.sectionTitle}>Elliott Wave</div>
-            <div className={styles.indicatorRow}>
-              <label className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  checked={config.ElliottWave.enabled}
-                  onChange={() => onChange({ ...config, ElliottWave: { ...config.ElliottWave, enabled: !config.ElliottWave.enabled } })}
-                />
-                <span style={{ color: config.ElliottWave.color }}>EW</span>
-              </label>
-              <div className={styles.controls}>
-                <label className={styles.checkbox}>
-                  <input
-                    type="checkbox"
-                    checked={config.ElliottWave.showLabels}
-                    onChange={() => onChange({ ...config, ElliottWave: { ...config.ElliottWave, showLabels: !config.ElliottWave.showLabels } })}
-                    disabled={!config.ElliottWave.enabled}
-                  />
-                  <span>標記</span>
-                </label>
-                <label className={styles.checkbox}>
-                  <input
-                    type="checkbox"
-                    checked={config.ElliottWave.showLines}
-                    onChange={() => onChange({ ...config, ElliottWave: { ...config.ElliottWave, showLines: !config.ElliottWave.showLines } })}
-                    disabled={!config.ElliottWave.enabled}
-                  />
-                  <span>連線</span>
-                </label>
-                <div className={styles.colorPicker}>
-                  <span className={styles.label}>顏色</span>
-                  <input
-                    type="color"
-                    value={config.ElliottWave.color}
-                    onChange={(e) => onChange({ ...config, ElliottWave: { ...config.ElliottWave, color: e.target.value } })}
-                    disabled={!config.ElliottWave.enabled}
                     className={styles.colorInput}
                   />
                 </div>
