@@ -94,16 +94,16 @@ function StockCard({
     // 簡潔模式：顯示喺組別入面，點擊整行打開圖表
     return (
       <div className={styles.compactRow} onClick={() => onChartClick?.()}>
-        <span className={styles.code}>{code.replace('HK.', '').replace('US.', '')}</span>
-        <span className={styles.name}>{name}</span>
-        <span className={styles.price}>{hasPrice ? price.toFixed(2) : '--'}</span>
-        <span className={styles.tag} style={{ color: changeColor }}>
+        <span className={styles.colCode}>{code.replace('HK.', '').replace('US.', '')}</span>
+        <span className={styles.colName}>{name}</span>
+        <span className={styles.colPrice}>{hasPrice ? price.toFixed(2) : '--'}</span>
+        <span className={styles.colPct} style={{ color: changeColor }}>
           {hasPrice ? `${isPositive ? '+' : ''}${pctChange.toFixed(2)}%` : '--'}
         </span>
-        <span className={styles.open}>{open?.toFixed(2) ?? '--'}</span>
-        <span className={styles.high}>{high?.toFixed(2) ?? '--'}</span>
-        <span className={styles.low}>{low?.toFixed(2) ?? '--'}</span>
-        <span className={styles.volume}>{formatVolume(volume)}</span>
+        <span className={styles.colOpen}>{open?.toFixed(2) ?? '--'}</span>
+        <span className={styles.colHigh}>{high?.toFixed(2) ?? '--'}</span>
+        <span className={styles.colLow}>{low?.toFixed(2) ?? '--'}</span>
+        <span className={styles.colVolume}>{formatVolume(volume)}</span>
         <Dropdown menu={{ items: menuItems }} trigger={['click']}>
           <span className={styles.moreBtn} onClick={(e) => e.stopPropagation()}>⋮</span>
         </Dropdown>

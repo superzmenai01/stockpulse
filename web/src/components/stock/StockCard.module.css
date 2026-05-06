@@ -15,19 +15,19 @@
   background: var(--hover-bg);
 }
 
-.code {
-  font-weight: bold;
-  min-width: 50px;
-  color: var(--text-primary);
-}
+/* Column classes for alignment with GroupCard header */
+.colCode { min-width: 50px; font-weight: bold; }
+.colName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colPrice { min-width: 60px; text-align: right; font-weight: bold; }
+.colPct { min-width: 55px; text-align: right; font-weight: bold; }
+.colOpen { min-width: 50px; text-align: right; color: var(--text-secondary); }
+.colHigh { min-width: 50px; text-align: right; color: var(--text-secondary); }
+.colLow { min-width: 50px; text-align: right; color: var(--text-secondary); }
+.colVolume { min-width: 50px; text-align: right; color: var(--text-secondary); }
 
-.name {
-  flex: 1;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Legacy class names mapped */
+.code { font-weight: bold; min-width: 50px; color: var(--text-primary); }
+.name { flex: 1; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .price {
   font-weight: bold;
