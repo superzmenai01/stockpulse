@@ -1,0 +1,106 @@
+/* GridTestPage - CSS Grid 對齊測試 */
+
+.container {
+  padding: 24px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+.container h1 {
+  margin-bottom: 24px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* Single grid template definition - used by both header and rows */
+.stockHeader,
+.stockRow {
+  display: grid;
+  /* Columns: code(60) name(1fr) price(70) pct(60) open(55) high(50) low(50) volume(50) more(24) */
+  grid-template-columns: 60px 1fr 70px 60px 55px 50px 50px 50px 24px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.stockHeader {
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.stockRow {
+  background: var(--bg-container);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
+.stockRow:hover {
+  background: var(--hover-bg);
+}
+
+/* Column specific styles - only alignment and colors */
+.colCode {
+  font-weight: bold;
+  min-width: 50px;
+}
+
+.colName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.colPrice {
+  text-align: right;
+  font-weight: bold;
+}
+
+.colPct {
+  text-align: right;
+  font-weight: bold;
+}
+
+.colOpen,
+.colHigh,
+.colLow {
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.colVolume {
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.colMore {
+  text-align: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.colMore:hover {
+  color: var(--text-primary);
+}
+
+.info {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.info code {
+  background: var(--bg-base);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: Monaco, Menlo, monospace;
+}

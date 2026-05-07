@@ -1,9 +1,9 @@
 // ResultPanel - 策略結果顯示面板
+// 使用 CSS Grid 對齊股票列表
 
-import React, { useState } from 'react'
-import { Card, Table, Tag, Typography, Button, Empty, Statistic, Row, Col, Modal } from 'antd'
+import { useState, useMemo } from 'react'
+import { Card, Typography, Button, Empty, Modal, Spin } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
-import { ColumnsType } from 'antd/es/table'
 import ChartContainer from '../../../components/chart/ChartContainer'
 import styles from './ResultPanel.module.css'
 
@@ -25,26 +25,20 @@ interface ResultPanelProps {
   onExecute: () => void
 }
 
-// 策略ID到名稱的映射
-const STRATEGY_NAMES: Record<string, string> = {
-  zigzag_v: 'ZigZag V型',
-  volume_surge: '成交量放大',
-  volume_surge_v2: '成交量放大',
-  breakout: '突破均線',
-  above_ma20: '20日均線',
-  above_ma50: '50日均線',
-  above_ma200: '200日均線',
-  rsi_oversold: 'RSI超賣',
-  macd_cross: 'MACD金叉',
-  new_high: '創新高',
-  low_pe: '低P/E',
-  high_roe: '高ROE',
-  volume_shrink: '成交量萎縮',
-}
+// Pagination constants
+const PAGE_SIZE = 10
 
 export default function ResultPanel({ results, loading, onRefresh, onExecute }: ResultPanelProps) {
   const [selectedStock, setSelectedStock] = useState<{ code: string; name: string } | null>(null)
   const [chartModalOpen, setChartModalOpen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  // Calculate pagination
+  const totalPages = Math.ceil(results.length / PAGE_SIZE)
+  const paginatedResults = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return results.slice(start, start + PAGE_SIZE)
+  }, [results, currentPage])
 
   const handleRowClick = (record: ScreenedStock) => {
     setSelectedStock({ code: record.code, name: record.name })
@@ -56,52 +50,9 @@ export default function ResultPanel({ results, loading, onRefresh, onExecute }: 
     setSelectedStock(null)
   }
 
-  const columns: ColumnsType<ScreenedStock> = [
-    {
-      title: '代碼',
-      dataIndex: 'code',
-      key: 'code',
-      width: 100,
-      render: (code: string) => <Text code>{code}</Text>,
-    },
-    {
-      title: '名稱',
-      dataIndex: 'name',
-      key: 'name',
-      width: 150,
-    },
-    {
-      title: '現價',
-      dataIndex: 'price',
-      key: 'price',
-      width: 80,
-      align: 'right',
-      render: (price: number) => price.toFixed(2),
-    },
-    {
-      title: '漲跌',
-      key: 'change',
-      width: 100,
-      align: 'right',
-      render: (_, record) => (
-        <Text type={record.change >= 0 ? 'success' : 'danger'}>
-          {record.change >= 0 ? '+' : ''}{record.change.toFixed(2)} ({record.pctChange >= 0 ? '+' : ''}{record.pctChange.toFixed(2)}%)
-        </Text>
-      ),
-    },
-    {
-      title: '符合策略',
-      dataIndex: 'matchedStrategies',
-      key: 'matchedStrategies',
-      render: (strategies: string[]) => (
-        <div className={styles.tagList}>
-          {strategies.map(s => (
-            <Tag key={s} color="blue">{STRATEGY_NAMES[s] || s}</Tag>
-          ))}
-        </div>
-      ),
-    },
-  ]
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
 
   return (
     <Card className={styles.card} size="small">
@@ -123,32 +74,74 @@ export default function ResultPanel({ results, loading, onRefresh, onExecute }: 
         </Text>
       </div>
 
-      {results.length === 0 ? (
+      {loading && results.length === 0 ? (
+        <div className={styles.empty}>
+          <Spin size="large" />
+          <Text type="secondary" style={{ marginTop: 12 }}>載入中...</Text>
+        </div>
+      ) : results.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={loading ? '載入中...' : '尚未執行策略'}
+          description="尚未執行策略"
           className={styles.empty}
         >
-          {!loading && (
-            <Button type="primary" onClick={onExecute}>
-              執行策略
-            </Button>
-          )}
+          <Button type="primary" onClick={onExecute}>
+            執行策略
+          </Button>
         </Empty>
       ) : (
-        <Table
-          className={styles.table}
-          dataSource={results}
-          columns={columns}
-          rowKey="code"
-          size="small"
-          pagination={{ pageSize: 10, showSizeChanger: true }}
-          loading={loading}
-          onRow={(record) => ({
-            onClick: () => handleRowClick(record),
-            style: { cursor: 'pointer' },
-          })}
-        />
+        <>
+          {/* Header */}
+          <div className={styles.stockHeader}>
+            <span className={styles.colCode}>代碼</span>
+            <span className={styles.colName}>名稱</span>
+            <span className={styles.colPrice}>現價</span>
+            <span className={styles.colChange}>漲跌</span>
+            <span className={styles.colMore}></span>
+          </div>
+
+          {/* Stock rows - CSS Grid */}
+          {paginatedResults.map((stock) => (
+            <div
+              key={stock.code}
+              className={styles.stockRow}
+              onClick={() => handleRowClick(stock)}
+            >
+              <span className={styles.colCode}>{stock.code}</span>
+              <span className={styles.colName}>{stock.name}</span>
+              <span className={styles.colPrice}>{stock.price.toFixed(2)}</span>
+              <span className={`${styles.colChange} ${stock.change >= 0 ? styles.colChangePositive : styles.colChangeNegative}`}>
+                {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.pctChange >= 0 ? '+' : ''}{stock.pctChange.toFixed(2)}%)
+              </span>
+              <span className={styles.colMore}>⋮</span>
+            </div>
+          ))}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className={styles.pagination}>
+              <Text className={styles.pageInfo}>
+                第 {currentPage}/{totalPages} 頁
+              </Text>
+              <Button
+                size="small"
+                disabled={currentPage <= 1}
+                onClick={() => handlePageChange(currentPage - 1)}
+                className={styles.pageBtn}
+              >
+                上一頁
+              </Button>
+              <Button
+                size="small"
+                disabled={currentPage >= totalPages}
+                onClick={() => handlePageChange(currentPage + 1)}
+                className={styles.pageBtn}
+              >
+                下一頁
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {/* 股票詳情 Modal - 點擊股票後顯示圖表 */}

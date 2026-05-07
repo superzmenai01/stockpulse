@@ -1,6 +1,8 @@
-/* 簡潔模式：組別內的股票行（暗色模式） */
+/* 簡潔模式：組別內的股票行（暗色模式）- CSS Grid 對齊 */
 .compactRow {
-  display: flex;
+  display: grid;
+  /* 與 stockHeader 完全一致: code(50) name(1fr) price(60) pct(55) open(50) high(50) low(50) volume(50) more(24) */
+  grid-template-columns: 50px 1fr 60px 55px 50px 50px 50px 50px 24px;
   align-items: center;
   padding: 8px 12px;
   background: var(--bg-base);
@@ -15,15 +17,15 @@
   background: var(--hover-bg);
 }
 
-/* Column classes for alignment with GroupCard header */
-.colCode { min-width: 50px; font-weight: bold; }
-.colName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.colPrice { min-width: 60px; text-align: right; font-weight: bold; }
-.colPct { min-width: 55px; text-align: right; font-weight: bold; }
-.colOpen { min-width: 50px; text-align: right; color: var(--text-secondary); }
-.colHigh { min-width: 50px; text-align: right; color: var(--text-secondary); }
-.colLow { min-width: 50px; text-align: right; color: var(--text-secondary); }
-.colVolume { min-width: 50px; text-align: right; color: var(--text-secondary); }
+/* Column classes for alignment with GroupCard header - Grid 精確匹配 */
+.colCode { font-weight: bold; }
+.colName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colPrice { text-align: right; font-weight: bold; }
+.colPct { text-align: right; font-weight: bold; }
+.colOpen { text-align: right; color: var(--text-secondary); }
+.colHigh { text-align: right; color: var(--text-secondary); }
+.colLow { text-align: right; color: var(--text-secondary); }
+.colVolume { text-align: right; color: var(--text-secondary); }
 
 /* Legacy class names mapped */
 .code { font-weight: bold; min-width: 50px; color: var(--text-primary); }
