@@ -34,7 +34,7 @@ function Header({
   return (
     <div className={styles.header}>
       <div className={styles.left}>
-        <span className={styles.title}>📈 StockPulse</span>
+        <span className={styles.title}>📈 ZMEN-StockPulse</span>
       </div>
       
       <div className={styles.right}>
