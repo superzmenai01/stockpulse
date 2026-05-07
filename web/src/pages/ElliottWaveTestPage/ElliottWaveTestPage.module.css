@@ -1,41 +1,92 @@
+/* ElliottWaveTestPage - 測試頁面樣式 */
+
 .container {
   display: flex;
   flex-direction: column;
-  height: 500px;
-  background: var(--bg-base);
+  height: 100vh;
+  background: #0D1114;
+  color: #D1D1D1;
+  padding: 0;
+  margin: 0;
 }
 
-.toolbar {
+.header {
+  padding: 16px 20px;
+  background: #161B22;
+  border-bottom: 1px solid #30363D;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: var(--bg-container);
-  border-bottom: 1px solid var(--border-color);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #F0F0F0;
 }
 
 .stockInfo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+.stockCode {
+  background: #238636;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .stockName {
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--text-primary);
+  font-size: 14px;
+  color: #D1D1D1;
 }
 
+.ewToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #D1D1D1;
+  cursor: pointer;
+  margin-left: 12px;
+}
+
+.ewToggle input {
+  cursor: pointer;
+}
+
+.ewStats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #888;
+  margin-left: auto;
+}
+
+.ewDebug {
+  padding: 8px 16px;
+  background: #1a1a2e;
+  color: #9B59B6;
+  font-size: 12px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  overflow-x: auto;
+  white-space: nowrap;
+}
 .chartWrapper {
   flex: 1;
   position: relative;
-  height: 450px;
-  min-height: 450px;
+  overflow: hidden;
 }
 
 .chart {
   width: 100%;
-  height: 450px;
+  height: 100%;
 }
 
 .loading {
@@ -43,7 +94,10 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.8);
+  color: #F9A11B;
+  padding: 12px 24px;
+  border-radius: 6px;
   font-size: 14px;
   z-index: 10;
 }
@@ -53,16 +107,37 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: var(--color-warning, #EE5151);
-  font-size: 16px;
-  font-weight: 500;
-  text-align: center;
+  background: rgba(238, 81, 81, 0.9);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 14px;
   z-index: 10;
 }
 
-.activeBtn {
-  background: var(--sidebar-selected) !important;
-  color: #fff !important;
+/* Elliott Wave Labels Overlay */
+.ewLabelOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.ewLabel {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  border: 2px solid;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
 }
 
 /* Right-click popup for EW editing */

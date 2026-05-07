@@ -10,6 +10,8 @@ import WatchlistPage from './pages/WatchlistPage'
 import StrategyPage from './pages/StrategyPage'
 import CalendarPage from './pages/CalendarPage'
 import TestKlinePage from './pages/TestKlinePage/TestKlinePage'
+import ElliottWaveTestPage from './pages/ElliottWaveTestPage/ElliottWaveTestPage'
+import GridTestPage from './pages/GridTestPage/GridTestPage'
 
 function App() {
   return (
@@ -23,6 +25,8 @@ function App() {
             <Route path="/strategy" element={<StrategyPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/test-kline" element={<TestKlinePage />} />
+            <Route path="/ew-test" element={<ElliottWaveTestPage />} />
+            <Route path="/grid-test" element={<GridTestPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </IndicatorSettingsProvider>

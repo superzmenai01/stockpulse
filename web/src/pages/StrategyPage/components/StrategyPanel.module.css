@@ -1,0 +1,68 @@
+.card {
+  margin-bottom: 12px;
+}
+
+.collapse :global(.ant-collapse-header) {
+  padding: 8px 0 !important;
+}
+
+.collapse :global(.ant-collapse-content-box) {
+  padding: 0 0 8px 0 !important;
+}
+
+.categoryLabel {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.strategyItem {
+  padding: 8px;
+  background: #f5f5f5;
+  border-radius: 6px;
+}
+
+.strategyHeader {
+  display: flex;
+  align-items: center;
+}
+
+.strategyDesc {
+  font-size: 12px;
+  display: block;
+  margin-top: 2px;
+  margin-left: 24px;
+}
+
+.params {
+  margin-top: 8px;
+  margin-left: 24px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.paramItem {
+  margin-bottom: 8px;
+}
+
+.paramItem:last-child {
+  margin-bottom: 0;
+}
+
+.paramLabel {
+  font-size: 12px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.slider {
+  margin: 0 4px;
+}
+
+.inputNumber {
+  width: 100%;
+}
+
+.select {
+  width: 100%;
+}

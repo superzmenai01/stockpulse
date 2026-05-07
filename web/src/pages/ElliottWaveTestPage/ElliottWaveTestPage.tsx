@@ -1,13 +1,16 @@
-// ChartContainer - K線圖主容器
+// ElliottWaveTestPage - Elliott Wave 指標測試頁面
+// 複製 ChartContainer 的 K線圖功能，用於測試 Elliott Wave 指標
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts'
 import { useWebSocketContext } from '../../context'
 import { useIndicatorSettings } from '../../context/IndicatorSettingsContext'
-import ChartToolbar from './ChartToolbar'
-import IndicatorPanel, { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorPanel'
 import { calculateElliottWave } from '../../utils/elliottWave'
-import styles from './ChartContainer.module.css'
+import ChartToolbar from '../../components/chart/ChartToolbar'
+import IndicatorPanel, { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from '../../components/chart/IndicatorPanel'
+import styles from './ElliottWaveTestPage.module.css'
+
+// ============ Types ============
 
 interface StockInfo {
   code: string
@@ -23,13 +26,6 @@ interface KLine {
   volume: number
 }
 
-interface ChartContainerProps {
-  stock: StockInfo
-  period?: string
-  indicatorConfig?: IndicatorConfig
-  onIndicatorChange?: (config: IndicatorConfig) => void
-}
-
 interface ChartData {
   code: string
   name: string
@@ -38,23 +34,20 @@ interface ChartData {
   error?: string
 }
 
+// User adjustment for a single EW point
+interface EWUserAdjustment {
+  time: Time        // Identify point by time
+  wave: number      // User-chosen wave number
+}
+
+// ============ Constants ============
+
 const PERIODS = [
   { label: '1分鐘K', value: '1m' },
   { label: '日K', value: '1d' },
   { label: '月K', value: '1M' },
   { label: '年K', value: '1y' },
 ]
-
-// ============ Elliott Wave 常量 ============
-
-// LocalStorage key for EW adjustments
-const EW_ADJUSTMENTS_KEY = 'stockpulse_ew_adjustments'
-
-// User adjustment for a single EW point
-interface EWUserAdjustment {
-  time: Time
-  wave: number
-}
 
 // Wave label colors
 const WAVE_COLORS: Record<number, string> = {
@@ -110,6 +103,33 @@ const ALL_WAVE_OPTIONS = [
   { value: -4, label: 'E', color: WAVE_COLORS[-4] },
 ]
 
+// ============ Time Parsing ============
+
+// LocalStorage key for EW adjustments
+const EW_ADJUSTMENTS_KEY = 'stockpulse_ew_adjustments'
+
+// Load adjustments from localStorage
+function loadEWAdjustments(): EWUserAdjustment[] {
+  try {
+    const saved = localStorage.getItem(EW_ADJUSTMENTS_KEY)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (e) {
+    console.error('[EW] Failed to load adjustments from localStorage:', e)
+  }
+  return []
+}
+
+// Save adjustments to localStorage
+function saveEWAdjustments(adjustments: EWUserAdjustment[]): void {
+  try {
+    localStorage.setItem(EW_ADJUSTMENTS_KEY, JSON.stringify(adjustments))
+  } catch (e) {
+    console.error('[EW] Failed to save adjustments to localStorage:', e)
+  }
+}
+
 const parseTime = (timeStr: string, period: string): Time => {
   if (period === '1m') {
     const date = new Date(timeStr)
@@ -125,14 +145,8 @@ const parseTime = (timeStr: string, period: string): Time => {
   return timeStr.substring(0, 10) as Time
 }
 
-// ============ 指標計算函數 ============
+// ============ Indicator Calculations ============
 
-/**
- * 計算移動平均線 (MA)
- * @param klines K線數據
- * @param period 週期（如 5、10、20）
- * @returns 包含 time 和 value 的數組
- */
 function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
   const result: Array<{ time: Time; value: number }> = []
   for (let i = period - 1; i < klines.length; i++) {
@@ -148,12 +162,6 @@ function calculateMA(klines: KLine[], period: number): Array<{ time: Time; value
   return result
 }
 
-/**
- * 計算指數移動平均線 (EMA)
- * @param klines K線數據
- * @param period 週期（如 5、10、20）
- * @returns 包含 time 和 value 的數組
- */
 function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; value: number }> {
   if (klines.length < period) return []
 
@@ -177,13 +185,6 @@ function calculateEMA(klines: KLine[], period: number): Array<{ time: Time; valu
   return result
 }
 
-/**
- * 計算布林帶 (Bollinger Bands)
- * @param klines K線數據
- * @param period 週期（預設20）
- * @param stdDev 標準差倍數（預設2）
- * @returns 上軌、中軌、下軌三組數據
- */
 function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper: Array<{ time: Time; value: number }>; middle: Array<{ time: Time; value: number }>; lower: Array<{ time: Time; value: number }> } {
   const upper: Array<{ time: Time; value: number }> = []
   const middle: Array<{ time: Time; value: number }> = []
@@ -210,23 +211,8 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
   
   return { upper, middle, lower }
 }
-// ============ ZigZag 計算（使用 High/Low）===========
 
-/**
- * ZigZag 轉向點識別
- * 
- * 使用 high/low 追蹤價格峰值和谷底，
- * 當 close 偏離峰值/谷底超過 threshold% 時判定為轉向。
- * 
- * @param klines K線數據
- * @param thresholdPercent 轉向阈值（預設5%）
- * @param period 週期字串（用於時間解析）
- * @returns 轉向點數組 [{time, value}]
- */
-interface ZigZagPoint {
-  time: Time
-  price: number
-}
+// ============ ZigZag Calculation ============
 
 function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period: string = '1d'): Array<{ time: Time; value: number }> {
   if (klines.length < 2) return []
@@ -234,10 +220,9 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
   const result: Array<{ time: Time; value: number }> = []
   const threshold = thresholdPercent / 100
 
-  // ZigZag 永遠從第一支竹的 low 開始
   result.push({
     time: parseTime(klines[0].time, period),
-    value: klines[0].low,  // 用 low 作為起始點
+    value: klines[0].low,
   })
 
   let lastSwingHigh = klines[0].high
@@ -245,23 +230,20 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
   let lastSwingIdx = 0
   let inUptrend = klines[1].close > klines[0].close
 
-  // 找到第一個顯著高/低點
   for (let i = 1; i < klines.length; i++) {
     const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
     const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
 
     if (inUptrend) {
-      // 上升趨勢：更新 high
       if (klines[i].high > lastSwingHigh) {
         lastSwingHigh = klines[i].high
         lastSwingLow = klines[i].low
         lastSwingIdx = i
       }
-      // 從 high 下跌超過 threshold = 轉向
       if (changeFromHigh <= -threshold) {
         result.push({
           time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingHigh,  // 記錄峰值 high
+          value: lastSwingHigh,
         })
         inUptrend = false
         lastSwingLow = klines[i].low
@@ -270,17 +252,15 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
         break
       }
     } else {
-      // 下跌趨勢：更新 low
       if (klines[i].low < lastSwingLow) {
         lastSwingLow = klines[i].low
         lastSwingHigh = klines[i].high
         lastSwingIdx = i
       }
-      // 從 low 上升超過 threshold = 轉向
       if (changeFromLow >= threshold) {
         result.push({
           time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingLow,  // 記錄谷底 low
+          value: lastSwingLow,
         })
         inUptrend = true
         lastSwingLow = klines[i].low
@@ -291,23 +271,17 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
     }
   }
 
-  if (result.length <= 1) {
-    // 沒有找到顯著轉向點，只返回第一個點
-    return result
-  }
+  if (result.length <= 1) return result
 
-  // 繼續追蹤轉向點
   for (let i = lastSwingIdx + 1; i < klines.length; i++) {
     const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
     const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
 
     if (inUptrend) {
-      // 上升趨勢：更新 high
       if (klines[i].high > lastSwingHigh) {
         lastSwingHigh = klines[i].high
         lastSwingIdx = i
       }
-      // 從 high 下跌超過 threshold = 轉向下跌
       if (changeFromHigh <= -threshold) {
         result.push({
           time: parseTime(klines[lastSwingIdx].time, period),
@@ -318,12 +292,10 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
         lastSwingIdx = i
       }
     } else {
-      // 下跌趨勢：更新 low
       if (klines[i].low < lastSwingLow) {
         lastSwingLow = klines[i].low
         lastSwingIdx = i
       }
-      // 從 low 上升超過 threshold = 轉向上漲
       if (changeFromLow >= threshold) {
         result.push({
           time: parseTime(klines[lastSwingIdx].time, period),
@@ -336,7 +308,6 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
     }
   }
 
-  // 添加最後一個有效轉向點（峰值或谷底）
   const lastTime = parseTime(klines[lastSwingIdx].time, period)
   if (result.length > 0 && result[result.length - 1].time !== lastTime) {
     result.push({
@@ -345,14 +316,11 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
     })
   }
 
-  // 過濾並確保時間严格遞增（去重 + 排序）
-  // 使用 Map 確保每個 timestamp 只有一個點（保留最後一個）
   const timeMap = new Map<Time, { time: Time; value: number }>()
   for (const point of result) {
-    timeMap.set(point.time, point)  // 相同 time 的後者覆蓋前者
+    timeMap.set(point.time, point)
   }
   
-  // 轉為數組並確保嚴格遞增排序
   const filtered: Array<{ time: Time; value: number }> = Array.from(timeMap.values()).sort((a, b) => {
     if (a.time < b.time) return -1
     if (a.time > b.time) return 1
@@ -362,12 +330,12 @@ function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period:
   return filtered
 }
 
-// ============ 創建圖表實例 ============
+// ============ Chart Creation ============
 
 const createChartInstance = (container: HTMLDivElement) => {
   const chart = createChart(container, {
-    width: container.clientWidth || 800,
-    height: container.clientHeight || 450,
+    width: container.clientWidth || 900,
+    height: container.clientHeight || 500,
     layout: {
       background: { color: '#0D1114' },
       textColor: '#D1D1D1',
@@ -414,8 +382,9 @@ const createChartInstance = (container: HTMLDivElement) => {
   return { chart, candlestickSeries, volumeSeries }
 }
 
-// ============ ChartClickHandler - right-click for EW editing ============
+// ============ Component ============
 
+// ChartClickHandler - right-click handler for EW point editing
 interface ChartClickHandlerProps {
   chartRef: React.RefObject<IChartApi | null>
   ewResult: ReturnType<typeof calculateElliottWave> | null
@@ -428,26 +397,32 @@ function ChartClickHandler({ chartRef, ewResult, ewEnabled, onEWPointClick }: Ch
     const chart = chartRef.current
     if (!chart || !ewEnabled || !ewResult) return
 
-    const handleContextMenu = (param: { point: { x: number; y: number } | null }) => {
+    const handleContextMenu = (param: any) => {
       if (!ewResult || ewResult.labels.length === 0) return
-      if (!param.point) return
-
-      const time = chart.timeScale().coordinateToTime(param.point.x)
+      
+      const point = param.point
+      if (!point) return
+      
+      // Get time at click position
+      const time = chart.timeScale().coordinateToTime(point.x)
       if (!time) return
-
+      
+      // Find nearest EW label
       let nearestLabel: typeof ewResult.labels[0] | null = null
       let nearestDist = Infinity
-
+      
       for (const label of ewResult.labels) {
         const labelTimeCoord = chart.timeScale().timeToCoordinate(label.time)
         if (labelTimeCoord === null) continue
-        const dist = Math.abs(labelTimeCoord - param.point.x)
+        
+        // Simple distance in screen coords
+        const dist = Math.abs(labelTimeCoord - point.x) 
         if (dist < nearestDist && dist < 50) {
           nearestDist = dist
           nearestLabel = label
         }
       }
-
+      
       if (nearestLabel) {
         onEWPointClick(nearestLabel.time, nearestLabel.wave, nearestLabel.price)
       }
@@ -462,12 +437,9 @@ function ChartClickHandler({ chartRef, ewResult, ewEnabled, onEWPointClick }: Ch
   return null
 }
 
-export default function ChartContainer({
-  stock,
-  period = '1d',
-  indicatorConfig: externalConfig,
-  onIndicatorChange,
-}: ChartContainerProps) {
+const TEST_STOCK: StockInfo = { code: 'HK.00981', name: '中芯國際' }
+
+export default function ElliottWaveTestPage() {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -475,10 +447,8 @@ export default function ChartContainer({
   const lineSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const zigzagSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-  const ewSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-  const ewLabelsRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const ewConnectionRefs = useRef<ISeriesApi<'Line'>[]>([])
   const ewMarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null)
-  const ewResultRef = useRef<ReturnType<typeof calculateElliottWave> | null>(null)
   
   const loadingPeriodRef = useRef<string>('')
   const dataPeriodRef = useRef<string>('')
@@ -487,32 +457,27 @@ export default function ChartContainer({
   
   const today = new Date().toISOString().split('T')[0]
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const [currentPeriod, setCurrentPeriod] = useState(period)
+  const [currentPeriod, setCurrentPeriod] = useState('1d')
   const [startDate, setStartDate] = useState<string>(sixMonthsAgo)
   const [endDate, setEndDate] = useState<string>(today)
   
-  // 當 currentPeriod 改變時，自動調整 startDate
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
     let newStartDate: string
     
     if (currentPeriod === '1M') {
-      // 月K：自動向前取 10 年（120個月）
       const d = new Date()
       d.setFullYear(d.getFullYear() - 10)
       newStartDate = d.toISOString().split('T')[0]
     } else if (currentPeriod === '1y') {
-      // 年K：自動向前取 120 年（全部歷史）
       const d = new Date()
       d.setFullYear(d.getFullYear() - 120)
       newStartDate = d.toISOString().split('T')[0]
     } else if (currentPeriod === '1d') {
-      // 日K：維持現有的 6 個月 logic
       const d = new Date()
       d.setDate(d.getDate() - 180)
       newStartDate = d.toISOString().split('T')[0]
     } else {
-      // 1m, 5m, 15m 等分鐘K：不需要 startDate
       newStartDate = ''
     }
     
@@ -524,45 +489,22 @@ export default function ChartContainer({
   
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [ewResult, setEwResult] = useState<ReturnType<typeof calculateElliottWave> | null>(null)
   
-  // 使用 context 的設置（如果有的話）
   const { config: contextConfig, setConfig: setContextConfig } = useIndicatorSettings()
   const [indicatorConfig, setIndicatorConfig] = useState<IndicatorConfig>(
-    externalConfig || contextConfig || DEFAULT_INDICATOR_CONFIG
+    contextConfig || DEFAULT_INDICATOR_CONFIG
+  )
+  
+  // EW enabled state 直接來自 indicatorConfig.ElliottWave.enabled
+  const ewEnabled = indicatorConfig.ElliottWave?.enabled ?? false
+
+  // Semi-auto: user adjustments - load from localStorage
+  const [ewUserAdjustments, setEwUserAdjustments] = useState<EWUserAdjustment[]>(
+    () => loadEWAdjustments()
   )
 
-  // MACD overlay refs removed
-
-  const [klineData, setKlineData] = useState<KLine[]>([])
-
-  const { quotes } = useWebSocketContext()
-
-  // ============ EW 半自動狀態 ============
-
-  // Load adjustments from localStorage
-  const loadEWAdjustments = useCallback((): EWUserAdjustment[] => {
-    try {
-      const saved = localStorage.getItem(EW_ADJUSTMENTS_KEY)
-      if (saved) return JSON.parse(saved)
-    } catch (e) {
-      console.error('[Chart] Failed to load EW adjustments:', e)
-    }
-    return []
-  }, [])
-
-  // Save adjustments to localStorage
-  const saveEWAdjustments = useCallback((adjustments: EWUserAdjustment[]) => {
-    try {
-      localStorage.setItem(EW_ADJUSTMENTS_KEY, JSON.stringify(adjustments))
-    } catch (e) {
-      console.error('[Chart] Failed to save EW adjustments:', e)
-    }
-  }, [])
-
-  // User adjustments state
-  const [ewUserAdjustments, setEwUserAdjustments] = useState<EWUserAdjustment[]>(() => loadEWAdjustments())
-
-  // Popup state for editing EW label
+  // Semi-auto: popup state for editing wave label
   const [ewEditPopup, setEwEditPopup] = useState<{
     visible: boolean
     time: Time | null
@@ -576,12 +518,17 @@ export default function ChartContainer({
     return adj ? adj.wave : defaultWave
   }, [ewUserAdjustments])
 
-  // Handle clicking an EW marker
+  // Handle clicking an EW marker to change its label
   const handleEWMarkerClick = useCallback((time: Time, wave: number, price: number) => {
-    setEwEditPopup({ visible: true, time, currentWave: wave, price })
+    setEwEditPopup({
+      visible: true,
+      time,
+      currentWave: wave,
+      price,
+    })
   }, [])
 
-  // Confirm wave label change and persist
+  // Confirm wave label change and persist to localStorage
   const confirmEWLabelChange = useCallback((newWave: number) => {
     if (ewEditPopup.time !== null) {
       setEwUserAdjustments(prev => {
@@ -592,20 +539,23 @@ export default function ChartContainer({
       })
     }
     setEwEditPopup({ visible: false, time: null, currentWave: 0, price: 0 })
-  }, [ewEditPopup.time, saveEWAdjustments])
+  }, [ewEditPopup.time])
+
+  const [klineData, setKlineData] = useState<KLine[]>([])
+
+  const { quotes } = useWebSocketContext()
 
   const handleIndicatorChange = useCallback((newConfig: IndicatorConfig) => {
     setIndicatorConfig(newConfig)
-    setContextConfig(newConfig)  // 保存到後端
-    onIndicatorChange?.(newConfig)
-  }, [setContextConfig, onIndicatorChange])
+    setContextConfig(newConfig)
+  }, [setContextConfig])
 
-  // 初始化圖表（只在 mount 時執行一次）
+  // 初始化圖表
   useEffect(() => {
     if (!chartContainerRef.current) return
 
     const container = chartContainerRef.current
-    console.log('[Chart] Creating chart')
+    console.log('[EW Test] Creating chart')
 
     const { chart, candlestickSeries, volumeSeries } = createChartInstance(container)
 
@@ -613,13 +563,13 @@ export default function ChartContainer({
     candlestickSeriesRef.current = candlestickSeries
     volumeSeriesRef.current = volumeSeries
     setChartCreated(true)
-    console.log('[Chart] Chart created')
+    console.log('[EW Test] Chart created')
     
     const handleResize = () => {
       if (container && chartRef.current) {
         chartRef.current.applyOptions({
-          width: container.clientWidth || 800,
-          height: container.clientHeight || 450,
+          width: container.clientWidth || 900,
+          height: container.clientHeight || 500,
         })
       }
     }
@@ -628,7 +578,7 @@ export default function ChartContainer({
 
     return () => {
       window.removeEventListener('resize', handleResize)
-      console.log('[Chart] Cleanup')
+      console.log('[EW Test] Cleanup')
       if (chartRef.current) {
         chartRef.current.remove()
         chartRef.current = null
@@ -663,6 +613,27 @@ export default function ChartContainer({
       dataPeriodRef.current = period
       setKlineData(data.klines)
       
+      // 計算 Elliott Wave
+      const zigzagPoints = calculateZigZag(data.klines, indicatorConfig.ZigZag.threshold, period)
+      const ew = calculateElliottWave(zigzagPoints)
+      setEwResult(ew)
+      
+      // DEBUG: 打印完整 EW 結果
+      console.log('[EW Test] === DEBUG START ===')
+      console.log('[EW Test] K-lines count:', data.klines.length)
+      console.log('[EW Test] ZigZag threshold:', indicatorConfig.ZigZag.threshold)
+      console.log('[EW Test] ZigZag points:', zigzagPoints.length)
+      zigzagPoints.forEach((p, i) => {
+        console.log(`  [${i}] ${p.time}: ${p.value}`)
+      })
+      console.log('[EW Test] EW result:', JSON.stringify({
+        labelsCount: ew.labels.length,
+        wavesCount: ew.waves.length,
+        connectionsCount: ew.connections.length,
+        labels: ew.labels.slice(0, 5).map(l => ({ t: l.text, w: l.wave, p: l.price }))
+      }))
+      console.log('[EW Test] === DEBUG END ===')
+      
       if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
         const candleMap = new Map<string, CandlestickData<Time>>()
         for (const k of data.klines) {
@@ -686,22 +657,21 @@ export default function ChartContainer({
         chartRef.current.timeScale().fitContent()
       }
     } catch (err) {
-      console.error('[Chart] 載入K線失敗:', err)
+      console.error('[EW Test] 載入K線失敗:', err)
     } finally {
       if (loadingPeriodRef.current === period) {
         setLoading(false)
       }
     }
-  }, [])
+  }, [indicatorConfig.ZigZag.threshold])
 
-  // chartCreated 後載入數據
   useEffect(() => {
     if (chartCreated) {
-      loadKlineData(stock.code, currentPeriod, startDate, endDate)
+      loadKlineData(TEST_STOCK.code, currentPeriod, startDate, endDate)
     }
-  }, [chartCreated, stock.code, currentPeriod, startDate, endDate, loadKlineData])
+  }, [chartCreated, currentPeriod, startDate, endDate, loadKlineData])
 
-  // 更新指標線
+  // 更新 MA/EMA/BOLL 指標線
   useEffect(() => {
     if (!chartRef.current || klineData.length === 0) return
     
@@ -723,7 +693,6 @@ export default function ChartContainer({
       if (config.enabled) {
         const rawData = calculateMA(klineData, config.period)
         if (rawData.length > 0) {
-          // 去重：確保時間嚴格遞增
           const seen = new Set<Time>()
           const data = rawData.filter(p => {
             if (seen.has(p.time)) return false
@@ -749,7 +718,6 @@ export default function ChartContainer({
       if (config.enabled) {
         const rawData = calculateEMA(klineData, config.period)
         if (rawData.length > 0) {
-          // 去重：確保時間嚴格遞增
           const seen = new Set<Time>()
           const data = rawData.filter(p => {
             if (seen.has(p.time)) return false
@@ -787,7 +755,7 @@ export default function ChartContainer({
         bollSeriesRefs.current['BOLL_LOWER'] = lowerSeries
       }
     }
-  }, [klineData, currentPeriod, indicatorConfig])
+  }, [klineData, indicatorConfig])
 
   // ZigZag Indicator
   useEffect(() => {
@@ -797,7 +765,6 @@ export default function ChartContainer({
     const enabled = indicatorConfig.ZigZag.enabled
     const threshold = indicatorConfig.ZigZag.threshold
 
-    // 移除舊的 ZigZag series（如果存在）
     if (zigzagSeriesRef.current) {
       try { chart.removeSeries(zigzagSeriesRef.current) } catch {}
       zigzagSeriesRef.current = null
@@ -815,94 +782,50 @@ export default function ChartContainer({
     })
     zigzagSeries.setData(zigzagData)
     zigzagSeriesRef.current = zigzagSeries
-  }, [indicatorConfig.ZigZag, klineData, chartCreated])
+  }, [indicatorConfig.ZigZag, klineData, chartCreated, currentPeriod])
 
-  // Elliott Wave Indicator
+  // Elliott Wave Connections (lines between waves)
   useEffect(() => {
-    if (!chartRef.current || !chartCreated || klineData.length === 0) return
+    if (!chartRef.current || !chartCreated || klineData.length === 0 || !ewEnabled) return
 
     const chart = chartRef.current
-    const enabled = indicatorConfig.ElliottWave?.enabled
-    const showLines = indicatorConfig.ElliottWave?.showLines ?? true
-    const showLabels = indicatorConfig.ElliottWave?.showLabels ?? true
-    const ewColor = indicatorConfig.ElliottWave?.color ?? '#00CED1'
 
-    // 移除舊的 EW series
-    if (ewSeriesRef.current) {
-      try { chart.removeSeries(ewSeriesRef.current) } catch {}
-      ewSeriesRef.current = null
+    // Remove old EW connection series
+    for (const ref of ewConnectionRefs.current) {
+      try { chart.removeSeries(ref) } catch {}
     }
-    if (ewLabelsRef.current) {
-      try { chart.removeSeries(ewLabelsRef.current) } catch {}
-      ewLabelsRef.current = null
-    }
+    ewConnectionRefs.current = []
 
-    if (!enabled) return
+    if (!ewResult || ewResult.connections.length === 0) return
 
-    // 先計算 ZigZag 轉向點
-    const zigzagData = calculateZigZag(klineData, indicatorConfig.ZigZag.threshold, currentPeriod)
-    if (zigzagData.length < 4) return
-
-    // 計算 Elliott Wave
-    const ewResult = calculateElliottWave(zigzagData)
-    console.log('[EW] Result:', ewResult)
-    ewResultRef.current = ewResult
-
-    // 繪製 EW 連線（使用調整後的 wave 編號）
-    if (showLines && ewResult.connections.length > 0) {
-      const ewLineData = ewResult.connections.map(conn => ({
-        time: conn.from,
-        value: conn.priceFrom,
-      }))
-      // 添加最後一個點到收盤
-      const lastConn = ewResult.connections[ewResult.connections.length - 1]
-      ewLineData.push({ time: lastConn.to, value: lastConn.priceTo })
-
-      const ewSeries = chart.addSeries(LineSeries, {
-        color: ewColor,
-        lineWidth: 2,
+    // Draw wave connections (thicker lines for visibility)
+    for (const conn of ewResult.connections) {
+      const color = WAVE_COLORS[conn.wave] || '#FF6B6B'
+      const connectionSeries = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 3,
         priceLineVisible: false,
+        lastValueVisible: false,
       })
-      ewSeries.setData(ewLineData)
-      ewSeriesRef.current = ewSeries
+      connectionSeries.setData([
+        { time: conn.from, value: conn.priceFrom },
+        { time: conn.to, value: conn.priceTo },
+      ])
+      ewConnectionRefs.current.push(connectionSeries)
     }
+    
+    console.log('[EW Test] Drew', ewResult.connections.length, 'wave connections')
+  }, [ewResult, ewEnabled, chartCreated, klineData])
 
-    // 繪製 EW 標記（用極端點）
-    if (showLabels && ewResult.waves.length > 0) {
-      // 找出關鍵轉向點（wave > 0 或 wave === 0 當作 A）
-      const labelPoints = ewResult.waves
-        .filter(w => w.wave > 0 || w.wave === 0)
-        .map(w => ({
-          time: w.time,
-          value: w.price,
-        }))
-
-      if (labelPoints.length > 0) {
-        const ewLabelSeries = chart.addSeries(LineSeries, {
-          color: ewColor,
-          lineWidth: 0,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        })
-        ewLabelSeries.setData(labelPoints)
-        ewLabelsRef.current = ewLabelSeries
-      }
-    }
-  }, [indicatorConfig.ElliottWave, indicatorConfig.ZigZag, klineData, chartCreated, currentPeriod, ewUserAdjustments])
-
-  // Elliott Wave Markers (wave labels on chart) - 新增 useEffect
+  // Elliott Wave Markers (wave labels on chart)
   useEffect(() => {
     if (!chartRef.current || !chartCreated || klineData.length === 0) return
 
     const series = candlestickSeriesRef.current
     if (!series) return
 
-    const enabled = indicatorConfig.ElliottWave?.enabled
-    const showLabels = indicatorConfig.ElliottWave?.showLabels ?? true
-    const ewResult = ewResultRef.current
-
     // Clear markers when EW is disabled
-    if (!enabled || !showLabels || !ewResult || !ewResult.labels || ewResult.labels.length === 0) {
+    if (!ewEnabled || !ewResult || !ewResult.labels || ewResult.labels.length === 0) {
       if (ewMarkersRef.current) {
         ewMarkersRef.current.setMarkers([])
       }
@@ -918,19 +841,19 @@ export default function ChartContainer({
     const markers = ewResult.labels.map(label => {
       // Apply user adjustment
       const waveNum = getWaveNumber(label.time, label.wave)
-
+      
       // Find corresponding wave in ewResult.waves to get the type (high/low)
-      const waveInfo = ewResult.waves.find(w =>
+      const waveInfo = ewResult.waves.find(w => 
         w.time === label.time && w.price === label.price
       )
       const isHighPoint = waveInfo?.type === 'high'
-
+      
       // Position: aboveBar for highs, belowBar for lows
       const position: 'aboveBar' | 'belowBar' = isHighPoint ? 'aboveBar' : 'belowBar'
-
-      // Shape: arrowUp for highs, arrowDown for lows
+      
+      // Shape: arrowUp for highs (push up), arrowDown for lows (push down)
       const shape: 'arrowUp' | 'arrowDown' = isHighPoint ? 'arrowUp' : 'arrowDown'
-
+      
       return {
         time: label.time,
         position,
@@ -942,14 +865,17 @@ export default function ChartContainer({
       }
     })
 
-    console.log('[Chart] Setting', markers.length, 'EW markers')
+    console.log('[EW Test] Setting', markers.length, 'EW markers')
     const markersPlugin = createSeriesMarkers(series, markers)
     ewMarkersRef.current = markersPlugin
-  }, [indicatorConfig.ElliottWave, klineData, chartCreated, ewUserAdjustments, getWaveNumber])
+    
+    // Subscribe to marker clicks for semi-auto editing
+    // Note: lightweight-charts markers don't have click events, using right-click instead
+  }, [ewResult, ewEnabled, chartCreated, klineData, ewUserAdjustments, getWaveNumber])
 
   // 實時更新最後一根蠟燭
   useEffect(() => {
-    const quote = quotes[stock.code]
+    const quote = quotes[TEST_STOCK.code]
     if (!quote || !candlestickSeriesRef.current || loading) return
     if (dataPeriodRef.current !== currentPeriod) return
     
@@ -972,7 +898,7 @@ export default function ChartContainer({
       low: quote.low_price || quote.last_price,
       close: quote.last_price,
     })
-  }, [quotes[stock.code], stock.code, currentPeriod, loading])
+  }, [quotes[TEST_STOCK.code], currentPeriod, loading])
 
   const handlePeriodChange = (period: string) => setCurrentPeriod(period)
   const handleDateChange = (start: string, end: string) => {
@@ -980,26 +906,56 @@ export default function ChartContainer({
     setEndDate(end)
   }
 
+  // 構建 EW 標籤列表用於調試顯示
+  const ewLabelsDebug = ewResult?.labels.map(l => `${l.text}@${l.price}`).join(', ') || ''
+
   return (
     <div className={styles.container}>
+      <div className={styles.header}>
+        <h2>📊 Elliott Wave 指標測試頁面</h2>
+        <div className={styles.stockInfo}>
+          <span className={styles.stockCode}>{TEST_STOCK.code}</span>
+          <span className={styles.stockName}>{TEST_STOCK.name}</span>
+          <span className={styles.ewStatus}>{ewEnabled ? '✓ EW On' : '✗ EW Off'}</span>
+        </div>
+        {ewResult && (
+          <div className={styles.ewStats}>
+            <span>ZigZag 點: {ewResult.waves.length}</span>
+            <span>標記: {ewResult.labels.length}</span>
+            <span>連線: {ewResult.connections.length}</span>
+            <span style={{ color: ewResult.valid ? '#26BA75' : '#F39C12' }}>
+              {ewResult.valid ? '✓ 規則驗證通過' : '⚠ ' + ewResult.message}
+            </span>
+          </div>
+        )}
+      </div>
+      
+      {ewLabelsDebug && ewEnabled && (
+        <div className={styles.ewDebug}>
+          {ewLabelsDebug}
+        </div>
+      )}
+      
       <ChartToolbar
         periods={PERIODS}
         currentPeriod={currentPeriod}
         onPeriodChange={handlePeriodChange}
-        stockName={stock.name}
+        stockName={TEST_STOCK.name}
         startDate={startDate}
         endDate={endDate}
         onDateChange={handleDateChange}
       />
+      
       <IndicatorPanel
         config={indicatorConfig}
         onChange={handleIndicatorChange}
       />
+      
       <div className={styles.chartWrapper}>
         <div ref={chartContainerRef} className={styles.chart} />
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
-
+        
         {/* Semi-auto EW Edit Popup */}
         {ewEditPopup.visible && (
           <div className={styles.ewEditPopup}>
@@ -1010,7 +966,7 @@ export default function ChartContainer({
                 <button
                   key={opt.value}
                   className={styles.ewWaveButton}
-                  style={{
+                  style={{ 
                     backgroundColor: opt.value === ewEditPopup.currentWave ? opt.color : '#333',
                     color: opt.value === ewEditPopup.currentWave ? '#000' : '#FFF'
                   }}
@@ -1021,7 +977,7 @@ export default function ChartContainer({
               ))}
             </div>
             <div className={styles.ewEditPopupHint}>點擊波浪編號以更改標記</div>
-            <button
+            <button 
               className={styles.ewEditPopupCancel}
               onClick={() => setEwEditPopup({ visible: false, time: null, currentWave: 0, price: 0 })}
             >
@@ -1030,12 +986,12 @@ export default function ChartContainer({
           </div>
         )}
       </div>
-
+      
       {/* Right-click on chart to edit EW label */}
       <ChartClickHandler
         chartRef={chartRef}
-        ewResult={ewResultRef.current}
-        ewEnabled={indicatorConfig.ElliottWave?.enabled ?? false}
+        ewResult={ewResult}
+        ewEnabled={ewEnabled}
         onEWPointClick={handleEWMarkerClick}
       />
     </div>
