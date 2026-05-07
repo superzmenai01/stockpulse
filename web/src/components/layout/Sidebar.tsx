@@ -32,7 +32,7 @@ function Sidebar() {
   return (
     <div className={styles.sidebar}>
       <div className={styles.logo}>
-        <span className={styles.logoText}>📈 StockPulse</span>
+        <span className={styles.logoText}>📈 ZMEN-StockPulse</span>
       </div>
       
       <Menu
