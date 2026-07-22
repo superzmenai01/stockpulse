@@ -24,10 +24,32 @@
   .sider {
     display: none;
   }
-  
+
   .content {
     margin-left: 0;
     padding: 16px;
     padding-bottom: 80px; /* 給底部導航留空間 */
   }
+}
+
+/* Drag handle (right edge of sidebar) */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background 0.15s;
+}
+
+.resizeHandle:hover {
+  background: rgba(37, 99, 235, 0.25);
+}
+
+.resizeHandleActive,
+.resizeHandleActive:hover {
+  background: rgba(37, 99, 235, 0.5);
 }

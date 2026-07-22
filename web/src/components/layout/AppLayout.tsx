@@ -1,5 +1,5 @@
 // AppLayout - 主要佈局組件
-// Desktop: 側邊欄 + 內容區
+// Desktop: 側邊欄 (drag-to-resize + auto-persist) + 內容區
 // Mobile: 底部導航 + 內容區
 
 import React from 'react'
@@ -7,6 +7,7 @@ import { Layout } from 'antd'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import Header from './Header'
+import { useDragResize } from '../../utils/useDragResize'
 import styles from './AppLayout.module.css'
 
 const { Content, Sider } = Layout
@@ -29,6 +30,12 @@ function AppLayout({
   onUnsubscribe,
 }: AppLayoutProps) {
   const [isMobile, setIsMobile] = React.useState(false)
+  const sidebar = useDragResize({
+    initial: 200,
+    min: 160,
+    max: 400,
+    storageKey: 'main-sidebar-width',
+  })
 
   React.useEffect(() => {
     const checkMobile = () => {
@@ -60,8 +67,14 @@ function AppLayout({
       ) : (
         // Desktop: 側邊欄 + Header + Content
         <>
-          <Sider width={200} className={styles.sider}>
+          <Sider width={sidebar.width} className={styles.sider}>
             <Sidebar />
+            {/* Drag handle on right edge */}
+            <div
+              className={`${styles.resizeHandle} ${sidebar.dragging ? styles.resizeHandleActive : ''}`}
+              onMouseDown={sidebar.handleMouseDown}
+              title="拖拽改 sidebar 闊度"
+            />
           </Sider>
           <Layout>
             <Header
@@ -71,7 +84,7 @@ function AppLayout({
               cancelCooldown={cancelCooldown}
               onUnsubscribe={onUnsubscribe}
             />
-            <Content className={styles.content}>
+            <Content className={styles.content} style={{ marginLeft: sidebar.width }}>
               {children}
             </Content>
           </Layout>
