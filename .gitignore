@@ -28,3 +28,7 @@ STRATEGY_CONCEPTS.md
 # docs/ sync hash files (managed by LaunchAgent, auto-regenerated)
 docs/.strategy_last_sync_hash
 docs/.algorithm_last_sync_hash
+
+# docs/ALGORITHM_SPECS.md (auto-synced from MEMORY every 1h by LaunchAgent,
+# would conflict on push/pulls; tracked only in workspace MEMORY)
+docs/ALGORITHM_SPECS.md
