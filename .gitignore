@@ -24,3 +24,7 @@ logs/*.log
 *.db
 logs/*.log
 STRATEGY_CONCEPTS.md
+
+# docs/ sync hash files (managed by LaunchAgent, auto-regenerated)
+docs/.strategy_last_sync_hash
+docs/.algorithm_last_sync_hash
