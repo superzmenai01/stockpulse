@@ -2,12 +2,15 @@
 StockPulse 組別 Model
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 import sqlite3
 import os
 import json
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'stocks.db')
 
@@ -56,8 +59,8 @@ def init_group_table():
         # 如果 position 欄位不存在，則添加（遷移）
         try:
             conn.execute("ALTER TABLE `groups` ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
-        except:
-            pass
+        except sqlite3.OperationalError as e:
+            logger.debug(f"[Migration] position column already exists: {e}")
         conn.commit()
 
 

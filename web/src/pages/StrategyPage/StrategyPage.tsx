@@ -8,6 +8,7 @@ import { AppLayout } from '../../components/layout'
 import FilterPanel, { FilterConfig } from './components/FilterPanel'
 import StrategyPanel, { StrategyConfig } from './components/StrategyPanel'
 import ResultPanel, { ScreenedStock } from './components/ResultPanel'
+import { API_BASE } from '../../config'
 import styles from './StrategyPage.module.css'
 
 // 預設 Filter 配置
@@ -38,38 +39,6 @@ const DEFAULT_STRATEGIES: StrategyConfig[] = [
   { id: 'volume_shrink', enabled: false, params: { ratio: 0.3 } },
 ]
 
-// Mock 測試數據 - 動態生成 based on selected strategies
-const generateMockResults = (enabledStrategyIds: string[]): ScreenedStock[] => {
-  // 假設的股票數據
-  const stocks = [
-    { code: 'HK.00700', name: '騰訊控股', price: 467.80, change: -11.40, pctChange: -2.38 },
-    { code: 'HK.00981', name: '中芯國際', price: 70.90, change: 5.10, pctChange: 7.75 },
-    { code: 'HK.02382', name: '比亞迪', price: 298.00, change: 9.26, pctChange: 3.21 },
-    { code: 'HK.06809', name: '瀾起科技', price: 42.50, change: 1.85, pctChange: 4.55 },
-  ]
-  
-  // 策略映射 - 每隻股票實際符合的策略
-  const stockStrategies: Record<string, string[]> = {
-    'HK.00700': ['zigzag_v', 'volume_surge', 'above_ma20'],
-    'HK.00981': ['zigzag_v', 'above_ma20', 'above_ma50'],
-    'HK.02382': ['volume_surge', 'above_ma50', 'above_ma200'],
-    'HK.06809': ['zigzag_v', 'macd_cross', 'rsi_oversold'],
-  }
-  
-  return stocks
-    .map(stock => {
-      // 過濾：只保留用戶揀選了的策略
-      const matched = stockStrategies[stock.code]?.filter(s => enabledStrategyIds.includes(s)) || []
-      return {
-        ...stock,
-        matchedStrategies: matched,
-      }
-    })
-    .filter(stock => stock.matchedStrategies.length > 0) // 至少要有一個匹配的策略
-}
-
-const MOCK_RESULTS: ScreenedStock[] = [] // 空，等動態生成
-
 export default function StrategyPage() {
   const [filters, setFilters] = useState<FilterConfig>(DEFAULT_FILTERS)
   const [strategies, setStrategies] = useState<StrategyConfig[]>(DEFAULT_STRATEGIES)
@@ -85,23 +54,19 @@ export default function StrategyPage() {
 
     setLoading(true)
     try {
-      // TODO: 調用真實 API
-      // const response = await fetch('/api/strategy/screen', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ filters, strategies }),
-      // })
-      // const data = await response.json()
-      // setResults(data.stocks)
-
-      // Mock: 模擬 API 延遲
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      
-      // 只傳遞用戶選中的策略ID
-      const enabledStrategyIds = enabledStrategies.map(s => s.id)
-      const mockResults = generateMockResults(enabledStrategyIds)
-      setResults(mockResults)
-      message.success(`找到 ${mockResults.length} 隻符合條件的股票`)
+      const response = await fetch(`${API_BASE}/strategy/screen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters, strategies: enabledStrategies }),
+      })
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`)
+      }
+      const data = await response.json()
+      const matched = Array.isArray(data.stocks) ? data.stocks : []
+      setResults(matched)
+      message.success(`找到 ${matched.length} 隻符合條件的股票`)
     } catch (err) {
       console.error('執行指標失敗:', err)
       message.error('執行指標失敗')

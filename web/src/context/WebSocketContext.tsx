@@ -44,6 +44,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   
   const wsRef = useRef<WebSocket | null>(null)
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const statusTimerRef = useRef<NodeJS.Timeout | null>(null)
   const initSentRef = useRef(false)
   const pendingInitRef = useRef<string[] | null>(null)
 
@@ -112,7 +113,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             setSubscribeStatus('failed')
           }
         }
-        setTimeout(() => setSubscribeStatus(null), 3000)
+        if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+        statusTimerRef.current = setTimeout(() => setSubscribeStatus(null), 3000)
       }
 
       if (data.type === 'all_unsubscribed') {
@@ -237,6 +239,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log('[WS] WebSocketProvider mounted，開始連接')
     connect()
+    return () => {
+      if (statusTimerRef.current) {
+        clearTimeout(statusTimerRef.current)
+        statusTimerRef.current = null
+      }
+    }
   }, [connect])
 
   const value: WebSocketContextValue = {
