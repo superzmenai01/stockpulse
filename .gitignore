@@ -23,3 +23,4 @@ __pycache__/
 logs/*.log
 *.db
 logs/*.log
+STRATEGY_CONCEPTS.md

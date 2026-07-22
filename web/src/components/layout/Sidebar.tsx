@@ -17,7 +17,7 @@ const navItems = [
   { key: '/', icon: <HomeOutlined />, label: '首頁' },
   { key: '/ew-test', icon: <ExperimentOutlined />, label: 'EW測試' },
   { key: '/watchlist', icon: <StarOutlined />, label: '策略關注' },
-  { key: '/strategy', icon: <BarChartOutlined />, label: '策略' },
+  { key: '/strategy', icon: <BarChartOutlined />, label: '指標' },
   { key: '/calendar', icon: <CalendarOutlined />, label: '日曆' },
 ]
 

@@ -9,7 +9,7 @@ import styles from './MobileNav.module.css'
 const navItems = [
   { key: '/', icon: <HomeOutlined />, label: '首頁' },
   { key: '/watchlist', icon: <StarOutlined />, label: '關注' },
-  { key: '/strategy', icon: <BarChartOutlined />, label: '策略' },
+  { key: '/strategy', icon: <BarChartOutlined />, label: '指標' },
   { key: '/calendar', icon: <CalendarOutlined />, label: '日曆' },
 ]
 

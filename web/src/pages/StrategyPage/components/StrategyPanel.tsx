@@ -1,4 +1,4 @@
-// StrategyPanel - 策略面板
+// StrategyPanel - 指標面板
 
 import React from 'react'
 import { Card, Checkbox, InputNumber, Slider, Select, Space, Typography, Button, Divider, Collapse } from 'antd'
@@ -7,7 +7,7 @@ import styles from './StrategyPanel.module.css'
 
 const { Text } = Typography
 
-// 策略定義
+// 指標定義
 export interface Strategy {
   id: string
   name: string
@@ -23,7 +23,7 @@ export interface StrategyConfig {
   params: Record<string, any>
 }
 
-// 策略分類
+// 指標分類
 const STRATEGY_CATEGORIES = [
   {
     key: 'tech',
@@ -77,7 +77,7 @@ const STRATEGY_CATEGORIES = [
   },
   {
     key: 'momentum',
-    label: '動能策略',
+    label: '動能指標',
     icon: <ThunderboltOutlined />,
     strategies: [
       {
@@ -261,7 +261,7 @@ export default function StrategyPanel({ strategies, onChange }: StrategyPanelPro
   }))
 
   return (
-    <Card className={styles.card} size="small" title="策略列表">
+    <Card className={styles.card} size="small" title="指標列表">
       <Collapse
         items={collapseItems}
         defaultActiveKey={['tech', 'trend']}

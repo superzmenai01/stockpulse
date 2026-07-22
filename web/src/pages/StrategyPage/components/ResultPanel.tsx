@@ -1,4 +1,4 @@
-// ResultPanel - 策略結果顯示面板
+// ResultPanel - 指標結果顯示面板
 // 使用 CSS Grid 對齊股票列表
 
 import { useState, useMemo } from 'react'
@@ -82,11 +82,11 @@ export default function ResultPanel({ results, loading, onRefresh, onExecute }: 
       ) : results.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="尚未執行策略"
+          description="尚未執行指標"
           className={styles.empty}
         >
           <Button type="primary" onClick={onExecute}>
-            執行策略
+            執行指標
           </Button>
         </Empty>
       ) : (

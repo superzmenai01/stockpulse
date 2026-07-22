@@ -1,4 +1,4 @@
-// StrategyPage - 策略頁面
+// StrategyPage - 指標頁面
 // 用於根據技術指標篩選股票
 
 import React, { useState, useCallback } from 'react'
@@ -79,7 +79,7 @@ export default function StrategyPage() {
   const handleExecute = useCallback(async () => {
     const enabledStrategies = strategies.filter(s => s.enabled)
     if (enabledStrategies.length === 0) {
-      message.warning('請至少選擇一個策略')
+      message.warning('請至少選擇一個指標')
       return
     }
 
@@ -103,8 +103,8 @@ export default function StrategyPage() {
       setResults(mockResults)
       message.success(`找到 ${mockResults.length} 隻符合條件的股票`)
     } catch (err) {
-      console.error('執行策略失敗:', err)
-      message.error('執行策略失敗')
+      console.error('執行指標失敗:', err)
+      message.error('執行指標失敗')
     } finally {
       setLoading(false)
     }
@@ -131,7 +131,7 @@ export default function StrategyPage() {
             className={styles.executeBtn}
             block
           >
-            執行策略
+            執行指標
           </Button>
         </div>
 

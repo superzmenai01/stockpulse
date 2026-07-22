@@ -1,4 +1,4 @@
-// FilterPanel - 策略頁面範圍選擇面板
+// FilterPanel - 指標頁面範圍選擇面板
 
 import React, { useState } from 'react'
 import { Card, Checkbox, Select, InputNumber, Space, Divider, Typography } from 'antd'
