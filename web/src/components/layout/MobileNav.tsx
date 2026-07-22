@@ -2,12 +2,13 @@
 
 import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { HomeOutlined, StarOutlined, BarChartOutlined, CalendarOutlined } from '@ant-design/icons'
+import { HomeOutlined, StarOutlined, BarChartOutlined, CalendarOutlined, FunctionOutlined } from '@ant-design/icons'
 import styles from './MobileNav.module.css'
 
 // 導航項目
 const navItems = [
   { key: '/', icon: <HomeOutlined />, label: '首頁' },
+  { key: '/algorithms', icon: <FunctionOutlined />, label: '演算法' },
   { key: '/watchlist', icon: <StarOutlined />, label: '關注' },
   { key: '/strategy', icon: <BarChartOutlined />, label: '指標' },
   { key: '/calendar', icon: <CalendarOutlined />, label: '日曆' },

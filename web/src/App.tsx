@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import WatchlistPage from './pages/WatchlistPage'
 import StrategyPage from './pages/StrategyPage'
+import AlgorithmStrategyPage from './pages/AlgorithmStrategyPage'
 import CalendarPage from './pages/CalendarPage'
 import TestKlinePage from './pages/TestKlinePage/TestKlinePage'
 import ElliottWaveTestPage from './pages/ElliottWaveTestPage/ElliottWaveTestPage'
@@ -23,6 +24,7 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/strategy" element={<StrategyPage />} />
+            <Route path="/algorithms" element={<AlgorithmStrategyPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/test-kline" element={<TestKlinePage />} />
             <Route path="/ew-test" element={<ElliottWaveTestPage />} />

@@ -9,12 +9,14 @@ import {
   BarChartOutlined,
   CalendarOutlined,
   ExperimentOutlined,
+  FunctionOutlined,
 } from '@ant-design/icons'
 import styles from './Sidebar.module.css'
 
 // 導航項目
 const navItems = [
   { key: '/', icon: <HomeOutlined />, label: '首頁' },
+  { key: '/algorithms', icon: <FunctionOutlined />, label: '演算法策略' },
   { key: '/ew-test', icon: <ExperimentOutlined />, label: 'EW測試' },
   { key: '/watchlist', icon: <StarOutlined />, label: '策略關注' },
   { key: '/strategy', icon: <BarChartOutlined />, label: '指標' },
@@ -34,7 +36,7 @@ function Sidebar() {
       <div className={styles.logo}>
         <span className={styles.logoText}>📈 ZMEN-StockPulse</span>
       </div>
-      
+
       <Menu
         mode="inline"
         selectedKeys={[location.pathname]}
