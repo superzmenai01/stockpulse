@@ -138,3 +138,49 @@
 .ewEditPopupCancel:hover {
   background: #30363D;
 }
+/* 大少 #7768 #7771: Hover tooltip (Futu Niuniu 風格) */
+.tooltip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(28, 33, 40, 0.95);
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  padding: 10px 14px;
+  z-index: 50;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  font-size: 12px;
+  color: #D1D1D1;
+  backdrop-filter: blur(8px);
+}
+
+.tooltipHeader {
+  font-size: 13px;
+  font-weight: 600;
+  color: #F0F0F0;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #30363D;
+}
+
+.tooltipRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+  gap: 16px;
+}
+
+.tooltipLabel {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+}
+
+.tooltipValue {
+  color: #F0F0F0;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}

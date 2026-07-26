@@ -45,6 +45,41 @@ const PERIODS = [
   { label: '年K', value: '1y' },
 ]
 
+// 大少 #7768 #7771: Tooltip helper functions (format date + volume)
+function formatTooltipDate(timeStr: string, period: string): string {
+  if (!timeStr) return ''
+  if (period === '1d') {
+    // e.g. "2026-05-07" → "2026-05-07 星期四"
+    const d = new Date(timeStr)
+    if (isNaN(d.getTime())) return timeStr
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+    return `${timeStr} 星期${weekdays[d.getDay()]}`
+  }
+  if (period === '1m') {
+    // e.g. "2026-05-07 14:30" → already formatted
+    return timeStr
+  }
+  if (period === '1M') {
+    // e.g. "2026-05" → "2026年5月"
+    const parts = timeStr.split('-')
+    return parts.length === 2 ? `${parts[0]}年${parseInt(parts[1])}月` : timeStr
+  }
+  if (period === '1y') {
+    return timeStr  // e.g. "2026"
+  }
+  return timeStr
+}
+
+function formatVolume(vol: number): string {
+  if (!vol || vol === 0) return '—'
+  const abs = Math.abs(vol)
+  if (abs >= 1e8) return `${(vol / 1e8).toFixed(2)} 億`
+  if (abs >= 1e4) return `${(vol / 1e4).toFixed(2)} 萬`
+  return vol.toFixed(0)
+}
+
+
+
 // ============ Elliott Wave 常量 ============
 
 // LocalStorage key for EW adjustments
@@ -469,6 +504,8 @@ export default function ChartContainer({
   onIndicatorChange,
 }: ChartContainerProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
+  // 大少 #7768 #7771: Hover tooltip — use ref to access latest klineData in crosshair handler
+  const klineDataRef = useRef<KLine[]>([])
   const chartRef = useRef<IChartApi | null>(null)
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
@@ -534,6 +571,8 @@ export default function ChartContainer({
   // MACD overlay refs removed
 
   const [klineData, setKlineData] = useState<KLine[]>([])
+  // 大少 #7768 #7771: Hover tooltip state — 顯示 hover 嗰支竹嘅 OHLC + 漲跌 + 成交
+  const [hoverCandle, setHoverCandle] = useState<KLine | null>(null)
 
   const { quotes } = useWebSocketContext()
 
@@ -635,6 +674,34 @@ export default function ChartContainer({
       }
     }
   }, [])
+
+  // 大少 #7768 #7771: 同步 klineData 到 ref (crosshair handler 用嚟揾 hover 嗰支竹)
+  useEffect(() => {
+    klineDataRef.current = klineData
+  }, [klineData])
+
+  // 大少 #7768 #7771: Crosshair hover → setHoverCandle
+  useEffect(() => {
+    if (!chartRef.current || !chartCreated) return
+    const chart = chartRef.current
+
+    const handleCrosshair = (param: any) => {
+      if (!param.time) {
+        setHoverCandle(null)
+        return
+      }
+      const tStr = String(param.time)
+      const candle = klineDataRef.current.find(
+        (k) => String(parseTime(k.time, currentPeriod)) === tStr
+      )
+      setHoverCandle(candle || null)
+    }
+
+    chart.subscribeCrosshairMove(handleCrosshair)
+    return () => {
+      try { chart.unsubscribeCrosshairMove(handleCrosshair) } catch {}
+    }
+  }, [chartCreated, currentPeriod])
 
   // 載入K線數據
   const loadKlineData = useCallback(async (code: string, period: string, start?: string, end?: string) => {
@@ -999,6 +1066,62 @@ export default function ChartContainer({
         <div ref={chartContainerRef} className={styles.chart} />
         {loading && <div className={styles.loading}>載入中...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
+
+        {/* 大少 #7768 #7771: Hover tooltip — Futu Niuniu 風格 (OHLC + 漲跌 + 成交) */}
+        {hoverCandle && (() => {
+          // 搵前一支竹計漲跌
+          const idx = klineData.findIndex(
+            (k) => String(parseTime(k.time, currentPeriod)) === String(parseTime(hoverCandle.time, currentPeriod))
+          )
+          const prev = idx > 0 ? klineData[idx - 1] : null
+          const change = prev ? hoverCandle.close - prev.close : 0
+          const changePct = prev && prev.close !== 0 ? (change / prev.close) * 100 : 0
+          const changeColor = change > 0 ? '#26BA75' : change < 0 ? '#EE5151' : '#888'
+          const sign = change > 0 ? '+' : ''
+          return (
+            <div className={styles.tooltip} data-testid="chart-hover-tooltip">
+              <div className={styles.tooltipHeader}>
+                {formatTooltipDate(hoverCandle.time, currentPeriod)}
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>開盤</span>
+                <span className={styles.tooltipValue}>{hoverCandle.open.toFixed(3)}</span>
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>最高</span>
+                <span className={styles.tooltipValue}>{hoverCandle.high.toFixed(3)}</span>
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>最低</span>
+                <span className={styles.tooltipValue}>{hoverCandle.low.toFixed(3)}</span>
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>收盤</span>
+                <span className={styles.tooltipValue}>{hoverCandle.close.toFixed(3)}</span>
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>漲跌額</span>
+                <span className={styles.tooltipValue} style={{ color: changeColor }}>
+                  {sign}{change.toFixed(3)}
+                </span>
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>漲跌幅</span>
+                <span className={styles.tooltipValue} style={{ color: changeColor }}>
+                  {sign}{changePct.toFixed(2)}%
+                </span>
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>成交量</span>
+                <span className={styles.tooltipValue}>{formatVolume(hoverCandle.volume)}</span>
+              </div>
+              <div className={styles.tooltipRow}>
+                <span className={styles.tooltipLabel}>成交額</span>
+                <span className={styles.tooltipValue}>{formatVolume(hoverCandle.volume * hoverCandle.close)}</span>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Semi-auto EW Edit Popup */}
         {ewEditPopup.visible && (
