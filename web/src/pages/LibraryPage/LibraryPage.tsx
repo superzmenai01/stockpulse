@@ -13,6 +13,7 @@ import { EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, BookOutli
 import { useSavedRuns, type SavedRun } from '../../hooks/useSavedRuns';
 import EditRunModal from '../../components/library/EditRunModal';
 import DeleteRunConfirm from '../../components/library/DeleteRunConfirm';
+import ViewRunModal from '../../components/library/ViewRunModal';
 import styles from './LibraryPage.module.css';
 
 const { Title, Text } = Typography;
@@ -23,6 +24,8 @@ function LibraryPage() {
   const [search, setSearch] = useState('');
   const [editingRun, setEditingRun] = useState<SavedRun | null>(null);
   const [deletingRun, setDeletingRun] = useState<SavedRun | null>(null);
+  // 大少 2026-07-26 #7558: row click 開 ViewRunModal
+  const [viewingRun, setViewingRun] = useState<SavedRun | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
 
   // 提取 unique algorithms (用嚟 filter dropdown)
@@ -120,6 +123,11 @@ function LibraryPage() {
             rowKey="id"
             pagination={{ pageSize: 20, showSizeChanger: true }}
             size="middle"
+            // 大少 2026-07-26 #7558: row click 開 ViewRunModal
+            onRow={(run) => ({
+              onClick: () => setViewingRun(run),
+              style: { cursor: 'pointer' },
+            })}
             columns={[
               {
                 title: 'Unit',
@@ -173,7 +181,11 @@ function LibraryPage() {
                     <Button
                       size="small"
                       icon={<EditOutlined />}
-                      onClick={() => setEditingRun(run)}
+                      // 大少 #7558: stopPropagation 唔好同時開 view modal
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingRun(run);
+                      }}
                     >
                       編輯
                     </Button>
@@ -181,7 +193,10 @@ function LibraryPage() {
                       size="small"
                       danger
                       icon={<DeleteOutlined />}
-                      onClick={() => setDeletingRun(run)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingRun(run);
+                      }}
                     >
                       刪除
                     </Button>
@@ -206,6 +221,13 @@ function LibraryPage() {
           run={deletingRun}
           onConfirm={() => handleDelete(deletingRun.id)}
           onCancel={() => setDeletingRun(null)}
+        />
+      )}
+      {/* 大少 2026-07-26 #7558: ViewRunModal — row click trigger */}
+      {viewingRun && (
+        <ViewRunModal
+          run={viewingRun}
+          onCancel={() => setViewingRun(null)}
         />
       )}
       </div>
