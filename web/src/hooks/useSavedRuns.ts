@@ -8,6 +8,10 @@
 // - Get single run detail (GET by id)
 
 import { useState, useEffect, useCallback } from 'react';
+import type { Leader } from '../types/algorithm';
+
+// 大少 2026-07-26 #7566: SavedStock = full Leader snapshot
+export type SavedStock = Leader;
 
 const API_BASE = 'http://localhost:18792';
 
@@ -20,6 +24,8 @@ export interface SavedRun {
   saved_at: string;
   updated_at: string;
   stocks: string[];
+  // 大少 #7566: full snapshot data per stock (vs `stocks: string[]` 喺 POST 自動 derived)
+  saved_stocks: SavedStock[];
   metadata: Record<string, unknown>;
 }
 

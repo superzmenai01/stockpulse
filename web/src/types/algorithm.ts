@@ -28,6 +28,9 @@ export interface Leader {
   reason: string;
 }
 
+// 大少 2026-07-26 #7566: SavedStock = full Leader snapshot (per saved_stocks DB column)
+export type SavedStock = Leader;
+
 export interface PopularityStatus {
   total: number;
   ranked: number;

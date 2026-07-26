@@ -53,6 +53,7 @@ def init_saved_runs_table(db_path: Path = DEFAULT_DB_PATH) -> None:
                 saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 stocks JSON NOT NULL,
+                saved_stocks JSON NOT NULL DEFAULT '[]',
                 metadata JSON NOT NULL,
                 UNIQUE(algorithm_id, name)
             )
@@ -64,6 +65,14 @@ def init_saved_runs_table(db_path: Path = DEFAULT_DB_PATH) -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_saved_runs_saved_at ON saved_algorithm_runs(saved_at DESC)"
         )
+        # Migration: add saved_stocks column to existing tables (大少 2026-07-26 #7566)
+        cursor = conn.execute("PRAGMA table_info(saved_algorithm_runs)").fetchall()
+        existing_cols = {row[1] for row in cursor}
+        if "saved_stocks" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE saved_algorithm_runs ADD COLUMN saved_stocks JSON NOT NULL DEFAULT '[]'"
+            )
+            conn.commit()
 
 
 # ============================================================================
@@ -83,6 +92,8 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     """Convert sqlite3.Row to dict, parse JSON columns."""
     d = dict(row)
     d["stocks"] = json.loads(d["stocks"])
+    # 大少 2026-07-26 #7566: saved_stocks 係 full snapshot (Leader fields per stock)
+    d["saved_stocks"] = json.loads(d.get("saved_stocks", "[]"))
     d["metadata"] = json.loads(d["metadata"])
     return d
 
@@ -114,6 +125,7 @@ def save_run(
     algorithm_name: str,
     stocks: list[str],
     metadata: dict[str, Any],
+    saved_stocks: list[dict[str, Any]] | None = None,
     name: Optional[str] = None,
     note: Optional[str] = None,
     db_path: Path = DEFAULT_DB_PATH,
@@ -122,10 +134,18 @@ def save_run(
     [POST] 儲存新 result。
     - name 唔提供 → auto-name `{algorithm_name} {YYYY-MM-DD} {HHMM}`
     - 撞名 → auto-append `-2`, `-3`
-    - 回傳完整 record (含 id, saved_at)
+    - 大少 2026-07-26 #7566: 接受 saved_stocks (full Leader data per stock)。
+      如果提供 saved_stocks, 自動 derive stocks (codes) 以保持 backward field 同步。
+    - 回傳完整 record (含 id, saved_at, saved_stocks)
     """
     if not name:
         name = generate_auto_name(algorithm_name)
+
+    # 大少 #7566: derived stocks from saved_stocks if provided (single source of truth)
+    if saved_stocks is not None:
+        stocks = [s.get("code", "") for s in saved_stocks]
+    else:
+        saved_stocks = []
 
     with get_connection(db_path) as conn:
         conn.row_factory = sqlite3.Row  # 大少 2026-07-24 18:43 fix: TypeError 'object is not iterable'
@@ -133,8 +153,8 @@ def save_run(
         cursor = conn.execute(
             """
             INSERT INTO saved_algorithm_runs
-                (algorithm_id, algorithm_name, name, note, stocks, metadata)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (algorithm_id, algorithm_name, name, note, stocks, saved_stocks, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 algorithm_id,
@@ -142,6 +162,7 @@ def save_run(
                 final_name,
                 note,
                 json.dumps(stocks, ensure_ascii=False),
+                json.dumps(saved_stocks, ensure_ascii=False),
                 json.dumps(metadata, ensure_ascii=False),
             ),
         )

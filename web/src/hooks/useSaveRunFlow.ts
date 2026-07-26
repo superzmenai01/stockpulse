@@ -49,6 +49,8 @@ export function useSaveRunFlow(params: UseSaveRunFlowParams): UseSaveRunFlowRetu
       return await save({
         algorithm_id: algorithmId,
         algorithm_name: algorithmName,
+        // 大少 #7566: 傳 full Leader snapshot (saved_stocks) + 自動 derive stocks (codes)
+        saved_stocks: results,
         stocks: results.map((l) => l.code),
         metadata: {
           plates: selectedPlates,

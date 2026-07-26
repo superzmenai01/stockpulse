@@ -28,7 +28,15 @@ class SaveRunRequest(BaseModel):
     """POST body — 儲存新 result"""
     algorithm_id: str = Field(..., description="e.g. 'AS-01'")
     algorithm_name: str = Field(..., description="e.g. '板塊龍頭股'")
-    stocks: list[str] = Field(..., description="Stock codes list, e.g. ['HK.00981', ...]")
+    stocks: list[str] = Field(
+        default_factory=list,
+        description="(optional) Stock codes list, e.g. ['HK.00981', ...] — 可由 saved_stocks 自動 derive"
+    )
+    # 大少 2026-07-26 #7566: 完整 snapshot 數據 (price / change_pct / mcap / turnover / plate_name 等)
+    saved_stocks: list[dict] = Field(
+        default_factory=list,
+        description="(大少 #7566) Full Leader snapshot per stock — 在 ViewRunModal table 顯示"
+    )
     metadata: dict = Field(default_factory=dict, description="{plates, top_n, ...}")
     name: Optional[str] = Field(None, description="User-given name (optional, auto-generate if 唔提供)")
     note: Optional[str] = Field(None, description="Optional 備註")
@@ -50,12 +58,14 @@ async def save_run(req: SaveRunRequest) -> dict:
     儲存新 result。
     - name 唔提供 → auto-generate `{algorithm_name} {YYYY-MM-DD} {HHMM}`
     - 撞名 → auto-append `-2`, `-3`
+    - 大少 2026-07-26 #7566: 接受 saved_stocks (full snapshot), stocks 自動 derived if 唔提供
     """
     try:
         return model.save_run(
             algorithm_id=req.algorithm_id,
             algorithm_name=req.algorithm_name,
             stocks=req.stocks,
+            saved_stocks=req.saved_stocks,
             metadata=req.metadata,
             name=req.name,
             note=req.note,
