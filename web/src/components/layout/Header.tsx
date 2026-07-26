@@ -4,6 +4,7 @@ import React from 'react'
 import { Space, Tag, Button, Switch } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../context/ThemeContext'
+import DebugPanel from '../debug/DebugPanel'
 import styles from './Header.module.css'
 
 interface HeaderProps {
@@ -39,6 +40,7 @@ function Header({
       
       <div className={styles.right}>
         <Space>
+          <DebugPanel />
           <Switch
             checked={mode === 'dark'}
             onChange={toggleTheme}

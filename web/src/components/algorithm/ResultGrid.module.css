@@ -1,0 +1,112 @@
+/* ResultGrid.module.css — 5-column results grid (大少 2026-07-26 09:00 改) */
+.rightPanel {
+  height: fit-content;
+}
+
+.center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+}
+
+.resultsGrid {
+  display: flex;
+  flex-direction: column;
+}
+
+.gridHeader {
+  display: grid;
+  /* 大少 2026-07-26 09:00: 5 columns (cancel 漲跌 col, merge 名稱/原因/板塊來源 入 代碼 cell) */
+  grid-template-columns: 40px minmax(220px, 1.5fr) 90px 90px 100px;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ant-color-text-secondary, rgba(255, 255, 255, 0.65));
+  border-bottom: 1px solid var(--ant-color-border-secondary, rgba(255, 255, 255, 0.08));
+  background: var(--ant-color-fill-tertiary, rgba(255, 255, 255, 0.04));
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.gridRow {
+  display: grid;
+  grid-template-columns: 40px minmax(220px, 1.5fr) 90px 90px 100px;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, rgba(255, 255, 255, 0.05));
+  cursor: pointer;
+  transition: background 0.2s;
+  align-items: center;
+}
+
+.gridRow:last-child {
+  border-bottom: none;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.gridRow:hover {
+  background: var(--ant-color-fill-tertiary, rgba(255, 255, 255, 0.08));
+}
+
+.rankCell {
+  font-size: 11px;
+  color: var(--ant-color-text-tertiary, rgba(255, 255, 255, 0.45));
+  font-weight: 600;
+}
+
+/* 大少 2026-07-26 09:00: 代碼格 vertical stack 4 行 (代碼 → 名稱 → 板塊來源 → 原因) */
+.codeCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;        /* flex/grid item 嘅 min-width default 係 auto, 會 push column 闊過設定 */
+}
+
+.codeMain {
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ant-color-text, rgba(255, 255, 255, 0.88));
+  line-height: 1.4;
+}
+
+.nameMain {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.4;
+}
+
+.plateMain {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reasonMain {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.price {
+  font-variant-numeric: tabular-nums;
+  color: var(--ant-color-text, rgba(255, 255, 255, 0.88));
+}
+
+.alignRight {
+  text-align: right;
+}
+
+.muted {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+}

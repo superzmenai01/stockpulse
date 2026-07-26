@@ -11,7 +11,7 @@
 //   ✓ 清理 test-specific UI (banner / back link / footer note)
 //   ✓ 保留 drag-resize + auto-persist
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Card,
   Select,
@@ -23,6 +23,8 @@ import {
   Typography,
   Space,
   Tag,
+  Switch,
+  message,
 } from 'antd'
 import {
   SearchOutlined,
@@ -30,34 +32,28 @@ import {
   SaveOutlined,
   PlusOutlined,
   ExperimentOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import { AppLayout } from '../components/layout'
 import { useDragResize } from '../utils/useDragResize'
 import styles from './AlgorithmStrategyPage.module.css'
 
+// 大少 2026-07-24 Tier 1.3: Modular hooks + sub-components
+import { usePlates } from '../hooks/usePlates'
+import { useExecuteAlgorithm } from '../hooks/useExecuteAlgorithm'
+import { usePopularityStatus } from '../hooks/usePopularityStatus'
+import NonStockToggle from '../components/algorithm/NonStockToggle'
+import PlateSelector from '../components/algorithm/PlateSelector'
+import ResultGrid from '../components/algorithm/ResultGrid'
+
 const { Title, Paragraph, Text } = Typography
 
-// ============== Mock data ==============
-const MOCK_PLATES = [
-  { value: 'HK.LIST1091', label: '半導體' },
-  { value: 'HK.LIST1044', label: 'AI 人工智能' },
-  { value: 'HK.LIST1234', label: '互聯網' },
-  { value: 'HK.LIST5678', label: '金融' },
-  { value: 'HK.LIST9012', label: '醫藥' },
-  { value: 'HK.LIST3456', label: '新能源' },
-  { value: 'HK.LIST7890', label: '消費' },
-  { value: 'HK.LIST1111', label: '地產' },
-  { value: 'HK.LIST2222', label: '通訊' },
-  { value: 'HK.LIST3333', label: '公用事業' },
-]
-
-const MOCK_RESULTS_AS01 = [
-  { code: '00981', name: '中芯國際', price: 73.80, change: -1.15, pct: -1.54, mcap: '4500 億', turnover: '2.3%' },
-  { code: '00700', name: '騰訊控股', price: 467.80, change: -11.40, pct: -2.38, mcap: '44000 億', turnover: '1.8%' },
-  { code: '02382', name: '比亞迪', price: 298.00, change: 9.26, pct: 3.21, mcap: '8700 億', turnover: '3.5%' },
-  { code: '09988', name: '阿里巴巴', price: 89.50, change: 2.10, pct: 2.40, mcap: '17000 億', turnover: '1.5%' },
-  { code: '01024', name: '快手', price: 52.30, change: 0.85, pct: 1.65, mcap: '2200 億', turnover: '4.1%' },
-]
+// ============== Mock data 已全部移除 ==============
+// MOCK_PLATES 已移除 — 改從 /api/plates fetch 真實 popularity data
+// (大少 2026-07-23 instruction: 板塊選項用 OpenD + popularity ranking)
+// 真實 data 由 AS01Panel 入面嘅 fetchTopPlates() handle.
+// MOCK_RESULTS_AS01 已移除 (大少 2026-07-23 Option A) — 改從 /api/plates/run fetch
+// 真實 AS-01 結果, 直接 render `results` state, 冇 fallback mock。
 
 const SIDEBAR_ITEMS = [
   { key: 'as-01', id: 'AS-01', name: '板塊龍頭股', icon: <ThunderboltOutlined />, implemented: true },
@@ -86,53 +82,185 @@ function NotImplementedPlaceholder({ algorithmId }: { algorithmId: string }) {
 }
 
 // ============== AS-01 panel (with inner drag-to-resize + auto-persist) ==============
+// 大少指定 (2026-07-23): UI 板塊選項只顯示 top 50, search 用全部 275, 最多選 30 個
+const MAX_PLATES = 30
+const DEFAULT_TOP_N_LIMIT = 50
+
+// Helper: 將 API 返嘅 plate dict 轉 Select option 格式
+// 格式: "#1 其他金属及矿物 (29)" — rank + name + stock_count 令 user 一眼睇到
+function toPlateOption(p: {
+  plate_code: string
+  plate_name: string
+  popularity_rank: number | null
+  stock_count: number
+}) {
+  const rank = p.popularity_rank != null ? `#${p.popularity_rank}` : '#?'
+  return {
+    value: p.plate_code,
+    label: `${rank} ${p.plate_name} (${p.stock_count})`,
+  }
+}
+
+// Helper: Format market cap 為 億/萬億 中文 (大少 SPEC: "市值 top 1 (4500億)")
+// 同 backend `models/plate.py` 入面嘅 format_mcap 一致, frontend 都要
+// 顯示 (因為 backend 個 response 冇 formatted field, 係 raw number)。
+// 大少 2026-07-23 12:23 instruction: 0 / negative / NaN 返 "—" 避免
+// Vite HMR stale state 個 stock.mcap=0 個 case 顯示 0 個誤導數值
+function formatMcap(mcap: number): string {
+  if (mcap === null || mcap === undefined || isNaN(mcap) || mcap <= 0) return '—'
+  if (mcap >= 1e12) return `${(mcap / 1e12).toFixed(1)}萬億`
+  if (mcap >= 1e8) return `${Math.round(mcap / 1e8)}億`
+  if (mcap >= 1e4) return `${Math.round(mcap / 1e4)}萬`
+  return `${Math.round(mcap)}`
+}
+
+// Helper: Format turnover 為 億/萬 簡單格式
+// 大少 2026-07-23 12:23: 0 / negative / NaN 返 "—" 同上
+function formatTurnover(turnover: number): string {
+  if (turnover === null || turnover === undefined || isNaN(turnover) || turnover <= 0) return '—'
+  if (turnover >= 1e8) return `${(turnover / 1e8).toFixed(1)}億`
+  if (turnover >= 1e4) return `${(turnover / 1e4).toFixed(0)}萬`
+  return `${turnover.toFixed(0)}`
+}
+
+// Helper: Normalize 一個 stock object — 大少 2026-07-23 12:01 instruction (Option C - A)
+// 確保每個 field 都係正確 type (numbers default 0, strings default '')
+// handleExecute (setResults 之前) 同 render (displayedResults.map 入面) 兩重 normalize
+// 防 Vite HMR stale state 個 issue (舊 mock data string 喺 state 入面)
+function normalizeStock(s: any) {
+  return {
+    code: String(s.code || ''),
+    name: String(s.name || ''),
+    price: Number(s.price) || 0,
+    change_pct: Number(s.change_pct) || 0,
+    mcap: Number(s.mcap) || 0,
+    turnover: Number(s.turnover) || 0,
+    plate_code: String(s.plate_code || ''),
+    plate_name: String(s.plate_name || ''),  // 大少 2026-07-24 新加 — 顯示「板塊來源」column
+    score: Number(s.score) || 0,
+    mcap_rank: Number(s.mcap_rank) || 0,
+    volume_rank: Number(s.volume_rank) || 0,
+    reason: String(s.reason || ''),
+  }
+}
+
+// ============================================================================
+// ErrorBoundary — React 18 必須係 class component (暫時仲未出 hook 版本)
+// 大少 2026-07-23 12:01 instruction (Option C - B): 任何 render error catch,
+// 顯示 fallback UI 而唔 unmount 整棵 tree (即係全畫面黑色 issue 完全解決)
+// ============================================================================
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; errorMessage: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false, errorMessage: '' }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error.message }
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Log 喺 console, 等 dev 見到 stack trace
+    console.error('ErrorBoundary caught:', error, info)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 24 }}>
+          <Text strong>❌ 渲染出錯</Text>
+          <br />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {this.state.errorMessage}
+          </Text>
+          <br />
+          <Button
+            size="small"
+            style={{ marginTop: 12 }}
+            onClick={() => this.setState({ hasError: false, errorMessage: '' })}
+          >
+            重試
+          </Button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function AS01Panel() {
+  // 大少 2026-07-24 Tier 1.3: Refactored to use custom hooks + sub-components
+  // Old monolithic (~400 lines) → clean modular (~80 lines)
+
   const inner = useDragResize({
     initial: 380,
     min: 240,
     max: 500,
     storageKey: 'main-algorithms-inner-width',
-  })
+  });
 
-  const [selectedPlates, setSelectedPlates] = useState<string[]>(['HK.LIST1091', 'HK.LIST1044'])
-  const [topN, setTopN] = useState<number>(3)
-  const [loading, setLoading] = useState(false)
-  const [hasRun, setHasRun] = useState(true)
+  // Custom hooks (Tier 1.3 modular architecture)
+  const {
+    plates, platesLoading, searching,
+    includeNonStock, setIncludeNonStock,
+    handleSearch,
+    // 大少 2026-07-26 08:36: 一鍵還原 props
+    isDefault, restoring, restoreDefault,
+  } = usePlates();
 
-  const handleExecute = () => {
-    setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-      setHasRun(true)
-    }, 1200)
-  }
+  const {
+    results, loading, hasRun, lastError, handleExecute,
+  } = useExecuteAlgorithm();
 
-  const displayedResults = MOCK_RESULTS_AS01.slice(0, topN)
+  const {
+    status, refreshing, handleRefresh,
+  } = usePopularityStatus();
+
+  // Local state (specific to this panel)
+  const [selectedPlates, setSelectedPlates] = useState<string[]>([]);
+  const [topN, setTopN] = useState<number>(10);
 
   return (
     <div className={styles.twoPanel} style={{ gridTemplateColumns: `${inner.width}px 1fr` }}>
-      {/* LEFT: Filter (drag-to-resize via right handle) */}
+      {/* LEFT: Filter */}
       <Card title="⚙️ 設定" className={styles.leftPanel}>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <div>
-            <Text strong>🏷️ 板塊（可多選）</Text>
-            <Select
-              mode="multiple"
-              showSearch
-              placeholder="🔍 搵板塊..."
-              value={selectedPlates}
-              onChange={setSelectedPlates}
-              options={MOCK_PLATES}
-              className={styles.fullWidth}
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-              maxTagCount="responsive"
-            />
-            <Text type="secondary" className={styles.hint}>
-              已選 <Tag color="blue">{selectedPlates.length}</Tag> 個板塊
+          {/* Popularity status + refresh button + non-stock toggle */}
+          <div className={styles.statusRow}>
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={refreshing}
+              onClick={handleRefresh}
+              title="重新計算所有板塊的 popularity (背景跑 ~15 min)"
+            >
+              🔄 重新計算
+            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {status ? (
+                <>{status.ranked}/{status.total} ranked</>
+              ) : (
+                '載入中...'
+              )}
             </Text>
+            <NonStockToggle checked={includeNonStock} onChange={setIncludeNonStock} />
           </div>
+
+          <PlateSelector
+            plates={plates}
+            loading={platesLoading}
+            searching={searching}
+            selectedPlates={selectedPlates}
+            onChange={setSelectedPlates}
+            onSearch={handleSearch}
+            // 大少 2026-07-26 08:36: 一鍵還原 props
+            isDefault={isDefault}
+            restoring={restoring}
+            restoreDefault={restoreDefault}
+          />
 
           <div>
             <Text strong>🔢 取頭 N 位</Text>
@@ -140,11 +268,11 @@ function AS01Panel() {
               min={1}
               max={50}
               value={topN}
-              onChange={(v) => setTopN(v ?? 3)}
+              onChange={(v) => setTopN(v ?? 10)}
               className={styles.fullWidth}
             />
             <Text type="secondary" className={styles.hint}>
-              範圍 1-50，預設 3
+              範圍 1-50，預設 10
             </Text>
           </div>
 
@@ -153,13 +281,12 @@ function AS01Panel() {
             size="large"
             icon={<SearchOutlined />}
             loading={loading}
-            onClick={handleExecute}
+            onClick={() => handleExecute(selectedPlates, topN)}
             block
           >
             🔍 執行
           </Button>
         </Space>
-        {/* Drag handle on right edge */}
         <div
           className={`${styles.resizeHandle} ${inner.dragging ? styles.resizeHandleActive : ''}`}
           onMouseDown={inner.handleMouseDown}
@@ -168,73 +295,14 @@ function AS01Panel() {
       </Card>
 
       {/* RIGHT: Results */}
-      <Card
-        title={
-          <Space>
-            <span>📊 結果</span>
-            {hasRun && !loading && (
-              <Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
-                （顯示 top {displayedResults.length}）
-              </Text>
-            )}
-          </Space>
-        }
-        className={styles.rightPanel}
-        extra={
-          <Tooltip title="🚧 儲存結果待實裝">
-            <Button icon={<SaveOutlined />} disabled size="small">
-              💾 儲存結果
-            </Button>
-          </Tooltip>
-        }
-      >
-        {loading ? (
-          <div className={styles.center}>
-            <Spin size="large" />
-            <Text type="secondary" style={{ marginTop: 12, display: 'block' }}>
-              正在執行 composite ranking...
-            </Text>
-          </div>
-        ) : !hasRun ? (
-          <Empty description="未有結果，請選板塊按執行" />
-        ) : (
-          <div className={styles.resultsGrid}>
-            <div className={styles.gridHeader}>
-              <span>排名</span>
-              <span>代碼</span>
-              <span>名稱</span>
-              <span className={styles.alignRight}>現價</span>
-              <span className={styles.alignRight}>漲跌</span>
-              <span className={styles.alignRight}>市值</span>
-              <span className={styles.alignRight}>換手率</span>
-            </div>
-            {displayedResults.map((stock, idx) => (
-              <div key={stock.code} className={styles.gridRow}>
-                <span className={styles.rankCell}>#{idx + 1}</span>
-                <span className={styles.code}>{stock.code}</span>
-                <span className={styles.name}>{stock.name}</span>
-                <span className={`${styles.price} ${styles.alignRight}`}>
-                  {stock.price.toFixed(2)}
-                </span>
-                <span
-                  className={`${styles.change} ${styles.alignRight} ${
-                    stock.pct >= 0 ? styles.up : styles.down
-                  }`}
-                >
-                  {stock.pct >= 0 ? '+' : ''}
-                  {stock.pct.toFixed(2)}%
-                </span>
-                <span className={`${styles.muted} ${styles.alignRight}`}>{stock.mcap}</span>
-                <span className={`${styles.muted} ${styles.alignRight}`}>
-                  {stock.turnover}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      <ResultGrid
+        leaders={results}
+        loading={loading}
+        hasRun={hasRun}
+        errorMessage={lastError}
+      />
     </div>
-  )
+  );
 }
 
 // ============== Main Page ==============
@@ -315,7 +383,10 @@ export default function AlgorithmStrategyPage() {
 
           {/* Content area */}
           <main className={styles.contentArea}>
-            {activeKey === 'as-01' && <AS01Panel />}
+            {/* 大少 2026-07-23 12:01 instruction (Option C - B): 包 ErrorBoundary 防黑畫面 */}
+            <ErrorBoundary>
+              {activeKey === 'as-01' && <AS01Panel />}
+            </ErrorBoundary>
             {activeKey !== 'as-01' && activeItem && (
               <NotImplementedPlaceholder algorithmId={activeItem.id} />
             )}

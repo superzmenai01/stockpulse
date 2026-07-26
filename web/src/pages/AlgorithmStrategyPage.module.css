@@ -164,24 +164,27 @@
 
 .gridHeader {
   display: grid;
-  grid-template-columns: 40px 80px 1fr 100px 90px 100px 90px;
+  /* 大少 2026-07-24: 加多一欄「板塊來源」(plate column, 100px), 由 7 columns 變 8 columns */
+  grid-template-columns: 40px 80px 1fr 100px 100px 90px 100px 90px;
   gap: 12px;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #6b7280;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
+  /* 大少 2026-07-23 12:14: 用 antd CSS vars 跟 dark theme 自動切換 color */
+  color: var(--ant-color-text-secondary, rgba(255, 255, 255, 0.65));
+  border-bottom: 1px solid var(--ant-color-border-secondary, rgba(255, 255, 255, 0.08));
+  background: var(--ant-color-fill-tertiary, rgba(255, 255, 255, 0.04));
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
 }
 
 .gridRow {
   display: grid;
-  grid-template-columns: 40px 80px 1fr 100px 90px 100px 90px;
+  /* 大少 2026-07-24: 加多一欄「板塊來源」(plate column, 100px), 由 7 columns 變 8 columns */
+  grid-template-columns: 40px 80px 1fr 100px 100px 90px 100px 90px;
   gap: 12px;
   padding: 12px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--ant-color-border-secondary, rgba(255, 255, 255, 0.05));
   cursor: pointer;
   transition: background 0.2s;
   align-items: center;
@@ -194,28 +197,38 @@
 }
 
 .gridRow:hover {
-  background: #f9fafb;
+  background: var(--ant-color-fill-tertiary, rgba(255, 255, 255, 0.08));
 }
 
 .rankCell {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--ant-color-text-tertiary, rgba(255, 255, 255, 0.45));
   font-weight: 600;
 }
 
 .code {
   font-family: 'SF Mono', Monaco, Consolas, monospace;
   font-size: 13px;
-  color: #374151;
+  color: var(--ant-color-text-secondary, rgba(255, 255, 255, 0.65));
 }
 
 .name {
   font-weight: 500;
-  color: #111827;
+  color: var(--ant-color-text, rgba(255, 255, 255, 0.88));
+}
+
+/* 大少 2026-07-24: 「板塊來源」column 樣式 */
+.plate {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .price {
   font-variant-numeric: tabular-nums;
+  color: var(--ant-color-text, rgba(255, 255, 255, 0.88));
 }
 
 .alignRight {
@@ -225,26 +238,31 @@
 .change {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  /* 大少 2026-07-23 12:19: 直接 hardcode rgba 確保 light text visible
+     (bypass antd CSS var 嘅 Vite HMR injection issue) */
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .up {
-  color: #10b981;
+  color: #34d399;  /* 漲綠 (dark theme 調整, 比 #10b981 亮) */
 }
 
 .down {
-  color: #ef4444;
+  color: #f87171;  /* 跌紅 (dark theme 調整, 比 #ef4444 亮) */
 }
 
 .muted {
-  color: #6b7280;
+  /* 呢個係 mcap/換手率 用嘅 color, 之前 hardcoded #6b7280 喺黑底睇唔到 */
+  /* 大少 2026-07-23 12:19: 直接 hardcode rgba (bypass CSS var injection issue) */
+  color: rgba(255, 255, 255, 0.85);
   font-size: 13px;
 }
 
 .placeholderPanel {
   padding: 60px 20px;
-  background: #f9fafb;
+  background: var(--ant-color-fill-tertiary, rgba(255, 255, 255, 0.04));
   border-radius: 8px;
-  border: 1px dashed #d1d5db;
+  border: 1px dashed var(--ant-color-border, rgba(255, 255, 255, 0.15));
   margin-top: 8px;
 }
 
@@ -272,4 +290,36 @@
 .resizeHandleActive,
 .resizeHandleActive:hover {
   background: rgba(37, 99, 235, 0.5);
+}
+/* ============================================================================
+ * Popularity status row (大少個「🔄 重新計算」button + ranked count)
+ * Layout: 大少 2026-07-23 09:37 instruction — button 喺上, count 喺下 (column)
+ * ============================================================================ */
+.statusRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.statusRow .ant-btn-sm {
+  font-size: 12px;
+}
+
+/* ============================================================================
+ * Non-stock plate toggle row (大少 2026-07-24 instruction)
+ * 細細個 Switch, 同 status row 其他 element 對齊
+ * ============================================================================ */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  width: 100%;
 }

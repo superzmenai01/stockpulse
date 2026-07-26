@@ -13,6 +13,7 @@ import CalendarPage from './pages/CalendarPage'
 import TestKlinePage from './pages/TestKlinePage/TestKlinePage'
 import ElliottWaveTestPage from './pages/ElliottWaveTestPage/ElliottWaveTestPage'
 import GridTestPage from './pages/GridTestPage/GridTestPage'
+import LibraryPage from './pages/LibraryPage/LibraryPage'
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
             <Route path="/test-kline" element={<TestKlinePage />} />
             <Route path="/ew-test" element={<ElliottWaveTestPage />} />
             <Route path="/grid-test" element={<GridTestPage />} />
+            <Route path="/library" element={<LibraryPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </IndicatorSettingsProvider>

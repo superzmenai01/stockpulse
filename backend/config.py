@@ -23,3 +23,12 @@ LOG_LEVEL = "INFO"
 
 # 預設股票池（供測試用）
 DEFAULT_STOCKS = ["HK.00700", "HK.00981"]
+
+
+# 大少 2026-07-25 龍頭板塊 reset:
+# Plate pipeline (populate + popularity) 由頭重寫, 暫停。
+# - True  = endpoint / scripts early exit (full disable)
+# - False = 正常跑 (往後重新 enable)
+# Reset 時 == True, 寫完新 pipeline 改返 False。
+# 大少 2026-07-25 19:22 populate 完成 (231 rows 入 DB) 改返 True (PA compute 仍未 ready)
+PLATES_PIPELINE_DISABLED = True

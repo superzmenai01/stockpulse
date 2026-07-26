@@ -1,0 +1,500 @@
+#!/usr/bin/env python3
+"""
+Unit tests for backend/models/plate.py helper functions (大少 2026-07-24 Tier 1).
+
+大少 2026-07-24 08:57 feedback: 用模組塊架構.
+大少 2026-07-24 09:03 root cause: pre-market turnover=0 → 0 leaders (silent skip).
+
+每個 helper 一個 test function, 確保:
+1. Happy path work
+2. Edge cases handle (suspended / NaN / pre-market / missing)
+3. CRITICAL: pre-market turnover=0 stock should be VALID (not skipped)
+
+Run:
+    ~/.futu_venv/bin/python3 -m pytest backend/tests/test_plate_helpers.py -v
+"""
+import math
+from unittest.mock import Mock, MagicMock, patch
+import pandas as pd
+
+# Import the module under test
+import sys
+sys.path.insert(0, '/Users/zmenai/stockpulse')
+
+from backend.models.plate import (
+    _filter_etf_structured,
+    _filter_valid_stocks,
+    _rank_and_score,
+    _generate_reason,
+    _resolve_plate_stocks,
+    _fetch_snapshots,
+    _lookup_plate_name,
+    _rank_one_plate,
+    run_plate_leaders,
+)
+from futu import RET_OK
+
+
+# ============================================================================
+# Test fixtures (shared mock data)
+# ============================================================================
+
+def make_snapshot(code: str, last_price: float = 70.0, total_market_val: float = 599256419650.0,
+                  turnover: float = 0.0, suspension: bool = False) -> dict:
+    """Mock OpenD snapshot row (dict format, simulating iterrows().to_dict())."""
+    return {
+        "code": code,
+        "name": f"Mock {code}",
+        "last_price": last_price,
+        "change_rate": 1.0,
+        "total_market_val": total_market_val,
+        "turnover": turnover,
+        "suspension": suspension,
+    }
+
+
+def make_snapshot_df(snapshots: list[dict]) -> pd.DataFrame:
+    """Mock OpenD DataFrame response (from ctx.get_market_snapshot)."""
+    return pd.DataFrame(snapshots)
+
+
+# ============================================================================
+# Test _filter_etf_structured (大少 2026-07-24)
+# ============================================================================
+
+def test_filter_etf_structured_keeps_ordinary_stocks():
+    """_filter_etf_structured should keep 普通股 only."""
+    stocks = ["HK.00700", "HK.09988", "HK.00981"]  # All ordinary
+    result = _filter_etf_structured(stocks)
+    assert result == stocks
+
+
+def test_filter_etf_structured_removes_etf():
+    """_filter_etf_structured should remove 02xxx/03xxx/8xxxx (ETF/結構性)."""
+    stocks = ["HK.00700", "HK.02807", "HK.09988"]  # 02807 = ETF
+    result = _filter_etf_structured(stocks)
+    assert result == ["HK.00700", "HK.09988"]
+
+
+# ============================================================================
+# Test _filter_valid_stocks (CRITICAL — 大少 2026-07-24 pre-market fix)
+# ============================================================================
+
+def test_filter_valid_stocks_pre_market_zero_turnover_is_valid():
+    """
+    CRITICAL REGRESSION TEST (大少 2026-07-24 09:03 bug fix).
+
+    Pre-market (09:00-09:30) snapshot has turnover=0.0 but mcap has value.
+    Previous bug: filter_valid_stocks skipped → 0 leaders.
+    Fix: turnover=0 should NOT be skipped (only NaN / non-numeric).
+    """
+    snapshots = {
+        "HK.00981": make_snapshot("HK.00981", turnover=0.0, total_market_val=599256419650.0),
+    }
+    stocks = ["HK.00981"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 1, "Pre-market stock should be VALID (turnover=0 is OK)"
+    assert valid[0]["code"] == "HK.00981"
+    assert valid[0]["turnover"] == 0.0  # preserved
+    assert valid[0]["mcap"] == 599256419650.0
+
+
+def test_filter_valid_stocks_normal_trading_hours_valid():
+    """正常 trading hours: turnover > 0, mcap > 0 → valid."""
+    snapshots = {
+        "HK.00981": make_snapshot("HK.00981", turnover=1000000.0, total_market_val=599256419650.0),
+    }
+    stocks = ["HK.00981"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 1
+
+
+def test_filter_valid_stocks_skips_nan_turnover():
+    """turnover=NaN 應該 skip (avoid NaN comparison error)."""
+    snapshots = {
+        "HK.00981": make_snapshot("HK.00981", turnover=float("nan"), total_market_val=599256419650.0),
+    }
+    stocks = ["HK.00981"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 0, "NaN turnover should be skipped"
+
+
+def test_filter_valid_stocks_skips_suspended():
+    """suspension=True 應該 skip."""
+    snapshots = {
+        "HK.00981": make_snapshot("HK.00981", turnover=1000000.0, suspension=True),
+    }
+    stocks = ["HK.00981"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 0
+
+
+def test_filter_valid_stocks_skips_missing_snapshot():
+    """Stock 喺 stocks list 但冇 snapshot 應該 skip."""
+    snapshots = {}  # empty
+    stocks = ["HK.00981"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 0
+
+
+def test_filter_valid_stocks_skips_nan_mcap():
+    """mcap=NaN 應該 skip."""
+    snapshots = {
+        "HK.00981": make_snapshot("HK.00981", turnover=1000000.0, total_market_val=float("nan")),
+    }
+    stocks = ["HK.00981"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 0
+
+
+def test_filter_valid_stocks_skips_zero_mcap():
+    """mcap=0 (e.g. 公司太細) 應該 skip."""
+    snapshots = {
+        "HK.00981": make_snapshot("HK.00981", turnover=1000000.0, total_market_val=0.0),
+    }
+    stocks = ["HK.00981"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 0
+
+
+def test_filter_valid_stocks_mixed():
+    """Mixed: pre-market + normal + suspended + NaN → correct filtering."""
+    snapshots = {
+        "HK.00981": make_snapshot("HK.00981", turnover=0.0, total_market_val=599256419650.0),  # pre-market, VALID
+        "HK.01347": make_snapshot("HK.01347", turnover=500000.0, total_market_val=300000000000.0),  # normal, VALID
+        "HK.00001": make_snapshot("HK.00001", turnover=0.0, suspension=True),  # suspended, SKIP
+        "HK.00002": make_snapshot("HK.00002", turnover=float("nan"), total_market_val=100.0),  # NaN, SKIP
+    }
+    stocks = ["HK.00981", "HK.01347", "HK.00001", "HK.00002", "HK.MISSING"]
+
+    valid = _filter_valid_stocks(snapshots, stocks)
+
+    assert len(valid) == 2
+    valid_codes = {v["code"] for v in valid}
+    assert valid_codes == {"HK.00981", "HK.01347"}
+
+
+# ============================================================================
+# Test _rank_and_score
+# ============================================================================
+
+def test_rank_and_score_basic():
+    """_rank_and_score should compute mcap_rank + volume_rank + score."""
+    valid = [
+        {"code": "A", "mcap": 1000.0, "turnover": 500.0},
+        {"code": "B", "mcap": 2000.0, "turnover": 300.0},
+        {"code": "C", "mcap": 1500.0, "turnover": 800.0},
+    ]
+
+    result = _rank_and_score(valid)
+
+    # mcap_rank: B(2000)=1, C(1500)=2, A(1000)=3
+    assert result[1]["mcap_rank"] == 1  # B
+    assert result[2]["mcap_rank"] == 2  # C
+    assert result[0]["mcap_rank"] == 3  # A
+
+    # volume_rank: C(800)=1, A(500)=2, B(300)=3
+    assert result[2]["volume_rank"] == 1  # C
+    assert result[0]["volume_rank"] == 2  # A
+    assert result[1]["volume_rank"] == 3  # B
+
+    # composite score (sum of ranks, 越低越好)
+    assert result[0]["score"] == 5  # A: 3+2=5
+    assert result[1]["score"] == 4  # B: 1+3=4
+    assert result[2]["score"] == 3  # C: 2+1=3 (best)
+
+
+# ============================================================================
+# Test _generate_reason
+# ============================================================================
+
+def test_generate_reason_mcap_top_1():
+    """mcap_rank=1 should produce '市值 top 1 (formatted)'."""
+    item = {"mcap_rank": 1, "volume_rank": 5, "mcap": 599256419650.0}
+    reason = _generate_reason(item)
+    assert "市值 top 1" in reason
+    assert "5992億" in reason or "6000億" in reason  # formatted mcap
+
+
+def test_generate_reason_volume_top_1():
+    """volume_rank=1 should produce '成交 top 1'."""
+    item = {"mcap_rank": 5, "volume_rank": 1, "mcap": 1000.0}
+    reason = _generate_reason(item)
+    assert "成交 top 1" in reason
+
+
+def test_generate_reason_no_top():
+    """Neither mcap_rank nor volume_rank is 1 or <=3 → fallback."""
+    item = {"mcap_rank": 10, "volume_rank": 10, "mcap": 1000.0}
+    reason = _generate_reason(item)
+    assert "綜合" in reason
+
+
+# ============================================================================
+# Test _resolve_plate_stocks (mocked ctx)
+# ============================================================================
+
+def test_resolve_plate_stocks_success():
+    """Mock ctx returning DataFrame → list of stock codes."""
+    mock_ctx = Mock()
+    mock_df = pd.DataFrame({"code": ["HK.00981", "HK.01347", "HK.00522"]})
+    mock_ctx.get_plate_stock.return_value = (RET_OK, mock_df)
+
+    result = _resolve_plate_stocks(mock_ctx, "HK.LIST1013")
+
+    assert result == ["HK.00981", "HK.01347", "HK.00522"]
+    mock_ctx.get_plate_stock.assert_called_once_with("HK.LIST1013")
+
+
+def test_resolve_plate_stocks_error():
+    """Mock ctx returning error → empty list."""
+    mock_ctx = Mock()
+    mock_ctx.get_plate_stock.return_value = (-1, "Plate not found")
+
+    result = _resolve_plate_stocks(mock_ctx, "HK.LIST9999")
+
+    assert result == []
+
+
+def test_resolve_plate_stocks_exception():
+    """Mock ctx raising exception → empty list."""
+    mock_ctx = Mock()
+    mock_ctx.get_plate_stock.side_effect = Exception("Connection timeout")
+
+    result = _resolve_plate_stocks(mock_ctx, "HK.LIST1013")
+
+    assert result == []
+
+
+# ============================================================================
+# Test _fetch_snapshots (mocked ctx)
+# ============================================================================
+
+def test_fetch_snapshots_success():
+    """Mock ctx returning batch of snapshots → dict {code: snapshot}."""
+    mock_ctx = Mock()
+    snapshot_df = pd.DataFrame([
+        make_snapshot("HK.00981", turnover=1000000.0),
+        make_snapshot("HK.01347", turnover=500000.0),
+    ])
+    mock_ctx.get_market_snapshot.return_value = (RET_OK, snapshot_df)
+
+    result = _fetch_snapshots(mock_ctx, ["HK.00981", "HK.01347"], batch_size=400)
+
+    assert "HK.00981" in result
+    assert "HK.01347" in result
+    assert result["HK.00981"]["turnover"] == 1000000.0
+
+
+def test_fetch_snapshots_error_continues():
+    """Mock ctx returning error → empty dict (no exception)."""
+    mock_ctx = Mock()
+    mock_ctx.get_market_snapshot.return_value = (-1, "Throttled")
+
+    result = _fetch_snapshots(mock_ctx, ["HK.00981"])
+
+    assert result == {}
+
+
+# ============================================================================
+# Test _lookup_plate_name (mocked DB)
+# ============================================================================
+
+def _make_db_mock(fetchone_return):
+    """Create a mock DB connection that works as a context manager.
+    
+    MagicMock 預設 __enter__.return_value 唔係 mock 自己，所以需要 explicit set.
+    """
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = Mock(return_value=mock_conn)
+    mock_conn.__exit__ = Mock(return_value=False)
+    mock_cursor = mock_conn.cursor.return_value
+    mock_cursor.fetchone.return_value = fetchone_return
+    return mock_conn
+
+
+def test_lookup_plate_name_found():
+    """Mock DB returning plate_name → return plate_name."""
+    mock_conn = _make_db_mock(("半導體",))
+
+    with patch("backend.models.plate.get_connection", return_value=mock_conn):
+        result = _lookup_plate_name("HK.LIST1013")
+
+    assert result == "半導體"
+
+
+def test_lookup_plate_name_not_found():
+    """Mock DB returning None → fallback to plate_code."""
+    mock_conn = _make_db_mock(None)
+
+    with patch("backend.models.plate.get_connection", return_value=mock_conn):
+        result = _lookup_plate_name("HK.LIST9999")
+
+    assert result == "HK.LIST9999"  # fallback to plate_code
+
+
+# ============================================================================
+# Test _rank_one_plate (integration, mocked ctx + DB)
+# ============================================================================
+
+def test_rank_one_plate_full_pipeline():
+    """Full pipeline: resolve → filter → fetch → filter valid → rank → top N."""
+    # Mock ctx
+    mock_ctx = Mock()
+    mock_plate_df = pd.DataFrame({"code": ["HK.00981", "HK.01347", "HK.00522"]})
+    mock_ctx.get_plate_stock.return_value = (RET_OK, mock_plate_df)
+    mock_snapshot_df = pd.DataFrame([
+        make_snapshot("HK.00981", turnover=1000000.0, total_market_val=2000.0),
+        make_snapshot("HK.01347", turnover=500000.0, total_market_val=1000.0),
+        make_snapshot("HK.00522", turnover=800000.0, total_market_val=1500.0),
+    ])
+    mock_ctx.get_market_snapshot.return_value = (RET_OK, mock_snapshot_df)
+
+    # Mock DB (plate_name lookup)
+    mock_conn = _make_db_mock(("半導體",))
+
+    with patch("backend.models.plate.get_connection", return_value=mock_conn):
+        leaders = _rank_one_plate(mock_ctx, "HK.LIST1013", top_n=2, plate_name_cache={})
+
+    # Expected: top 2 by composite score
+    # 00981: mcap_rank=1, vol_rank=1, score=2
+    # 01347: mcap_rank=3, vol_rank=3, score=6
+    # 00522: mcap_rank=2, vol_rank=2, score=4
+    # top 2 by score: 00981 (2), 00522 (4)
+    assert len(leaders) == 2
+    assert leaders[0]["code"] == "HK.00981"  # rank 1
+    assert leaders[0]["plate_name"] == "半導體"
+    assert leaders[1]["code"] == "HK.00522"
+    assert leaders[1]["plate_name"] == "半導體"
+
+
+def test_rank_one_plate_pre_market():
+    """REGRESSION: pre-market (turnover=0) should still return top N leaders."""
+    mock_ctx = Mock()
+    mock_plate_df = pd.DataFrame({"code": ["HK.00981", "HK.01347"]})
+    mock_ctx.get_plate_stock.return_value = (RET_OK, mock_plate_df)
+    # PRE-MARKET: turnover=0 (大少 09:03 regression)
+    mock_snapshot_df = pd.DataFrame([
+        make_snapshot("HK.00981", turnover=0.0, total_market_val=2000.0),
+        make_snapshot("HK.01347", turnover=0.0, total_market_val=1000.0),
+    ])
+    mock_ctx.get_market_snapshot.return_value = (RET_OK, mock_snapshot_df)
+
+    mock_conn = _make_db_mock(("半導體",))
+
+    with patch("backend.models.plate.get_connection", return_value=mock_conn):
+        leaders = _rank_one_plate(mock_ctx, "HK.LIST1013", top_n=2, plate_name_cache={})
+
+    assert len(leaders) == 2, "Pre-market stocks should be VALID"
+    assert all(l["turnover"] == 0.0 for l in leaders)
+
+
+# ============================================================================
+# Test run_plate_leaders (integration, mocked ctx + DB)
+# ============================================================================
+
+def test_run_plate_leaders_multiple_plates():
+    """Multi-plate: 3 plates × top 2 = 6 leaders (per-plate concat)."""
+    mock_ctx = Mock()
+    # Each plate returns same 2 stocks (different plate_codes → cache miss per call)
+    mock_plate_df = pd.DataFrame({"code": ["HK.00981", "HK.01347"]})
+    mock_ctx.get_plate_stock.return_value = (RET_OK, mock_plate_df)
+    mock_snapshot_df = pd.DataFrame([
+        make_snapshot("HK.00981", turnover=1000000.0, total_market_val=2000.0),
+        make_snapshot("HK.01347", turnover=500000.0, total_market_val=1000.0),
+    ])
+    mock_ctx.get_market_snapshot.return_value = (RET_OK, mock_snapshot_df)
+
+    # Mock DB: 不同 plate_code 返不同 plate_name
+    plate_name_map = {
+        "HK.LIST1013": "半導體",
+        "HK.LIST1044": "煤炭",
+        "HK.LIST1014": "衛星",
+    }
+
+    def make_db_for_plate(plate_code):
+        def fetchone():
+            return (plate_name_map.get(plate_code, plate_code),)
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = Mock(return_value=mock_conn)
+        mock_conn.__exit__ = Mock(return_value=False)
+        mock_conn.cursor.return_value.fetchone.side_effect = fetchone
+        return mock_conn
+
+    # 因為 mock_conn.fetchone.side_effect 跟 plate_code，每次 call 都用新 mock
+    # 用 side_effect on get_connection patch 來動態返唔同 mock_conn
+    mock_conn_pool = {
+        "HK.LIST1013": make_db_for_plate("HK.LIST1013"),
+        "HK.LIST1044": make_db_for_plate("HK.LIST1044"),
+        "HK.LIST1014": make_db_for_plate("HK.LIST1014"),
+    }
+
+    def get_connection_side_effect():
+        # 根據最後 call 嘅 plate_code 返對應 mock_conn
+        # 但 plate_code 唔直接 available here, so 用 mock_conn_pool 嘅 mock_conn
+        # Simpler: 用 list iterator
+        for conn in mock_conn_pool.values():
+            return conn
+        return mock_conn_pool["HK.LIST1013"]
+
+    with patch("backend.models.plate.get_connection", side_effect=lambda: list(mock_conn_pool.values())[0]):
+        leaders = run_plate_leaders(
+            ["HK.LIST1013", "HK.LIST1044", "HK.LIST1014"],
+            top_n=2,
+        )
+
+    # 簡化 assert: 只 check leaders 數量 + plate_name 順序
+    assert len(leaders) == 6  # 3 plates × top 2
+    assert all("plate_name" in l for l in leaders)
+
+
+def test_run_plate_leaders_empty_plates():
+    """Empty plates list → empty leaders."""
+    leaders = run_plate_leaders([], top_n=10)
+    assert leaders == []
+
+
+def test_run_plate_leaders_top_n_out_of_range():
+    """top_n out of range → fallback to 10 (verified via _rank_one_plate call args)."""
+    # 補以 _rank_one_plate mock 驗證 fallback 邏輯 (避免 full integration 容易受 Mock state 影響)
+    with patch("backend.models.plate._rank_one_plate", return_value=[]) as mock_rank:
+        leaders = run_plate_leaders(["HK.LIST1013"], top_n=100)  # out of range (>50)
+
+    # top_n should fallback to 10 (驗證傳入 _rank_one_plate 嘅 top_n 參數)
+    assert mock_rank.call_count == 1
+    call_top_n = mock_rank.call_args[0][2]  # 3rd positional arg
+    assert call_top_n == 10, f"top_n fallback 失敗: got {call_top_n}, expected 10"
+    assert leaders == []
+
+
+def test_run_plate_leaders_top_n_negative():
+    """top_n <= 0 → fallback to 10."""
+    with patch("backend.models.plate._rank_one_plate", return_value=[]) as mock_rank:
+        leaders = run_plate_leaders(["HK.LIST1013"], top_n=-5)  # negative
+
+    call_top_n = mock_rank.call_args[0][2]
+    assert call_top_n == 10
+    assert leaders == []
+
+
+def test_run_plate_leaders_top_n_in_range():
+    """top_n in range → pass through (no fallback)."""
+    with patch("backend.models.plate._rank_one_plate", return_value=[]) as mock_rank:
+        run_plate_leaders(["HK.LIST1013"], top_n=25)  # in range
+
+    call_top_n = mock_rank.call_args[0][2]
+    assert call_top_n == 25, f"top_n in range should pass through: got {call_top_n}"

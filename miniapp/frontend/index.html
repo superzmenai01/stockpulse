@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>StockPulse Mini App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding-bottom: 80px;
+    }
+
+    /* HEADER */
+    .header {
+      background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+      padding: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .header h1 {
+      font-size: 18px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header .status {
+      font-size: 11px;
+      color: #4ade80;
+      margin-top: 4px;
+    }
+    .header .status.offline { color: #f87171; }
+
+    /* TABS */
+    .tabs {
+      display: flex;
+      background: #16213e;
+      padding: 0 16px;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab {
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #888;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      color: #4ade80;
+      border-bottom-color: #4ade80;
+    }
+
+    /* MAIN CONTENT */
+    .content { padding: 16px; }
+
+    /* STOCK CARD */
+    .stock-card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stock-card::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: #4ade80;
+    }
+    .stock-card.negative::before { background: #f87171; }
+    .stock-card.negative .price { color: #f87171; }
+
+    .stock-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .stock-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .stock-code {
+      font-size: 12px;
+      color: #666;
+    }
+    .stock-price {
+      font-size: 22px;
+      font-weight: 700;
+      color: #4ade80;
+    }
+    .stock-change {
+      font-size: 14px;
+      margin-left: 8px;
+    }
+    .stock-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: #888;
+      margin-top: 8px;
+    }
+    .stock-meta span { display: flex; flex-direction: column; }
+    .stock-meta .label { color: #555; font-size: 10px; }
+    .stock-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #333;
+    }
+    .btn {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: none;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-edit { background: #333; color: #fff; }
+    .btn-delete { background: #7f1d1d; color: #f87171; }
+    .btn-chart { background: #1e3a5f; color: #60a5fa; }
+    .btn:hover { opacity: 0.8; }
+
+    /* ADD FORM */
+    .add-form {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .add-form h3 {
+      font-size: 14px;
+      color: #4ade80;
+      margin-bottom: 12px;
+    }
+    .form-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .form-row input, .form-row select {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #1a1a2e;
+      color: #fff;
+      font-size: 14px;
+    }
+    .form-row input:focus, .form-row select:focus {
+      outline: none;
+      border-color: #4ade80;
+    }
+    .form-row button {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      background: #4ade80;
+      color: #1a1a2e;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .form-row button:active { transform: scale(0.95); }
+
+    /* ALERT FORM */
+    .alert-form {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .alert-form h3 {
+      font-size: 14px;
+      color: #fbbf24;
+      margin-bottom: 12px;
+    }
+    .alert-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #333;
+    }
+    .alert-item:last-child { border-bottom: none; }
+    .alert-info { display: flex; flex-direction: column; gap: 2px; }
+    .alert-code { font-size: 13px; color: #fff; }
+    .alert-condition { font-size: 12px; color: #888; }
+    .alert-price { font-size: 14px; font-weight: 600; color: #fbbf24; }
+    .alert-delete {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      background: #7f1d1d;
+      color: #f87171;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* POSITIONS */
+    .position-card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .position-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .position-name { font-size: 16px; font-weight: 600; color: #fff; }
+    .position-code { font-size: 12px; color: #666; }
+    .position-pl {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .position-pl.positive { color: #4ade80; }
+    .position-pl.negative { color: #f87171; }
+    .position-details {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      font-size: 12px;
+      color: #888;
+    }
+    .position-details span { display: flex; flex-direction: column; gap: 2px; }
+    .position-details .label { color: #555; font-size: 10px; }
+
+    /* CHART MODAL */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 200;
+      padding: 16px;
+      overflow-y: auto;
+    }
+    .modal.active { display: flex; flex-direction: column; gap: 16px; }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #16213e;
+      padding: 12px 16px;
+      border-radius: 12px;
+    }
+    .modal-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .modal-close {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      background: #333;
+      color: #fff;
+      cursor: pointer;
+    }
+    .chart-container {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      min-height: 300px;
+    }
+    .chart-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .chart-tabs::-webkit-scrollbar { display: none; }
+    .chart-tab {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: transparent;
+      color: #888;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .chart-tab.active {
+      background: #4ade80;
+      color: #1a1a2e;
+      border-color: #4ade80;
+    }
+    #chartCanvas {
+      width: 100%;
+      height: 250px;
+      background: #0f0f1a;
+      border-radius: 8px;
+    }
+    .kline-info {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .kline-info span {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 11px;
+    }
+    .kline-info .label { color: #555; }
+    .kline-info .value { color: #fff; font-weight: 500; }
+
+    /* BOTTOM NAV */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #16213e;
+      display: flex;
+      padding: 8px 16px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      gap: 8px;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+    }
+    .nav-btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    .nav-btn.home { background: #4ade80; color: #1a1a2e; }
+    .nav-btn.alert { background: #333; color: #fbbf24; }
+    .nav-btn.add { background: #1e3a5f; color: #60a5fa; }
+
+    /* LOADING */
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px;
+      color: #666;
+    }
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid #333;
+      border-top-color: #4ade80;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* EMPTY */
+    .empty {
+      text-align: center;
+      padding: 40px;
+      color: #555;
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+    /* TOAST */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #16213e;
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      border: 1px solid #4ade80;
+    }
+    .toast.show { opacity: 1; }
+    .toast.error { border-color: #f87171; }
+  </style>
+</head>
+<body>
+  <!-- HEADER -->
+  <div class="header">
+    <h1>📈 StockPulse</h1>
+    <div class="status" id="status">連接中...</div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" data-tab="watch">自選</div>
+    <div class="tab" data-tab="positions">持倉</div>
+    <div class="tab" data-tab="alerts">警報</div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content" id="content">
+    <div class="loading"><div class="spinner"></div></div>
+  </div>
+
+  <!-- CHART MODAL -->
+  <div class="modal" id="chartModal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">圖表</div>
+      <button class="modal-close" onclick="closeModal()">關閉</button>
+    </div>
+    <div class="chart-container">
+      <div class="chart-tabs">
+        <button class="chart-tab active" data-ktype="1K">1分鐘</button>
+        <button class="chart-tab" data-ktype="5K">5分鐘</button>
+        <button class="chart-tab" data-ktype="30K">30分鐘</button>
+        <button class="chart-tab" data-ktype="DK">日K</button>
+        <button class="chart-tab" data-ktype="WK">週K</button>
+      </div>
+      <canvas id="chartCanvas"></canvas>
+      <div class="kline-info" id="klineInfo"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <div class="bottom-nav">
+    <button class="nav-btn home" onclick="showTab('watch')">📋 自選</button>
+    <button class="nav-btn alert" onclick="showTab('alerts')">🔔 警報</button>
+    <button class="nav-btn add" onclick="showTab('add')">➕ 加入</button>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+<script>
+// === CONFIG ===
+const API_BASE = 'http://localhost:18793';
+let watchlist = { stocks: [], alerts: [] };
+let currentTab = 'watch';
+let currentChartCode = null;
+let klineCache = {};
+
+// === UTILS ===
+function toast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isError ? ' error' : '') + ' show';
+  setTimeout(() => t.className = 't oast', 2500);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+function formatPrice(p) {
+  if (p == null) return '--';
+  return Number(p).toFixed(2);
+}
+
+function formatChange(c) {
+  if (c == null) return '--';
+  const sign = c >= 0 ? '+' : '';
+  return sign + Number(c).toFixed(2) + '%';
+}
+
+// === STATUS ===
+async function checkStatus() {
+  const el = document.getElementById('status');
+  try {
+    const r = await api('/api/status');
+    el.textContent = r.futu_connected ? '✅ 富途已連接' : '⚠️ 富途未連接';
+    el.className = 'status' + (r.futu_connected ? '' : ' offline');
+  } catch {
+    el.textContent = '❌ 服務未運行';
+    el.className = 'status offline';
+  }
+}
+
+// === TAB NAVIGATION ===
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => showTab(t.dataset.tab));
+});
+
+async function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => {
+    t.className = 'tab' + (t.dataset.tab === tab ? ' active' : '');
+  });
+  const content = document.getElementById('content');
+  
+  if (tab === 'watch') await renderWatchlist();
+  else if (tab === 'positions') await renderPositions();
+  else if (tab === 'alerts') await renderAlerts();
+  else if (tab === 'add') await renderAddForm();
+}
+
+// === RENDER WATCHLIST ===
+async function renderWatchlist() {
+  const content = document.getElementById('content');
+  try {
+    watchlist = await api('/api/watchlist');
+    if (!watchlist.stocks || watchlist.stocks.length === 0) {
+      content.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">📋</div>
+          <div>自選列表係空白</div>
+          <div style="font-size:12px;margin-top:8px;color:#555">點下方➕加入股票</div>
+        </div>`;
+      return;
+    }
+    
+    const codes = watchlist.stocks.map(s => s.code).join(',');
+    let quotes;
+    try {
+      const q = await api('/api/quote/' + codes);
+      quotes = {};
+      if (q.data) q.data.forEach(r => quotes[r.code] = r);
+    } catch { quotes = {}; }
+    
+    content.innerHTML = watchlist.stocks.map(s => {
+      const q = quotes[s.code] || {};
+      const change = q.change_ratio || 0;
+      const isNeg = change < 0;
+      return `
+        <div class="stock-card ${isNeg ? 'negative' : ''}">
+          <div class="stock-header">
+            <div>
+              <div class="stock-name">${s.name || s.code}</div>
+              <div class="stock-code">${s.code}</div>
+            </div>
+            <div>
+              <span class="stock-price">${formatPrice(q.last_price)}</span>
+              <span class="stock-change">${formatChange(change)}</span>
+            </div>
+          </div>
+          <div class="stock-meta">
+            <span><span class="label">開</span>${formatPrice(q.open_price)}</span>
+            <span><span class="label">高</span>${formatPrice(q.high_price)}</span>
+            <span><span class="label">低</span>${formatPrice(q.low_price)}</span>
+            <span><span class="label">成交量</span>${q.volume ? (q.volume/1000).toFixed(0) + 'K' : '--'}</span>
+          </div>
+          <div class="stock-actions">
+            <button class="btn btn-chart" onclick="openChart('${s.code}', '${s.name}')">📊 圖表</button>
+            <button class="btn btn-edit" onclick="editStock('${s.code}')">✏️ 備註</button>
+            <button class="btn btn-delete" onclick="deleteStock('${s.code}')">🗑️</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    content.innerHTML = `<div class="empty">載入失敗: ${e.message}</div>`;
+  }
+}
+
+// === RENDER POSITIONS ===
+async function renderPositions() {
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/api/positions');
+    if (!r.data || r.data.length === 0) {
+      content.innerHTML = `<div class="empty"><div class="empty-icon">📦</div><div>暫時沒有持倉</div></div>`;
+      return;
+    }
+    content.innerHTML = r.data.map(p => {
+      const pl = p.pl_ratio || 0;
+      const isNeg = pl < 0;
+      return `
+        <div class="position-card">
+          <div class="position-header">
+            <div>
+              <div class="position-name">${p.stock_name || p.code}</div>
+              <div class="position-code">${p.code}</div>
+            </div>
+            <div class="position-pl ${isNeg ? 'negative' : 'positive'}">
+              ${pl >= 0 ? '+' : ''}${pl.toFixed(2)}%
+            </div>
+          </div>
+          <div class="position-details">
+            <span><span class="label">持倉</span>${p.qty}</span>
+            <span><span class="label">成本</span>${formatPrice(p.cost_price)}</span>
+            <span><span class="label">市價</span>${formatPrice(p.nominal_price)}</span>
+            <span><span class="label">盈虧</span>${formatPrice(p.pl_val)}</span>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    content.innerHTML = `<div class="empty">載入失敗: ${e.message}</div>`;
+  }
+}
+
+// === RENDER ADD FORM ===
+function renderAddForm() {
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="add-form">
+      <h3>➕ 加入股票到自選</h3>
+      <div class="form-row">
+        <select id="marketSelect">
+          <option value="HK">🇭🇰 港股</option>
+          <option value="US">🇺🇸 美股</option>
+          <option value="SH">🇨🇳 滬股</option>
+          <option value="SZ">🇨🇳 深股</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <input type="text" id="codeInput" placeholder="股票代碼，如 00700">
+      </div>
+      <div class="form-row">
+        <input type="text" id="nameInput" placeholder="備註名稱（可選）">
+      </div>
+      <div class="form-row">
+        <button onclick="addStock()">加入自選</button>
+      </div>
+      <div style="font-size:11px;color:#555;margin-top:12px">
+        例子：HK.00700 (騰訊), US.AAPL (蘋果), SH.600519 (茅台)
+      </div>
+    </div>`;
+}
+
+async function addStock() {
+  const market = document.getElementById('marketSelect').value;
+  const code = document.getElementById('codeInput').value.trim().toUpperCase();
+  const name = document.getElementById('nameInput').value.trim();
+  
+  if (!code) { toast('請輸入股票代碼', true); return; }
+  
+  try {
+    await api('/api/watchlist', {
+      method: 'POST',
+      body: JSON.stringify({ code, name, market })
+    });
+    toast('✅ 已加入自選');
+    document.getElementById('codeInput').value = '';
+    document.getElementById('nameInput').value = '';
+    await renderWatchlist();
+  } catch (e) {
+    toast('加入失敗: ' + e.message, true);
+  }
+}
+
+// === EDIT / DELETE ===
+async function editStock(code) {
+  const stock = watchlist.stocks.find(s => s.code === code);
+  if (!stock) return;
+  const note = prompt('備註:', stock.note || '');
+  if (note === null) return;
+  try {
+    await api('/api/watchlist/' + code, {
+      method: 'PATCH',
+      body: JSON.stringify({ note })
+    });
+    toast('✅ 已更新');
+    await renderWatchlist();
+  } catch (e) { toast('更新失敗', true); }
+}
+
+async function deleteStock(code) {
+  if (!confirm('確定要刪除這檔股票？')) return;
+  try {
+    await api('/api/watchlist/' + code, { method: 'DELETE' });
+    toast('✅ 已刪除');
+    await renderWatchlist();
+  } catch (e) { toast('刪除失敗', true); }
+}
+
+// === ALERTS ===
+async function renderAlerts() {
+  const content = document.getElementById('content');
+  try {
+    watchlist = await api('/api/watchlist');
+    const alerts = watchlist.alerts || [];
+    
+    content.innerHTML = `
+      <div class="alert-form">
+        <h3>🔔 價格警報設置</h3>
+        ${alerts.length === 0 ? '<div class="empty" style="padding:20px">暫時沒有警報</div>' : ''}
+        ${alerts.map(a => `
+          <div class="alert-item">
+            <div class="alert-info">
+              <div class="alert-code">${a.code}</div>
+              <div class="alert-condition">當價格 ${a.type === 'above' ? '升穿' : '跌穿'}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="alert-price">${formatPrice(a.price)}</div>
+              <button class="alert-delete" onclick="deleteAlert('${a.id}')">刪除</button>
+            </div>
+          </div>`).join('')}
+        
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
+          <div style="font-size:12px;color:#555;margin-bottom:8px">新增警報</div>
+          <div class="form-row">
+            <input type="text" id="alertCode" placeholder="股票代碼">
+            <select id="alertType">
+              <option value="above">升穿</option>
+              <option value="below">跌穿</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <input type="number" id="alertPrice" placeholder="目標價格">
+            <button onclick="addAlert()">設置</button>
+          </div>
+        </div>
+      </div>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty">載入失敗</div>`;
+  }
+}
+
+async function addAlert() {
+  const code = document.getElementById('alertCode').value.trim().toUpperCase();
+  const type = document.getElementById('alertType').value;
+  const price = parseFloat(document.getElementById('alertPrice').value);
+  
+  if (!code || !price) { toast('請填寫完整', true); return; }
+  
+  try {
+    await api('/api/alert', {
+      method: 'POST',
+      body: JSON.stringify({ code, type, price })
+    });
+    toast('✅ 警報已設置');
+    await renderAlerts();
+  } catch (e) { toast('設置失敗', true); }
+}
+
+async function deleteAlert(id) {
+  try {
+    await api('/api/alert/' + id, { method: 'DELETE' });
+    toast('✅ 已刪除');
+    await renderAlerts();
+  } catch (e) { toast('刪除失敗', true); }
+}
+
+// === CHART ===
+function openModal(code, name) {
+  currentChartCode = code;
+  document.getElementById('modalTitle').textContent = name || code;
+  document.getElementById('chartModal').className = 'modal active';
+  loadChart('1K');
+}
+
+function closeModal() {
+  document.getElementById('chartModal').className = 'modal';
+  currentChartCode = null;
+}
+
+function openChart(code, name) { openModal(code, name); }
+
+document.querySelectorAll('.chart-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.chart-tab').forEach(x => x.className = 'chart-tab');
+    t.className = 'chart-tab active';
+    loadChart(t.dataset.ktype);
+  });
+});
+
+async function loadChart(ktype) {
+  if (!currentChartCode) return;
+  const canvas = document.getElementById('chartCanvas');
+  const ctx = canvas.getContext('2d');
+  
+  try {
+    const r = await api('/api/kline/' + currentChartCode + '?type=' + ktype + '&num=100');
+    if (!r.data || r.data.length === 0) { toast('沒有K線數據', true); return; }
+    
+    const candles = r.data;
+    
+    // Update info
+    const latest = candles[candles.length - 1];
+    const prev = candles.length > 1 ? candles[candles.length - 2] : latest;
+    document.getElementById('klineInfo').innerHTML = `
+      <span><span class="label">開</span><span class="value">${formatPrice(latest.open)}</span></span>
+      <span><span class="label">高</span><span class="value">${formatPrice(latest.high)}</span></span>
+      <span><span class="label">低</span><span class="value">${formatPrice(latest.low)}</span></span>
+      <span><span class="label">收</span><span class="value">${formatPrice(latest.close)}</span></span>`;
+    
+    // Draw candlestick
+    canvas.width = canvas.offsetWidth * 2;
+    canvas.height = canvas.offsetHeight * 2;
+    ctx.scale(2, 2);
+    
+    const w = canvas.offsetWidth;
+    const h = canvas.offsetHeight;
+    const padding = { top: 10, right: 10, bottom: 25, left: 10 };
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+    
+    ctx.fillStyle = '#0f0f1a';
+    ctx.fillRect(0, 0, w, h);
+    
+    // Calculate price range
+    let minPrice = Infinity, maxPrice = -Infinity;
+    candles.forEach(c => {
+      minPrice = Math.min(minPrice, c.low);
+      maxPrice = Math.max(maxPrice, c.high);
+    });
+    const priceRange = maxPrice - minPrice || 1;
+    
+    const candleW = Math.max(2, chartW / candles.length - 1);
+    
+    candles.forEach((c, i) => {
+      const x = padding.left + i * (candleW + 1) + candleW / 2;
+      const isGreen = c.close >= c.open;
+      ctx.strokeStyle = isGreen ? '#4ade80' : '#f87171';
+      ctx.fillStyle = isGreen ? '#4ade80' : '#f87171';
+      
+      // Wick
+      const highY = padding.top + chartH * (1 - (c.high - minPrice) / priceRange);
+      const lowY = padding.top + chartH * (1 - (c.low - minPrice) / priceRange);
+      ctx.beginPath();
+      ctx.moveTo(x, highY);
+      ctx.lineTo(x, lowY);
+      ctx.stroke();
+      
+      // Body
+      const openY = padding.top + chartH * (1 - (c.open - minPrice) / priceRange);
+      const closeY = padding.top + chartH * (1 - (c.close - minPrice) / priceRange);
+      const bodyTop = Math.min(openY, closeY);
+      const bodyH = Math.max(1, Math.abs(closeY - openY));
+      ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
+    });
+    
+  } catch (e) {
+    ctx.fillStyle = '#0f0f1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#f87171';
+    ctx.fillText('載入圖表失敗', 10, 20);
+  }
+}
+
+// === INIT ===
+async function init() {
+  await checkStatus();
+  await showTab('watch');
+  setInterval(checkStatus, 30000);
+}
+
+init();
+</script>
+</body>
+</html>

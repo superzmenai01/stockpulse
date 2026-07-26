@@ -10,6 +10,7 @@ import {
   CalendarOutlined,
   ExperimentOutlined,
   FunctionOutlined,
+  BookOutlined,
 } from '@ant-design/icons'
 import styles from './Sidebar.module.css'
 
@@ -17,6 +18,7 @@ import styles from './Sidebar.module.css'
 const navItems = [
   { key: '/', icon: <HomeOutlined />, label: '首頁' },
   { key: '/algorithms', icon: <FunctionOutlined />, label: '演算法策略' },
+  { key: '/library', icon: <BookOutlined />, label: '演算法結果庫' },
   { key: '/ew-test', icon: <ExperimentOutlined />, label: 'EW測試' },
   { key: '/watchlist', icon: <StarOutlined />, label: '策略關注' },
   { key: '/strategy', icon: <BarChartOutlined />, label: '指標' },

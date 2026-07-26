@@ -12,9 +12,13 @@ import { API_BASE } from '../../config'
 import styles from './StrategyPage.module.css'
 
 // 預設 Filter 配置
+// 大少 2026-07-25 龍頭板塊 reset (Q2 A): 刪晒 hardcoded default
+// - markets: []  → 空 (user 必須揀, 唔預設)
+// - sector: ''   → 空 (user 必須揀, 唔預設 'ALL')
+// - logic: 'AND' → 保留 (AND/OR 係 operator, 一定要有 default, TypeScript type 强制咗)
 const DEFAULT_FILTERS: FilterConfig = {
-  markets: ['HK_MAIN', 'HK_GEM'],
-  sector: 'ALL',
+  markets: [],
+  sector: '',
   logic: 'AND',
 }
 

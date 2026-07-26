@@ -1,0 +1,40 @@
+/* pages/LibraryPage/LibraryPage.module.css — Saved Runs Library page styles (大少 2026-07-24) */
+
+.container {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filters {
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.errorBanner {
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+}
+
+.note {
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+:global(.ant-table-row) > td {
+  vertical-align: top;
+}
