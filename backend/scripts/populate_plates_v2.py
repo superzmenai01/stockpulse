@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import PLATES_PIPELINE_DISABLED  # 大少 2026-07-25 reset gate
+from utils.zh_normalize import to_traditional  # A2 大少 #7609: 永久 zhconv (1-line hook)
 from futu import OpenQuoteContext, RET_OK, Plate
 from futu.common.constant import Market
 
@@ -107,7 +108,7 @@ def upsert_plates(db_path: Path, plates: list[dict]) -> int:
     try:
         cursor = conn.cursor()
         rows = [
-            (p["code"], p["name"], p["plate_type"])
+            (p["code"], to_traditional(p["name"]), p["plate_type"])  # A2 hook
             for p in plates
         ]
         cursor.executemany(INSERT_SQL, rows)

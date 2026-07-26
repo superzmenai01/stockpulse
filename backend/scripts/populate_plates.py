@@ -58,6 +58,7 @@ from futu.common.constant import Plate
 # 用同一份 logic 確保 backend query 同 populate 一致
 sys.path.insert(0, str(Path.home() / "stockpulse"))
 from backend.models.plate import classify_plate_type
+from backend.utils.zh_normalize import to_traditional  # A2 大少 #7609: 永久 zhconv
 
 # ============================================================================
 # Constants
@@ -211,6 +212,9 @@ def upsert_plates(
     conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
+        # A2 hook (大少 #7609): 永久 zhconv 將來新 plate 寫入都繁體
+        plates = [(code, to_traditional(name), market, plate_type)
+                  for code, name, market, plate_type in plates]
         # SQLite UPSERT (3.24+, 2018+): 只 update specified columns, preserve others
         cursor.executemany(
             """INSERT INTO plate_leaders_options
