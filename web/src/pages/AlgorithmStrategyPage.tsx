@@ -11,7 +11,7 @@
 //   ✓ 清理 test-specific UI (banner / back link / footer note)
 //   ✓ 保留 drag-resize + auto-persist
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Card,
   Select,
@@ -45,6 +45,8 @@ import { usePopularityStatus } from '../hooks/usePopularityStatus'
 import NonStockToggle from '../components/algorithm/NonStockToggle'
 import PlateSelector from '../components/algorithm/PlateSelector'
 import ResultGrid from '../components/algorithm/ResultGrid'
+import SaveRunModal from '../components/library/SaveRunModal'
+import { useSaveRunFlow } from '../hooks/useSaveRunFlow'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -212,7 +214,8 @@ function AS01Panel() {
   } = usePlates();
 
   const {
-    results, loading, hasRun, lastError, handleExecute,
+    results, loading, hasRun, lastError, rankedAt,
+    handleExecute,
   } = useExecuteAlgorithm();
 
   const {
@@ -222,6 +225,15 @@ function AS01Panel() {
   // Local state (specific to this panel)
   const [selectedPlates, setSelectedPlates] = useState<string[]>([]);
   const [topN, setTopN] = useState<number>(10);
+  // 大少 2026-07-26 #7530 🥇: 抽 useSaveRunFlow hook 出 page (4 inline handlers → 1 hook call)
+  const saveFlow = useSaveRunFlow({
+    algorithmId: 'AS-01',
+    algorithmName: '板塊龍頭股',
+    results,
+    selectedPlates,
+    topN,
+    rankedAt,
+  });
 
   return (
     <div className={styles.twoPanel} style={{ gridTemplateColumns: `${inner.width}px 1fr` }}>
@@ -262,6 +274,17 @@ function AS01Panel() {
             restoreDefault={restoreDefault}
           />
 
+          <Button
+            type="primary"
+            size="large"
+            icon={<SearchOutlined />}
+            loading={loading}
+            onClick={() => handleExecute(selectedPlates, topN)}
+            block
+          >
+            🔍 執行
+          </Button>
+
           <div>
             <Text strong>🔢 取頭 N 位</Text>
             <InputNumber
@@ -300,6 +323,22 @@ function AS01Panel() {
         loading={loading}
         hasRun={hasRun}
         errorMessage={lastError}
+        // 大少 2026-07-26 #7493 + #7530: save props from useSaveRunFlow hook
+        canSave={hasRun && results.length > 0 && !loading}
+        onSave={saveFlow.show}
+        saving={saveFlow.saving}
+      />
+
+      {/* 大少 2026-07-26 #7493 + #7530: Save Run modal (state/handlers from useSaveRunFlow) */}
+      <SaveRunModal
+        open={saveFlow.open}
+        algorithmName="板塊龍頭股"
+        stockCount={results.length}
+        stockCodes={results.map((l) => l.code)}
+        rankedAt={rankedAt}
+        saving={saveFlow.saving}
+        onSave={saveFlow.confirmSave}
+        onCancel={saveFlow.hide}
       />
     </div>
   );

@@ -15,6 +15,10 @@ interface ResultGridProps {
   loading: boolean;
   hasRun: boolean;
   errorMessage?: string | null;
+  // 大少 2026-07-26 #7493: 儲存結果 button props
+  canSave?: boolean;
+  onSave?: () => void;
+  saving?: boolean;
 }
 
 function normalizeStock(s: Leader): Leader {
@@ -35,7 +39,7 @@ function normalizeStock(s: Leader): Leader {
   };
 }
 
-export default function ResultGrid({ leaders, loading, hasRun, errorMessage }: ResultGridProps) {
+export default function ResultGrid({ leaders, loading, hasRun, errorMessage, canSave, onSave, saving }: ResultGridProps) {
   const displayedLeaders = leaders.map(normalizeStock);
 
   return (
@@ -52,8 +56,15 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage }: R
       }
       className={styles.rightPanel}
       extra={
-        <Tooltip title="🚧 儲存結果待實裝">
-          <Button icon={<SaveOutlined />} disabled size="small">
+        // 大少 2026-07-26 #7493: 儲存結果 button 連住 SaveRunModal
+        <Tooltip title={canSave ? '儲存到 Library page' : '請先執行 AS-01 算法先可以儲存'}>
+          <Button
+            icon={<SaveOutlined />}
+            size="small"
+            disabled={!canSave}
+            loading={saving}
+            onClick={onSave}
+          >
             💾 儲存結果
           </Button>
         </Tooltip>

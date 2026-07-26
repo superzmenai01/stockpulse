@@ -1,5 +1,7 @@
 // hooks/useExecuteAlgorithm.ts — POST execute + state management
 // 大少 2026-07-24 Tier 1.3
+// 大少 2026-07-26 #7493: 加 rankedAt state (俾 SaveRunModal 用)
+// 大少 2026-07-26 #7530 🥈: 拆 hook — save logic moved to useSaveRun.ts
 
 import { useState, useCallback } from 'react';
 import { message } from 'antd';
@@ -10,6 +12,8 @@ export function useExecuteAlgorithm() {
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  // 大少 2026-07-26 #7493: 記住 last ranked_at (俾 SaveRunModal 用 — 顯示 execution timestamp)
+  const [rankedAt, setRankedAt] = useState<string | null>(null);
 
   const handleExecute = useCallback(async (selectedPlates: string[], topN: number) => {
     if (selectedPlates.length === 0) {
@@ -31,6 +35,7 @@ export function useExecuteAlgorithm() {
       }
       const data: ExecuteApiResponse = await res.json();
       setResults(data.leaders || []);
+      setRankedAt(data.ranked_at || null);
       setHasRun(true);
       // Ensure minimum 1.2s loading (UX, 避免 fetch 太快 spin 閃一下)
       const elapsed = Date.now() - startTime;
@@ -43,6 +48,7 @@ export function useExecuteAlgorithm() {
       message.error(`執行失敗: ${errMsg}`);
       setLastError(errMsg);
       setResults([]);
+      setRankedAt(null);
     } finally {
       setLoading(false);
     }
@@ -53,6 +59,7 @@ export function useExecuteAlgorithm() {
     loading,
     hasRun,
     lastError,
+    rankedAt,
     handleExecute,
     setResults,
   };
