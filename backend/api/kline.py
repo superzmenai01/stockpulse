@@ -160,6 +160,23 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
                 'close': float(row['close']),
                 'volume': int(row['volume']),
             })
+
+        # 大少 #7780: 加 turnover_rate per candle (volume / outstanding_shares)
+        outstanding_shares = 0
+        try:
+            ret_snap, snap_data = ctx.get_market_snapshot([code])
+            if ret_snap == 0 and len(snap_data) > 0 and 'outstanding_shares' in snap_data.columns:
+                outstanding_shares = float(snap_data.iloc[0]['outstanding_shares'] or 0)
+                logger.info(f"[KLine] {code} outstanding_shares = {outstanding_shares:,.0f}")
+        except Exception as e:
+            logger.warning(f"[KLine] 取 outstanding_shares 失敗: {e}")
+
+        if outstanding_shares > 0:
+            for kline in klines:
+                kline['turnover_rate'] = round((kline['volume'] / outstanding_shares) * 100, 3)
+        else:
+            for kline in klines:
+                kline['turnover_rate'] = None
         
         # 股票名稱
         name = code

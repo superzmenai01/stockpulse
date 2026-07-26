@@ -21,6 +21,8 @@ interface KLine {
   low: number
   close: number
   volume: number
+  // 大少 #7780: 換手率 (volume / outstanding_shares × 100)
+  turnover_rate?: number | null
 }
 
 interface ChartContainerProps {
@@ -1119,6 +1121,13 @@ export default function ChartContainer({
                 <span className={styles.tooltipLabel}>成交額</span>
                 <span className={styles.tooltipValue}>{formatVolume(hoverCandle.volume * hoverCandle.close)}</span>
               </div>
+              {/* 大少 #7780: 換手率 (從 outstanding_shares 計算) */}
+              {hoverCandle.turnover_rate != null && (
+                <div className={styles.tooltipRow}>
+                  <span className={styles.tooltipLabel}>換手率</span>
+                  <span className={styles.tooltipValue}>{hoverCandle.turnover_rate.toFixed(2)}%</span>
+                </div>
+              )}
             </div>
           )
         })()}
