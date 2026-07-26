@@ -1,11 +1,12 @@
 // components/algorithm/ResultGrid.tsx — 8-column results grid
 // 大少 2026-07-24 Tier 1.3: Frontend modular refactor
 
-import React from 'react';
-import { Card, Spin, Empty, Typography, Space, Tag, Tooltip, Button } from 'antd';
+import React, { useState } from 'react';
+import { Card, Modal, Spin, Empty, Typography, Space, Tag, Tooltip, Button } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import { Leader } from '../../types/algorithm';
 import { formatMcap, formatTurnover } from '../../utils/formatters';
+import ChartContainer from '../chart/ChartContainer';
 import styles from './ResultGrid.module.css';
 
 const { Text } = Typography;
@@ -42,7 +43,22 @@ function normalizeStock(s: Leader): Leader {
 export default function ResultGrid({ leaders, loading, hasRun, errorMessage, canSave, onSave, saving }: ResultGridProps) {
   const displayedLeaders = leaders.map(normalizeStock);
 
+  // 大少 #7694 #7754: 點擊股票出 K 線圖表
+  const [selectedStock, setSelectedStock] = useState<{ code: string; name: string } | null>(null);
+  const [chartModalOpen, setChartModalOpen] = useState(false);
+
+  const handleStockClick = (stock: Leader) => {
+    setSelectedStock({ code: stock.code, name: stock.name });
+    setChartModalOpen(true);
+  };
+
+  const handleCloseChart = () => {
+    setChartModalOpen(false);
+    setSelectedStock(null);
+  };
+
   return (
+    <>
     <Card
       title={
         <Space>
@@ -91,7 +107,11 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
             <span className={styles.alignRight}>換手率</span>
           </div>
           {displayedLeaders.map((stock, idx) => (
-            <div key={stock.code} className={styles.gridRow}>
+            <div
+              key={stock.code}
+              className={styles.gridRow}
+              onClick={() => handleStockClick(stock)}
+            >
               <span className={styles.rankCell}>#{idx + 1}</span>
               {/* 大少 2026-07-26 09:00: 代碼格 vertical stack: 代碼 → 名稱 → 板塊來源 → (最好是原因) */}
               <span className={styles.codeCell} title={stock.code}>
@@ -120,5 +140,23 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
         </div>
       )}
     </Card>
+
+    {/* 大少 #7694 #7754: 點擊股票出 K 線圖表 (獨立 Modal) */}
+    <Modal
+      open={chartModalOpen}
+      onCancel={handleCloseChart}
+      title={selectedStock?.name || ''}
+      width={900}
+      footer={null}
+      className={styles.modal}
+      styles={{ body: { padding: 0, height: 500 } }}
+    >
+      {selectedStock && (
+        <div className={styles.content}>
+          <ChartContainer stock={selectedStock} />
+        </div>
+      )}
+    </Modal>
+    </>
   );
 }

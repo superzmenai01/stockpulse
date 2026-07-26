@@ -1,4 +1,22 @@
 /* ResultGrid.module.css — 5-column results grid (大少 2026-07-26 09:00 改) */
+
+/* 大少 #7694 #7754: K 線圖表 Modal styling (對齊 StockDetailModal) */
+.modal :global(.ant-modal-content) {
+  background: var(--bg-container);
+}
+
+.modal :global(.ant-modal-header) {
+  background: var(--bg-container);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal :global(.ant-modal-title) {
+  color: var(--text-primary);
+}
+
+.content {
+  height: 100%;
+}
 .rightPanel {
   height: fit-content;
 }

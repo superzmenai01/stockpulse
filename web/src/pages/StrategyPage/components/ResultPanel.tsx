@@ -151,10 +151,13 @@ export default function ResultPanel({ results, loading, onRefresh, onExecute }: 
         title={selectedStock?.name || ''}
         width={900}
         footer={null}
+        className={styles.modal}
         styles={{ body: { padding: 0, height: 500 } }}
       >
         {selectedStock && (
-          <ChartContainer stock={selectedStock} />
+          <div className={styles.content}>
+            <ChartContainer stock={selectedStock} />
+          </div>
         )}
       </Modal>
     </Card>

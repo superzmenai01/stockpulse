@@ -7,7 +7,7 @@
 // Pattern: 同 EditRunModal/SaveRunModal 一樣 (Modal + 顯示 SavedRun data + onCancel callback).
 // Triggered by LibraryPage row click.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Modal,
   Tag,
@@ -27,6 +27,8 @@ import {
 import { SavedRun } from '../../hooks/useSavedRuns';
 import type { SavedStock } from '../../types/algorithm';
 import { formatMcap, formatTurnover } from '../../utils/formatters';
+import ChartContainer from '../chart/ChartContainer';
+import styles from './ViewRunModal.module.css';
 
 const { Text, Paragraph } = Typography;
 
@@ -65,6 +67,20 @@ function ViewRunModal({ run, onCancel, onUseAsInput }: ViewRunModalProps) {
   const hasMetadata = Object.keys(metadata).length > 0;
   const savedStocks: SavedStock[] = run.saved_stocks || [];
 
+  // Chart modal state (大少 #7694: 點擊股票出 K 線圖表)
+  const [selectedStock, setSelectedStock] = useState<{ code: string; name: string } | null>(null);
+  const [chartModalOpen, setChartModalOpen] = useState(false);
+
+  const handleStockClick = (stock: SavedStock) => {
+    setSelectedStock({ code: stock.code, name: stock.name });
+    setChartModalOpen(true);
+  };
+
+  const handleCloseChart = () => {
+    setChartModalOpen(false);
+    setSelectedStock(null);
+  };
+
   // Enrich saved stocks with idx for 排名 column
   const stocksWithIdx = useMemo<SavedStockWithIdx[]>(
     () => savedStocks.map((s, idx) => ({ ...s, idx: idx + 1 })),
@@ -72,6 +88,7 @@ function ViewRunModal({ run, onCancel, onUseAsInput }: ViewRunModalProps) {
   );
 
   return (
+    <>
     <Modal
       title={
         <Space>
@@ -165,6 +182,10 @@ function ViewRunModal({ run, onCancel, onUseAsInput }: ViewRunModalProps) {
             size="small"
             data-testid="viewrunmodal-stocks-table"
             scroll={{ x: 'max-content' }}
+            onRow={(record) => ({
+              onClick: () => handleStockClick(record),
+              style: { cursor: 'pointer' },
+            })}
             columns={[
               {
                 title: '#',
@@ -260,6 +281,24 @@ function ViewRunModal({ run, onCancel, onUseAsInput }: ViewRunModalProps) {
         )}
       </div>
     </Modal>
+
+    {/* 大少 #7694: 點擊股票出 K 線圖表 (獨立 Modal，避免 nested AntD Modal 問題) */}
+    <Modal
+      open={chartModalOpen}
+      onCancel={handleCloseChart}
+      title={selectedStock?.name || ''}
+      width={900}
+      footer={null}
+      className={styles.modal}
+      styles={{ body: { padding: 0, height: 500 } }}
+    >
+      {selectedStock && (
+        <div className={styles.content}>
+          <ChartContainer stock={selectedStock} />
+        </div>
+      )}
+    </Modal>
+    </>
   );
 }
 
