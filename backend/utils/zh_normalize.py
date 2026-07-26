@@ -12,28 +12,34 @@ History:
 """
 from zhconv import convert as _zh_convert
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Any
 
 
 @lru_cache(maxsize=10000)
-def to_traditional(text: Optional[str]) -> Optional[str]:
+def _to_traditional_cached(text: str) -> str:
+    """Inner cached function — only accepts strings (lru_cache needs hashable)."""
+    return _zh_convert(text, 'zh-tw')
+
+
+def to_traditional(text: Optional[Any]) -> Optional[Any]:
     """
     Convert simplified Chinese → traditional Chinese (zh-tw).
-    Pass-through if null/empty/non-string.
+    Pass-through if null/empty/non-string (e.g. list, int, dict).
 
     Usage:
         from utils.zh_normalize import to_traditional
         data['name'] = to_traditional(data.get('name', ''))
 
     Args:
-        text: input string (may contain simplified Chinese)
+        text: input (string expected, but non-string gracefully passed through)
 
     Returns:
-        Traditional Chinese string, or original if null/empty
+        Traditional Chinese string, or original input if null/empty/non-string
     """
-    if not text or not isinstance(text, str):
+    # Gracefully handle non-string types (lru_cache requires hashable)
+    if not isinstance(text, str) or not text:
         return text
-    return _zh_convert(text, 'zh-tw')
+    return _to_traditional_cached(text)
 
 
 def to_traditional_batch(texts: list) -> list:
