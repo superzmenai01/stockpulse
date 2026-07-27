@@ -1,11 +1,29 @@
 # K線 API
 
+"""
+K線 API endpoint
+
+大少 2026-07-28 #7987 trigger：cache-aside pattern
+===================================================
+
+Cache strategy (大少 trigger):
+- period='1d': 走 KlineCache service（lazy fetch + bulk insert + qfq overwrite）
+- 其他 period (1m, 1M, 1y): 直接 OpenD（Phase 1 唔 cache）
+- 即時數據：保留現有 /api/snapshot endpoint，永遠 OpenD
+
+Design:
+- 改 existing endpoint 對 frontend **0 影響**（transparent cache-aside）
+- 即使 cache path fail，fallback 直接 OpenD，唔會 break user
+- Response 加 'cached' + 'fetch_count' flag（frontend debug 用）
+"""
+
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
 from futu import KLType
+from backend.services.kline_cache import get_kline_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -13,9 +31,10 @@ router = APIRouter()
 # 富途週期映射表
 # Key: 前端使用的週期字串
 # Value: 富途的 KLType 枚舉
+# 大少 #7985: Phase 1 only cache '1d'，其他直接 OpenD
 PERIOD_MAP = {
     '1m': KLType.K_1M,   # 1分鐘K
-    '1d': KLType.K_DAY,  # 日K
+    '1d': KLType.K_DAY,  # 日K ← cache path
     '1M': KLType.K_MON,  # 月K
     '1y': KLType.K_YEAR, # 年K
 }
@@ -28,180 +47,104 @@ class KlineResponse(BaseModel):
     klines: list[dict]
 
 
-def get_kline_type(period: str) -> KLType:
-    """將字串轉換為富途 KLType"""
-    # 注意：1M 和 1m 不同，1M 是月K，1m 是分鐘K
-    # 所以唔好用 lower()，直接精確匹配
-    ktype = PERIOD_MAP.get(period)
-    if ktype is None:
-        raise HTTPException(status_code=400, detail=f"不支援的週期: {period}")
-    return ktype
-
-
 @router.get("/kline")
-async def get_kline(code: str, period: str = "1d", count: int = 100, start: Optional[str] = None, end: Optional[str] = None):
+async def get_kline(
+    code: str,
+    period: str = "1d",
+    count: int = 100,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+):
     """
     獲取 K線數據
-    
+
+    大少 #7987：cache-aside pattern
+    - period='1d' → KlineCache（本地 DB，lazy fetch，qfq overwrite）
+    - 其他 period → 直接 OpenD（保留原邏輯）
+
     Params:
         code: 股票代碼 (如 HK.00700, US.INTC)
-        period: 週期 (1m, 5m, 15m, 30m, 1h, 1d, 1w, 1M)
+        period: 週期 (1m, 1d, 1M, 1y)
         count: 獲取多少根 K線
         start: 開始日期 (YYYY-MM-DD)，可選
         end: 結束日期 (YYYY-MM-DD)，預設今天
     """
     from backend.futu_conn import get_quote_ctx
-    
+
     logger.info(f"[KLine] 獲取 {code} {period} K線，count={count}, start={start}, end={end}")
-    
+
     # ========================================
     # 1. 前置檢查
     # ========================================
-    
+
     # 1a. 美股不支援分鐘K
     if code.startswith('US.') and period in ('1m', '5m', '15m', '30m', '60m'):
         logger.warning(f"[KLine] 美股不支援分鐘K: {code} {period}")
         return {
-            'code': code,
-            'name': code,
-            'period': period,
-            'klines': [],
-            'mock': False,
+            'code': code, 'name': code, 'period': period,
+            'klines': [], 'mock': False, 'cached': False,
             'error': '美股不支援分鐘K',
         }
-    
+
+    # 1b. period 必須支援
+    if period not in PERIOD_MAP:
+        logger.warning(f"[KLine] 不支援的週期: {period}")
+        return {
+            'code': code, 'name': code, 'period': period,
+            'klines': [], 'mock': False, 'cached': False,
+            'error': f'不支援的週期: {period}',
+        }
+
     try:
-        ktype = get_kline_type(period)
         ctx = get_quote_ctx()
-        
-        logger.info(f"[KLine] period={period} -> ktype={ktype}")
-        
-        # 1b. 富途未連接 → 直接告知前端
         if ctx is None:
-            logger.error(f"[KLine] 富途未連接，請檢查 FutuOpenD 是否運行")
+            logger.error("[KLine] 富途未連接")
             return {
-                'code': code,
-                'name': code,
-                'period': period,
-                'klines': [],
-                'mock': False,
+                'code': code, 'name': code, 'period': period,
+                'klines': [], 'mock': False, 'cached': False,
                 'error': '富途未連接，請確保 FutuOpenD 已開啟',
             }
-        
-        # 1c. 處理日期範圍
-        import datetime
-        # 如果用戶有指定 start/end，就用戶的；否則用自動計算的
-        start_date = start
-        end_date = end
-        
-        # 1m 自動需要昨天（用戶指定時以用戶為準）
-        if period == '1m' and not start:
-            yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-            start_date = yesterday
-            end_date = end_date or datetime.date.today().isoformat()
-        
-        # 美股日K：需要更大範圍（用戶指定時以用戶為準）
-        if code.startswith('US.') and period == '1d' and not start:
-            week_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
-            start_date = week_ago
-            end_date = end_date or datetime.date.today().isoformat()
-        
-        # 日K：默認前6個月（用戶指定時以用戶為準）
-        if period == '1d' and not start:
-            six_months_ago = (datetime.date.today() - datetime.timedelta(days=180)).isoformat()
-            start_date = six_months_ago
-            end_date = end_date or datetime.date.today().isoformat()
-        
-        # 月K：默認前72個月 = 6年（用戶指定時以用戶為準）
-        if period == '1M' and not start:
-            from dateutil.relativedelta import relativedelta
-            six_years_ago = datetime.date.today() - relativedelta(months=72)
-            # 月K的start需要使用月份的第一天，否則會漏掉該月的K線
-            start_date = six_years_ago.replace(day=1).isoformat()
-            end_date = end_date or datetime.date.today().isoformat()
-        
-        # 年K：默認所有歷史數據（用戶指定時以用戶為準）
-        # 富途預設行為當 start/end 都為 None 時只返回最近一年，
-        # 所以我們用一個很早的日期確保拿到所有歷史數據
-        if period == '1y' and not start:
-            start_date = '1990-01-01'
-            end_date = end_date or datetime.date.today().isoformat()
-        elif period == '1y' and start and not end:
-            end_date = datetime.date.today().isoformat()
-        
-        ret, data, page_key = ctx.request_history_kline(
-            code=code,
-            ktype=ktype,
-            autype='qfq',  # 前復權
-            max_count=count,
-            start=start_date,
-            end=end_date,
-        )
-        
-        if ret != 0:
-            logger.error(f"[KLine] 富途錯誤: {data}")
+
+        # ========================================
+        # 2. Cache path (period='1d') vs Direct path
+        # ========================================
+        cache = get_kline_cache()
+
+        if period == '1d':
+            # Cache-aside path (大少 #7987 Phase 1)
+            result = await cache.get_or_fetch(
+                code=code, ctx=ctx, period=period,
+                count=count, start=start, end=end,
+            )
             return {
-                'code': code,
-                'name': code,
-                'period': period,
-                'klines': [],
+                'code': code, 'name': code, 'period': period,
+                'klines': result['klines'],
                 'mock': False,
-                'error': f'富途錯誤: {data}',
+                'cached': result['cached'],
+                'fetch_count': result.get('fetch_count', 0),
+                'error': result.get('error'),
             }
-        
-        # 轉換為我們需要的格式
-        klines = []
-        for _, row in data.iterrows():
-            klines.append({
-                'time': row['time_key'],
-                'open': float(row['open']),
-                'high': float(row['high']),
-                'low': float(row['low']),
-                'close': float(row['close']),
-                'volume': int(row['volume']),
-            })
-
-        # 大少 #7780: 加 turnover_rate per candle (volume / outstanding_shares)
-        outstanding_shares = 0
-        try:
-            ret_snap, snap_data = ctx.get_market_snapshot([code])
-            if ret_snap == 0 and len(snap_data) > 0 and 'outstanding_shares' in snap_data.columns:
-                outstanding_shares = float(snap_data.iloc[0]['outstanding_shares'] or 0)
-                logger.info(f"[KLine] {code} outstanding_shares = {outstanding_shares:,.0f}")
-        except Exception as e:
-            logger.warning(f"[KLine] 取 outstanding_shares 失敗: {e}")
-
-        if outstanding_shares > 0:
-            for kline in klines:
-                kline['turnover_rate'] = round((kline['volume'] / outstanding_shares) * 100, 3)
         else:
-            for kline in klines:
-                kline['turnover_rate'] = None
-        
-        # 股票名稱
-        name = code
-        
-        logger.info(f"[KLine] 成功獲取 {len(klines)} 根 K線")
-        
-        return {
-            'code': code,
-            'name': name,
-            'period': period,
-            'klines': klines,
-            'mock': False,
-        }
-        
+            # Direct OpenD path (1m, 1M, 1y — Phase 1 不 cache)
+            # 保留原 endpoint 邏輯：直接從 OpenD fetch
+            result = await cache._fetch_direct_only(
+                code, ctx, period, count, start, end,
+            )
+            return {
+                'code': code, 'name': code, 'period': period,
+                'klines': result['klines'],
+                'mock': False,
+                'cached': False,
+                'fetch_count': result.get('fetch_count', 0),
+                'error': result.get('error'),
+            }
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"[KLine] 錯誤: {e}")
         return {
-            'code': code,
-            'name': code,
-            'period': period,
-            'klines': [],
-            'mock': False,
+            'code': code, 'name': code, 'period': period,
+            'klines': [], 'mock': False, 'cached': False,
             'error': str(e),
         }
-
-
