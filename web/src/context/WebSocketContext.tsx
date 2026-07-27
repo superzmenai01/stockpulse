@@ -1,5 +1,20 @@
-// WebSocket Context - 保持 WebSocket 連接狀態
-// 確保頁面導航時連接不會中斷
+// WebSocketContext.tsx — WebSocket 連接狀態管理 (Singleton at App root)
+// 大少 2026-07-27: AI-friendly 註解補完
+//
+// Purpose: 保持 WebSocket 連接去 backend /quote endpoint，即時 push 報價
+// 確保頁面導航時連接唔會中斷 (App-level singleton)
+//
+// 設計重點：
+// - WebSocketProvider 喺 App.tsx 包住成個 app — 連接喺 mount 時 init，unmount 時 close
+// - cancelCooldown (Futu 限速規則：1 分鐘 cooldown)
+// - subscribeStatus 追蹤訂閱結果 (success / failed / waiting)
+// - quotes state 儲存所有訂閱股票嘅即時 quote data
+//
+// 連接流程：
+// 1. createContext 默認 null
+// 2. ws 連接到 /quote
+// 3. onmessage 處理報價 + 訂閱 status
+// 4. cancelCooldown 防止太密 subscribe/unsubscribe
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import { WS_BASE } from '../config'

@@ -1,4 +1,18 @@
-// StrategyPanel - 指標面板
+// StrategyPanel.tsx — 指標面板 (technical indicators strategy panel)
+// 大少 2026-07-27: AI-friendly 註解補完
+//
+// Purpose: 讓用戶配置多個技術分析 strategy (MA crossover / ZigZag / 成交量放大 / Elliott Wave)
+// Status: 純 UI panel — 後端 strategy execution 邏輯係 TODO (per STOCKPULSE_REFERENCE.md)
+//
+// 設計重點：
+// - STRATEGY_CATEGORIES 定義 3 個 categories (tech / trend / momentum) + 各自嘅 strategies
+// - 每個 strategy 嘅 params schema 驅動 UI render (slider / number / select)
+// - StrategyConfig 用戶 enable 嘅 state，傳到後端做 screen
+//
+// 將來 extend：
+// 1. 加 strategy entry 落 STRATEGY_CATEGORIES
+// 2. 喺後端 screen handler 對應做邏輯
+// 3. params validation 喺前端 + 後端都做
 
 import React from 'react'
 import { Card, Checkbox, InputNumber, Slider, Select, Space, Typography, Button, Divider, Collapse } from 'antd'

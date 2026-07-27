@@ -1,4 +1,20 @@
-// ChartContainer - K線圖主容器
+// ChartContainer.tsx — K線圖主容器 (Candlestick chart with technical indicators)
+// 大少 2026-07-27: AI-friendly 註解補完
+//
+// Purpose: 包裝 lightweight-charts library 嘅 candlestick chart + 技術指標 overlay
+// 接收 stock code + period + IndicatorConfig，渲染互動式 K 線
+//
+// 設計重點：
+// - 使用 lightweight-charts v5 (createChart / CandlestickSeries / etc.)
+// - 接收 useIndicatorSettings context 嘅 indicator config
+// - 支援 MA / EMA / BOLL / ZigZag / Elliott Wave 5 種指標 overlay
+// - useEffect 處理 lifecycle：mount create chart, unmount dispose
+// - Volume 喺下方面板用 HistogramSeries render
+//
+// 將來 extend：
+// - 加新指標 (e.g. MACD / RSI) 落 IndicatorPanel + 對應 render 
+// - 支援 save chart layout (用戶自訂 indicator)
+// - K 線數據可改用 WebSocket 增量更新 (現時係 fetch 一次過)
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts'

@@ -1,4 +1,23 @@
-// HomePage - 首頁（組別列表）
+// HomePage.tsx — 首頁（組別列表 + 即時報價）
+// 大少 2026-07-27: AI-friendly 註解補完
+//
+// Purpose: 顯示用戶嘅 stock groups + 訂閱即時報價
+// 主要互動：drag-to-reorder groups / add stock / add group / view stock detail
+//
+// 設計重點：
+// - DnD via @dnd-kit (sortableKeyboardCoordinates + verticalListSortingStrategy)
+// - useWebSocketContext 訂閱報價 (group 入面嘅 stocks auto-subscribe)
+// - 5 個 modals: AddGroupModal / EditGroupModal / AddStockModal / StockDetailModal / MoveStockModal
+// - dnd-kit sensors: PointerSensor (desktop) + KeyboardSensor (a11y)
+//
+// 報價流程：
+// 1. group 載入後，subscribe 所有 stocks
+// 2. WebSocket push quote → quotes state 更新
+// 3. GroupCard re-render 顯示即時價
+//
+// 將來 extend：
+// - 加 group 嘅 category / color tag
+// - 報價 alert (突破某 threshold 通知)
 
 import React, { useState, useEffect } from 'react'
 import { Button, Empty, message } from 'antd'

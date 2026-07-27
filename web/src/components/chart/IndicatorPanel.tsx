@@ -1,4 +1,17 @@
-// IndicatorPanel - 技術指標控制面板
+// IndicatorPanel.tsx — 技術指標控制面板 (chart indicator configuration)
+// 大少 2026-07-27: AI-friendly 註解補完
+//
+// Purpose: 讓用戶啟用 / 停用 + 設定技術指標 (MA / EMA / BOLL / ZigZag / Elliott Wave)
+// 傳入 ChartContainer 嘅 props 控制 chart render
+//
+// 設計重點：
+// - MA5/MA10/MA20/MA60/MA120/MA250 6 條 SMA + EMA5/10/20
+// - DEFAULT_INDICATOR_CONFIG 預設值 (MA5/10/20 + ZigZag enabled)
+// - ElliottWave 用 semi-auto 模式 (user adjustments keyed by time)
+//
+// Magic numbers：
+// - BOLL period=20, stdDev=2 (industry standard)
+// - ZigZag threshold=5% (default sensitivity)
 
 import React, { useState } from 'react'
 import { Button, InputNumber } from 'antd'
