@@ -18,6 +18,7 @@ import {
   Tooltip,
   Table,
   Collapse,
+  Checkbox,
 } from 'antd';
 import {
   ExperimentOutlined,
@@ -40,6 +41,11 @@ interface ViewRunModalProps {
    * 而家保留 stub，按鈕 disabled。等 AS-02/03/04 實裝時 enable + 連去對應 algorithm page。
    */
   onUseAsInput?: (run: SavedRun) => void;
+  /**
+   * 大少 2026-07-27 checkbox UI 預備料 — 將來 AS-02/03/04 落地時接收 selected stocks。
+   * 而家**唔 connect**到任何 logic (底 button 留 disabled)。
+   */
+  onSelectionChange?: (selectedCodes: Set<string>) => void;
 }
 
 // Helper: format price (defensive for 0 / NaN, like ResultGrid)
@@ -62,7 +68,7 @@ function changeColor(c: number): string {
 
 type SavedStockWithIdx = SavedStock & { idx: number };
 
-function ViewRunModal({ run, onCancel, onUseAsInput }: ViewRunModalProps) {
+function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange }: ViewRunModalProps) {
   const metadata = run.metadata || {};
   const hasMetadata = Object.keys(metadata).length > 0;
   const savedStocks: SavedStock[] = run.saved_stocks || [];
@@ -74,6 +80,35 @@ function ViewRunModal({ run, onCancel, onUseAsInput }: ViewRunModalProps) {
   const handleStockClick = (stock: SavedStock) => {
     setSelectedStock({ code: stock.code, name: stock.name });
     setChartModalOpen(true);
+  };
+
+  // 大少 2026-07-27: checkbox 選 stocks (為將來 AS-02 輸入預備)
+  // 預設全部 selected, 兩 states (大少 reject 咗 indeterminate)
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(
+    () => new Set(savedStocks.map(s => s.code))
+  );
+  const allSelected = savedStocks.length > 0 && selectedCodes.size === savedStocks.length;
+
+  const handleToggle = (code: string) => {
+    setSelectedCodes(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      onSelectionChange?.(next);
+      return next;
+    });
+  };
+
+  const handleToggleAll = () => {
+    setSelectedCodes(prev => {
+      // 用 prev 判斷 (避免 stale closure on allSelected)
+      const allCurrentlySelected = prev.size === savedStocks.length && savedStocks.length > 0;
+      const next: Set<string> = allCurrentlySelected
+        ? new Set() // 全 unselect
+        : new Set(savedStocks.map(s => s.code)); // 全 select
+      onSelectionChange?.(next);
+      return next;
+    });
   };
 
   const handleCloseChart = () => {
@@ -187,6 +222,25 @@ function ViewRunModal({ run, onCancel, onUseAsInput }: ViewRunModalProps) {
               style: { cursor: 'pointer' },
             })}
             columns={[
+              {
+                title: (
+                  <Checkbox
+                    checked={allSelected}
+                    onChange={handleToggleAll}
+                    aria-label="全選"
+                  />
+                ),
+                key: 'select',
+                width: 40,
+                render: (_: unknown, record: SavedStockWithIdx) => (
+                  <Checkbox
+                    checked={selectedCodes.has(record.code)}
+                    onChange={() => handleToggle(record.code)}
+                    // 唔好 trigger row click 開 K 線圖
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ),
+              },
               {
                 title: '#',
                 dataIndex: 'idx',
