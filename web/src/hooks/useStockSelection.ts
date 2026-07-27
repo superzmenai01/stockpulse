@@ -47,19 +47,27 @@ export function useStockSelection(
   // 大少 2026-07-27 09:21 fix: 用 stable key 防止 codes 每次 render 嘅 reference 變動引爆 useEffect
   const codesKey = useMemo(() => codes.slice().sort().join(','), [codes]);
 
+  // 大少 2026-07-27 10:14 fix: stable 化 codes reference 由 codesKey 決定
+  // 同 caller 嘅 codes array 內容唔變時, 保持 same reference
+  // 確保 useCallback 個 deps (stableCodes / onChange) stable until 真正 value 變
+  const stableCodes = useMemo(() => codes, [codesKey]);
+
+  // 抽 options.onChange 為獨立 variable, 避免 options object 每次 render rebuild 影響 useCallback
+  const onChange = options?.onChange;
+
   // 大少 2026-07-27 09:21 fix: 當 codes 由 async load 出現 (mount 時 [] → 完載 N stocks)
   // 同時 user 仲未 touch 過, 自動 fill 全部 selected。等 useState 嘅 lazy initial 救唔到嘅 mount 時序問題
   useEffect(() => {
     if (codesKey.length > 0 && !userTouchedRef.current && selectedCodes.size === 0) {
-      setSelectedCodes(new Set(codes));
+      setSelectedCodes(new Set(stableCodes));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codesKey]);
 
   // 全部已選 (用嚟畀 全選 checkbox display)
   const allSelected = useMemo(
-    () => codes.length > 0 && selectedCodes.size === codes.length,
-    [codes, selectedCodes]
+    () => stableCodes.length > 0 && selectedCodes.size === stableCodes.length,
+    [stableCodes, selectedCodes]
   );
 
   const toggle = useCallback((code: string) => {
@@ -68,30 +76,30 @@ export function useStockSelection(
       const next = new Set(prev);
       if (next.has(code)) next.delete(code);
       else next.add(code);
-      options?.onChange?.(next);
+      onChange?.(next);
       return next;
     });
-  }, [options]);
+  }, [onChange]);
 
   // 2 states: all selected → 全 unselect; 有未選 → 全 select
   // 大少 reject 咗 indeterminate
   const toggleAll = useCallback(() => {
     userTouchedRef.current = true;
     setSelectedCodes(prev => {
-      const allCurrentlySelected = prev.size === codes.length && codes.length > 0;
+      const allCurrentlySelected = prev.size === stableCodes.length && stableCodes.length > 0;
       const next: Set<string> = allCurrentlySelected
         ? new Set()
-        : new Set(codes);
-      options?.onChange?.(next);
+        : new Set(stableCodes);
+      onChange?.(next);
       return next;
     });
-  }, [codes, options]);
+  }, [stableCodes, onChange]);
 
   const setSelected = useCallback((next: Set<string>) => {
     userTouchedRef.current = true;
     setSelectedCodes(next);
-    options?.onChange?.(next);
-  }, [options]);
+    onChange?.(next);
+  }, [onChange]);
 
   return { selectedCodes, allSelected, toggle, toggleAll, setSelected };
 }

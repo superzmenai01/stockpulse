@@ -44,7 +44,9 @@ function normalizeStock(s: Leader): Leader {
 }
 
 export default function ResultGrid({ leaders, loading, hasRun, errorMessage, canSave, onSave, saving }: ResultGridProps) {
-  const displayedLeaders = leaders.map(normalizeStock);
+  // 大少 2026-07-27 10:14 fix: useMemo 確保 displayedLeaders reference 穩定
+  // 之前每次 render 都 new array, 導致 stockCodes 嘅 useMemo 重新計算 → useStockSelection 嘅 codes 唔 stable
+  const displayedLeaders = useMemo(() => leaders.map(normalizeStock), [leaders]);
 
   // 大少 #7694 #7754: 點擊股票出 K 線圖表
   const [selectedStock, setSelectedStock] = useState<{ code: string; name: string } | null>(null);
