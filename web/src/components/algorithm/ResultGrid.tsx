@@ -20,7 +20,8 @@ interface ResultGridProps {
   errorMessage?: string | null;
   // 大少 2026-07-26 #7493: 儲存結果 button props
   canSave?: boolean;
-  onSave?: () => void;
+  // 大少 2026-07-27 09:38 bug 3 fix: 將 selectedCodes 傳到 save flow 過濾 stocks
+  onSave?: (selectedCodes: Set<string>) => void;
   saving?: boolean;
 }
 
@@ -82,13 +83,14 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
       className={styles.rightPanel}
       extra={
         // 大少 2026-07-26 #7493: 儲存結果 button 連住 SaveRunModal
+        // 大少 2026-07-27 09:38 bug 3 fix: 將 selectedCodes 傳到 save flow 過濾 stocks
         <Tooltip title={canSave ? '儲存到 Library page' : '請先執行 AS-01 算法先可以儲存'}>
           <Button
             icon={<SaveOutlined />}
             size="small"
             disabled={!canSave}
             loading={saving}
-            onClick={onSave}
+            onClick={() => onSave?.(selectedCodes)}
           >
             💾 儲存結果
           </Button>

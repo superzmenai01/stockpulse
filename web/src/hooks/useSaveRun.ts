@@ -6,12 +6,16 @@
 
 import { useState, useCallback } from 'react';
 import { message } from 'antd';
+import { Leader } from '../types/algorithm';
 
 // 大少 2026-07-24 saved_runs library endpoint: POST /api/saved-runs
 export interface SaveRunBody {
   algorithm_id: string;
   algorithm_name: string;
   stocks: string[];
+  // 大少 #7566: full Leader snapshot — backend /api/saved-runs 接受 saved_stocks,
+  // 與 `stocks` (codes-only) 並存。 frontend 加返個 field 嚟呼應
+  saved_stocks?: Leader[];
   metadata: Record<string, unknown>;
   name?: string;
   note?: string;

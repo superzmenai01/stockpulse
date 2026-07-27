@@ -225,6 +225,8 @@ function AS01Panel() {
   // Local state (specific to this panel)
   const [selectedPlates, setSelectedPlates] = useState<string[]>([]);
   const [topN, setTopN] = useState<number>(10);
+  // 大少 2026-07-27 09:38 bug 3 fix: lift state 接收 selectedCodes 從 ResultGrid
+  const [pendingSelectedCodes, setPendingSelectedCodes] = useState<Set<string> | null>(null);
   // 大少 2026-07-26 #7530 🥇: 抽 useSaveRunFlow hook 出 page (4 inline handlers → 1 hook call)
   const saveFlow = useSaveRunFlow({
     algorithmId: 'AS-01',
@@ -233,6 +235,7 @@ function AS01Panel() {
     selectedPlates,
     topN,
     rankedAt,
+    selectedCodes: pendingSelectedCodes,
   });
 
   return (
@@ -325,16 +328,21 @@ function AS01Panel() {
         errorMessage={lastError}
         // 大少 2026-07-26 #7493 + #7530: save props from useSaveRunFlow hook
         canSave={hasRun && results.length > 0 && !loading}
-        onSave={saveFlow.show}
+        // 大少 2026-07-27 09:38 bug 3 fix: 接收 selectedCodes 從 ResultGrid
+        onSave={(codes) => {
+          setPendingSelectedCodes(codes);
+          saveFlow.show();
+        }}
         saving={saveFlow.saving}
       />
 
       {/* 大少 2026-07-26 #7493 + #7530: Save Run modal (state/handlers from useSaveRunFlow) */}
+      {/* 大少 2026-07-27 09:44 confirm Option A: SaveRunModal 預覽 show selected stocks */}
       <SaveRunModal
         open={saveFlow.open}
         algorithmName="板塊龍頭股"
-        stockCount={results.length}
-        stockCodes={results.map((l) => l.code)}
+        stockCount={saveFlow.filteredResults.length}
+        stockCodes={saveFlow.filteredResults.map((l) => l.code)}
         rankedAt={rankedAt}
         saving={saveFlow.saving}
         onSave={saveFlow.confirmSave}
