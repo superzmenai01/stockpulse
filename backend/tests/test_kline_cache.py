@@ -357,3 +357,50 @@ def test_schema_initialization(temp_db_path):
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '-s'])
+
+# ----------------------------------------------------------------
+# Test 9: Backward increment (大少 #8057 Phase A)
+# ----------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_backward_increment(temp_cache):
+    """user query start < DB earliest → backward fetch historical.
+
+    Phase A scenario:
+    1. Cold populate (10 days range)
+    2. User query earlier (start = today - 60 days) → trigger backward fetch
+    3. DB earliest should expand backward
+    """
+    today = datetime.date.today()
+    end_str = today.isoformat()
+    start_str = (today - datetime.timedelta(days=10)).isoformat()
+
+    # Step 1: Cold populate (10 days range)
+    klines = make_kline_rows(start_str, end_str)
+    ctx = make_mock_ctx(klines_data=klines)
+
+    await temp_cache.get_or_fetch('HK.00981', ctx, '1d', count=100)
+    db_earliest_before = temp_cache.get_earliest_time('HK.00981', '1d')
+    assert db_earliest_before is not None
+    assert db_earliest_before >= start_str
+
+    # Step 2: Request earlier (start = today - 60 days) → backward fetch
+    earlier_start = (today - datetime.timedelta(days=60)).isoformat()
+
+    # Mock should return historical data (today - 60 days to today - 11 days)
+    historical_klines = make_kline_rows(earlier_start, start_str)
+    ctx_hist = make_mock_ctx(klines_data=historical_klines)
+
+    result = await temp_cache.get_or_fetch(
+        'HK.00981', ctx_hist, '1d',
+        count=100, start=earlier_start, end=end_str,
+    )
+
+    # Step 3: Verify DB earliest expanded backward
+    db_earliest_after = temp_cache.get_earliest_time('HK.00981', '1d')
+    assert db_earliest_after < db_earliest_before, (
+        f"Expected backward expansion: before={db_earliest_before}, after={db_earliest_after}"
+    )
+    assert result['cached'] is True
+    assert result['fetch_count'] > 0  # backward fetch should populate rows
+    assert result['error'] is None

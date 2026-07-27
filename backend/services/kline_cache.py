@@ -146,6 +146,23 @@ class KlineCache:
         finally:
             conn.close()
 
+    def get_earliest_time(self, code: str, period: str) -> Optional[str]:
+        """
+        Return min(time) for (code, period), or None if no rows.
+
+        大少 #8057 Phase A: 用嚟判斷係咪要 backward increment fetch
+        (user scroll 去更早時間 → fetch 更早嘅 history)。
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            row = conn.execute(
+                "SELECT MIN(time) FROM kline_cache WHERE code=? AND period=?",
+                (code, period),
+            ).fetchone()
+            return row[0] if row and row[0] else None
+        finally:
+            conn.close()
+
     def get_klines(
         self,
         code: str,
@@ -233,37 +250,60 @@ class KlineCache:
             try:
                 today = datetime.date.today().isoformat()
                 db_latest = self.get_latest_time(code, period)
+                db_earliest = self.get_earliest_time(code, period)
+
+                # Normalize user range (大少 #8057 Phase A: 支持 user-specified start/end)
+                if start:
+                    fetch_start = start
+                else:
+                    # Default: last 6 months
+                    fetch_start = (
+                        datetime.date.today()
+                        - datetime.timedelta(days=180)
+                    ).isoformat()
+                fetch_end = min(end, today) if end else today
 
                 fetch_count = 0
                 if db_latest is None:
-                    # Cold cache: fetch 10 years
-                    fetch_start = (
-                        datetime.date.today()
-                        - datetime.timedelta(days=365 * self.HISTORY_YEARS)
-                    ).isoformat()
-                    fetch_end = today
+                    # Cold cache: full fetch from fetch_start to fetch_end
                     fetch_count = await self._fetch_and_store(
                         code, ctx, period, fetch_start, fetch_end,
                     )
                     logger.info(
                         f"[KlineCache] Cold cache: {code} {period} "
-                        f"fetched {fetch_count} rows from {fetch_start}"
+                        f"fetched {fetch_count} rows ({fetch_start} → {fetch_end})"
                     )
-                elif db_latest < today:
-                    # Warm cache: incremental fetch (db_latest+1 → today)
-                    # OpenD 會自動 skip 非交易日
-                    db_latest_date = datetime.date.fromisoformat(db_latest)
-                    fetch_start = (db_latest_date + datetime.timedelta(days=1)).isoformat()
-                    fetch_end = today
-                    if fetch_start <= fetch_end:
-                        fetch_count = await self._fetch_and_store(
-                            code, ctx, period, fetch_start, fetch_end,
+                else:
+                    # 大少 #8057 Phase A: backward + forward increment
+                    need_backward = fetch_start < db_earliest
+                    need_forward = fetch_end > db_latest and db_latest < today
+
+                    if need_backward:
+                        # Fetch historical (before DB loaded range)
+                        backward_end = min(fetch_end, db_earliest)
+                        backward_count = await self._fetch_and_store(
+                            code, ctx, period, fetch_start, backward_end,
                         )
+                        fetch_count += backward_count
                         logger.info(
-                            f"[KlineCache] Incremental: {code} {period} "
-                            f"fetched {fetch_count} rows ({fetch_start} → {fetch_end})"
+                            f"[KlineCache] Backward increment: {code} {period} "
+                            f"fetched {backward_count} rows ({fetch_start} → {backward_end})"
                         )
-                # else: db_latest >= today → DB 已是 ≤ T-1，skip
+
+                    if need_forward:
+                        # Fetch forward (newer than DB loaded range)
+                        forward_start = max(fetch_start, db_latest)
+                        forward_end = max(fetch_end, today)
+                        if forward_start < forward_end:
+                            forward_count = await self._fetch_and_store(
+                                code, ctx, period, forward_start, forward_end,
+                            )
+                            fetch_count += forward_count
+                            logger.info(
+                                f"[KlineCache] Forward increment: {code} {period} "
+                                f"fetched {forward_count} rows ({forward_start} → {forward_end})"
+                            )
+                # else: DB 已 fully cover user range → skip fetch
 
                 # Read from DB (always fresh after potential insert)
                 klines = self.get_klines(code, period, count=count, start=start, end=end)

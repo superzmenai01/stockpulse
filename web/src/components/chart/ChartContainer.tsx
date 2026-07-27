@@ -545,6 +545,12 @@ export default function ChartContainer({
   const [currentPeriod, setCurrentPeriod] = useState(period)
   const [startDate, setStartDate] = useState<string>(sixMonthsAgo)
   const [endDate, setEndDate] = useState<string>(today)
+
+  // 大少 #8057 Phase B: infinite scroll historical data
+  // 監聽 visible range change → user pan 到左邊邊緣 → 自動 fetch 更早 history
+  const [loadedRange, setLoadedRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null })
+  const [loadingHistorical, setLoadingHistorical] = useState(false)
+  const inFlightHistoricalRef = useRef(false)
   
   // 當 currentPeriod 改變時，自動調整 startDate
   useEffect(() => {
@@ -721,6 +727,81 @@ export default function ChartContainer({
     }
   }, [chartCreated, currentPeriod])
 
+  // 大少 #8057 Phase B: auto-fetch historical when user pans to left edge
+  // 監聽 chart timeScale 嘅 visible range change
+  // 當 visible.from 接近 loadedRange.start (within 5% buffer or 30 days) → trigger fetchHistorical()
+  useEffect(() => {
+    if (!chartRef.current || !chartCreated || !loadedRange.start) return
+
+    const handler = (range: { from: Time | number; to: Time | number } | null) => {
+      if (!range || !loadedRange.start) return
+
+      const visibleFrom = typeof range.from === 'number' ? range.from : Number(range.from)
+      const visibleTo = typeof range.to === 'number' ? range.to : Number(range.to)
+      const loadedStart = typeof loadedRange.start === 'string'
+        ? new Date(loadedRange.start).getTime() / 1000
+        : Number(loadedRange.start)
+
+      const span = visibleTo - visibleFrom
+      const buffer = Math.max(span * 0.05, 86400 * 30)  // 5% of span OR 30 days minimum
+
+      if (visibleFrom < loadedStart + buffer) {
+        fetchHistorical()
+      }
+    }
+
+    chartRef.current.timeScale().subscribeVisibleTimeRangeChange(handler)
+    return () => {
+      try { chartRef.current?.timeScale().unsubscribeVisibleTimeRangeChange(handler) } catch {}
+    }
+  }, [chartCreated, loadedRange])
+
+  // 大少 #8057 Phase B: fetchHistorical — backend trigger to load more historical data
+  // Called when user pans to left edge of chart
+  // 大少 #8057 Phase C: inFlightHistoricalRef de-dup concurrent fetches
+  const fetchHistorical = useCallback(async () => {
+    if (inFlightHistoricalRef.current || !loadedRange.start) return
+    inFlightHistoricalRef.current = true
+    setLoadingHistorical(true)
+
+    try {
+      // Fetch from earliest allowed (today - 10y) to current loadedRange.start - 1 day
+      const earliestAllowed = new Date()
+      earliestAllowed.setFullYear(earliestAllowed.getFullYear() - 10)
+      const earliestStr = earliestAllowed.toISOString().split('T')[0]
+      const currentStartStr = loadedRange.start as string
+
+      const url = `http://${window.location.hostname}:18792/api/kline?code=${stock.code}&period=${currentPeriod}&start=${earliestStr}&end=${currentStartStr}&count=5000`
+      const res = await fetch(url)
+      const data = await res.json()
+
+      if (data.klines && data.klines.length > 0) {
+        // De-dup by time
+        const existingTimes = new Set(klineData.map(k => k.time))
+        const newKlines = data.klines.filter((k: KLine) => !existingTimes.has(k.time))
+
+        // Merge + sort ASC
+        const merged = [...newKlines, ...klineData].sort((a, b) =>
+          a.time < b.time ? -1 : a.time > b.time ? 1 : 0
+        )
+
+        // 大少 #8057 Phase C: smooth append — setData all merged (lightweight-charts 必須 ASC 全部)
+        setKlineData(merged)
+        setLoadedRange({
+          start: merged.length > 0 ? merged[0].time : loadedRange.start,
+          end: merged.length > 0 ? merged[merged.length - 1].time : loadedRange.end,
+        })
+
+        console.log(`[Chart] Historical fetch: +${newKlines.length} candles (total: ${merged.length})`)
+      }
+    } catch (err) {
+      console.error('[Chart] Historical fetch failed:', err)
+    } finally {
+      setLoadingHistorical(false)
+      inFlightHistoricalRef.current = false
+    }
+  }, [loadedRange, currentPeriod, stock.code, klineData])
+
   // 載入K線數據
   const loadKlineData = useCallback(async (code: string, period: string, start?: string, end?: string) => {
     loadingPeriodRef.current = period
@@ -753,7 +834,13 @@ export default function ChartContainer({
         a.time < b.time ? -1 : a.time > b.time ? 1 : 0
       )
       setKlineData(sortedKlines)
-      
+
+      // 大少 #8057 Phase B: track loaded range for infinite scroll listener
+      setLoadedRange({
+        start: sortedKlines.length > 0 ? sortedKlines[0].time : null,
+        end: sortedKlines.length > 0 ? sortedKlines[sortedKlines.length - 1].time : null,
+      })
+
       if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
         const candleMap = new Map<string, CandlestickData<Time>>()
         for (const k of data.klines) {
@@ -1089,6 +1176,8 @@ export default function ChartContainer({
       <div className={styles.chartWrapper}>
         <div ref={chartContainerRef} className={styles.chart} />
         {loading && <div className={styles.loading}>載入中...</div>}
+        {/* 大少 #8057 Phase C: loading indicator for infinite scroll historical fetch */}
+        {loadingHistorical && <div className={styles.loading}>📜 載入歷史數據...</div>}
         {errorMessage && <div className={styles.error}>{errorMessage}</div>}
 
         {/* 大少 #7768 #7771: Hover tooltip — Futu Niuniu 風格 (OHLC + 漲跌 + 成交) */}
