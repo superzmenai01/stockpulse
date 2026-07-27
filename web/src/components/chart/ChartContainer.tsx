@@ -668,7 +668,6 @@ export default function ChartContainer({
     if (!chartContainerRef.current) return
 
     const container = chartContainerRef.current
-    console.log('[Chart] Creating chart')
 
     const { chart, candlestickSeries, volumeSeries } = createChartInstance(container)
 
@@ -676,7 +675,6 @@ export default function ChartContainer({
     candlestickSeriesRef.current = candlestickSeries
     volumeSeriesRef.current = volumeSeries
     setChartCreated(true)
-    console.log('[Chart] Chart created')
     
     const handleResize = () => {
       if (container && chartRef.current) {
@@ -691,7 +689,6 @@ export default function ChartContainer({
 
     return () => {
       window.removeEventListener('resize', handleResize)
-      console.log('[Chart] Cleanup')
       if (chartRef.current) {
         chartRef.current.remove()
         chartRef.current = null
@@ -731,16 +728,24 @@ export default function ChartContainer({
   // 監聽 chart timeScale 嘅 visible range change
   // 當 visible.from 接近 loadedRange.start (within 5% buffer or 30 days) → trigger fetchHistorical()
   useEffect(() => {
-    if (!chartRef.current || !chartCreated || !loadedRange.start) return
+    if (!chartRef.current || !chartCreated || !loadedRange.start) {
+      return
+    }
 
     const handler = (range: { from: Time | number; to: Time | number } | null) => {
-      if (!range || !loadedRange.start) return
+      // 大少 #8098 P2 debug: log listener fire
+      if (!range || !loadedRange.start) {
+        return
+      }
 
-      const visibleFrom = typeof range.from === 'number' ? range.from : Number(range.from)
-      const visibleTo = typeof range.to === 'number' ? range.to : Number(range.to)
-      const loadedStart = typeof loadedRange.start === 'string'
-        ? new Date(loadedRange.start).getTime() / 1000
-        : Number(loadedRange.start)
+      // 大少 #8107 fix: 處理 string "YYYY-MM-DD" (daily K) / number (1m Unix timestamp) / BusinessDay
+      const toUnix = (t: Time | number): number => {
+        if (typeof t === 'number') return t
+        return new Date(t as string).getTime() / 1000
+      }
+      const visibleFrom = toUnix(range.from)
+      const visibleTo = toUnix(range.to)
+      const loadedStart = toUnix(loadedRange.start)
 
       const span = visibleTo - visibleFrom
       const buffer = Math.max(span * 0.05, 86400 * 30)  // 5% of span OR 30 days minimum
@@ -760,7 +765,10 @@ export default function ChartContainer({
   // Called when user pans to left edge of chart
   // 大少 #8057 Phase C: inFlightHistoricalRef de-dup concurrent fetches
   const fetchHistorical = useCallback(async () => {
-    if (inFlightHistoricalRef.current || !loadedRange.start) return
+    // 大少 #8098 P2 debug: log function call
+    if (inFlightHistoricalRef.current || !loadedRange.start) {
+      return
+    }
     inFlightHistoricalRef.current = true
     setLoadingHistorical(true)
 
@@ -795,7 +803,6 @@ export default function ChartContainer({
         console.log(`[Chart] Historical fetch: +${newKlines.length} candles (total: ${merged.length})`)
       }
     } catch (err) {
-      console.error('[Chart] Historical fetch failed:', err)
     } finally {
       setLoadingHistorical(false)
       inFlightHistoricalRef.current = false
@@ -1120,7 +1127,6 @@ export default function ChartContainer({
       }
     })
 
-    console.log('[Chart] Setting', markers.length, 'EW markers')
     const markersPlugin = createSeriesMarkers(series, markers)
     ewMarkersRef.current = markersPlugin
   }, [indicatorConfig.ElliottWave, klineData, chartCreated, ewUserAdjustments, getWaveNumber])
