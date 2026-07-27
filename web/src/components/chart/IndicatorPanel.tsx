@@ -72,7 +72,7 @@ export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = {
   EMA10: { enabled: false, period: 10, color: '#4ECDC4' },
   EMA20: { enabled: false, period: 20, color: '#45B7D1' },
   BOLL: { enabled: false, period: 20, stdDev: 2, color: '#FFB347' },
-  ZigZag: { enabled: true, threshold: 5 },
+  ZigZag: { enabled: true, threshold: 10 },
   ElliottWave: { enabled: false, showLabels: true, showLines: true, color: '#00CED1' },
 }
 
@@ -174,7 +174,7 @@ export default function IndicatorPanel({ config, onChange }: IndicatorPanelProps
                   min={5}
                   max={20}
                   value={config.ZigZag.threshold}
-                  onChange={(val) => onChange({ ...config, ZigZag: { ...config.ZigZag, threshold: val || 5 } })}
+                  onChange={(val) => onChange({ ...config, ZigZag: { ...config.ZigZag, threshold: val || 10 } })}
                   disabled={!config.ZigZag.enabled}
                   className={styles.numberInput}
                 />

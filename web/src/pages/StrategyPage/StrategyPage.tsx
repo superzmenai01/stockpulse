@@ -25,7 +25,7 @@ const DEFAULT_FILTERS: FilterConfig = {
 // 預設策略配置（所有策略預設關閉）
 const DEFAULT_STRATEGIES: StrategyConfig[] = [
   // 技術分析
-  { id: 'zigzag_v', enabled: false, params: { threshold: 5 } },
+  { id: 'zigzag_v', enabled: false, params: { threshold: 10 } },
   { id: 'volume_surge', enabled: false, params: { multiplier: 2 } },
   { id: 'breakout', enabled: false, params: { period: 20 } },
   // 趨勢追蹤

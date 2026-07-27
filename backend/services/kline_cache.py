@@ -155,7 +155,10 @@ class KlineCache:
         end: Optional[str] = None,
     ) -> list[dict]:
         """
-        Read klines from DB (no fetch). ORDER BY time DESC LIMIT count.
+        Read klines from DB (no fetch). ORDER BY time ASC LIMIT count.
+
+        大少 #8042 Fix-2: lightweight-charts requires ASC order (setData throws
+        assertion if data not strictly ascending by time).
 
         Optional start/end filters (inclusive on both sides).
         """
@@ -172,7 +175,7 @@ class KlineCache:
             if end:
                 sql += " AND time <= ?"
                 params.append(end)
-            sql += " ORDER BY time DESC LIMIT ?"
+            sql += " ORDER BY time ASC LIMIT ?"
             params.append(count)
 
             rows = conn.execute(sql, params).fetchall()

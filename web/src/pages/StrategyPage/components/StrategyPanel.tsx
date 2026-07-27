@@ -48,7 +48,7 @@ const STRATEGY_CATEGORIES = [
         id: 'zigzag_v',
         name: 'ZigZag V型反轉',
         description: '使用 ZigZag 識別價格 V 型反轉形態',
-        params: { threshold: { label: 'Threshold', type: 'slider', min: 3, max: 20, default: 5 } },
+        params: { threshold: { label: 'Threshold', type: 'slider', min: 3, max: 20, default: 10 } },
       },
       {
         id: 'volume_surge',

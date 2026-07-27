@@ -746,7 +746,13 @@ export default function ChartContainer({
       
       setErrorMessage(null)
       dataPeriodRef.current = period
-      setKlineData(data.klines)
+      // 大少 #8042 Fix-2: defensive sort ASC (lightweight-charts requires strict
+      // ascending by time, throws assertion if not). Backend should already
+      // return ASC but defensive sort guards against future regressions.
+      const sortedKlines = [...data.klines].sort((a, b) =>
+        a.time < b.time ? -1 : a.time > b.time ? 1 : 0
+      )
+      setKlineData(sortedKlines)
       
       if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
         const candleMap = new Map<string, CandlestickData<Time>>()
