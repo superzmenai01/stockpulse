@@ -86,8 +86,10 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange }: ViewRu
   // 大少 2026-07-27: checkbox 選 stocks (為將來 AS-02 輸入預備)
   // 預設全部 selected, 兩 states (大少 reject 咗 indeterminate)
   // 2026-07-27 refactor: use 共用 useStockSelection hook
+  // 09:21 fix: useMemo codes 穩定 reference, 避免 useCallback 每次 render rebuild
+  const stockCodes = useMemo(() => savedStocks.map(s => s.code), [savedStocks]);
   const { selectedCodes, allSelected, toggle, toggleAll } = useStockSelection(
-    savedStocks.map(s => s.code),
+    stockCodes,
     { onChange: onSelectionChange }
   );
 

@@ -2,7 +2,7 @@
 // 大少 2026-07-24 Tier 1.3: Frontend modular refactor
 // 大少 2026-07-27: 加 checkbox column + 全選 (useStockSelection hook)
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, Modal, Spin, Empty, Typography, Space, Tag, Tooltip, Button, Checkbox } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import { Leader } from '../../types/algorithm';
@@ -62,9 +62,9 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
   // 大少 2026-07-27: checkbox 選 stocks (為將來 AS-02 輸入預備)
   // 預設全部 selected, 兩 states (大少 reject 咗 indeterminate)
   // 與 ViewRunModal 共用 useStockSelection hook
-  const { selectedCodes, allSelected, toggle, toggleAll } = useStockSelection(
-    displayedLeaders.map(s => s.code)
-  );
+  // 09:21 fix: useMemo codes 穩定 reference, 避免 useCallback 每次 render rebuild
+  const stockCodes = useMemo(() => displayedLeaders.map(s => s.code), [displayedLeaders]);
+  const { selectedCodes, allSelected, toggle, toggleAll } = useStockSelection(stockCodes);
 
   return (
     <>

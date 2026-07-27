@@ -8,8 +8,14 @@
 // 預設 initial = all codes selected
 // onChange callback 觸發時機：(a) toggle 後 (b) toggleAll 後 (c) setSelected 後
 //   → 將來 AS-02 落地時直接 wire onChange 接收 selectedCodes
+//
+// **大少 2026-07-27 09:21 bug fix**:
+// 1. Mount 嗰時 codes 可能為空 (async load 仲未完), 之後先 load 返 N stocks
+//    → useState 嘅 lazy initial 只 first render 跑一次, 所以 selectedCodes 永遠 empty
+//    → 用 useEffect auto-sync: 當 codes 變動 + user 未 touch + selectedCodes empty → 自動 fill
+// 2. Caller useMemo codes 穩定 reference, 避免 useCallback 每次 render rebuild
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 
 export interface UseStockSelectionOptions {
   /** Optional initial codes (default = all codes). 用嚟 set partial initial selection。 */
@@ -35,6 +41,21 @@ export function useStockSelection(
     () => new Set(options?.initialCodes ?? codes)
   );
 
+  // 大少 2026-07-27 09:21 fix: userTouchedRef 區分「user 沒碰過」vs「user 點空咗」
+  const userTouchedRef = useRef(false);
+
+  // 大少 2026-07-27 09:21 fix: 用 stable key 防止 codes 每次 render 嘅 reference 變動引爆 useEffect
+  const codesKey = useMemo(() => codes.slice().sort().join(','), [codes]);
+
+  // 大少 2026-07-27 09:21 fix: 當 codes 由 async load 出現 (mount 時 [] → 完載 N stocks)
+  // 同時 user 仲未 touch 過, 自動 fill 全部 selected。等 useState 嘅 lazy initial 救唔到嘅 mount 時序問題
+  useEffect(() => {
+    if (codesKey.length > 0 && !userTouchedRef.current && selectedCodes.size === 0) {
+      setSelectedCodes(new Set(codes));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codesKey]);
+
   // 全部已選 (用嚟畀 全選 checkbox display)
   const allSelected = useMemo(
     () => codes.length > 0 && selectedCodes.size === codes.length,
@@ -42,6 +63,7 @@ export function useStockSelection(
   );
 
   const toggle = useCallback((code: string) => {
+    userTouchedRef.current = true;
     setSelectedCodes(prev => {
       const next = new Set(prev);
       if (next.has(code)) next.delete(code);
@@ -54,6 +76,7 @@ export function useStockSelection(
   // 2 states: all selected → 全 unselect; 有未選 → 全 select
   // 大少 reject 咗 indeterminate
   const toggleAll = useCallback(() => {
+    userTouchedRef.current = true;
     setSelectedCodes(prev => {
       const allCurrentlySelected = prev.size === codes.length && codes.length > 0;
       const next: Set<string> = allCurrentlySelected
@@ -65,6 +88,7 @@ export function useStockSelection(
   }, [codes, options]);
 
   const setSelected = useCallback((next: Set<string>) => {
+    userTouchedRef.current = true;
     setSelectedCodes(next);
     options?.onChange?.(next);
   }, [options]);
