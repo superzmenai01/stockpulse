@@ -27,6 +27,7 @@ import {
 } from '@ant-design/icons';
 import { SavedRun } from '../../hooks/useSavedRuns';
 import type { SavedStock } from '../../types/algorithm';
+import { useStockSelection } from '../../hooks/useStockSelection';
 import { formatMcap, formatTurnover } from '../../utils/formatters';
 import ChartContainer from '../chart/ChartContainer';
 import styles from './ViewRunModal.module.css';
@@ -84,32 +85,11 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange }: ViewRu
 
   // 大少 2026-07-27: checkbox 選 stocks (為將來 AS-02 輸入預備)
   // 預設全部 selected, 兩 states (大少 reject 咗 indeterminate)
-  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(
-    () => new Set(savedStocks.map(s => s.code))
+  // 2026-07-27 refactor: use 共用 useStockSelection hook
+  const { selectedCodes, allSelected, toggle, toggleAll } = useStockSelection(
+    savedStocks.map(s => s.code),
+    { onChange: onSelectionChange }
   );
-  const allSelected = savedStocks.length > 0 && selectedCodes.size === savedStocks.length;
-
-  const handleToggle = (code: string) => {
-    setSelectedCodes(prev => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      onSelectionChange?.(next);
-      return next;
-    });
-  };
-
-  const handleToggleAll = () => {
-    setSelectedCodes(prev => {
-      // 用 prev 判斷 (避免 stale closure on allSelected)
-      const allCurrentlySelected = prev.size === savedStocks.length && savedStocks.length > 0;
-      const next: Set<string> = allCurrentlySelected
-        ? new Set() // 全 unselect
-        : new Set(savedStocks.map(s => s.code)); // 全 select
-      onSelectionChange?.(next);
-      return next;
-    });
-  };
 
   const handleCloseChart = () => {
     setChartModalOpen(false);
@@ -226,7 +206,7 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange }: ViewRu
                 title: (
                   <Checkbox
                     checked={allSelected}
-                    onChange={handleToggleAll}
+                    onChange={toggleAll}
                     aria-label="全選"
                   />
                 ),
@@ -235,7 +215,7 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange }: ViewRu
                 render: (_: unknown, record: SavedStockWithIdx) => (
                   <Checkbox
                     checked={selectedCodes.has(record.code)}
-                    onChange={() => handleToggle(record.code)}
+                    onChange={() => toggle(record.code)}
                     // 唔好 trigger row click 開 K 線圖
                     onClick={(e) => e.stopPropagation()}
                   />

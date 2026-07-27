@@ -1,10 +1,12 @@
 // components/algorithm/ResultGrid.tsx — 8-column results grid
 // 大少 2026-07-24 Tier 1.3: Frontend modular refactor
+// 大少 2026-07-27: 加 checkbox column + 全選 (useStockSelection hook)
 
 import React, { useState } from 'react';
-import { Card, Modal, Spin, Empty, Typography, Space, Tag, Tooltip, Button } from 'antd';
+import { Card, Modal, Spin, Empty, Typography, Space, Tag, Tooltip, Button, Checkbox } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import { Leader } from '../../types/algorithm';
+import { useStockSelection } from '../../hooks/useStockSelection';
 import { formatMcap, formatTurnover } from '../../utils/formatters';
 import ChartContainer from '../chart/ChartContainer';
 import styles from './ResultGrid.module.css';
@@ -57,6 +59,13 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
     setSelectedStock(null);
   };
 
+  // 大少 2026-07-27: checkbox 選 stocks (為將來 AS-02 輸入預備)
+  // 預設全部 selected, 兩 states (大少 reject 咗 indeterminate)
+  // 與 ViewRunModal 共用 useStockSelection hook
+  const { selectedCodes, allSelected, toggle, toggleAll } = useStockSelection(
+    displayedLeaders.map(s => s.code)
+  );
+
   return (
     <>
     <Card
@@ -100,6 +109,13 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
       ) : (
         <div className={styles.resultsGrid}>
           <div className={styles.gridHeader}>
+            <span className={styles.checkboxCell}>
+              <Checkbox
+                checked={allSelected}
+                onChange={toggleAll}
+                aria-label="全選"
+              />
+            </span>
             <span>排名</span>
             <span>代碼</span>
             <span className={styles.alignRight}>現價</span>
@@ -112,6 +128,16 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
               className={styles.gridRow}
               onClick={() => handleStockClick(stock)}
             >
+              <span
+                className={styles.checkboxCell}
+                // 唔好 trigger row click 開 K 線圖
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Checkbox
+                  checked={selectedCodes.has(stock.code)}
+                  onChange={() => toggle(stock.code)}
+                />
+              </span>
               <span className={styles.rankCell}>#{idx + 1}</span>
               {/* 大少 2026-07-26 09:00: 代碼格 vertical stack: 代碼 → 名稱 → 板塊來源 → (最好是原因) */}
               <span className={styles.codeCell} title={stock.code}>
