@@ -761,6 +761,40 @@ export default function ChartContainer({
     }
   }, [chartCreated, loadedRange])
 
+  // 大少 #8124 fix: extract helper to apply klines to chart series (hoisted BEFORE loadKlineData to avoid ReferenceError)
+  const applyKlineDataToChart = useCallback((klines: KLine[], opts?: { fitContent?: boolean }) => {
+    if (!candlestickSeriesRef.current || !volumeSeriesRef.current || !chartRef.current) return
+    if (klines.length === 0) return
+
+    const candleMap = new Map<string, CandlestickData<Time>>()
+    for (const k of klines) {
+      const t = parseTime(k.time, currentPeriod)
+      const tStr = String(t)
+      if (!candleMap.has(tStr)) {
+        candleMap.set(tStr, { time: t, open: k.open, high: k.high, low: k.low, close: k.close })
+      }
+    }
+    candlestickSeriesRef.current.setData(Array.from(candleMap.values()))
+
+    const volumeMap = new Map<string, HistogramData<Time>>()
+    for (const k of klines) {
+      const t = parseTime(k.time, currentPeriod)
+      const tStr = String(t)
+      if (!volumeMap.has(tStr)) {
+        volumeMap.set(tStr, { time: t, value: k.volume, color: k.close >= k.open ? '#26BA7544' : '#EE515144' })
+      }
+    }
+    volumeSeriesRef.current.setData(Array.from(volumeMap.values()))
+    // 大少 #8124 fix: only fitContent when explicitly requested (initial load) —
+    // 避免 fetchHistorical setKlineData() 後 reset user 嘅 drag scroll position
+    if (opts?.fitContent) {
+      chartRef.current.timeScale().fitContent()
+    }
+  }, [currentPeriod])
+
+  // 大少 #8124 fix: separate useEffect REMOVED — 直接避免 race condition + fitContent override
+  // (fetchHistorical 會 explicit call applyKlineDataToChart with fitContent)
+
   // 大少 #8057 Phase B: fetchHistorical — backend trigger to load more historical data
   // Called when user pans to left edge of chart
   // 大少 #8057 Phase C: inFlightHistoricalRef de-dup concurrent fetches
@@ -800,14 +834,24 @@ export default function ChartContainer({
           end: merged.length > 0 ? merged[merged.length - 1].time : loadedRange.end,
         })
 
-        console.log(`[Chart] Historical fetch: +${newKlines.length} candles (total: ${merged.length})`)
+        // 大少 #8124 fix: explicit call applyKlineDataToChart after extend — candlestickSeries + volumeSeries re-setData
+        // (用 opts.fitContent: true because extend 後 user 期望見到 full extended range)
+        applyKlineDataToChart(merged, { fitContent: true })
+
+        // 大少 #8124 fix: update ChartToolbar date inputs to reflect extended range
+        const newStart = merged[0].time
+        const newEnd = merged[merged.length - 1].time
+        setStartDate(newStart)
+        setEndDate(newEnd)
+
+        console.log(`[Chart] Historical fetch: +${newKlines.length} candles (total: ${merged.length}, ${newStart} → ${newEnd})`)
       }
     } catch (err) {
     } finally {
       setLoadingHistorical(false)
       inFlightHistoricalRef.current = false
     }
-  }, [loadedRange, currentPeriod, stock.code, klineData])
+  }, [loadedRange, currentPeriod, stock.code, klineData, applyKlineDataToChart])
 
   // 載入K線數據
   const loadKlineData = useCallback(async (code: string, period: string, start?: string, end?: string) => {
@@ -849,26 +893,8 @@ export default function ChartContainer({
       })
 
       if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
-        const candleMap = new Map<string, CandlestickData<Time>>()
-        for (const k of data.klines) {
-          const t = parseTime(k.time, period)
-          const tStr = String(t)
-          if (!candleMap.has(tStr)) {
-            candleMap.set(tStr, { time: t, open: k.open, high: k.high, low: k.low, close: k.close })
-          }
-        }
-        candlestickSeriesRef.current.setData(Array.from(candleMap.values()))
-        
-        const volumeMap = new Map<string, HistogramData<Time>>()
-        for (const k of data.klines) {
-          const t = parseTime(k.time, period)
-          const tStr = String(t)
-          if (!volumeMap.has(tStr)) {
-            volumeMap.set(tStr, { time: t, value: k.volume, color: k.close >= k.open ? '#26BA7544' : '#EE515144' })
-          }
-        }
-        volumeSeriesRef.current.setData(Array.from(volumeMap.values()))
-        chartRef.current.timeScale().fitContent()
+        // 大少 #8124 fix: initial load 應該 fitContent (default behavior)
+        applyKlineDataToChart(sortedKlines, { fitContent: true })
       }
     } catch (err) {
       console.error('[Chart] 載入K線失敗:', err)
