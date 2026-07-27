@@ -323,3 +323,51 @@
   border-top: 1px dashed rgba(255, 255, 255, 0.08);
   width: 100%;
 }
+
+/* ============================================================================
+ * Algorithm description box (大少 2026-07-27 V2 collapsed)
+ * Default 摺埋，用戶 click header 先展開 V2 description。
+ * 將來新算法都要喺 constants/algorithmDescriptions.ts 加 entry。
+ * ============================================================================ */
+.descriptionBox {
+  background: var(--ant-color-fill-tertiary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--ant-color-border-secondary, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.descriptionHeader {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary, rgba(255, 255, 255, 0.65));
+}
+
+.descriptionHeader:hover {
+  color: var(--ant-color-text, rgba(255, 255, 255, 0.88));
+}
+
+.descriptionHeader:focus-visible {
+  outline: 2px solid var(--sidebar-selected, #2563eb);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.descriptionToggle {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.descriptionBody {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ant-color-border-secondary, rgba(255, 255, 255, 0.08));
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ant-color-text-secondary, rgba(255, 255, 255, 0.7));
+}

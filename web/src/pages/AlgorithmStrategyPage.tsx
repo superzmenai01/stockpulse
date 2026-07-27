@@ -47,6 +47,8 @@ import PlateSelector from '../components/algorithm/PlateSelector'
 import ResultGrid from '../components/algorithm/ResultGrid'
 import SaveRunModal from '../components/library/SaveRunModal'
 import { useSaveRunFlow } from '../hooks/useSaveRunFlow'
+// 大少 2026-07-27: 每條 AS 嘅 user-facing description (V2 collapsed 模式)
+import { ALGORITHM_DESCRIPTIONS } from '../constants/algorithmDescriptions'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -225,6 +227,8 @@ function AS01Panel() {
   // Local state (specific to this panel)
   const [selectedPlates, setSelectedPlates] = useState<string[]>([]);
   const [topN, setTopN] = useState<number>(10);
+  // 大少 2026-07-27: Collapsed description (V2 簡化版，預設摺埋)
+  const [showDescription, setShowDescription] = useState<boolean>(false);
   // 大少 2026-07-27 09:38 bug 3 fix: lift state 接收 selectedCodes 從 ResultGrid
   const [pendingSelectedCodes, setPendingSelectedCodes] = useState<Set<string> | null>(null);
   // 大少 2026-07-26 #7530 🥇: 抽 useSaveRunFlow hook 出 page (4 inline handlers → 1 hook call)
@@ -243,6 +247,26 @@ function AS01Panel() {
       {/* LEFT: Filter */}
       <Card title="⚙️ 設定" className={styles.leftPanel}>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          {/* 大少 2026-07-27: Collapsed algorithm description (V2) */}
+          <div className={styles.descriptionBox}>
+            <div
+              className={styles.descriptionHeader}
+              onClick={() => setShowDescription(!showDescription)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowDescription(!showDescription); }}
+              title="點擊展開 / 摺埋"
+            >
+              <span>📖 點解用呢個？</span>
+              <span className={styles.descriptionToggle}>{showDescription ? '⌃' : '⌄'}</span>
+            </div>
+            {showDescription && (
+              <div className={styles.descriptionBody}>
+                {ALGORITHM_DESCRIPTIONS['AS-01']}
+              </div>
+            )}
+          </div>
+
           {/* Popularity status + refresh button + non-stock toggle */}
           <div className={styles.statusRow}>
             <Button
