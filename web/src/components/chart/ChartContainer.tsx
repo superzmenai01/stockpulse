@@ -595,6 +595,8 @@ export default function ChartContainer({
   // MACD overlay refs removed
 
   const [klineData, setKlineData] = useState<KLine[]>([])
+  // Plan B Fix B: reuse existing klineDataRef (line 526 大少 #7768 #7771 已 declare) — 唔加 duplicate
+  // fetchHistorical 改用 klineDataRef.current (避每次 state update rebuild callback 嘅 race)
   // 大少 #7768 #7771: Hover tooltip state — 顯示 hover 嗰支竹嘅 OHLC + 漲跌 + 成交
   const [hoverCandle, setHoverCandle] = useState<KLine | null>(null)
 
@@ -762,26 +764,26 @@ export default function ChartContainer({
   }, [chartCreated, loadedRange])
 
   // 大少 #8124 fix: extract helper to apply klines to chart series (hoisted BEFORE loadKlineData to avoid ReferenceError)
+  // Plan B Fix A: dedup key 用 k.time 直接 (避 String(parseTime(t)) 對 string "YYYY-MM-DD" 同 number 唔 consistent)
+  // Backend KlineCache PRIMARY KEY (code, period, time) 已 dedup → frontend 用 k.time 做 key safe
   const applyKlineDataToChart = useCallback((klines: KLine[], opts?: { fitContent?: boolean }) => {
     if (!candlestickSeriesRef.current || !volumeSeriesRef.current || !chartRef.current) return
     if (klines.length === 0) return
 
     const candleMap = new Map<string, CandlestickData<Time>>()
     for (const k of klines) {
-      const t = parseTime(k.time, currentPeriod)
-      const tStr = String(t)
-      if (!candleMap.has(tStr)) {
-        candleMap.set(tStr, { time: t, open: k.open, high: k.high, low: k.low, close: k.close })
+      if (!candleMap.has(k.time)) {
+        const t = parseTime(k.time, currentPeriod)
+        candleMap.set(k.time, { time: t, open: k.open, high: k.high, low: k.low, close: k.close })
       }
     }
     candlestickSeriesRef.current.setData(Array.from(candleMap.values()))
 
     const volumeMap = new Map<string, HistogramData<Time>>()
     for (const k of klines) {
-      const t = parseTime(k.time, currentPeriod)
-      const tStr = String(t)
-      if (!volumeMap.has(tStr)) {
-        volumeMap.set(tStr, { time: t, value: k.volume, color: k.close >= k.open ? '#26BA7544' : '#EE515144' })
+      if (!volumeMap.has(k.time)) {
+        const t = parseTime(k.time, currentPeriod)
+        volumeMap.set(k.time, { time: t, value: k.volume, color: k.close >= k.open ? '#26BA7544' : '#EE515144' })
       }
     }
     volumeSeriesRef.current.setData(Array.from(volumeMap.values()))
@@ -819,7 +821,7 @@ export default function ChartContainer({
 
       if (data.klines && data.klines.length > 0) {
         // De-dup by time
-        const existingTimes = new Set(klineData.map(k => k.time))
+        const existingTimes = new Set(klineDataRef.current.map(k => k.time))  // Plan B Fix B: 用 ref (避 stale closure)
         const newKlines = data.klines.filter((k: KLine) => !existingTimes.has(k.time))
 
         // Merge + sort ASC
@@ -836,7 +838,9 @@ export default function ChartContainer({
 
         // 大少 #8124 fix: explicit call applyKlineDataToChart after extend — candlestickSeries + volumeSeries re-setData
         // (用 opts.fitContent: true because extend 後 user 期望見到 full extended range)
-        applyKlineDataToChart(merged, { fitContent: true })
+        // Plan B Fix C: 唔 call fitContent/setVisibleRange — setData 就夠
+        // 保留 user 嘅 drag scroll position, user 自己 drag 去 left edge discover new data
+        applyKlineDataToChart(merged)
 
         // 大少 #8124 fix: update ChartToolbar date inputs to reflect extended range
         const newStart = merged[0].time
@@ -851,7 +855,7 @@ export default function ChartContainer({
       setLoadingHistorical(false)
       inFlightHistoricalRef.current = false
     }
-  }, [loadedRange, currentPeriod, stock.code, klineData, applyKlineDataToChart])
+  }, [loadedRange, currentPeriod, stock.code, applyKlineDataToChart])  // Plan B Fix B: 移除 klineData deps (改用 klineDataRef.current)
 
   // 載入K線數據
   const loadKlineData = useCallback(async (code: string, period: string, start?: string, end?: string) => {
