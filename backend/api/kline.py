@@ -116,9 +116,19 @@ async def get_kline(
                 code=code, ctx=ctx, period=period,
                 count=count, start=start, end=end,
             )
+            # 大少 #8296: 加 detail logger 顯示 DB pass 咩 data 俾 chart
+            klines = result.get('klines', [])
+            first_time = klines[0]['time'] if klines else None
+            last_time = klines[-1]['time'] if klines else None
+            logger.info(
+                f"[KLine] response: code={code} period={period} "
+                f"cached={result.get('cached')} fetch_count={result.get('fetch_count', 0)} "
+                f"rows={len(klines)} first={first_time} last={last_time} "
+                f"(query: count={count} start={start} end={end})"
+            )
             return {
                 'code': code, 'name': code, 'period': period,
-                'klines': result['klines'],
+                'klines': klines,
                 'mock': False,
                 'cached': result['cached'],
                 'fetch_count': result.get('fetch_count', 0),
