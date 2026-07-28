@@ -602,6 +602,16 @@ export default function ChartContainer({
   // MACD overlay refs removed
 
   const [klineData, setKlineData] = useState<KLine[]>([])
+  // 大少 #8305 #8307 Step 3: Force reset klineData + loadedRange on stock.code change
+  // Fix Issue 1 (chart stale 2020-08-18) — 前端 hold 住 stale state, 換 stock 時強制清空
+  // 等 chart component re-render with fresh data from backend
+  useEffect(() => {
+    setKlineData([])
+    setLoadedRange({ start: null, end: null })
+    setStartDate(sixMonthsAgo)
+    setEndDate(today)
+    setErrorMessage(null)
+  }, [stock.code])
   // Plan B Fix B: reuse existing klineDataRef (line 526 大少 #7768 #7771 已 declare) — 唔加 duplicate
   // fetchHistorical 改用 klineDataRef.current (避每次 state update rebuild callback 嘅 race)
   // 大少 #7768 #7771: Hover tooltip state — 顯示 hover 嗰支竹嘅 OHLC + 漲跌 + 成交
