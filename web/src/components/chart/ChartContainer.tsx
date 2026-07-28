@@ -835,13 +835,17 @@ export default function ChartContainer({
     setLoadingHistorical(true)
 
     try {
-      // Fetch from earliest allowed (today - 10y) to current loadedRange.start - 1 day
-      const earliestAllowed = new Date()
-      earliestAllowed.setFullYear(earliestAllowed.getFullYear() - 10)
-      const earliestStr = earliestAllowed.toISOString().split('T')[0]
+      // 大少 #8327 Plan B Fix G Option A: gradual extend (180 days at a time, count=200)
+      // 而家 bug: 一次性撈 today-10y → loadedRange.start (~800 rows 2016-2020 stale)
+      // 改做: 撈 loadedRange.start - 180 days → loadedRange.start (~130 rows gradual)
+      // 符合 Plan B infinite scroll 嘅 gradual extend 設計意圖
+      const currentStart = new Date(loadedRange.start)
+      const newStartDate = new Date(currentStart)
+      newStartDate.setDate(newStartDate.getDate() - 180)
+      const newStartStr = newStartDate.toISOString().split('T')[0]
       const currentStartStr = loadedRange.start as string
 
-      const url = `http://${window.location.hostname}:18792/api/kline?code=${stock.code}&period=${currentPeriod}&start=${earliestStr}&end=${currentStartStr}&count=5000`
+      const url = `http://${window.location.hostname}:18792/api/kline?code=${stock.code}&period=${currentPeriod}&start=${newStartStr}&end=${currentStartStr}&count=200`
       const res = await fetch(url)
       const data = await res.json()
 
