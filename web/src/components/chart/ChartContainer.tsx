@@ -545,6 +545,13 @@ export default function ChartContainer({
   const [currentPeriod, setCurrentPeriod] = useState(period)
   const [startDate, setStartDate] = useState<string>(sixMonthsAgo)
   const [endDate, setEndDate] = useState<string>(today)
+  // Plan B Fix D: 換 stock 時 force reset date range (避 ChartToolbar stale state)
+  // - endDate 永遠 today
+  // - startDate default 6 months ago (細節睇得到，fetchHistorical 仲可以 extend backward)
+  useEffect(() => {
+    setStartDate(sixMonthsAgo)
+    setEndDate(today)
+  }, [stock.code])
 
   // 大少 #8057 Phase B: infinite scroll historical data
   // 監聽 visible range change → user pan 到左邊邊緣 → 自動 fetch 更早 history
@@ -846,7 +853,7 @@ export default function ChartContainer({
         const newStart = merged[0].time
         const newEnd = merged[merged.length - 1].time
         setStartDate(newStart)
-        setEndDate(newEnd)
+        // Plan B Fix D: 唔 setEndDate — extend backward 不應該改 user 嘅 right edge (avoid 2020-08-18 stale bug)
 
         console.log(`[Chart] Historical fetch: +${newKlines.length} candles (total: ${merged.length}, ${newStart} → ${newEnd})`)
       }
