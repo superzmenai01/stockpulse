@@ -1196,10 +1196,7 @@ export default function ChartContainer({
   }, [quotes[stock.code], stock.code, currentPeriod, loading])
 
   const handlePeriodChange = (period: string) => setCurrentPeriod(period)
-  const handleDateChange = (start: string, end: string) => {
-    setStartDate(start)
-    setEndDate(end)
-  }
+  // 大少 #8256 #8258: 刪 handleDateChange — date range picker 已移除 (fetchHistorical 仲 setStartDate 內部用)
 
   return (
     <div className={styles.container}>
@@ -1208,9 +1205,6 @@ export default function ChartContainer({
         currentPeriod={currentPeriod}
         onPeriodChange={handlePeriodChange}
         stockName={stock.name}
-        startDate={startDate}
-        endDate={endDate}
-        onDateChange={handleDateChange}
       />
       <IndicatorPanel
         config={indicatorConfig}
