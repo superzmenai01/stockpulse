@@ -172,10 +172,15 @@ class KlineCache:
         end: Optional[str] = None,
     ) -> list[dict]:
         """
-        Read klines from DB (no fetch). ORDER BY time ASC LIMIT count.
+        Read klines from DB (no fetch).
 
         大少 #8042 Fix-2: lightweight-charts requires ASC order (setData throws
         assertion if data not strictly ascending by time).
+
+        大少 #8240 Fix A: count semantics 修正
+        - 有 start/end: ASC LIMIT count (filtered range 已 ASC order)
+        - 冇 start/end: DESC LIMIT count → reverse → ASC (取最新 N 條)
+          (修正前 bug: ASC LIMIT count 返最舊 N 條 (2016)，chart 顯示 stale data)
 
         Optional start/end filters (inclusive on both sides).
         """
@@ -192,11 +197,19 @@ class KlineCache:
             if end:
                 sql += " AND time <= ?"
                 params.append(end)
-            sql += " ORDER BY time ASC LIMIT ?"
-            params.append(count)
+
+            # 大少 #8240 Fix A: count-only path 取最新 N 條 (DESC + reverse)
+            reverse_for_asc = False
+            if start is None and end is None:
+                sql += " ORDER BY time DESC LIMIT ?"
+                params.append(count)
+                reverse_for_asc = True
+            else:
+                sql += " ORDER BY time ASC LIMIT ?"
+                params.append(count)
 
             rows = conn.execute(sql, params).fetchall()
-            return [
+            result = [
                 {
                     'time': r[0],
                     'open': r[1],
@@ -208,6 +221,9 @@ class KlineCache:
                 }
                 for r in rows
             ]
+            if reverse_for_asc:
+                result.reverse()  # DESC → ASC for lightweight-charts
+            return result
         finally:
             conn.close()
 
