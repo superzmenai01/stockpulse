@@ -541,9 +541,9 @@ export default function ChartContainer({
   const [chartCreated, setChartCreated] = useState(false)
   
   const today = new Date().toISOString().split('T')[0]
-  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const nineMonthsAgo = new Date(Date.now() - 270 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const [currentPeriod, setCurrentPeriod] = useState(period)
-  const [startDate, setStartDate] = useState<string>(sixMonthsAgo)
+  const [startDate, setStartDate] = useState<string>(nineMonthsAgo)
   const [endDate, setEndDate] = useState<string>(today)
   
   // 當 currentPeriod 改變時，自動調整 startDate
@@ -562,9 +562,9 @@ export default function ChartContainer({
       d.setFullYear(d.getFullYear() - 120)
       newStartDate = d.toISOString().split('T')[0]
     } else if (currentPeriod === '1d') {
-      // 日K：維持現有的 6 個月 logic
+      // 日K：默認 9 個月 (大少 #8498)
       const d = new Date()
-      d.setDate(d.getDate() - 180)
+      d.setDate(d.getDate() - 270)
       newStartDate = d.toISOString().split('T')[0]
     } else {
       // 1m, 5m, 15m 等分鐘K：不需要 startDate
