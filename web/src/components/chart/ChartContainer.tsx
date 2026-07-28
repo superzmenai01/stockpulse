@@ -558,6 +558,10 @@ export default function ChartContainer({
   const [loadedRange, setLoadedRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null })
   const [loadingHistorical, setLoadingHistorical] = useState(false)
   const inFlightHistoricalRef = useRef(false)
+  // 大少 #8315 Plan B Fix F: skip FIRST listener fire — mount 時立即 fire 嘅係 spurious
+  // (lightweight-charts v5 subscribeVisibleTimeRangeChange 喺 subscribe 時 trigger 一次 initial range)
+  // 導致 race condition: fetchHistorical 立即 fetch 2016-2020 stale data 覆蓋 initial load 嘅 6 個月 fresh data
+  const initialListenerFireRef = useRef(true)
   
   // 當 currentPeriod 改變時，自動調整 startDate
   useEffect(() => {
@@ -752,6 +756,11 @@ export default function ChartContainer({
     }
 
     const handler = (range: { from: Time | number; to: Time | number } | null) => {
+      // 大少 #8315 Plan B Fix F: skip FIRST listener fire (mount spurious)
+      if (initialListenerFireRef.current) {
+        initialListenerFireRef.current = false
+        return
+      }
       // 大少 #8098 P2 debug: log listener fire
       if (!range || !loadedRange.start) {
         return
