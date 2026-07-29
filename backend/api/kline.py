@@ -10,6 +10,10 @@ from futu import KLType
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# 大少 #8505: KlineCache module-level instance (凡人話: cache 整個 process 共用)
+from backend.services.kline_cache import KlineCache
+_cache = KlineCache()
+
 # 富途週期映射表
 # Key: 前端使用的週期字串
 # Value: 富途的 KLType 枚舉
@@ -129,37 +133,17 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
         elif period == '1y' and start and not end:
             end_date = datetime.date.today().isoformat()
         
-        ret, data, page_key = ctx.request_history_kline(
-            code=code,
-            ktype=ktype,
-            autype='qfq',  # 前復權
-            max_count=count,
-            start=start_date,
-            end=end_date,
+        # 大少 #8505 + #8513: cache-aside — caller (kline.py) 負責 PERIOD_MAP 轉 ktype
+        cache_result = await _cache.get_or_fetch(
+            code=code, ctx=ctx, ktype=ktype, period=period,
+            start=start_date, end=end_date, max_count=count
         )
-        
-        if ret != 0:
-            logger.error(f"[KLine] 富途錯誤: {data}")
-            return {
-                'code': code,
-                'name': code,
-                'period': period,
-                'klines': [],
-                'mock': False,
-                'error': f'富途錯誤: {data}',
-            }
-        
-        # 轉換為我們需要的格式
-        klines = []
-        for _, row in data.iterrows():
-            klines.append({
-                'time': row['time_key'],
-                'open': float(row['open']),
-                'high': float(row['high']),
-                'low': float(row['low']),
-                'close': float(row['close']),
-                'volume': int(row['volume']),
-            })
+        # 大少 #8549: KlineCache 已 return formatted klines (per #8505 contract)
+        # 之前 refactor leftover: data=None + for row in data.iterrows() → NoneType crash
+        # 刪走 dead code, 直接用 cache_result['klines']
+        klines = cache_result['klines']
+        cached_flag = cache_result['cached']
+        fetch_count = cache_result['fetch_count']
 
         # 大少 #7780: 加 turnover_rate per candle (volume / outstanding_shares)
         outstanding_shares = 0
@@ -181,14 +165,17 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
         # 股票名稱
         name = code
         
-        logger.info(f"[KLine] 成功獲取 {len(klines)} 根 K線")
+        logger.info(f"[KLine] 成功獲取 {len(klines)} 根 K線 (cached={cached_flag}, fetch_count={fetch_count})")
         
+        # 大少 #8505: 加 cached + fetch_count flags 俾 frontend debug
         return {
             'code': code,
             'name': name,
             'period': period,
             'klines': klines,
             'mock': False,
+            'cached': cached_flag,
+            'fetch_count': fetch_count,
         }
         
     except HTTPException:
