@@ -43,9 +43,15 @@ class SaveRunRequest(BaseModel):
 
 
 class UpdateRunRequest(BaseModel):
-    """PUT body — update name / note (大少 #7051: editable)"""
+    """PUT body — update name / note / saved_stocks (大少 #7051 + #8762)"""
     name: Optional[str] = Field(None, description="新名稱 (optional)")
     note: Optional[str] = Field(None, description="新備註 (optional)")
+    # 大少 #8762 (2026-07-29): 加 saved_stocks 支援 stock list editable
+    # - 提供時 backend 會 derive stocks (codes list) 自動 derive + persist
+    saved_stocks: Optional[list[dict]] = Field(
+        None,
+        description="(optional) Full saved stock snapshot per stock — 提供時會一齊更新 stocks column"
+    )
 
 
 # ============================================================================
@@ -96,11 +102,84 @@ async def get_run(run_id: int) -> dict:
     return run
 
 
+# ============================================================================
+# 大少 #8960 (2026-07-29): LibraryPage reorder + pin 功能 嘅 endpoints
+# ============================================================================
+
+class ReorderRequest(BaseModel):
+    ordered_ids: list[int] = Field(..., description="新嘅 display order (前 = 排前)")
+
+
+class PinRequest(BaseModel):
+    pinned: bool = Field(..., description="置頂 (True) / 取消置頂 (False)")
+
+
+@router.post("/reorder")
+async def reorder_runs(req: ReorderRequest) -> dict:
+    """
+    [POST reorder] 將 saved runs 按 ordered_ids 嘅 list 重新排序。
+    - per-row up/down arrow button 用呢個 endpoint 一次性 save 全部
+    - 唔喺 list 入面嘅 runs 嘅 position 唔變
+    """
+    try:
+        runs = model.reorder_runs(req.ordered_ids)
+        return {"runs": runs, "count": len(runs)}
+    except Exception as e:
+        raise HTTPException(500, f"Reorder failed: {e}")
+
+
+@router.post("/{run_id}/pin")
+async def pin_run(run_id: int, req: PinRequest) -> dict:
+    """[POST pin] 設置 is_pinned (per-row 📌 button toggle)。"""
+    run = model.pin_run(run_id, req.pinned)
+    if not run:
+        raise HTTPException(404, f"Run #{run_id} not found")
+    return run
+
+
+# ============================================================================
+# 大少 #8960 (2026-07-29): LibraryPage 排位 + 置頂 嘅 endpoints
+# ============================================================================
+
+class ReorderRequest(BaseModel):
+    ordered_ids: list[int] = Field(
+        ...,
+        description="New display order — front element sorts to top"
+    )
+
+
+class PinRequest(BaseModel):
+    pinned: bool = Field(
+        ...,
+        description="Pin to top (True) / unpin (False)"
+    )
+
+
+@router.post("/reorder")
+async def reorder_runs(req: ReorderRequest) -> dict:
+    """Set positions based on ordered_ids list (大少 #8960: 排位)."""
+    try:
+        runs = model.reorder_runs(req.ordered_ids)
+        return {"runs": runs, "count": len(runs)}
+    except Exception as exc:
+        raise HTTPException(500, f"Reorder failed: {exc}")
+
+
+@router.post("/{run_id}/pin")
+async def pin_run(run_id: int, req: PinRequest) -> dict:
+    """Toggle is_pinned (大少 #8960: 置頂)."""
+    run = model.pin_run(run_id, req.pinned)
+    if not run:
+        raise HTTPException(404, f"Run #{run_id} not found")
+    return run
+
+
 @router.put("/{run_id}")
 async def update_run(run_id: int, req: UpdateRunRequest) -> dict:
     """
-    Update name / note (大少 #7051: editable)。
-    - 唔可以改 algorithm_id/stocks (鎖死)
+    Update name / note / saved_stocks (大少 #7051 + #8762)。
+    - 唔可以改 algorithm_id (鎖死)
+    - saved_stocks 提供時會自動 derive `stocks` (codes list) 保持同步
     - 撞名 → 400 error
     """
     try:
@@ -108,6 +187,7 @@ async def update_run(run_id: int, req: UpdateRunRequest) -> dict:
             run_id=run_id,
             name=req.name,
             note=req.note,
+            saved_stocks=req.saved_stocks,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

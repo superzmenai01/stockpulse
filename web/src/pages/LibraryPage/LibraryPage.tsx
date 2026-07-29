@@ -7,9 +7,9 @@
 // - useSavedRuns: hook for CRUD operations
 
 import React, { useState, useMemo } from 'react';
-import { Table, Input, Select, Button, Tag, Space, Typography, Empty, Spin, message } from 'antd';
+import { Table, Input, Select, Button, Tag, Space, Typography, Empty, Spin, message, Tooltip } from 'antd';
 import { AppLayout } from '../../components/layout';
-import { EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, BookOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, BookOutlined, ArrowUpOutlined, ArrowDownOutlined, PushpinOutlined, PushpinFilled } from '@ant-design/icons';
 import { useSavedRuns, type SavedRun } from '../../hooks/useSavedRuns';
 import EditRunModal from '../../components/library/EditRunModal';
 import DeleteRunConfirm from '../../components/library/DeleteRunConfirm';
@@ -19,7 +19,7 @@ import styles from './LibraryPage.module.css';
 const { Title, Text } = Typography;
 
 function LibraryPage() {
-  const { runs, loading, error, refresh, updateRun, deleteRun } = useSavedRuns();
+  const { runs, loading, error, refresh, updateRun, deleteRun, reorderRuns, pinRun } = useSavedRuns();
   const [algorithmFilter, setAlgorithmFilter] = useState<string | undefined>();
   const [search, setSearch] = useState('');
   const [editingRun, setEditingRun] = useState<SavedRun | null>(null);
@@ -173,35 +173,73 @@ function LibraryPage() {
                 render: (ts: string) => <Text type="secondary">{ts}</Text>,
               },
               {
+                // 大少 #8960 (2026-07-29): 操作 column 改 reorder/pin icon-only。
+                // 原先有嘅「刪除」移咗去 EditRunModal footer (popconfirm)。
                 title: '操作',
                 key: 'actions',
-                width: 120,
-                render: (_, run: SavedRun) => (
-                  <Space>
-                    <Button
-                      size="small"
-                      icon={<EditOutlined />}
-                      // 大少 #7558: stopPropagation 唔好同時開 view modal
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingRun(run);
-                      }}
-                    >
-                      編輯
-                    </Button>
-                    <Button
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeletingRun(run);
-                      }}
-                    >
-                      刪除
-                    </Button>
-                  </Space>
-                ),
+                width: 178,
+                render: (_: unknown, run: SavedRun, idx: number) => {
+                  const handleMoveUp = async () => {
+                    const arr = filteredRuns.map((r) => r.id);
+                    if (idx <= 0) return;
+                    [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+                    await reorderRuns(arr);
+                  };
+                  const handleMoveDown = async () => {
+                    const arr = filteredRuns.map((r) => r.id);
+                    if (idx >= filteredRuns.length - 1) return;
+                    [arr[idx + 1], arr[idx]] = [arr[idx], arr[idx + 1]];
+                    await reorderRuns(arr);
+                  };
+                  const handleTogglePin = async () => {
+                    await pinRun(run.id, !run.is_pinned);
+                  };
+                  return (
+                    <Space>
+                      <Tooltip title="編輯 (內裏有儲存 / 刪除)">
+                        <Button
+                          size="small"
+                          icon={<EditOutlined />}
+                          data-testid={`librarypage-edit-${run.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingRun(run);
+                          }}
+                        >
+                          編輯
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="向上排位">
+                        <Button
+                          size="small"
+                          icon={<ArrowUpOutlined />}
+                          data-testid={`librarypage-up-${run.id}`}
+                          disabled={idx === 0}
+                          onClick={(e) => { e.stopPropagation(); handleMoveUp(); }}
+                        />
+                      </Tooltip>
+                      <Tooltip title="向下排位">
+                        <Button
+                          size="small"
+                          icon={<ArrowDownOutlined />}
+                          data-testid={`librarypage-down-${run.id}`}
+                          disabled={idx === filteredRuns.length - 1}
+                          onClick={(e) => { e.stopPropagation(); handleMoveDown(); }}
+                        />
+                      </Tooltip>
+                      <Tooltip title={run.is_pinned ? '取消置頂' : '置頂'}>
+                        <Button
+                          size={run.is_pinned ? 'middle' : 'small'}
+                          type={run.is_pinned ? 'primary' : 'default'}
+                          icon={run.is_pinned ? <PushpinFilled /> : <PushpinOutlined />}
+                          data-testid={`librarypage-pin-${run.id}`}
+                          style={run.is_pinned ? { color: '#faad14' } : undefined}
+                          onClick={(e) => { e.stopPropagation(); handleTogglePin(); }}
+                        />
+                      </Tooltip>
+                    </Space>
+                  );
+                },
               },
             ]}
           />
@@ -214,20 +252,27 @@ function LibraryPage() {
           run={editingRun}
           onSave={(updates) => handleEdit(editingRun.id, updates)}
           onCancel={() => setEditingRun(null)}
+          // 大少 #8960 (2026-07-29): Delete 喺 modal 入面（Popconfirm）→ 直接 handleDelete + refresh
+          onDelete={async () => {
+            await handleDelete(editingRun.id);
+            setEditingRun(null);
+          }}
         />
       )}
-      {deletingRun && (
-        <DeleteRunConfirm
-          run={deletingRun}
-          onConfirm={() => handleDelete(deletingRun.id)}
-          onCancel={() => setDeletingRun(null)}
-        />
-      )}
+      {/* 大少 #8960 (2026-07-29): DeleteRunConfirm 唔再 mount — Delete 移咗入 EditRunModal footer */}
+      {/* (保留 deletingRun state 給將來可能嘅 "archive" 功能用) */}
       {/* 大少 2026-07-26 #7558: ViewRunModal — row click trigger */}
+      {/* 大少 #8762 (2026-07-29): onSaved callback — 保存後 close modal + refresh list */}
       {viewingRun && (
         <ViewRunModal
           run={viewingRun}
           onCancel={() => setViewingRun(null)}
+          onSaved={() => {
+            // ViewRunModal 嘅 handleSaveChanges 入面已經 POST PUT + message.success。
+            // 呢度只需 close modal + refresh list。
+            setViewingRun(null);
+            refresh();
+          }}
         />
       )}
       </div>

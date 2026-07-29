@@ -55,6 +55,9 @@ def init_saved_runs_table(db_path: Path = DEFAULT_DB_PATH) -> None:
                 stocks JSON NOT NULL,
                 saved_stocks JSON NOT NULL DEFAULT '[]',
                 metadata JSON NOT NULL,
+                -- 大少 #8960 (2026-07-29): LibraryPage reorder + 置頂 嘅 columns
+                position INTEGER NOT NULL DEFAULT 0,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(algorithm_id, name)
             )
             """
@@ -72,7 +75,20 @@ def init_saved_runs_table(db_path: Path = DEFAULT_DB_PATH) -> None:
             conn.execute(
                 "ALTER TABLE saved_algorithm_runs ADD COLUMN saved_stocks JSON NOT NULL DEFAULT '[]'"
             )
-            conn.commit()
+        # 大少 #8960 (2026-07-29): reorder + 置頂 嘅 migration
+        if "position" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE saved_algorithm_runs ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
+            )
+        if "is_pinned" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE saved_algorithm_runs ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0"
+            )
+        # Init position from id ordering (only if any rows missing position)
+        conn.execute(
+            "UPDATE saved_algorithm_runs SET position = id WHERE position = 0 AND id > 0"
+        )
+        conn.commit()
 
 
 # ============================================================================
@@ -95,6 +111,9 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     # 大少 2026-07-26 #7566: saved_stocks 係 full snapshot (Leader fields per stock)
     d["saved_stocks"] = json.loads(d.get("saved_stocks", "[]"))
     d["metadata"] = json.loads(d["metadata"])
+    # 大少 #8960 (2026-07-29): reorder + 置頂 嘅 fields (Pydantic-friendly defaults)
+    d["position"] = int(d.get("position", 0) or 0)
+    d["is_pinned"] = bool(int(d.get("is_pinned", 0) or 0))
     return d
 
 
@@ -181,17 +200,20 @@ def list_runs(
     """
     [GET] 列出所有 saved runs (新至舊 sort — 大少 #7050)。
     - Optional filter by algorithm_id
+    - 大少 #8960 (2026-07-29): 改 ORDER BY — pinned 先, position 後, saved_at 兜底
     """
     with get_connection(db_path) as conn:
         conn.row_factory = sqlite3.Row
         if algorithm_id:
             rows = conn.execute(
-                "SELECT * FROM saved_algorithm_runs WHERE algorithm_id = ? ORDER BY saved_at DESC",
+                "SELECT * FROM saved_algorithm_runs WHERE algorithm_id = ? "
+                "ORDER BY is_pinned DESC, position ASC, saved_at DESC",
                 (algorithm_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM saved_algorithm_runs ORDER BY saved_at DESC"
+                "SELECT * FROM saved_algorithm_runs "
+                "ORDER BY is_pinned DESC, position ASC, saved_at DESC"
             ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -213,16 +235,24 @@ def update_run(
     run_id: int,
     name: Optional[str] = None,
     note: Optional[str] = None,
+    saved_stocks: Optional[list[dict[str, Any]]] = None,
     db_path: Path = DEFAULT_DB_PATH,
 ) -> Optional[dict[str, Any]]:
     """
-    [PUT] Update name/note (大少 #7051)。
-    - name/note 都 optional — 只 update 提供嘅 field
-    - 唔可以改 algorithm_id/stocks (鎖死)
+    [PUT] Update name/note/saved_stocks (大少 #7051 + #8762)。
+    - name/note/saved_stocks 都 optional — 只 update 提供嘅 field
+    - algorithm_id 鎖死, 唔可以改
+    - saved_stocks 提供時自動 derive `stocks` (codes) 以保持兩欄同步
+      (同 save_run() 一樣邏輯, single source of truth = saved_stocks)
     - 撞名 → raise ValueError
     """
-    if name is None and note is None:
-        raise ValueError("At least one of name/note must be provided")
+    if name is None and note is None and saved_stocks is None:
+        raise ValueError("At least one of name/note/saved_stocks must be provided")
+
+    # 大少 #8762: 如果提供 saved_stocks, 自動 derive codes list
+    derived_stocks: Optional[list[str]] = None
+    if saved_stocks is not None:
+        derived_stocks = [s.get("code", "") for s in saved_stocks]
 
     with get_connection(db_path) as conn:
         # Get current record
@@ -251,6 +281,12 @@ def update_run(
         if note is not None:
             updates.append("note = ?")
             params.append(note)
+        # 大少 #8762: saved_stocks 提供時一齊 update stocks (codes list)
+        if saved_stocks is not None:
+            updates.append("saved_stocks = ?")
+            params.append(json.dumps(saved_stocks, ensure_ascii=False))
+            updates.append("stocks = ?")
+            params.append(json.dumps(derived_stocks, ensure_ascii=False))
         updates.append("updated_at = CURRENT_TIMESTAMP")
         params.append(run_id)
 
@@ -260,6 +296,55 @@ def update_run(
         )
         conn.commit()
 
+        row = conn.execute(
+            "SELECT * FROM saved_algorithm_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+# ============================================================================
+# 大少 #8960 (2026-07-29): 排位 + 置頂 嘅新 functions
+# ============================================================================
+
+def reorder_runs(
+    ordered_ids: list[int],
+    db_path: Path = DEFAULT_DB_PATH,
+) -> list[dict[str, Any]]:
+    """
+    [POST /reorder] 將 runs 按 ordered_ids 順序重設 position (= ordered_ids index)。
+    - 只 update 包含 ordered_ids 入面嘅 rows，其他 runs position 唔郁
+    - atomic txn: BEGIN 然後逐條 UPDATE，COMMIT
+    """
+    if not ordered_ids:
+        return list_runs(db_path=db_path)
+    with get_connection(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        for idx, rid in enumerate(ordered_ids):
+            conn.execute(
+                "UPDATE saved_algorithm_runs SET position = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (idx, rid),
+            )
+        conn.commit()
+    return list_runs(db_path=db_path)
+
+
+def pin_run(
+    run_id: int,
+    pinned: bool,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> Optional[dict[str, Any]]:
+    """
+    [POST /{id}/pin] 設置 is_pinned (boolean toggle).
+    - pinned=True → 置頂 (排前)
+    - pinned=False → 取消置頂
+    """
+    with get_connection(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "UPDATE saved_algorithm_runs SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (1 if pinned else 0, run_id),
+        )
+        conn.commit()
         row = conn.execute(
             "SELECT * FROM saved_algorithm_runs WHERE id = ?", (run_id,)
         ).fetchone()

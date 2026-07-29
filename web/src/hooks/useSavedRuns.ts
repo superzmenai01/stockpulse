@@ -27,6 +27,9 @@ export interface SavedRun {
   // 大少 #7566: full snapshot data per stock (vs `stocks: string[]` 喺 POST 自動 derived)
   saved_stocks: SavedStock[];
   metadata: Record<string, unknown>;
+  // 大少 #8960 (2026-07-29): LibraryPage 排位 + 置頂
+  position: number;
+  is_pinned: boolean;
 }
 
 export interface SaveRunInput {
@@ -41,6 +44,8 @@ export interface SaveRunInput {
 export interface UpdateRunInput {
   name?: string;
   note?: string;
+  // 大少 #8762 (2026-07-29): 結果詳情可編輯 — 提供 saved_stocks 就會 replace 整個 list
+  saved_stocks?: SavedStock[];
 }
 
 interface UseSavedRunsResult {
@@ -52,6 +57,10 @@ interface UseSavedRunsResult {
   updateRun: (id: number, input: UpdateRunInput) => Promise<SavedRun>;
   deleteRun: (id: number) => Promise<void>;
   getRun: (id: number) => Promise<SavedRun | null>;
+  // 大少 #8960 (2026-07-29): LibraryPage 排位 + 置頂 嘅 methods
+  reorderRuns: (ordered_ids: number[]) => Promise<void>;
+  pinRun: (id: number, pinned: boolean) => Promise<SavedRun>;
+
 }
 
 export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
@@ -127,5 +136,47 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
     return (await resp.json()) as SavedRun;
   }, []);
 
-  return { runs, loading, error, refresh, saveRun, updateRun, deleteRun, getRun };
+  // 大少 #8960 (2026-07-29): LibraryPage 排位 + 置頂 嘅 API hooks
+  // 大少 #9026 (2026-07-29): 用 inline fetch (跟 saveRun 等 pattern)，因為 helper `apiRequest` 唔存在
+  const reorderRuns = async (ordered_ids: number[]) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch(`${API_BASE}/api/saved-runs/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ordered_ids }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const pinRun = async (id: number, pinned: boolean) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch(`${API_BASE}/api/saved-runs/${id}/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const updated = await resp.json();
+      await refresh();
+      return updated;
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { runs, loading, error, refresh, saveRun, updateRun, deleteRun, getRun, reorderRuns, pinRun };
 }
