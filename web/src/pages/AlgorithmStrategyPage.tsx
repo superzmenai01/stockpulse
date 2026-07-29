@@ -325,17 +325,6 @@ function AS01Panel() {
               範圍 1-50，預設 10
             </Text>
           </div>
-
-          <Button
-            type="primary"
-            size="large"
-            icon={<SearchOutlined />}
-            loading={loading}
-            onClick={() => handleExecute(selectedPlates, topN)}
-            block
-          >
-            🔍 執行
-          </Button>
         </Space>
         <div
           className={`${styles.resizeHandle} ${inner.dragging ? styles.resizeHandleActive : ''}`}
@@ -396,9 +385,7 @@ export default function AlgorithmStrategyPage() {
           <Title level={2} style={{ margin: 0 }}>
             🧮 演算法策略
           </Title>
-          <Paragraph type="secondary" style={{ margin: '8px 0 0 0' }}>
-            演算法集中點 · 各演算法有自己嘅 filter + 結果 · 拉 sidebar / filter 右邊界改 width · 自動 persist
-          </Paragraph>
+
         </div>
 
         {/* Outer layout: sidebar + content (drag-to-resize) */}
