@@ -1114,8 +1114,11 @@ export default function ChartContainer({
               className={styles.tooltip}
               data-testid="chart-hover-tooltip"
               style={{
-                left: tooltipSide === 'right' && mouseX !== null ? `${mouseX + 20}px` : 'auto',
-                right: tooltipSide === 'left' && mouseX !== null ? `${chartWidth - mouseX + 20}px` : 'auto',
+                // 大少 #8643: panel 固定邊, 唔跟 cursor 漂
+                // Mouse 喺左 (tooltipSide='right') → panel 固定最右 (right: 12px)
+                // Mouse 喺右 (tooltipSide='left') → panel 固定最左 (left: 12px)
+                right: tooltipSide === 'right' ? '12px' : 'auto',
+                left: tooltipSide === 'left' ? '12px' : 'auto',
               }}
             >
               <div className={styles.tooltipHeader}>
