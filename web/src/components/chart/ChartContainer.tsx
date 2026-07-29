@@ -596,7 +596,7 @@ export default function ChartContainer({
   const [chartWidth, setChartWidth] = useState<number>(0)
   const [tooltipSide, setTooltipSide] = useState<'right' | 'left'>('right')
 
-  const { quotes } = useWebSocketContext()
+  const { quotes, subscribe } = useWebSocketContext()
 
   // ============ EW 半自動狀態 ============
 
@@ -798,6 +798,13 @@ export default function ChartContainer({
       loadKlineData(stock.code, currentPeriod, startDate, endDate)
     }
   }, [chartCreated, stock.code, currentPeriod, startDate, endDate, loadKlineData])
+
+  // 大少 #8659: 之前 ChartContainer 只 destructure `quotes` 但從未 trigger subscribe action,
+  // WSContext 連接咗 WS 但 session 訂閱 list 永遠空, `quotes[stock.code]` 永遠 undefined → real-time data 唔 render.
+  // Fix: stock.code 變化時 call WSContext.subscribe, 推送 frontend codes list 去 backend trigger Futu OpenD subscribe.
+  useEffect(() => {
+    subscribe([stock.code])
+  }, [stock.code, subscribe])
 
   // 更新指標線
   useEffect(() => {
