@@ -19,7 +19,8 @@ interface ChartToolbarProps {
   periods: Period[]
   currentPeriod: string
   onPeriodChange: (period: string) => void
-  // 大少 #8648: 移除 stockName, 加 stockCode + real-time quote
+  // 大少 #8668: re-add stockName (top row), stockCode + quote (real-time data same row, right side)
+  stockName: string
   stockCode: string
   quote: QuoteData | null
   startDate: string
@@ -43,6 +44,7 @@ export default function ChartToolbar({
   periods,
   currentPeriod,
   onPeriodChange,
+  stockName,
   stockCode,
   quote,
   startDate,
@@ -62,48 +64,9 @@ export default function ChartToolbar({
 
   return (
     <div className={styles.toolbar}>
-      {/* 大少 #8648: 藍框 stockName 已移除 (CHART 用 top header 大少指定唔要 stock name 重複) */}
-      <Space size="middle" wrap>
-        {/* 日期輸入 */}
-        <Input
-          placeholder="開始日期"
-          value={startDate}
-          onChange={e => onDateChange(e.target.value, endDate)}
-          style={{ width: 110 }}
-          size="small"
-        />
-        <span style={{ color: '#666' }}>至</span>
-        <Input
-          placeholder="結束日期"
-          value={endDate}
-          onChange={e => onDateChange(startDate, e.target.value)}
-          style={{ width: 110 }}
-          size="small"
-        />
-        {/* 快捷按鈕 */}
-        {PRESETS.map(p => (
-          <Button
-            key={`preset-${p.label}`}
-            type="text"
-            size="small"
-            onClick={() => handlePreset(p.days)}
-          >
-            {p.label}
-          </Button>
-        ))}
-        {/* 週期按鈕 — 大少 #8648 指示 PERIODS array 順序 [1分鐘K, 日K, 月K, 年K] (1分鐘K index 0 最左) */}
-        {periods.map(p => (
-          <Button
-            key={`period-${p.value}`}
-            type={currentPeriod === p.value ? 'primary' : 'text'}
-            size="small"
-            onClick={() => onPeriodChange(p.value)}
-            className={currentPeriod === p.value ? styles.activeBtn : ''}
-          >
-            {p.label}
-          </Button>
-        ))}
-        {/* 大少 #8648: 紅框位置 (原本 1分鐘K button) 改為 real-time data — stock code + last price + change amount + change % */}
+      {/* 大少 #8668: Top row — stock name (left) + real-time data (right) */}
+      <div className={styles.topRow}>
+        <span className={styles.stockName}>{stockName}</span>
         {quote && (
           <span className={styles.realTimeData} data-testid="chart-realtime-quote">
             <span className={styles.realTimeCode}>{stockCode}</span>
@@ -128,7 +91,55 @@ export default function ChartToolbar({
             </span>
           </span>
         )}
-      </Space>
+      </div>
+
+      {/* 大少 #8668: Middle row — 日期輸入 + 快捷按鈕 (1M/3M/6M/1Y/3Y/6Y/10Y/ALL) */}
+      <div className={styles.middleRow}>
+        <Space size="middle" wrap>
+          <Input
+            placeholder="開始日期"
+            value={startDate}
+            onChange={e => onDateChange(e.target.value, endDate)}
+            style={{ width: 110 }}
+            size="small"
+          />
+          <span style={{ color: '#666' }}>至</span>
+          <Input
+            placeholder="結束日期"
+            value={endDate}
+            onChange={e => onDateChange(startDate, e.target.value)}
+            style={{ width: 110 }}
+            size="small"
+          />
+          {PRESETS.map(p => (
+            <Button
+              key={`preset-${p.label}`}
+              type="text"
+              size="small"
+              onClick={() => handlePreset(p.days)}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </Space>
+      </div>
+
+      {/* 大少 #8668: Bottom row — 週期按鈕 (1分鐘K / 日K / 月K / 年K) 去第二行 */}
+      <div className={styles.bottomRow}>
+        <Space size="middle" wrap>
+          {periods.map(p => (
+            <Button
+              key={`period-${p.value}`}
+              type={currentPeriod === p.value ? 'primary' : 'text'}
+              size="small"
+              onClick={() => onPeriodChange(p.value)}
+              className={currentPeriod === p.value ? styles.activeBtn : ''}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </Space>
+      </div>
     </div>
   )
 }

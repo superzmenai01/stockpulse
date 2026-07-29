@@ -1,10 +1,25 @@
 .toolbar {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
   padding: 12px 16px;
   background: var(--bg-container);
   border-bottom: 1px solid var(--border-color);
+}
+
+/* 大少 #8668: 3 row layout — top (stock name + real-time) / mid (date + range) / bot (period buttons) */
+.topRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.middleRow {
+  display: flex;
+}
+
+.bottomRow {
+  display: flex;
 }
 
 .stockInfo {
