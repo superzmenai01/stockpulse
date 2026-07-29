@@ -157,15 +157,41 @@ class KlineCache:
                     'fetch_count': len(fetched),
                 }
 
-            # Step 3: warm cache + today from OpenD if needed
+            # Step 3: warm cache + auto-update missing days + today from OpenD
+            # 大少 #8551: Step 3 fetch window 由 (today, today, 1) → (cached_latest+1 或 yesterday, today, 10)
+            # 解決 Issue A (auto-update 28/29 missing) + Issue B (今日 OpenD 數據)
             fetch_count = 0
             fetched = []
-            if today_in_range and today not in cached_times:
-                fetched_today = await self._fetch_and_store(
-                    ctx, code, ktype, period, today, today, 1
-                )
-                fetched = fetched_today
-                fetch_count = len(fetched)
+            if today_in_range:
+                today_date = datetime.date.today()
+                yesterday_date = today_date - datetime.timedelta(days=1)
+
+                if cached_times:
+                    # cached 最新一日的 next day 作為 fetch start
+                    latest_cached_date = datetime.date.fromisoformat(max(cached_times))
+                    fetch_start_date = max(
+                        latest_cached_date + datetime.timedelta(days=1),
+                        yesterday_date,
+                    )
+                else:
+                    # cached_times 空 (rare — Step 2 應該已 handle cold cache)
+                    fetch_start_date = yesterday_date
+
+                # 只在 missing days 範圍先 fetch (避免 over-fetch)
+                if fetch_start_date <= today_date:
+                    fetched = await self._fetch_and_store(
+                        ctx, code, ktype, period,
+                        fetch_start_date.isoformat(), today_date.isoformat(), 10
+                    )
+                    fetch_count = len(fetched)
+                    # 大少 #8551: partial failure log warning
+                    expected_days = (today_date - fetch_start_date).days + 1
+                    if len(fetched) < expected_days:
+                        logger.warning(
+                            f"KLineCache partial fetch {code} period={period}: "
+                            f"got {len(fetched)}/{expected_days} days "
+                            f"from {fetch_start_date} to {today_date}"
+                        )
 
             all_klines = sorted(cached + fetched, key=lambda k: k['time'])
             return {
@@ -177,18 +203,35 @@ class KlineCache:
     async def _fetch_and_store(self, ctx, code: str, ktype, period: str,
                                start: str, end: str,
                                max_count: int) -> list[dict]:
-        """大少 #8505: OpenD fetch + DB write (skip time >= today per 大少 #7983)."""
+        """大少 #8505: OpenD fetch + DB write (skip time >= today per 大少 #7983).
+        大少 #8551: retry 2 attempts on ret != 0 OR data is None (網絡抖動 robustness).
+        """
 
-        ret, data, _ = ctx.request_history_kline(
-            code=code, ktype=ktype, autype='qfq',
-            max_count=max_count, start=start, end=end,
-        )
+        # 大少 #8551: retry 2 attempts — 網絡抖動 / SDK 暫時失敗
+        ret = -1
+        data = None
+        last_error = None
+        for attempt in range(2):
+            ret, data, _ = ctx.request_history_kline(
+                code=code, ktype=ktype, autype='qfq',
+                max_count=max_count, start=start, end=end,
+            )
+            if ret == 0 and data is not None:
+                break
+            last_error = f"ret={ret} data={data}"
+            logger.warning(
+                f"KLineCache fetch attempt {attempt+1}/2 failed "
+                f"for {code} period={period}: {last_error}"
+            )
+            if attempt < 1:
+                await asyncio.sleep(0.5)  # brief delay before retry
+
         # 大少 #8549: 富途 SDK contract 是 ret==0 但 data 可能係 None (冇數據時)。
         # 之前無 check data is None → data.iterrows() → AttributeError 'NoneType' object has no attribute 'iterrows'
         # 紅字錯誤喺 frontend chart 中心顯示, 大少 09:18 報錯。
         if ret != 0 or data is None:
             level = logger.error if ret != 0 else logger.warning
-            level(f"KLineCache fetch skip for {code} period={period} ktype={ktype}: ret={ret} data={data}")
+            level(f"KLineCache fetch skip for {code} period={period} ktype={ktype}: {last_error}")
             return []
 
         today = datetime.date.today().isoformat()
