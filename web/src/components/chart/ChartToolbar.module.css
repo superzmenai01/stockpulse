@@ -18,3 +18,40 @@
   font-weight: bold;
   color: var(--text-primary);
 }
+
+/* 大少 #8648: 紅框位置 — real-time quote (原本 1分鐘K button 位置) */
+.realTimeData {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 12px;
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.realTimeCode {
+  font-weight: 600;
+  color: var(--text-primary, #F0F0F0);
+}
+
+.realTimePrice {
+  font-weight: 600;
+  color: var(--text-primary, #F0F0F0);
+}
+
+.realTimeChange {
+  color: #888;
+}
+
+.realTimeChangeUp {
+  color: #26BA75;
+  font-weight: 500;
+}
+
+.realTimeChangeDown {
+  color: #EE5151;
+  font-weight: 500;
+}

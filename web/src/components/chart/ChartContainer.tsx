@@ -1084,7 +1084,9 @@ export default function ChartContainer({
         periods={PERIODS}
         currentPeriod={currentPeriod}
         onPeriodChange={handlePeriodChange}
-        stockName={stock.name}
+        // 大少 #8648: 移除 stockName (藍框), 改為傳 real-time quote
+        stockCode={stock.code}
+        quote={quotes[stock.code] ?? null}
         startDate={startDate}
         endDate={endDate}
         onDateChange={handleDateChange}

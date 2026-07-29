@@ -9,11 +9,19 @@ interface Period {
   value: string
 }
 
+interface QuoteData {
+  last_price: number
+  change: number
+  pct_change: number
+}
+
 interface ChartToolbarProps {
   periods: Period[]
   currentPeriod: string
   onPeriodChange: (period: string) => void
-  stockName: string
+  // 大少 #8648: 移除 stockName, 加 stockCode + real-time quote
+  stockCode: string
+  quote: QuoteData | null
   startDate: string
   endDate: string
   onDateChange: (start: string, end: string) => void
@@ -35,7 +43,8 @@ export default function ChartToolbar({
   periods,
   currentPeriod,
   onPeriodChange,
-  stockName,
+  stockCode,
+  quote,
   startDate,
   endDate,
   onDateChange,
@@ -53,9 +62,7 @@ export default function ChartToolbar({
 
   return (
     <div className={styles.toolbar}>
-      <div className={styles.stockInfo}>
-        <span className={styles.stockName}>{stockName}</span>
-      </div>
+      {/* 大少 #8648: 藍框 stockName 已移除 (CHART 用 top header 大少指定唔要 stock name 重複) */}
       <Space size="middle" wrap>
         {/* 日期輸入 */}
         <Input
@@ -84,7 +91,7 @@ export default function ChartToolbar({
             {p.label}
           </Button>
         ))}
-        {/* 週期按鈕 */}
+        {/* 週期按鈕 — 大少 #8648 指示 PERIODS array 順序 [1分鐘K, 日K, 月K, 年K] (1分鐘K index 0 最左) */}
         {periods.map(p => (
           <Button
             key={`period-${p.value}`}
@@ -96,6 +103,31 @@ export default function ChartToolbar({
             {p.label}
           </Button>
         ))}
+        {/* 大少 #8648: 紅框位置 (原本 1分鐘K button) 改為 real-time data — stock code + last price + change amount + change % */}
+        {quote && (
+          <span className={styles.realTimeData} data-testid="chart-realtime-quote">
+            <span className={styles.realTimeCode}>{stockCode}</span>
+            <span className={styles.realTimePrice}>{quote.last_price.toFixed(3)}</span>
+            <span
+              className={
+                quote.change > 0 ? styles.realTimeChangeUp :
+                quote.change < 0 ? styles.realTimeChangeDown :
+                styles.realTimeChange
+              }
+            >
+              {quote.change > 0 ? '+' : ''}{quote.change.toFixed(3)}
+            </span>
+            <span
+              className={
+                quote.pct_change > 0 ? styles.realTimeChangeUp :
+                quote.pct_change < 0 ? styles.realTimeChangeDown :
+                styles.realTimeChange
+              }
+            >
+              ({quote.pct_change > 0 ? '+' : ''}{quote.pct_change.toFixed(2)}%)
+            </span>
+          </span>
+        )}
       </Space>
     </div>
   )
