@@ -591,6 +591,10 @@ export default function ChartContainer({
   const [klineData, setKlineData] = useState<KLine[]>([])
   // 大少 #7768 #7771: Hover tooltip state — 顯示 hover 嗰支竹嘅 OHLC + 漲跌 + 成交
   const [hoverCandle, setHoverCandle] = useState<KLine | null>(null)
+  // 大少 #8566: Hover tooltip 跟 cursor + smart flip (mouse 喺右半邊 → panel 走向左)
+  const [mouseX, setMouseX] = useState<number | null>(null)
+  const [chartWidth, setChartWidth] = useState<number>(0)
+  const [tooltipSide, setTooltipSide] = useState<'right' | 'left'>('right')
 
   const { quotes } = useWebSocketContext()
 
@@ -704,9 +708,18 @@ export default function ChartContainer({
     const chart = chartRef.current
 
     const handleCrosshair = (param: any) => {
-      if (!param.time) {
+      if (!param.time || !param.point) {
         setHoverCandle(null)
+        setMouseX(null)
         return
+      }
+      // 大少 #8566: Capture mouse X + compute smart flip
+      const x = param.point.x
+      setMouseX(x)
+      if (chartContainerRef.current) {
+        const width = chartContainerRef.current.offsetWidth
+        setChartWidth(width)
+        setTooltipSide(x > width / 2 ? 'left' : 'right')
       }
       const tStr = String(param.time)
       const candle = klineDataRef.current.find(
@@ -1097,7 +1110,14 @@ export default function ChartContainer({
           const changeColor = change > 0 ? '#26BA75' : change < 0 ? '#EE5151' : '#888'
           const sign = change > 0 ? '+' : ''
           return (
-            <div className={styles.tooltip} data-testid="chart-hover-tooltip">
+            <div
+              className={styles.tooltip}
+              data-testid="chart-hover-tooltip"
+              style={{
+                left: tooltipSide === 'right' && mouseX !== null ? `${mouseX + 20}px` : 'auto',
+                right: tooltipSide === 'left' && mouseX !== null ? `${chartWidth - mouseX + 20}px` : 'auto',
+              }}
+            >
               <div className={styles.tooltipHeader}>
                 {formatTooltipDate(hoverCandle.time, currentPeriod)}
               </div>

@@ -139,10 +139,12 @@
   background: #30363D;
 }
 /* 大少 #7768 #7771: Hover tooltip (Futu Niuniu 風格) */
+/* 大少 #8566: panel 跟 cursor + smart flip, default position 由 inline style 控制 */
 .tooltip {
   position: absolute;
   top: 12px;
-  left: 12px;
+  left: auto;
+  right: auto;
   background: rgba(28, 33, 40, 0.95);
   border: 1px solid #30363D;
   border-radius: 6px;
@@ -154,6 +156,8 @@
   font-size: 12px;
   color: #D1D1D1;
   backdrop-filter: blur(8px);
+  /* 大少 #8566: Smooth flip animation */
+  transition: left 0.15s ease-out, right 0.15s ease-out;
 }
 
 .tooltipHeader {
