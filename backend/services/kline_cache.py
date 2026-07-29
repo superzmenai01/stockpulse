@@ -168,7 +168,13 @@ class KlineCache:
 
                 if cached_times:
                     # cached 最新一日的 next day 作為 fetch start
-                    latest_cached_date = datetime.date.fromisoformat(max(cached_times))
+                    # 大少 #8573: handle mixed format DB time (富途 SDK 偶爾 return 'YYYY-MM-DD HH:MM:SS')
+                    latest_cached_str = max(cached_times)
+                    if ' ' in latest_cached_str:
+                        latest_cached_str = latest_cached_str.split(' ')[0]
+                    elif 'T' in latest_cached_str:
+                        latest_cached_str = latest_cached_str.split('T')[0]
+                    latest_cached_date = datetime.date.fromisoformat(latest_cached_str)
                     fetch_start_date = max(
                         latest_cached_date + datetime.timedelta(days=1),
                         yesterday_date,
@@ -239,8 +245,14 @@ class KlineCache:
         klines = []
         rows_to_insert = []
         for _, row in data.iterrows():
+            # 大少 #8573: normalize time 為 date-only (防止 DB mixed format → Step 3 fromisoformat 爆)
+            time_str = str(row['time_key'])
+            if ' ' in time_str:
+                time_str = time_str.split(' ')[0]
+            elif 'T' in time_str:
+                time_str = time_str.split('T')[0]
             kline = {
-                'time': row['time_key'],
+                'time': time_str,
                 'open': float(row['open']),
                 'high': float(row['high']),
                 'low': float(row['low']),
