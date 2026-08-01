@@ -123,6 +123,29 @@ async def run_as02(req: AS02RunRequest) -> AS02RunResponse:
                 algorithm_id="AS-02",
                 algorithm_name="公司質素分析",
                 stocks=[r["code"] for r in qualified],
+                # 大少 2026-08-01 #9425: pass full saved_stocks for ViewRunModal display
+                # (without saved_stocks, ViewRunModal shows all fields as '—')
+                saved_stocks=[
+                    {
+                        "code": r["code"],
+                        "name": r.get("name", ""),
+                        "price": r.get("price", 0),
+                        "change_pct": 0,  # AS-02 spec 唔 derive change
+                        "mcap": r.get("financial_data", {}).get("mcap", 0),
+                        "turnover": 0,  # AS-02 spec 唔 derive turnover
+                        "plate_code": "",
+                        "plate_name": r.get("sector", ""),
+                        "score": r.get("score", 0),
+                        "mcap_rank": 0,
+                        "volume_rank": 0,
+                        "reason": " / ".join(r.get("reasons", [])),
+                        # AS-02 specific fields (extra)
+                        "classification": r.get("classification"),
+                        "breakdown": r.get("breakdown", {}),
+                        "analysis_text": r.get("analysis_text", ""),
+                    }
+                    for r in qualified
+                ],
                 metadata={
                     "qualified_count": len(qualified),
                     "disqualified_count": len(disqualified),

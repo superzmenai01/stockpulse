@@ -43,6 +43,8 @@ import styles from './AlgorithmStrategyPage.module.css'
 import { usePlates } from '../hooks/usePlates'
 import { useExecuteAlgorithm } from '../hooks/useExecuteAlgorithm'
 import { useExecuteAS02 } from '../hooks/useExecuteAS02'
+import { stockApi } from '../services/stockApi'
+import type { StockSearchResult } from '../services/stockApi'
 import { usePopularityStatus } from '../hooks/usePopularityStatus'
 import NonStockToggle from '../components/algorithm/NonStockToggle'
 import PlateSelector from '../components/algorithm/PlateSelector'
@@ -377,7 +379,13 @@ function AS02Panel() {
     storageKey: 'main-algorithms-as02-inner-width',
   });
 
-  const [stockInput, setStockInput] = useState<string>('');
+  // 大少 2026-08-01 #9415: Key Search Auto Complete — 用 Select mode="tags" + stockApi.search()
+  // 大少以前用 TextArea 手動輸入, 而家可以用 dropdown suggestion (like StockSearch in ViewRunModal)
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
+  const [searchValue, setSearchValue] = useState<string>('');
+  const [searchOptions, setSearchOptions] = useState<StockSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState<boolean>(false);
+  const searchTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const [showDescription, setShowDescription] = useState<boolean>(false);
   const [pendingSelectedCodes, setPendingSelectedCodes] = useState<Set<string> | null>(null);
 
@@ -401,18 +409,38 @@ function AS02Panel() {
     selectedCodes: pendingSelectedCodes,
   });
 
-  // Parse stock codes (comma/space/newline separated)
-  const parsedCodes = stockInput
-    .split(/[\s,;\n]+/)
-    .map((s) => s.trim().toUpperCase())
-    .filter((s) => s.length > 0);
+  // 大少 #9415: AutoComplete debounced search via stockApi.search() (300ms)
+  const handleSearch = (value: string) => {
+    setSearchValue(value);
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setSearchOptions([]);
+      setSearchLoading(false);
+      return;
+    }
+    searchTimerRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const results = await stockApi.search(trimmed);
+        setSearchOptions(results.slice(0, 10));
+      } catch (e) {
+        // ignore error (offline / API fail)
+        setSearchOptions([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+  };
 
   const handleRun = () => {
-    if (parsedCodes.length === 0) {
+    if (selectedCodes.length === 0) {
       message.warning('請輸入至少 1 隻 stock code (e.g. HK.00981)');
       return;
     }
-    handleExecute(parsedCodes);
+    handleExecute(selectedCodes);
   };
 
   return (
@@ -440,20 +468,34 @@ function AS02Panel() {
             )}
           </div>
 
-          {/* Stock codes input */}
+          {/* Stock codes input — 大少 #9415: Key Search Auto Complete */}
           <div>
             <Text strong>📋 Stock Codes</Text>
-            <Input.TextArea
-              rows={4}
-              value={stockInput}
-              onChange={(e) => setStockInput(e.target.value)}
-              placeholder="HK.00981, HK.01347, HK.07709 ..."
+            <Select
+              mode="tags"
+              value={selectedCodes}
+              onChange={setSelectedCodes}
+              searchValue={searchValue}
+              onSearch={handleSearch}
+              placeholder="輸入股票名稱或代碼 (e.g. 中芯 / HK.00981) ..."
+              notFoundContent={searchLoading ? '搜索中...' : null}
+              filterOption={false}
+              tokenSeparators={[',', ' ', '\n', ';']}
+              maxCount={10}
               className={styles.fullWidth}
               style={{ fontFamily: 'monospace' }}
-            />
+            >
+              {searchOptions.map((s) => (
+                <Select.Option key={s.code} value={s.code}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span><strong>{s.code}</strong> {s.name}</span>
+                    <Tag color="default">{s.market}</Tag>
+                  </div>
+                </Select.Option>
+              ))}
+            </Select>
             <Text type="secondary" className={styles.hint}>
-              已輸入 <Text strong>{parsedCodes.length}</Text> / 10 隻 · 格式 <code>HK.XXXXX</code>
-              · 用逗號 / 空格 / 換行分隔
+              已輸入 <Text strong>{selectedCodes.length}</Text> / 10 隻 · 輸入股票名/代碼 選擇 dropdown 或用逗號/空格/換行分隔
             </Text>
           </div>
 
@@ -463,13 +505,13 @@ function AS02Panel() {
             <Space wrap>
               <Button
                 size="small"
-                onClick={() => setStockInput('HK.00981, HK.01347, HK.07709, HK.09988, HK.00700')}
+                onClick={() => setSelectedCodes(['HK.00981', 'HK.01347', 'HK.07709', 'HK.09988', 'HK.00700'])}
               >
                 5 隻半導體+互聯網
               </Button>
               <Button
                 size="small"
-                onClick={() => setStockInput('')}
+                onClick={() => setSelectedCodes([])}
               >
                 清空
               </Button>
@@ -484,9 +526,9 @@ function AS02Panel() {
             loading={loading}
             onClick={handleRun}
             block
-            disabled={parsedCodes.length === 0}
+            disabled={selectedCodes.length === 0}
           >
-            🔍 執行 ({parsedCodes.length})
+            🔍 執行 ({selectedCodes.length})
           </Button>
         </Space>
         <div
