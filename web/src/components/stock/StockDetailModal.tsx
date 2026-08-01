@@ -16,7 +16,8 @@ export default function StockDetailModal({ open, stock, onClose }: StockDetailMo
     <Modal
       open={open}
       onCancel={onClose}
-      title={stock?.name || ''}
+      // 大少 #8722 (2026-07-29): 移除 stock 名 title — toolbar top-left 已有 HK.00981 + price info
+      title={null}
       width={900}
       footer={null}
       className={styles.modal}

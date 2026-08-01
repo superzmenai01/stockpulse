@@ -32,3 +32,15 @@ docs/.algorithm_last_sync_hash
 # docs/ALGORITHM_SPECS.md (auto-synced from MEMORY every 1h by LaunchAgent,
 # would conflict on push/pulls; tracked only in workspace MEMORY)
 docs/ALGORITHM_SPECS.md
+
+# LLM encryption key (NEVER commit — security risk)
+backend/data/.llm_encryption_key
+
+# Vite cache files (auto-regenerated)
+web/node_modules/.vite/
+
+# Runtime SQLite DB (per-machine state, schema is migration-tracked)
+backend/data/stocks.db
+
+# sed backup files
+*.bak

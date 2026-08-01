@@ -7,7 +7,8 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-/* 大少 #8668: 3 row layout — top (stock name + real-time) / mid (date + range) / bot (period buttons) */
+/* 大少 #8722 (2026-07-29): 2 row layout — top (real-time data 左 + period buttons 右) / mid (date + range presets)
+   原本 3 row 改 2 row：移除 stockName + bottomRow (period buttons 已移上 topRow 右邊) */
 .topRow {
   display: flex;
   justify-content: space-between;
@@ -18,23 +19,8 @@
   display: flex;
 }
 
-.bottomRow {
-  display: flex;
-}
-
-.stockInfo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stockName {
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--text-primary);
-}
-
-/* 大少 #8648: 紅框位置 — real-time quote (原本 1分鐘K button 位置) */
+/* 大少 #8648: 紅框位置 — real-time quote (原本 1分鐘K button 位置)
+   #8722: 而家擺 top-left (取代原本 stockName 嘅位置) */
 .realTimeData {
   display: inline-flex;
   align-items: center;

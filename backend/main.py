@@ -16,7 +16,11 @@ from config import HOST, BACKEND_PORT, LOG_DIR, LOG_LEVEL
 from api import router as api_router
 from api.debug import router as debug_router
 from api.saved_runs import router as saved_runs_router
+from api.llm_settings import router as llm_settings_router
+from api.as02 import router as as02_router
 from models.saved_runs import init_saved_runs_table
+from models.llm_settings import init_llm_settings_table
+from models.algorithm_dq_log import init_algorithm_dq_log_table
 from ws import router as ws_router, init_futu_connection
 
 # 確保日誌目錄存在
@@ -42,6 +46,11 @@ async def lifespan(app: FastAPI):
     # 大少 2026-07-24: init saved_algorithm_runs table (Saved Runs Library)
     logger.info("[Startup] init saved_algorithm_runs table...")
     init_saved_runs_table()
+    # 大少 2026-08-01 #9146: init llm_settings + algorithm_dq_log tables
+    logger.info("[Startup] init llm_settings table...")
+    init_llm_settings_table()
+    logger.info("[Startup] init algorithm_dq_log table...")
+    init_algorithm_dq_log_table()
     yield
     # 關閉時清理（如果有的話）
 
@@ -61,6 +70,8 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 app.include_router(debug_router)  # already has prefix="/api/debug"
 app.include_router(saved_runs_router)  # already has prefix="/api/saved-runs"
+app.include_router(llm_settings_router)  # already has prefix="/api/llm-settings"
+app.include_router(as02_router)  # already has prefix="/api/as02"
 app.include_router(ws_router, prefix="/ws")
 
 @app.get("/api/health")

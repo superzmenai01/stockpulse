@@ -1,0 +1,47 @@
+/* SettingsPage — 大少 2026-08-01 #9146 */
+
+.page {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.title {
+  margin: 0 !important;
+}
+
+.subtitle {
+  display: block;
+  margin-bottom: 24px;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.section {
+  margin-top: 24px;
+}
+
+.sectionTitle {
+  margin-top: 16px !important;
+  margin-bottom: 8px !important;
+}
+
+.predefinedButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.providerTag {
+  font-family: monospace;
+}
+
+:global([data-theme='dark']) .subtitle {
+  color: rgba(255, 255, 255, 0.55);
+}
