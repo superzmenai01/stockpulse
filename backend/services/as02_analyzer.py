@@ -374,4 +374,13 @@ async def analyze_one_stock(stock_code: str, provider) -> dict:
         "analysis_text": llm_result.get("summary", ""),
         "data_sources": ["FutuOpenD", "web_search"],
         "financial_data": financials,
+        # 大少 2026-08-01 #9446: populate price/change_pct/mcap/turnover from fetch_snapshot
+        # (Phase F fix 嘅 safe_get_snapshot 真係攞到 呢啲 fields from OpenD, 但之前 AS-02 spec
+        # 唔 derive 入 return dict, save_run saved_stocks 永遠 0)
+        "price": snapshot.get("price", 0),
+        "change_pct": snapshot.get("change_pct", 0),
+        "mcap": snapshot.get("mcap", 0),
+        "turnover": snapshot.get("turnover", 0),
+        "pe": snapshot.get("pe", 0),
+        "pb": snapshot.get("pb", 0),
     }

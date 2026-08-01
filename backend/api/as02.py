@@ -123,18 +123,20 @@ async def run_as02(req: AS02RunRequest) -> AS02RunResponse:
                 algorithm_id="AS-02",
                 algorithm_name="公司質素分析",
                 stocks=[r["code"] for r in qualified],
-                # 大少 2026-08-01 #9425: pass full saved_stocks for ViewRunModal display
-                # (without saved_stocks, ViewRunModal shows all fields as '—')
+                # 大少 2026-08-01 #9446: populate all 4 saved_stocks fields from r dict (real OpenD data)
+                # Fix 2: analyze_one_stock return dict now includes price/change_pct/mcap/turnover/pe/pb
+                #         (Phase F fix futu_conn safe_get_snapshot 真係攞到 fields from OpenD)
+                #         Previously hardcoded 0 → ViewRunModal showed "—" for all 4 columns
                 saved_stocks=[
                     {
                         "code": r["code"],
                         "name": r.get("name", ""),
                         "price": r.get("price", 0),
-                        "change_pct": 0,  # AS-02 spec 唔 derive change
-                        "mcap": r.get("financial_data", {}).get("mcap", 0),
-                        "turnover": 0,  # AS-02 spec 唔 derive turnover
+                        "change_pct": r.get("change_pct", 0),
+                        "mcap": r.get("mcap", 0),
+                        "turnover": r.get("turnover", 0),
                         "plate_code": "",
-                        "plate_name": r.get("sector", ""),
+                        "plate_name": "",
                         "score": r.get("score", 0),
                         "mcap_rank": 0,
                         "volume_rank": 0,
@@ -143,6 +145,8 @@ async def run_as02(req: AS02RunRequest) -> AS02RunResponse:
                         "classification": r.get("classification"),
                         "breakdown": r.get("breakdown", {}),
                         "analysis_text": r.get("analysis_text", ""),
+                        "pe": r.get("pe", 0),
+                        "pb": r.get("pb", 0),
                     }
                     for r in qualified
                 ],

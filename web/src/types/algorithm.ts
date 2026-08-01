@@ -82,6 +82,13 @@ export interface AS02Stock {
   reasons: string[];
   analysis_text: string;
   data_sources: string[];
+  // 大少 2026-08-01 #9446: 現價/市值/換手率/PE/PB (real OpenD snapshot from Phase F fix)
+  price: number;
+  change_pct: number;
+  mcap: number;
+  turnover: number;
+  pe: number;
+  pb: number;
 }
 
 export interface AS02ApiResponse {

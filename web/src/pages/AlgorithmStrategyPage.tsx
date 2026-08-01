@@ -477,6 +477,7 @@ function AS02Panel() {
               onChange={setSelectedCodes}
               searchValue={searchValue}
               onSearch={handleSearch}
+              onSelect={() => setSearchValue('')}
               placeholder="輸入股票名稱或代碼 (e.g. 中芯 / HK.00981) ..."
               notFoundContent={searchLoading ? '搜索中...' : null}
               filterOption={false}

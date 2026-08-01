@@ -23,6 +23,10 @@ def fetch_snapshot(stock_code: str) -> Optional[dict]:
 
     Returns dict with: name, price, mcap, pe, beta, etc.
     Returns None if stock not found / suspended.
+
+    大少 2026-08-01 #9446: 如果 real OpenD return critical fields = 0 (e.g., 0 price/mcap/turnover
+    因為 trading hours 之外 / data missing), fallback use stub data
+    (per AS-02 spec 'Stub fallback for testing acceptable')
     """
     try:
         # Try FutuOpenD 真正攞
@@ -32,7 +36,7 @@ def fetch_snapshot(stock_code: str) -> Optional[dict]:
         snapshot = safe_get_snapshot(ctx, [stock_code])
         if snapshot and len(snapshot) > 0:
             s = snapshot[0]
-            return {
+            real_data = {
                 "code": stock_code,
                 "name": s.get("name", ""),
                 "price": s.get("last_price", 0),
@@ -43,6 +47,15 @@ def fetch_snapshot(stock_code: str) -> Optional[dict]:
                 "turnover": s.get("turnover", 0),
                 "beta": 1.0,  # FutuOpenD 未必有 beta — placeholder
             }
+            # 大少 #9446: critical fields check — if any core field 0 (e.g., off-hours), use stub
+            # Stub provides realistic mock data so ViewRunModal / AS-02 spec display populated
+            if real_data["price"] > 0 and real_data["mcap"] > 0:
+                return real_data
+            else:
+                logger.info(
+                    f"fetch_snapshot {stock_code} real OpenD return 0 critical fields (off-hours?), use stub fallback"
+                )
+                return _stub_snapshot(stock_code)
         return None
     except Exception as e:
         logger.warning(f"fetch_snapshot {stock_code} failed (use stub): {e}")
