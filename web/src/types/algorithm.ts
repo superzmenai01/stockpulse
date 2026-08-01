@@ -61,3 +61,39 @@ export interface RunRequest {
 export const MAX_PLATES = 30;
 export const DEFAULT_TOP_N = 10;
 export const DEFAULT_TOP_N_LIMIT = 50;
+
+// ============================================================================
+// AS-02 — 公司質素分析 (大少 2026-08-01 #9132)
+// ============================================================================
+
+export interface AS02Stock {
+  code: string;
+  name: string;
+  classification: 'qualified' | 'disqualified';
+  score: number;
+  breakdown: {
+    financial: number;
+    business: number;
+    management: number;
+    industry: number;
+    valuation: number;
+    risk: number;
+  };
+  reasons: string[];
+  analysis_text: string;
+  data_sources: string[];
+}
+
+export interface AS02ApiResponse {
+  run_id: number | null;
+  stocks: AS02Stock[];
+  qualified_count: number;
+  disqualified_count: number;
+  ranked_at: string;
+}
+
+export interface AS02RunRequest {
+  stocks: string[];  // e.g. ['HK.00981', 'HK.01347']
+}
+
+export const MAX_STOCKS = 10;

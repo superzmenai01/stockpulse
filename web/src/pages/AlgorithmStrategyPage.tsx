@@ -16,6 +16,7 @@ import {
   Card,
   Select,
   InputNumber,
+  Input,
   Button,
   Tooltip,
   Empty,
@@ -41,10 +42,12 @@ import styles from './AlgorithmStrategyPage.module.css'
 // 大少 2026-07-24 Tier 1.3: Modular hooks + sub-components
 import { usePlates } from '../hooks/usePlates'
 import { useExecuteAlgorithm } from '../hooks/useExecuteAlgorithm'
+import { useExecuteAS02 } from '../hooks/useExecuteAS02'
 import { usePopularityStatus } from '../hooks/usePopularityStatus'
 import NonStockToggle from '../components/algorithm/NonStockToggle'
 import PlateSelector from '../components/algorithm/PlateSelector'
 import ResultGrid from '../components/algorithm/ResultGrid'
+import AS02ResultPanel from '../components/algorithm/AS02ResultPanel'
 import SaveRunModal from '../components/library/SaveRunModal'
 import { useSaveRunFlow } from '../hooks/useSaveRunFlow'
 // 大少 2026-07-27: 每條 AS 嘅 user-facing description (V2 collapsed 模式)
@@ -61,7 +64,7 @@ const { Title, Paragraph, Text } = Typography
 
 const SIDEBAR_ITEMS = [
   { key: 'as-01', id: 'AS-01', name: '板塊龍頭股', icon: <ThunderboltOutlined />, implemented: true },
-  { key: 'as-02', id: '新演算法 A', name: '(TBD)', icon: <ExperimentOutlined />, implemented: false },
+  { key: 'as-02', id: 'AS-02', name: '公司質素分析', icon: <ExperimentOutlined />, implemented: true },
   { key: 'as-03', id: '新演算法 B', name: '(TBD)', icon: <ExperimentOutlined />, implemented: false },
   { key: 'as-04', id: '新演算法 C', name: '(TBD)', icon: <ExperimentOutlined />, implemented: false },
 ]
@@ -365,6 +368,165 @@ function AS01Panel() {
   );
 }
 
+// ============== AS-02 Panel (大少 2026-08-01 Phase 5) ==============
+function AS02Panel() {
+  const inner = useDragResize({
+    initial: 380,
+    min: 240,
+    max: 500,
+    storageKey: 'main-algorithms-as02-inner-width',
+  });
+
+  const [stockInput, setStockInput] = useState<string>('');
+  const [showDescription, setShowDescription] = useState<boolean>(false);
+  const [pendingSelectedCodes, setPendingSelectedCodes] = useState<Set<string> | null>(null);
+
+  const {
+    qualifiedResults,
+    disqualifiedResults,
+    loading,
+    hasRun,
+    lastError,
+    rankedAt,
+    handleExecute,
+  } = useExecuteAS02();
+
+  const saveFlow = useSaveRunFlow({
+    algorithmId: 'AS-02',
+    algorithmName: '公司質素分析',
+    results: qualifiedResults,
+    selectedPlates: [],
+    topN: 0,
+    rankedAt,
+    selectedCodes: pendingSelectedCodes,
+  });
+
+  // Parse stock codes (comma/space/newline separated)
+  const parsedCodes = stockInput
+    .split(/[\s,;\n]+/)
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => s.length > 0);
+
+  const handleRun = () => {
+    if (parsedCodes.length === 0) {
+      message.warning('請輸入至少 1 隻 stock code (e.g. HK.00981)');
+      return;
+    }
+    handleExecute(parsedCodes);
+  };
+
+  return (
+    <div className={styles.twoPanel} style={{ gridTemplateColumns: `${inner.width}px 1fr` }}>
+      {/* LEFT: Filter */}
+      <Card title="⚙️ 設定" className={styles.leftPanel}>
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          {/* Description (collapsible, V2 簡化) */}
+          <div className={styles.descriptionBox}>
+            <div
+              className={styles.descriptionHeader}
+              onClick={() => setShowDescription(!showDescription)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowDescription(!showDescription); }}
+              title="點擊展開 / 摺埋"
+            >
+              <span>📖 點解用呢個？</span>
+              <span className={styles.descriptionToggle}>{showDescription ? '⌃' : '⌄'}</span>
+            </div>
+            {showDescription && (
+              <div className={styles.descriptionBody}>
+                {`AS-02 公司質素分析 — 根據 6 個 weighted dimensions (財務 30% / 業務 20% / 管理 15% / 行業 15% / 估值 10% / 風險 10%) + 8 個硬性 DQ triggers (ROE < 0% 連續 2 年 / Debt > 100% / Beta > 2.5 / OCF 連續負數 / ESG CCC / 重大訴訟 等) 評估股票。輸入 1-10 隻 stock codes, LLM (MiniMax M3) 分析返中文 result。`}
+              </div>
+            )}
+          </div>
+
+          {/* Stock codes input */}
+          <div>
+            <Text strong>📋 Stock Codes</Text>
+            <Input.TextArea
+              rows={4}
+              value={stockInput}
+              onChange={(e) => setStockInput(e.target.value)}
+              placeholder="HK.00981, HK.01347, HK.07709 ..."
+              className={styles.fullWidth}
+              style={{ fontFamily: 'monospace' }}
+            />
+            <Text type="secondary" className={styles.hint}>
+              已輸入 <Text strong>{parsedCodes.length}</Text> / 10 隻 · 格式 <code>HK.XXXXX</code>
+              · 用逗號 / 空格 / 換行分隔
+            </Text>
+          </div>
+
+          {/* Quick presets */}
+          <div>
+            <Text strong>⚡ 快速測試</Text>
+            <Space wrap>
+              <Button
+                size="small"
+                onClick={() => setStockInput('HK.00981, HK.01347, HK.07709, HK.09988, HK.00700')}
+              >
+                5 隻半導體+互聯網
+              </Button>
+              <Button
+                size="small"
+                onClick={() => setStockInput('')}
+              >
+                清空
+              </Button>
+            </Space>
+          </div>
+
+          {/* Execute button */}
+          <Button
+            type="primary"
+            size="large"
+            icon={<SearchOutlined />}
+            loading={loading}
+            onClick={handleRun}
+            block
+            disabled={parsedCodes.length === 0}
+          >
+            🔍 執行 ({parsedCodes.length})
+          </Button>
+        </Space>
+        <div
+          className={`${styles.resizeHandle} ${inner.dragging ? styles.resizeHandleActive : ''}`}
+          onMouseDown={inner.handleMouseDown}
+          title="拖拽改 filter 闊度"
+        />
+      </Card>
+
+      {/* RIGHT: Results */}
+      <AS02ResultPanel
+        qualifiedStocks={qualifiedResults}
+        disqualifiedStocks={disqualifiedResults}
+        loading={loading}
+        hasRun={hasRun}
+        errorMessage={lastError}
+        rankedAt={rankedAt}
+        canSave={hasRun && qualifiedResults.length > 0 && !loading}
+        saving={saveFlow.saving}
+        onSave={(codes) => {
+          setPendingSelectedCodes(codes);
+          saveFlow.show();
+        }}
+      />
+
+      {/* Save Run Modal (useSaveRunFlow state) */}
+      <SaveRunModal
+        open={saveFlow.open}
+        algorithmName="公司質素分析"
+        stockCount={saveFlow.filteredResults.length}
+        stockCodes={saveFlow.filteredResults.map((s) => s.code)}
+        rankedAt={rankedAt}
+        saving={saveFlow.saving}
+        onSave={saveFlow.confirmSave}
+        onCancel={saveFlow.hide}
+      />
+    </div>
+  );
+}
+
 // ============== Main Page ==============
 export default function AlgorithmStrategyPage() {
   const outer = useDragResize({
@@ -444,8 +606,9 @@ export default function AlgorithmStrategyPage() {
             {/* 大少 2026-07-23 12:01 instruction (Option C - B): 包 ErrorBoundary 防黑畫面 */}
             <ErrorBoundary>
               {activeKey === 'as-01' && <AS01Panel />}
+              {activeKey === 'as-02' && <AS02Panel />}
             </ErrorBoundary>
-            {activeKey !== 'as-01' && activeItem && (
+            {(activeKey !== 'as-01' && activeKey !== 'as-02') && activeItem && (
               <NotImplementedPlaceholder algorithmId={activeItem.id} />
             )}
           </main>
