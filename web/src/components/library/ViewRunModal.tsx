@@ -37,6 +37,7 @@ import type { SavedStock } from '../../types/algorithm';
 import { useStockSelection } from '../../hooks/useStockSelection';
 import { formatMcap, formatTurnover } from '../../utils/formatters';
 import ChartContainer from '../chart/ChartContainer';
+import { ReasonCell } from './ReasonCell';
 import styles from './ViewRunModal.module.css';
 // 大少 #8918 (2026-07-29): 用 HomePage AddStockModal 嘅 StockSearch 做 search-first UI
 //              取代而家 2 個 <Input> (code + name)
@@ -460,14 +461,10 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
                 title: '原因',
                 dataIndex: 'reason',
                 key: 'reason',
-                render: (r: string) =>
-                  r ? (
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      {r}
-                    </Text>
-                  ) : (
-                    <Text type="secondary">—</Text>
-                  ),
+                // 大少 #9494 (2026-08-01): Truncate + onClick expand (方案 A)
+                // 用獨立 ReasonCell component (唔可以 inline useState 喺 column.render
+                // callback 入面, 違反 React Hooks Rules → AntD Cell2 crash).
+                render: (r: string) => <ReasonCell text={r} />,
               },
               {
                 // 大少 #8762 (2026-07-29): 操作 column — icon-only 刪除 button (低頻功能, 唔使常見)
