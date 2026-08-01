@@ -8,6 +8,11 @@
 // 'current' on boolean 'false'") → 永遠見 "結果詳情載入失敗" 而唔係 stock data.
 //
 // Fix: extract 出獨立 component, hook 喺 component top-level call.
+//
+// 大少 #9557 (2026-08-02 00:00): 2 個 UX fixes:
+//   1. onClick 加 e.stopPropagation() 避免 bubble 到 <Table> onRow.onClick 開 chart modal
+//   2. style 加 wordBreak: break-word + display: block 確保 column width fixed 時 wrap 落多行
+//      (column 由 ViewRunModal.tsx 設 width: 220, 約 20 中文字)
 
 import { useState } from 'react';
 import { Typography } from 'antd';
@@ -36,8 +41,14 @@ export function ReasonCell({ text, truncateLen = DEFAULT_TRUNCATE_LEN }: ReasonC
         fontSize: 11,
         cursor: needsTruncate ? 'pointer' : 'default',
         whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        display: 'block',
       }}
-      onClick={() => needsTruncate && setExpanded(!expanded)}
+      onClick={(e) => {
+        // 大少 #9557 (00:00): 避免 click [展開] bubble 到 <Table> onRow.onClick → handleStockClick → 開 chart modal
+        e.stopPropagation();
+        if (needsTruncate) setExpanded(!expanded);
+      }}
     >
       {display}
       {needsTruncate && (

@@ -461,6 +461,7 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
                 title: '原因',
                 dataIndex: 'reason',
                 key: 'reason',
+                width: 220,  // 大少 #9557 (2026-08-02 00:00): Fixed ~20 中文字 闊, 展開後 wrap 落多行唔擴闊
                 // 大少 #9494 (2026-08-01): Truncate + onClick expand (方案 A)
                 // 用獨立 ReasonCell component (唔可以 inline useState 喺 column.render
                 // callback 入面, 違反 React Hooks Rules → AntD Cell2 crash).
