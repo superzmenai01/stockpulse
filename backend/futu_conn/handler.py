@@ -120,11 +120,64 @@ class QuoteHandler(StockQuoteHandlerBase):
 def create_quote_handler(event_bus) -> QuoteHandler:
     """
     工廠函數：創建 QuoteHandler
-    
+
     Args:
         event_bus: 事件總線實例
-        
+
     Returns:
         QuoteHandler: 配置好的回調處理器
     """
     return QuoteHandler(event_bus)
+
+
+def safe_get_snapshot(ctx, code_list: list[str]) -> list[dict]:
+    """
+    大少 2026-08-01 #9132 P1 fix: wrapper for FutuOpenD get_market_snapshot.
+
+    Safely fetch market snapshots for given stock codes.
+    Returns empty list on any error (network, invalid code, OpenD disconnect, etc)
+    so caller can fallback to stub.
+
+    Note: FutuOpenD `get_market_snapshot()` returns `(ret_code, pandas.DataFrame)`,
+    NOT list of namedtuples. Must iterate via `df.iterrows()`.
+
+    Args:
+        ctx: OpenQuoteContext instance (from get_quote_ctx())
+        code_list: list of stock codes (e.g. ['HK.00981'])
+
+    Returns:
+        list of dicts with keys: code, name, last_price, change_rate,
+        total_market_val, pe, pb, turnover. Empty list on error.
+    """
+    if ctx is None:
+        logger.warning("[SAFE_GET_SNAPSHOT] ctx is None, return empty")
+        return []
+
+    try:
+        ret, df = ctx.get_market_snapshot(code_list)
+        if ret != RET_OK:
+            logger.warning(f"[SAFE_GET_SNAPSHOT] FutuOpenD ret error: {df}")
+            return []
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            return []
+
+        results = []
+        for _, row in df.iterrows():
+            try:
+                results.append({
+                    "code": str(row.get('code', '')),
+                    "name": str(row.get('name', '')),
+                    "last_price": float(row.get('last_price', 0) or 0),
+                    "change_rate": float(row.get('change_rate', 0) or 0),
+                    "total_market_val": float(row.get('total_market_val', 0) or 0),
+                    "pe": float(row.get('pe', 0) or 0),
+                    "pb": float(row.get('pb', 0) or 0),
+                    "turnover": float(row.get('turnover', 0) or 0),
+                })
+            except Exception as inner_e:
+                logger.warning(f"[SAFE_GET_SNAPSHOT] skip row parse error: {inner_e}")
+                continue
+        return results
+    except Exception as e:
+        logger.warning(f"[SAFE_GET_SNAPSHOT] failed: {e}")
+        return []

@@ -13,10 +13,10 @@ from .handler import QuoteHandler, create_quote_handler
 def get_quote_ctx():
     """
     獲取富途 Quote Context
-    
+
     每次都動態查找 ws.router._futu_ctx，避免模組導入時間問題。
     注意：只有在 init_futu_connection() 成功後才能獲取到有效的 context。
-    
+
     Returns:
         OpenQuoteContext or None: 富途連接 context
     """
@@ -24,4 +24,8 @@ def get_quote_ctx():
     mod = importlib.import_module('ws.router')
     return mod._futu_ctx
 
-__all__ = ["SubscriptionManager", "QuoteHandler", "create_quote_handler", "get_quote_ctx"]
+# 大少 2026-08-01: 加 alias `get_quote_context` (full name) 俾 services/futu_financials.py import
+# 保留 `get_quote_ctx` (短名) 以保持 backward compat
+get_quote_context = get_quote_ctx
+
+__all__ = ["SubscriptionManager", "QuoteHandler", "create_quote_handler", "get_quote_ctx", "get_quote_context"]
