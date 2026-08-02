@@ -39,6 +39,7 @@ import {
 } from '@dnd-kit/sortable'
 import { AppLayout } from '../../components/layout'
 import GroupCard from '../../components/group/GroupCard'
+import LanAccessPanel from '../../components/network/LanAccessPanel'  // 大少 2026-08-02 #9699 QW-5: LAN 訪問設定 panel
 import AddGroupModal from '../../components/group/AddGroupModal'
 import EditGroupModal from '../../components/group/EditGroupModal'
 import MoveStockModal from '../../components/group/MoveStockModal'
@@ -460,6 +461,11 @@ function HomePage() {
             </div>
           </SortableContext>
         </DndContext>
+
+        {/* 大少 2026-08-02 #9699 QW-5: LAN 訪問設定 panel — 顯示 MacBook IP
+            + frontend URL，方便其他 device (phone/tablet/laptop) 訪問。
+            Fetch /api/network/info (QW-2a API_BASE helper)。 */}
+        <LanAccessPanel />
       </div>
 
       <AddGroupModal
