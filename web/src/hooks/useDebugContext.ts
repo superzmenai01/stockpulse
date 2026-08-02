@@ -1,9 +1,9 @@
 // hooks/useDebugContext.ts — Fetch debug data + popularity status (大少 2026-07-24 Debug Panel)
 // Modular hook: separate fetch logic from UI
+// 2026-08-02 #9699 QW-2a: use central API_BASE from config/api
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-
-const API_BASE = 'http://localhost:18792';
+import { API_BASE } from '../config/api';
 
 export interface DebugStep {
   step: string;

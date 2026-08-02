@@ -9,11 +9,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { Leader } from '../types/algorithm';
+import { API_BASE } from '../config/api';
 
 // 大少 2026-07-26 #7566: SavedStock = full Leader snapshot
 export type SavedStock = Leader;
-
-const API_BASE = 'http://localhost:18792';
 
 export interface SavedRun {
   id: number;

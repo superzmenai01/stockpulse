@@ -1,5 +1,6 @@
 // Settings API Service
-const API_BASE = 'http://localhost:18792/api'
+// 2026-08-02 #9699 QW-2a: use central API_BASE from config/api
+import { API_BASE } from '../config/api'
 
 export async function fetchIndicatorSettings(): Promise<Record<string, any>> {
   const res = await fetch(`${API_BASE}/settings`)

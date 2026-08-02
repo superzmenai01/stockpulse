@@ -18,6 +18,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, Time, CandlestickSeries, HistogramSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts'
+import { klineUrl } from '../../config/api'
 import { useWebSocketContext } from '../../context'
 import { useIndicatorSettings } from '../../context/IndicatorSettingsContext'
 import ChartToolbar from './ChartToolbar'
@@ -745,7 +746,7 @@ export default function ChartContainer({
       if (start) params.set('start', start)
       if (end) params.set('end', end)
       
-      const url = `http://${window.location.hostname}:18792/api/kline?${params}`
+      const url = klineUrl(params)
       const res = await fetch(url)
       const data: ChartData = await res.json()
       

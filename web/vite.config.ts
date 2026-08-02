@@ -8,11 +8,11 @@ export default defineConfig({
     host: '0.0.0.0',  // 允許所有網絡接口訪問
     proxy: {
       '/api': {
-        target: 'http://localhost:18792',
+        target: `http://localhost:${process.env.BACKEND_PORT || 18792}`,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:18792',
+        target: `ws://localhost:${process.env.BACKEND_PORT || 18792}`,
         ws: true,
       },
     },
