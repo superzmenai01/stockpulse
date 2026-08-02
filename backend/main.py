@@ -1,8 +1,6 @@
 # StockPulse 主入口
 # 只負責啟動，唔好寫具體邏輯
 
-import socket
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,9 +19,11 @@ from api.debug import router as debug_router
 from api.saved_runs import router as saved_runs_router
 from api.llm_settings import router as llm_settings_router
 from api.as02 import router as as02_router
+from api.network import router as network_router
 from models.saved_runs import init_saved_runs_table
 from models.llm_settings import init_llm_settings_table
 from models.algorithm_dq_log import init_algorithm_dq_log_table
+from utils.network import detect_lan_ip
 from ws import router as ws_router, init_futu_connection
 
 # 確保日誌目錄存在
@@ -75,6 +75,7 @@ app.include_router(debug_router)  # already has prefix="/api/debug"
 app.include_router(saved_runs_router)  # already has prefix="/api/saved-runs"
 app.include_router(llm_settings_router)  # already has prefix="/api/llm-settings"
 app.include_router(as02_router)  # already has prefix="/api/as02"
+app.include_router(network_router)  # already has prefix="/api/network"
 app.include_router(ws_router, prefix="/ws")
 
 @app.get("/api/health")
@@ -85,38 +86,15 @@ async def health():
 # QW-4a (refactor #9699, 2026-08-02): 加 root-level /health endpoint，
 # 比 /api/health 多 LAN IP + backend_port + timestamp，方便其他 device / container
 # health check（特別係 frontend / miniapp 唔喺 localhost 嘅情況）。
-def _detect_lan_ip() -> str:
-    """優先用 socket.gethostbyname()（最快）；失敗 / 返 127.x 就 fallback 用
-    `ipconfig getifaddr en0`（macOS built-in，唔使額外 dep）。
-    最終 fallback 係 'unknown'，唔好 throw — health endpoint 一定要返 200。"""
-    try:
-        ip: str = socket.gethostbyname(socket.gethostname())
-        if ip and not ip.startswith("127."):
-            return ip
-    except Exception:
-        pass
-    try:
-        result = subprocess.run(
-            ["ipconfig", "getifaddr", "en0"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        ip2: str = result.stdout.strip()
-        if ip2:
-            return ip2
-    except Exception:
-        pass
-    return "unknown"
-
-
+# QW-5 (refactor #9699, 2026-08-02): _detect_lan_ip() 已抽出去 utils/network.py
+# 俾 /health 同 /api/network/info 共用 (DRY)。
 @app.get("/health")
 async def health_lan() -> dict[str, str | int]:
     """Root-level health check — 比 /api/health 多 LAN IP + port + ISO timestamp。
     任何 device / container health probe 都用呢個 endpoint。"""
     return {
         "status": "ok",
-        "mac_lan_ip": _detect_lan_ip(),
+        "mac_lan_ip": detect_lan_ip(),
         "backend_port": BACKEND_PORT,
         "timestamp": datetime.now(timezone.utc)
         .astimezone()
