@@ -271,4 +271,4 @@ if __name__ == '__main__':
     print(f"🚀 StockPulse Mini App Backend starting on port {PORT}")
     print(f"📂 Data file: {WATCHLIST_FILE}")
     print(f"🌐 Open http://localhost:{PORT} for the Mini App")
-    app.run(host='0.0.0.0', port=PORT, debug=False)
+    app.run(host='127.0.0.1', port=PORT, debug=False)
