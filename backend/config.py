@@ -1,6 +1,7 @@
 # StockPulse 配置模組
 # 所有配置集中係呢度，方便修改
 
+import os
 from pathlib import Path
 
 # 專案路徑
@@ -9,7 +10,9 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 # Server 配置
 HOST = "0.0.0.0"  # 允許外部訪問
-BACKEND_PORT = 18792
+# QW-3 (refactor #9699, 2026-08-02): BACKEND_PORT 由 env var override，
+# default 18792 fallback 保留向後兼容。Cast to int（uvicorn 需要 int port）。
+BACKEND_PORT: int = int(os.getenv("BACKEND_PORT", "18792"))
 FRONTEND_PORT = 3000
 
 # FutuOpenD 配置
