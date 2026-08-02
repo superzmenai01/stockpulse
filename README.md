@@ -1,6 +1,6 @@
 # StockPulse 📈
 
-> 股價分析 WebApp - 實時報價、組別管理、策略篩選、日曆
+> 股價分析 WebApp — 實時報價、組別管理、策略篩選、算法分析、日曆
 
 ---
 
@@ -16,11 +16,8 @@ cd stockpulse
 
 **Python（後端）：**
 ```bash
-# 創建虛擬環境
 python3 -m venv ~/.futu_venv
-
-# 安裝富途 API
-~/.futu_venv/bin/pip install futu-api
+~/.futu_venv/bin/pip install -r requirements.txt
 ```
 
 **Node.js（前端）：**
@@ -34,13 +31,13 @@ npm install
 
 ### 4. 啟動服務
 
-**終端 1 - 後端：**
+**終端 1 — 後端：**
 ```bash
 cd stockpulse/backend
 ~/.futu_venv/bin/python3 main.py
 ```
 
-**終端 2 - 前端：**
+**終端 2 — 前端：**
 ```bash
 cd stockpulse/web
 npm run dev
@@ -57,23 +54,46 @@ http://localhost:3000
 
 ```
 stockpulse/
-├── README.md              # 本文件
-├── PROJECT_SPEC.md        # 完整項目規格（詳細設計）
-├── backend/               # 後端（Python FastAPI）
-│   ├── main.py           # 入口
-│   ├── config.py         # 配置
-│   ├── futu_conn/        # 富途連接
-│   ├── ws/               # WebSocket
-│   └── services/         # 公共服務
+├── README.md                  # 本文件 (1-page 入口)
+├── PROJECT_SPEC.md            # 完整項目規格書
+├── ARCHITECTURE.md            # 系統架構圖 (新增 2026-08)
+├── API.md                     # API 端點 inventory (新增 2026-08)
 │
-└── web/                  # 前端（React + Vite）
-    ├── src/
-    │   ├── components/  # 組件
-    │   ├── pages/        # 頁面
-    │   ├── hooks/        # Hooks
-    │   ├── context/      # Context
-    │   └── services/     # API 服務
-    └── package.json
+├── backend/                   # FastAPI 後端
+│   ├── main.py                # 入口 (port 18792)
+│   ├── config.py
+│   ├── api/                   # HTTP routes (11 modules)
+│   ├── services/              # 業務邏輯 (7 modules: AS02 analyzer, encryption, event_bus, futu_financials, kline_cache, web_search)
+│   ├── llm/                   # LLM Provider 抽象層 (base / factory / custom)
+│   ├── models/                # SQLAlchemy models (8 tables)
+│   ├── futu_conn/             # 富途行情 (handler / subscription)
+│   ├── ws/                    # WebSocket (manager / broadcaster)
+│   └── tests/
+│
+├── web/                       # React + Vite 前端
+│   └── src/
+│       ├── pages/             # 13 頁 (Home, Watchlist, Strategy, AlgorithmStrategy, Library, Settings, Calendar, Login, etc.)
+│       ├── components/        # 11 類組件 (algorithm / chart / group / strategy / library / ...)
+│       ├── hooks/             # Custom React hooks
+│       ├── context/           # React Context (Auth / Stock / WebSocket / Theme)
+│       ├── services/          # API service layer
+│       └── types/
+│
+├── miniapp/                   # Telegram Bot (OpenD 整合)
+│   ├── backend/main.py
+│   ├── bot_command.py
+│   └── frontend/              # 小程序前端
+│
+├── docs/                      # 深度規格 / 學習筆記
+│   ├── ALGORITHM_SPECS.md     # Algorithm master index (AS-XX)
+│   ├── STRATEGY_CONCEPTS.md   # Strategy concepts (EW 等)
+│   ├── FUTU_API_LEARN.md      # Futu API 學習筆記
+│   ├── LIGHTWEIGHT_CHARTS_LEARN.md
+│   └── CHART_PLAN.md
+│
+├── data/                      # 數據 (transcripts / etc.)
+├── requirements.txt
+└── PROJECT_SPEC.md
 ```
 
 ---
@@ -82,11 +102,117 @@ stockpulse/
 
 | 服務 | Port | 說明 |
 |------|------|------|
-| Backend (backend) | 18792 | FastAPI 後端 |
-| Frontend (web) | 3000 | Vite 開發服務器 |
+| Backend (FastAPI) | 18792 | 後端 + WebSocket `/ws/quote` |
+| Frontend (Vite) | 3000 | 前端 dev server |
 | 富途 OpenD | 11111 | 行情數據源 |
+| Miniapp Backend | 18793 | Telegram bot API |
 
-**注意：** Backend 監聽 `0.0.0.0`，可從手機訪問
+Backend 監聽 `0.0.0.0`，可從手機 / 其他機器訪問。
+
+> 📘 想知點解咁設定 / LAN 訪問詳情 → 睇下面「🌐 其他電腦訪問 StockPulse」section
+> 📘 Port 完整 source-of-truth → `~/.openclaw/workspace-main/PORTS.md`
+
+---
+
+## 🌐 其他電腦訪問 StockPulse
+
+> 想喺屋企用 iPad / 第二部 Mac / Windows PC 訪問 StockPulse？跟住以下步驟。
+
+### Step 1 — 確認兩個設備同一個 LAN
+
+兩個設備要**駁緊同一個 WiFi router**（同一個 subnet，例如都係 `192.168.1.x`）。
+
+- ✅ 同屋企 WiFi → OK
+- ❌ 一個係屋企 WiFi，另一個用 4G → 唔得（唔同 subnet）
+- ❌ 一個係公司 WiFi，另一個係屋企 → 唔得
+
+### Step 2 — 攞 MacBook 嘅 LAN IP
+
+喺 MacBook 開 Terminal，跑：
+
+```bash
+ipconfig getifaddr en0
+```
+
+結果會係類似：
+
+```
+192.168.1.64
+```
+
+呢個就係你 MacBook 嘅 LAN IP。記住佢（例如 `192.168.1.64`）。
+
+> 💡 想確認網絡通唔通？可以由其他電腦 `ping 192.168.1.64`。
+
+### Step 3 — 喺其他電腦開瀏覽器
+
+喺 iPad / 第二部電腦嘅瀏覽器網址列輸入：
+
+```
+http://192.168.1.64:3000/
+```
+
+（將 `192.168.1.64` 換成你 Step 2 攞到嘅 IP）
+
+撳 Enter → 應該見到 StockPulse 主頁 ✅
+
+### Step 4 — 訪問唔到？Check macOS Firewall
+
+如果其他電腦開唔到個 URL（瀏覽器轉緊圈圈 / timeout），通常係 macOS Firewall 擋咗：
+
+1. **系統設定** → **網絡** → **Firewall**
+2. 撳 **Firewall Options...**
+3. 加入以下 apps 為 **Allow incoming connections**：
+   - `Python`（StockPulse backend 喺度）
+   - `node`（Vite frontend dev server 喺度）
+4. 或者**暫時 disable Firewall**（只係 development 環境先咁做，唔好 production disable）
+
+加完之後重新試 Step 3。
+
+### Step 5 — Backend 自動顯示 LAN URL
+
+StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 然後顯示畀你參考：
+
+- 主頁右上有個 **LanAccessPanel** panel，自動 fetch `/api/network/info` 並顯示 LAN URL
+- 或者手動 query：`curl http://localhost:18792/api/network/info`
+- Response 例：
+
+  ```json
+  {
+    "backend_port": 18792,
+    "mac_lan_ip": "192.168.1.64",
+    "frontend_port": 3000,
+    "frontend_url_local": "http://localhost:3000/",
+    "frontend_url_lan": "http://192.168.1.64:3000/",
+    "other_devices_can_reach": true,
+    "miniapps": {
+      "miniapp_backend_port": 18793,
+      "miniapp_local_only": true
+    }
+  }
+  ```
+
+  直接 copy `frontend_url_lan` 落其他電腦嘅瀏覽器就得。
+
+### 🛟 常見問題
+
+| 問題 | 解法 |
+|------|------|
+| 其他電腦 timeout / 連唔到 | Step 4 — Check macOS Firewall |
+| `ipconfig getifaddr en0` 冇 output | 用 WiFi 嘅話 interface 可能唔叫 `en0`。試 `ifconfig \| grep "inet "` 睇全部 IP |
+| 攞到嘅 IP 係 `192.168.x.x` 但其他電腦唔通 | 兩個設備唔同 subnet，例如一個係 guest WiFi |
+| 用 VPN 時 | VPN 會將所有 traffic 過 VPN，break LAN access。暫時 disconnect VPN |
+| LAN IP 會變嗎？ | DHCP lease 一般幾日～幾星期。如果斷 WiFi / 重啟 router 可能會變，要重新跑 Step 2 |
+
+### 🔒 邊啲 port 公開邊啲唔公開？
+
+| Port | 服務 | 公開？ |
+|------|------|--------|
+| **3000** | Frontend (Vite) | ✅ 公開（你其他電腦要訪問嘅就係呢個）|
+| **18792** | Backend (FastAPI) | ✅ 公開（同 LAN 訪問）|
+| **18793** | Miniapp Backend | ❌ 鎖本地（只 MacBook 自己用，安全考量）|
+
+詳見 `~/.openclaw/workspace-main/PORTS.md` 嘅 PUBLIC / LOOPBACK 分類。
 
 ---
 
@@ -94,23 +220,81 @@ stockpulse/
 
 | 層面 | 技術 |
 |------|------|
-| 前端框架 | React + Vite + Ant Design |
-| 後端框架 | Python FastAPI |
-| 實時數據 | WebSocket + FutuOpenD |
-| 數據庫 | SQLite（待實現） |
-| K線圖 | TradingView Lightweight Charts（待實現） |
+| **Frontend** | React 18 + Vite 5 + Ant Design 5 + TypeScript |
+| **Backend** | Python 3.10+ + FastAPI + SQLAlchemy |
+| **Database** | SQLite (production-grade schema 8 tables) |
+| **Real-time data** | WebSocket + FutuOpenD (富途 API) |
+| **K 線圖** | TradingView Lightweight Charts |
+| **LLM 抽象層** | `backend/llm/` (provider-agnostic, factory pattern) |
+| **Algorithms** | AS-XX series (見 `docs/ALGORITHM_SPECS.md`) |
+| **Miniapp** | Telegram Bot + 小程序 |
+| **外部依賴** | MiniMax / Kimi / Gemini 等多 LLM provider |
 
 ---
 
-## 📖 詳細規格
+## 📖 文檔地圖 (Documentation Map)
 
-**完整設計文檔：** 見 `PROJECT_SPEC.md`
+新 AI 接手請按以下順序讀：
 
-包含：
-- UI/UX 設計
-- 數據庫 Schema
-- 組件架構
-- 開發路線圖
+| 順序 | 文檔 | 用途 |
+|------|------|------|
+| 1 | 本文件 (README.md) | 入口 + Quick start |
+| 2 | `PROJECT_SPEC.md` | 完整設計規格書 (設計原則 / 結構 / UI / Schema) |
+| 3 | `ARCHITECTURE.md` | 系統架構 (3-tier + data flow) ⭐ 新 |
+| 4 | `API.md` | 全部 HTTP endpoint inventory ⭐ 新 |
+| 5 | `docs/ALGORITHM_SPECS.md` | Algorithm 規格 master index (AS-XX) |
+| 6 | `docs/STRATEGY_CONCEPTS.md` | 策略概念 (Elliott Wave 等) |
+| 7 | `docs/FUTU_API_LEARN.md` | Futu API 細節 |
+
+---
+
+## 🆕 主要功能模塊 (2026-08 狀態)
+
+### 🧠 Algorithm System (AS-XX)
+- **入口：** `/algorithms` 頁
+- **核心算法：** AS02 (公司質素分析) — `backend/services/as02_analyzer.py`
+- **Pipeline：** 股票清單 → 財務數據 → LLM 分析 → 結果入庫
+- **結果庫：** `/library` 頁 (`/api/saved-runs`)
+
+### ⚙️ Settings Page
+- **入口：** `/settings`
+- **功能：** LLM provider 切換 / API key 管理 / OpenD 設定
+- **API：** `/api/llm-settings/*` (6 endpoints) + `/api/settings/*`
+
+### 🤖 LLM Provider Abstraction Layer
+- **位置：** `backend/llm/`
+- **支援：** MiniMax / Kimi / Gemini / custom OpenAI-compatible
+- **API：** `AbstractProvider` interface (`base.py`)
+- **Factory：** `factory.py` 按 `provider_id` 選擇 adapter
+- **Custom：** `custom.py` for OpenAI-compatible endpoints
+
+### 📚 Library / Saved Runs
+- **入口：** `/library`
+- **功能：** Algorithm 結果儲存 + 重新排序 + pin + view reason
+- **API：** `/api/saved-runs/*` (9 endpoints)
+
+### 📊 Strategy System
+- **入口：** `/strategy`
+- **支援：** AI mode (自然語言) + Code mode (JSON)
+- **功能：** AND/OR 組合 / 歷史結果 / 日曆檢視
+
+### 🪙 Miniapp (Telegram Bot)
+- **位置：** `miniapp/`
+- **功能：** Telegram 內即時報價 + 策略觸發 + 簡易查詢
+- **Backend：** `miniapp/backend/main.py`
+
+---
+
+## 📅 近期重要更新 (2026-05 → 2026-08)
+
+| 日期 | 變更 |
+|------|------|
+| 2026-05 | 數據庫 schema 落地 (8 tables) + 後端 API 全 implement |
+| 2026-06 | LLM Provider Abstraction Layer + Settings Page |
+| 2026-07 | AS02 algorithm 上線 + Library/Saved Runs page + StrategyPage 大改版 |
+| 2026-07 | miniapp 整合 (Telegram bot) |
+| 2026-08 | Fallback chain + retry policy (LLM 穩定性) |
+| 2026-08 | README + PROJECT_SPEC + ARCHITECTURE + API 文檔重整 (本文件) |
 
 ---
 
@@ -118,22 +302,16 @@ stockpulse/
 
 ### 啟動服務
 ```bash
-# 終端 1 - 後端
+# 終端 1 — 後端
 cd stockpulse/backend
 ~/.futu_venv/bin/python3 main.py
 
-# 終端 2 - 前端
+# 終端 2 — 前端
 cd stockpulse/web
 npm run dev
 ```
 
-### 測試 WebSocket
-```bash
-cd stockpulse
-~/.futu_venv/bin/python3 test_ws_debug.py
-```
-
-### 運行後端測試
+### 跑後端測試
 ```bash
 cd stockpulse
 ~/.futu_venv/bin/python3 -m pytest backend/tests/ -v
@@ -146,6 +324,12 @@ git commit -m "描述"
 git push origin main
 ```
 
+### Algorithm Specs Sync
+```bash
+# Sync algorithm specs (cron-driven, also manually)
+~/.openclaw/scripts/sync_algorithm_specs.sh
+```
+
 ---
 
 ## 🆘 疑難排解
@@ -154,27 +338,34 @@ git push origin main
 A: 檢查後端是否運行：`lsof -i :18792`
 
 ### Q: 富途數據獲取失敗
-A: 確保富途 OpenD 正在運行，Port 11111
+A: 確保富途 OpenD 正在運行，Port `11111` (`lsof -i :11111`)
 
 ### Q: npm install 失敗
-A: 刪除 node_modules 和 package-lock.json，重新 npm install
+A: 刪除 `node_modules` + `package-lock.json`，重新 `npm install`
 
 ### Q: Python 模組找不到
-A: 確保使用正確的 Python：`~/.futu_venv/bin/python3`
+A: 用對 venv 的 Python：`~/.futu_venv/bin/python3`
+
+### Q: LLM call 失敗 (network error)
+A: 見 `backend/llm/` — fallback chain 已 setup (`minimax/MiniMax-M3-highspeed → MiniMax-M3 → MiniMax-M2.7`)，3 retry × 2s backoff
 
 ---
 
-## 📝 AI 開工指引
+## 📝 AI 開工指引 (接手必讀)
 
 當你被打開並被要求繼續 StockPulse 項目時：
 
-1. **首先閱讀** `README.md` 和 `PROJECT_SPEC.md`
-2. **了解當前狀態**：查看 `memory/stockpulse/` 目錄
-3. **確認方向**：問大少想做什么
-4. **动前確認**：任何改動前先解釋，確認後才做
-5. **測試**：每做一步都要測試，完全成功後才下一個
-6. **記錄**：重要決定和發現要記錄到 memory
+1. **先讀 `README.md`** (本文件) — 入口 + Quick start
+2. **跟住讀 `ARCHITECTURE.md`** — 理解 3-tier 架構 + data flow
+3. **再讀 `PROJECT_SPEC.md`** — 完整設計規格 + 設計原則
+4. **查 `API.md`** — 知道 endpoint 點用
+5. **睇 `docs/ALGORITHM_SPECS.md`** — Algorithm 規格 (AS-XX series)
+6. **睇 `~/.openclaw/workspace-main/STOCKPULSE_REFERENCE.md`** — 進階教訓 + 重要 rules
+7. **確認方向** — 問大少想做什么
+8. **動前確認** — 任何改動前先解釋，確認後才做
+9. **測試** — 每做一步都要測試，完全成功後才下一個
+10. **記錄** — 重要決定和發現要記錄到 `~/.openclaw/workspace-main/memory/`
 
 ---
 
-_最後更新：2026-04-27_
+_最後更新：2026-08-02 (大少 / AI assistant sync)_
