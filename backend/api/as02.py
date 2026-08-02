@@ -2,15 +2,18 @@
 AS-02 公司質素分析 API — 大少 2026-08-01 #9132
 
 Endpoint:
-- POST /api/as02/run  接受 stock codes, 跑 7 個 pipeline step, 儲存合格入 algorithm_results
+- POST /api/as02/run  接受 stock codes, 跑 7 個 pipeline step, log DQ 入 algorithm_dq_log
 
 Apply SPEC.md 嘅 AS-02 entry:
 - 兩入口 (A = Strategy page, B = Result library) 共用呢個 endpoint
 - Empty list → 400
 - > 10 stocks → 400
-- 全部合格 → 儲存喺 saved_algorithm_runs
 - 唔合格 → log 入 algorithm_dq_log
-- 混合 → 合格儲存, 唔合格 log
+- 合格 → log 入 algorithm_dq_log (DQ trace)
+- 儲存 (saved_algorithm_runs) 改為 user 手動點前端「💾 儲存」button:
+  - 大少 2026-08-02 #9700: 移除原本嘅 auto-save — backend 唔再自動 save_run()
+  - User flow: 執行 AS-02 → 睇結果 → 點「💾 儲存」button → SaveRunModal → confirm → POST /api/saved-runs
+  - 影響: /api/as02/run 嘅 response.run_id 永遠係 None
 """
 
 from __future__ import annotations
@@ -24,7 +27,6 @@ from pydantic import BaseModel, Field
 
 from services.as02_analyzer import analyze_stocks, AS02Error
 from models.algorithm_dq_log import log_dq_batch
-from models.saved_runs import save_run
 
 # 大少 2026-08-01 #9132: 加 file logger 捕 traceback
 logger = logging.getLogger(__name__)
@@ -58,6 +60,18 @@ class AS02StockResult(BaseModel):
     data_sources: List[str]
     financial_data: dict
     run_id: Optional[int] = None
+    # 大少 2026-08-02 #9700 follow-up: 令 ViewRunModal 顯示現價/變幅/市值/換手率/PE/PB
+    # 唔再顯示「—」。analyze_one_stock (backend/services/as02_analyzer.py) 已 populate
+    # 呢啲 fields, 但 Pydantic schema 原本冇 declare → 自動 drop 走 → frontend 收空。
+    # Fix: 加呢啲 fields + 默認 0.0 (兜底, 即 snapshot fetch 失敗時 render 0)。
+    # ViewRunModal 嘅 formatMcap/formatTurnover/formatPrice 對 0 自動顯示「—」,
+    # 但有真實數據時 (例 price=75.20) 就會正確 render。
+    price: float = 0.0
+    change_pct: float = 0.0
+    mcap: float = 0.0
+    turnover: float = 0.0
+    pe: float = 0.0
+    pb: float = 0.0
 
 
 class AS02RunResponse(BaseModel):
@@ -84,8 +98,10 @@ async def run_as02(req: AS02RunRequest) -> AS02RunResponse:
     3. Web Search
     4. LLM Analysis
     5. Weighted Scoring
-    6. Log DQ
-    7. If qualified: save to algorithm_results
+    6. Log DQ (always — qualified + disqualified 全部 record 入 algorithm_dq_log)
+    7. (2026-08-02 #9700 移除) Auto-save 落 saved_algorithm_runs：改為 user 手動點前端💾
+
+    Response 嘅 `run_id` 永遠係 None，user 要儲存嘅話自行 POST /api/saved-runs。
     """
     logger.info(f"[AS-02] POST /run called with {len(req.stocks)} stocks: {req.stocks}")
 
@@ -115,58 +131,17 @@ async def run_as02(req: AS02RunRequest) -> AS02RunResponse:
     qualified = [r for r in results if r["classification"] == "qualified"]
     disqualified = [r for r in results if r["classification"] == "disqualified"]
 
-    # Step 7: Save qualified to algorithm_results
-    run_id = None
-    if qualified:
-        try:
-            saved = save_run(
-                algorithm_id="AS-02",
-                algorithm_name="公司質素分析",
-                stocks=[r["code"] for r in qualified],
-                # 大少 2026-08-01 #9446: populate all 4 saved_stocks fields from r dict (real OpenD data)
-                # Fix 2: analyze_one_stock return dict now includes price/change_pct/mcap/turnover/pe/pb
-                #         (Phase F fix futu_conn safe_get_snapshot 真係攞到 fields from OpenD)
-                #         Previously hardcoded 0 → ViewRunModal showed "—" for all 4 columns
-                saved_stocks=[
-                    {
-                        "code": r["code"],
-                        "name": r.get("name", ""),
-                        "price": r.get("price", 0),
-                        "change_pct": r.get("change_pct", 0),
-                        "mcap": r.get("mcap", 0),
-                        "turnover": r.get("turnover", 0),
-                        "plate_code": "",
-                        "plate_name": "",
-                        "score": r.get("score", 0),
-                        "mcap_rank": 0,
-                        "volume_rank": 0,
-                        "reason": " / ".join(r.get("reasons", [])),
-                        # AS-02 specific fields (extra)
-                        "classification": r.get("classification"),
-                        "breakdown": r.get("breakdown", {}),
-                        "analysis_text": r.get("analysis_text", ""),
-                        "pe": r.get("pe", 0),
-                        "pb": r.get("pb", 0),
-                    }
-                    for r in qualified
-                ],
-                metadata={
-                    "qualified_count": len(qualified),
-                    "disqualified_count": len(disqualified),
-                    "total": len(results),
-                    "source": "as02_v1",
-                },
-            )
-            run_id = saved["id"]
-            # Update run_id for each qualified result
-            for r in qualified:
-                r["run_id"] = run_id
-            logger.info(f"[AS-02] Saved run {run_id} with {len(qualified)} qualified stocks")
-        except Exception as e:
-            logger.error(f"[AS-02] save_run failed: {e}")
-            # 儲存 fail 唔應該 block 結果返回
+    # 大少 2026-08-02 #9700: 移除 auto-save — 改為 user 手動點前端「💾 儲存」button
+    # - 原本呢度會直接 save_run(...)，導致 execute 完就自動落 saved_algorithm_runs
+    # - 改為：run_id 永遠 None，前端「💾 儲存」button → SaveRunModal → POST /api/saved-runs
+    # - Stage 行為：合格 results 仍會 log 入 algorithm_dq_log (Step 6) 保留分析記錄
+    run_id: Optional[int] = None
+    logger.info(
+        f"[AS-02] Analysis done: {len(qualified)} qualified / {len(disqualified)} disqualified. "
+        f"Auto-save disabled (大少 2026-08-02 #9700) — user 需手動點前端💾先儲存。"
+    )
 
-    # Step 6: Log DQ (for all - qualified + disqualified)
+    # Step 6: Log DQ (for all - qualified + disqualified，保留分析記錄)
     try:
         log_entries = []
         for r in results:
@@ -180,7 +155,7 @@ async def run_as02(req: AS02RunRequest) -> AS02RunResponse:
                 "financial_data": r.get("financial_data", {}),
                 "analysis_text": r.get("analysis_text"),
                 "data_sources": r.get("data_sources", []),
-                "run_id": run_id,
+                "run_id": run_id,  # 永遠 None (大少 2026-08-02 #9700 移除 auto-save)
             })
         log_dq_batch(log_entries)
     except Exception as e:

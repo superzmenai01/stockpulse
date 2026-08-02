@@ -253,7 +253,8 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 ### 🧠 Algorithm System (AS-XX)
 - **入口：** `/algorithms` 頁
 - **核心算法：** AS02 (公司質素分析) — `backend/services/as02_analyzer.py`
-- **Pipeline：** 股票清單 → 財務數據 → LLM 分析 → 結果入庫
+- **Pipeline：** 股票清單 → 財務數據 → LLM 分析 → 結果顯示（auto DQ log）
+- **儲存：** User 手動點前端「💾 儲存 N 隻合格股票」button → SaveRunModal → POST `/api/saved-runs`（大少 #9700 永久 rule：runtime endpoint 唔可以 auto-save）
 - **結果庫：** `/library` 頁 (`/api/saved-runs`)
 
 ### ⚙️ Settings Page
@@ -295,6 +296,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 | 2026-07 | miniapp 整合 (Telegram bot) |
 | 2026-08 | Fallback chain + retry policy (LLM 穩定性) |
 | 2026-08 | README + PROJECT_SPEC + ARCHITECTURE + API 文檔重整 (本文件) |
+| 2026-08 | AS-02 移除 auto-save: 改為 user 手動點「💾 儲存」(大少 #9700) |
 
 ---
 

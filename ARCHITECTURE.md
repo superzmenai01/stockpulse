@@ -233,10 +233,20 @@ skip                          calculate_valuation_score()
           ↓
 [all stocks processed]
           ↓
-backend/api/as02.py saves to saved_runs table
+backend/api/as02.py logs to algorithm_dq_log table (Python 寫 DQ trace - qualified + disqualified 全部)
           ↓
-[Frontend gets response, navigates to /library]
+[Frontend 顯示結果 — 唔寫入 saved_runs]
+          ↓
+[User 手動點「💾 儲存 N 隻合格股票」button]
+          ↓
+[Frontend POST /api/saved-runs { algorithm_id: "AS-02", stocks: [...], saved_stocks: [...] }]
+          ↓
+backend/api/saved_runs.py::save_run()
+          ↓
+[Frontend navigates to /library]
 ```
+
+> **📌 大少 2026-08-02 #9700 永久 rule:** AS-02 runtime endpoint (`/api/as02/run`) **唔可以** 寫入 `saved_algorithm_runs` table。execute 同 persist 行為唔可以 binding 死於單一 trigger — user 必須喺 frontend 手動點「💾 儲存」先入庫。原因：避免 execute 與 persist 行為 binding 死於單一 trigger,方便 user retry / refine 之後再決定儲存與否。詳細見 `ALGORITHM_SPECS.md` AS-XX 段嘅 none-auto-save rule。
 
 ### AS02 函數 (`backend/services/as02_analyzer.py`)
 
