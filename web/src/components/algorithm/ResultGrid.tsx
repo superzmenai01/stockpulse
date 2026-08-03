@@ -150,9 +150,14 @@ export default function ResultGrid({ leaders, loading, hasRun, errorMessage, can
                 <Text className={styles.plateMain} title={stock.plate_code}>
                   {stock.plate_name || stock.plate_code}
                 </Text>
-                {/* 大少 #9920 (2026-08-03): reason 改去 stock_reasons table + PopUp.
-                    ResultGrid 唔再 render inline reason text — user 撳股票 row 入
-                    ViewRunModal (Library) 後睇 ReasonPopUp. */}
+                {/* 大少 #10097 (2026-08-04): AS-01 「結果」畫面 inline render 簡單 plain text reason
+                    (e.g. 「市值 top 1 (5324億) / 成交 top 1」)。AS-02 仍用 stock_reasons table + PopUp
+                    架構 (大少 #9920)。Conditional render — 只有 saved_stocks[i].reason 有值先 display. */}
+                {stock.reason && (
+                  <Text type="secondary" className={styles.reasonMain}>
+                    {stock.reason}
+                  </Text>
+                )}
               </span>
               <span className={`${styles.price} ${styles.alignRight}`} style={{ color: 'rgba(255, 255, 255, 0.88)' }}>
                 {stock.price > 0 ? stock.price.toFixed(2) : '—'}

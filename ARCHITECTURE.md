@@ -748,3 +748,32 @@ _最後更新：2026-08-03 (LaunchAgent 永久 fix: Vite + logrotate)_
 3. **Cross-cutting helpers** (`_score_class`, `_width_class`): Duplicated 喺 `models/plate.py` 同 `services/as02_analyzer.py` — 唔 extract 避免 scope creep (將來可抽 `utils/scoring.py`)。
 4. **Generic v2 template pattern**: 每個 algorithm 都用同一個 stock_reasons table (title + html + score_class + width_class) — 將來 AS-03/AS-04 跟同一個 pattern。
 
+
+---
+
+## 📋 Hybrid Reason Display — AS-01 vs AS-02 (大少 #10097, 2026-08-04)
+
+### Decision Matrix
+
+| 維度 | AS-01 板塊龍頭股 | AS-02 公司質素分析 |
+|---|---|---|
+| Reason 複雜度 | 簡單 (~30 chars plain text) | 複雜 (~1500 chars HTML with bar chart) |
+| Data source | `_generate_reason()` 喺 AS-01 ranking | `build_as02_reason_html()` + LLM analysis |
+| 即時 inline display | ✅ 喺 ResultGrid (ResultGrid.tsx line ~150) | ❌ 用 AS02StockCard panel 顯示分數 |
+| Library PopUp | ✅ stock_reasons table (build_as01_reason_html v1) | ✅ stock_reasons table (build_as02_reason_html v2) |
+| Title 喺 PopUp | "板塊龍頭股篩選" | "公司質素分析篩選" |
+
+### Rationale (大少 #10097)
+
+AS-01 reason ("市值 top 1 (5324億) / 成交 top 1") 太短太簡單，inline display 已經夠 clear。PopUp 反而 over-engineered (需 user 額外 click 睇)。
+
+AS-02 reason 太複雜 (6 dimensions × score × LLM summary × 龍頭因素)，inline 顯示 會擠到 grid。所以用 stock_reasons table + PopUp。
+
+### Implementation Diff (大少 #10097, 1 file edit)
+
+`web/src/components/algorithm/ResultGrid.tsx`:
+- Added: `{stock.reason && <Text type="secondary">{stock.reason}</Text>}` conditional render
+- Comment: 大少 #10097 註明係 AS-01 inline，AS-02 仍用 stock_reasons PopUp (大少 #9920)
+- No backend changes (saved_stocks[i].reason 已經 populated by `_generate_reason()` 喺 AS-01 ranking)
+- No spec changes for stock_reasons table schema
+
