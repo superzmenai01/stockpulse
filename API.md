@@ -340,7 +340,7 @@ Health check endpoint.
 
 | Method | Endpoint | Purpose | Body | Response |
 |---|---|---|---|---|
-| `GET` | `/api/stock-reasons?code=HK.00981` | List active reasons for stock (newest first) | — | `{reasons: [...], count: N}` |
+| `GET` | `/api/stock-reasons?code=HK.00981&source_run_id=86` | List active reasons for stock (newest first) — `source_run_id` enables per-run scoping + 每個 reason 加 `is_stale` runtime flag (大少 #10144 Option C) | — | `{reasons: [...], count: N}` |
 | `GET` | `/api/stock-reasons/{id}` | Single reason by id | — | `ReasonEntry` |
 | `POST` | `/api/stock-reasons` | Create (sanitize + size check + UNIQUE dedupe) | `{code, source_type, source_ref, title, html, source_run_id?}` | `ReasonEntry` |
 | `PUT` | `/api/stock-reasons/{id}` | Update title/html | `{title?, html?}` | `ReasonEntry` |
@@ -348,7 +348,8 @@ Health check endpoint.
 
 ### Query Parameters
 
-- `code` (required for list) — Stock code, e.g. `HK.00981`
+- `code` (optional if `source_run_id` provided) — Stock code, e.g. `HK.00981`
+- `source_run_id` (optional, 大少 #10103/#10144 per-run scoped display) — SQL filter `code IN (run's saved_stocks)`, 每個 response reason 加 `is_stale` runtime flag (跨-run + 跨-algorithm = stale). 至少要提供 `code` 或 `source_run_id` 其中一個, 否則 400。
 - `include_inactive` (optional, default false) — Show soft-deleted for audit
 
 ### Request/Response Schemas
@@ -365,6 +366,13 @@ interface ReasonEntry {
   created_at: string;
   updated_at: string;
   is_active: boolean;
+  /**
+   * 大少 #10144 Option C: is_stale runtime flag (computed when source_run_id query param provided).
+   * - is_stale = (this.source_run_id != caller_run) AND (this.source_ref != caller_algo)
+   * - Caller (UI) 應該 filter is_stale=true reasons out before render (e.g. ReasonCell filter)
+   * - 如果 caller 唔傳 source_run_id, 全部 is_stale = false (no context)
+   */
+  is_stale?: boolean;
 }
 ```
 
@@ -410,6 +418,7 @@ interface ReasonEntry {
 
 | 日期 | 改動 | 大少 reference |
 |---|---|---|
+| 2026-08-04 | **Option C is_stale flag**: `list_reasons_filtered` 改 return all + 每個 reason 加 `is_stale` runtime flag (跨-run + 跨-algorithm = stale); UI filter stale。取代 f25d287f 嘅 source_ref hard filter (失去 accumulation)。 | 大少 #10144 |
 | 2026-08-04 | **v2 UX**: `build_as02_reason_html()` 改 emit bar chart (取代 table) + 中文 labels + 顏色 by score + class-based widths (w-10 ~ w-100) | 大少 #10031 |
 | 2026-08-04 | **CSS Module `:global()` rule**: `ReasonPopUp.module.css` 加 32 個 `:global()` wrappers (innerHTML compat) | 大少 #10031, fix #10047 |
 | 2026-08-04 | **Backend restart**: New PID 7630 listening on 18792 (started 00:22:20) — 載入所有今日寫嘅新 code | 大少 #9920 |

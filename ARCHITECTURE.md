@@ -823,9 +823,13 @@ AS-02 reason 太複雜 (6 dimensions × score × LLM summary × 龍頭因素)，
 
 ---
 
-## 📋 ViewRunModal Per-Run Scoped Query — Refined (大少 #10103 + smoke test feedback)
+## 📋 ViewRunModal Per-Run Scoped Query — Option C (大少 #10144, 2026-08-04 07:03)
 
-### Final Implementation (大少 #10103 + smoke test 16/18 pass)
+### Decision
+
+取代 commit `f25d287f` 嘅 source_ref hard filter，改用 **is_stale runtime flag** + UI filter。
+
+### Final Implementation (大少 #10144)
 
 ```python
 # backend/models/stock_reasons.py::list_reasons_filtered
@@ -838,39 +842,96 @@ if source_run_id is not None:
     run_algorithm_id = run_row["algorithm_id"]
     codes_in_run = [...]
     
-    where_parts = ["source_ref = ?"]  # ← source_ref filter!
-    params = [run_algorithm_id]
-    
+    # SQL filter: code IN run's stocks (唔 filter source_ref — 保留 accumulation)
+    where_parts: list[str] = []
+    params: list[Any] = []
     if code:
         where_parts.append("code = ?")
         params.append(code)
     else:
+        placeholders = ",".join(["?"] * len(codes_in_run))
         where_parts.append(f"code IN ({placeholders})")
         params.extend(codes_in_run)
+    where_parts.append("is_active = 1")
     
     rows = conn.execute(
         f"SELECT * FROM stock_reasons WHERE {' AND '.join(where_parts)} ORDER BY created_at DESC",
-        params
+        params,
     ).fetchall()
+    
+    # Compute is_stale per reason (Option C runtime flag)
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        d = _row_to_dict(row)
+        d["is_stale"] = (
+            d["source_run_id"] != source_run_id        # 跨-run
+            and d["source_ref"] != run_algorithm_id    # 跨-algorithm
+        )
+        results.append(d)
+    return results
 ```
 
-### Smoke Test Evidence (大少 #10103 verification)
+```typescript
+// web/src/components/library/ReasonCell.tsx (frontend filter)
+const { reasons, loading } = useStockReasons(code, runId);
+const visibleReasons = reasons.filter((r) => !r.is_stale);  // hide stale
+```
+
+### Data Flow Update (Option C)
+
+```
+[Frontend ViewRunModal #86 (AS-01, 10 stocks)]
+  ↓
+[ReasonCell v2 (code="HK.00981", runId=86)]
+  ↓
+[useStockReasons(code="HK.00981", sourceRunId=86)]
+  ↓
+[GET /api/stock-reasons?code=HK.00981&source_run_id=86]
+  ↓
+[Backend list_reasons_filtered(code, source_run_id=86)]
+  ↓
+[SELECT * FROM stock_reasons
+ WHERE code = HK.00981
+   AND is_active = 1
+ ORDER BY created_at DESC]
+ ↓
+[For each row, compute is_stale based on run #86 (AS-01) context]
+ ↓
+[Return reasons + is_stale flag (id=34 AS-01 NOT stale + id=1 AS-02 STALE)]
+ ↓
+[Frontend filter: visibleReasons = reasons.filter(r => !r.is_stale)]
+ ↓
+[Render 1 AS-01 title only (hide AS-02 stale)]
+```
+
+### Smoke Test Evidence (大少 #10144 verification, 5/5 pass)
 
 | Scenario | Expected | Actual | Result |
 |---|---|---|---|
-| AS-01 #86, HK.00981 | 1 reason (AS-01 only) | 1 reason (AS-01) | ✅ |
-| AS-01 #83, HK.00981 | 1 reason (AS-01 only) | 1 reason (AS-01) | ✅ |
-| code='HK.00981' (no run_id) | 2 reasons (cross-algorithm) | 2 reasons | ✅ |
-| No args | 0 reasons | 0 reasons | ✅ |
-| HK.99999 (not in run) + run_id | 0 reasons | 0 reasons | ✅ |
-| HTTP GET /api/stock-reasons?source_run_id=86 | 10 AS-01 reasons | 10 AS-01 reasons | ✅ |
-| HTTP GET ?code=HK.00981&source_run_id=86 | 1 AS-01 reason | 1 AS-01 reason | ✅ |
-| HTTP GET (no params) | 400 error | 400 error | ✅ |
+| AS-01 #86, HK.00981 | 1 visible (AS-01) + 1 stale (AS-02) | id=34 stale=False + id=1 stale=True | ✅ |
+| AS-01 #83, HK.00981 | 1 visible (AS-01) + 1 stale (AS-02) | id=34 stale=False + id=1 stale=True | ✅ |
+| AS-02 #52, HK.00981 | 1 stale (AS-01) + 1 visible (AS-02) | id=34 stale=True + id=1 stale=False | ✅ |
+| AS-02 #82, HK.00981 | 1 stale (AS-01) + 1 visible (AS-02) | id=34 stale=True + id=1 stale=False | ✅ |
+| code='HK.00981' (no run_id) | 全部 not stale (caller 冇 context) | id=34, id=1 stale=False | ✅ |
+| HK.99999 + run_id=86 | 0 reasons | 0 reasons | ✅ |
 
-### Key Architectural Decisions (Final)
+### Key Architectural Decisions (Option C)
 
-1. **Per-run source_ref isolation** (new): ViewRunModal 顯示 嗰個 run's algorithm 對應嘅 reasons only. **Smoke test 16/18 pass** — bug fixed.
-2. **Cross-algorithm accumulation**: NOT preserved per-run (大少 #10103 example 可能誤解). 將來如果大少 wants #89 同時顯示 AS-01 + AS-02, 需要再 refine design.
-3. **Frontend filter 已經 work** (大少 #10105): AS-02 panel `onSave={new Set(qualifiedStocks.map(s => s.code))}` 只 pass qualified stocks. Backend 唔需要 enforce qualification check.
-4. **Backward compat**: code-only query (no source_run_id) 仍然 work (cross-run cross-algorithm accumulation).
+1. **Per-run scoping (SQL)**: `code IN (run's stocks)` — 保留 accumulation, 唔做 source_ref hard filter。
+2. **is_stale runtime flag (Python)**: 每個 reason compute `is_stale = (cross-run) AND (cross-algo)` — runtime attribute, 唔做 DB column。
+3. **UI filter (Frontend)**: `visibleReasons = reasons.filter(r => !r.is_stale)` — 1 行 hide stale。
+4. **Cross-algorithm accumulation 保留**: 同一 stock 跨-run 同-algo 嘅 reasons 全部 not stale (visible)。例: HK.00981 AS-01 from #87 喺 AS-01 #86/#83 view 都 NOT stale (accumulation)。
+5. **Cross-algorithm stale hide**: HK.00981 AS-02 from #82 喺 AS-01 #86 view STALE (hide)；AS-01 from #87 喺 AS-02 #52/#82 view STALE (hide)。
+6. **Frontend filter 已經 work (大少 #10105)**: AS-02 panel `onSave` 只 pass qualified stocks. Backend 唔需要 enforce qualification check。
+7. **Backward compat**: code-only query (no source_run_id) 仍然 work, 全部 `is_stale=False` (e.g. AS-01「結果」頁面 inline render)。
+
+### f25d287f → 075ff644 Comparison
+
+| 項目 | f25d287f (hard filter) | 075ff644 (Option C) |
+|---|---|---|
+| Cross-algo cross-run stale leak | ❌ Filter 咗 | ❌ UI filter 咗 |
+| Cross-run same-algo accumulation | ❌ 失效 | ✅ 保留 |
+| Backend SQL 複雜度 | 中 (JOIN + filter) | 低 (code IN only) |
+| Frontend 邏輯 | 簡單 (顯示) | 加 1 行 filter |
+| Design intent | 嚴格 per-run algorithm | 保留 accumulation + hide stale |
 
