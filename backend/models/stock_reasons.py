@@ -217,22 +217,28 @@ def list_reasons_filtered(
     db_path: Optional[Path] = None,
 ) -> list[dict[str, Any]]:
     """
-    [大少 #10103 + #10105 fix] List reasons with per-run scoping + source_ref filter.
+    [大少 Option C, 2026-08-04 07:03] Per-run scoping + is_stale runtime flag.
 
-    Per-run scoping 邏輯 (refined after smoke test #10103):
-    1. 如果 source_run_id provided:
-       - 攞 saved_algorithm_runs #X 入面嘅 algorithm_id + saved_stocks codes
-       - Filter reasons:
-         * code IN (#X stocks) AND source_ref = (#X algorithm_id)
-       - 即是 ViewRunModal #86 (AS-01) 只顯示 AS-01 reasons for #86 stocks
-       - ViewRunModal #89 (AS-02) 只顯示 AS-02 reasons for #89 stocks
-       - 避免顯示 cross-run stale AS-02 reasons for HK.00981 喺 #86 ViewRunModal
+    取代之前 #10103 commit 嘅 source_ref hard filter。Option C 設計:
 
-    2. 如果 only code provided (e.g. AS-01 結果頁面 inline render, 沒有 runId):
-       - Fallback to code-only query (cross-run cross-algorithm accumulation)
-       - Backward compat for ReasonCell v2 冇 runId 嘅 use case
+    1. SQL filter: code IN (run's saved_stocks) — 唔 filter source_ref (保留 accumulation)
 
-    Returns: list of reason dicts, newest first
+    2. is_stale runtime 計算 (per reason):
+       - is_stale = (reason.source_run_id != current_run_id) AND
+                    (reason.source_ref != current_run.algorithm_id)
+       - 跨-run AND 跨-algorithm = stale
+       - 其他 cases (cross-run same-algo, same-run, cross-algo same-run) 全部 NOT stale
+
+    3. Caller (UI) 收到 reasons + is_stale flag，自己決定 hide 邊啲。
+
+    設計目標:
+       ✅ 保留跨-run same-algorithm accumulation (e.g. #83 + #86 都係 AS-01 → 兩條都見)
+       ✅ 避免跨-algorithm cross-run stale leak (e.g. #86 AS-01 ViewRunModal 唔見 #52 AS-02)
+       ✅ 跨-algorithm same-run 唔 stale (理論上 save 一個 run 唔會有跨 algo，但保留彈性)
+
+    Returns: list of reason dicts (含 is_stale field per item), newest first.
+    如果 caller 冇傳 source_run_id (e.g. AS-01 「結果」頁面 inline render),
+    全部 reasons 都係 is_stale=False (冇 caller context 點樣判定 stale)。
     """
     if db_path is None:
         db_path = DEFAULT_DB_PATH
@@ -268,18 +274,16 @@ def list_reasons_filtered(
             if not codes_in_run:
                 return []
 
-            # 大少 #10103 fix: source_ref filter 嗰個 run's algorithm
-            where_parts: list[str] = ["source_ref = ?"]
-            params: list[Any] = [run_algorithm_id]
+            # Option C: SQL filter 淨係 code IN run's stocks (唔 filter source_ref — 保留 accumulation)
+            where_parts: list[str] = []
+            params: list[Any] = []
 
             if code:
-                # Caller 有指定單一 stock code → intersect
-                where_parts.append("code = ?")
-                params.append(code)
                 if code not in codes_in_run:
                     return []  # code 唔喺 嗰個 run 入面
+                where_parts.append("code = ?")
+                params.append(code)
             else:
-                # Filter by all codes in run
                 placeholders = ",".join(["?"] * len(codes_in_run))
                 where_parts.append(f"code IN ({placeholders})")
                 params.extend(codes_in_run)
@@ -291,8 +295,22 @@ def list_reasons_filtered(
                 f"SELECT * FROM stock_reasons WHERE {' AND '.join(where_parts)} ORDER BY created_at DESC",
                 params,
             ).fetchall()
+
+            # Compute is_stale per reason (Option C runtime flag)
+            results: list[dict[str, Any]] = []
+            for row in rows:
+                d = _row_to_dict(row)
+                # is_stale = cross-run AND cross-algorithm
+                reason_run_id = d.get("source_run_id")
+                reason_ref = d.get("source_ref", "")
+                d["is_stale"] = (
+                    reason_run_id != source_run_id
+                    and reason_ref != run_algorithm_id
+                )
+                results.append(d)
+            return results
         else:
-            # Fallback: code-only (cross-run cross-algorithm accumulation)
+            # No source_run_id → code-only query, no is_stale (caller 冇 context)
             assert code is not None
             if include_inactive:
                 rows = conn.execute(
@@ -307,7 +325,8 @@ def list_reasons_filtered(
                     (code,),
                 ).fetchall()
 
-    return [_row_to_dict(r) for r in rows]
+    # No run context → is_stale always False
+    return [{**_row_to_dict(r), "is_stale": False} for r in rows]
 
 
 def list_reasons_legacy(

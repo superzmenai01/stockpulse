@@ -106,14 +106,21 @@ async def list_reasons(
 
     Default: only is_active=1. Pass include_inactive=true for audit.
 
-    大少 #10103 (2026-08-04) Per-run scoped display:
-    - 如果有 source_run_id, JOIN with saved_algorithm_runs.saved_stocks to filter
-      → 只 return reasons for stocks IN 嗰個 run's saved_stocks (跨 algorithm accumulation
-      但 per-run scoping — 只顯示嗰個 run 入面有 stocks 嘅 algorithm reasons)
-    - 即是 ViewRunModal 顯示 嗰個 run 內 stocks 嘅 qualified reasons, 避免顯示
-      跨算法 cross-run 嘅 stale reasons (e.g. 只 save 過 AS-01 但見到 AS-02 reasons)
-    - 保留 AS-01 + AS-02 accumulation: 如果 同一 stock 曾經 qualified for AS-01 同 AS-02
-      喺同一個 run, ViewRunModal 顯示 2 條 (AS-01 + AS-02)
+    大少 Option C (2026-08-04 07:03) Per-run scoping + is_stale flag:
+    - 如果有 source_run_id, 攞嗰個 run's algorithm_id + saved_stocks codes
+      → SQL filter: code IN (run's codes) — 唔 filter source_ref (保留 accumulation)
+      → 每個 returned reason 加 is_stale runtime flag
+    - is_stale 定義 (model layer):
+      * is_stale = (reason.source_run_id != current_run_id) AND
+                   (reason.source_ref != current_run.algorithm_id)
+      * 跨-run AND 跨-algorithm = stale
+      * 其他 cases (cross-run same-algo / same-run / cross-algo same-run) 全部 NOT stale
+    - Caller (UI) 收到 reasons + is_stale，自己決定 hide 邊啲
+    - 效果:
+      ✅ 保留跨-run same-algorithm accumulation (#83 + #86 都 AS-01 → 兩條都見)
+      ✅ 避免跨-algorithm cross-run stale leak (#86 AS-01 view 唔見 #52 AS-02)
+    - 如果 caller 唔傳 source_run_id (e.g. AS-01「結果」頁面 inline render)，
+      response 入面 is_stale 全部 False (冇 caller context 點樣判定 stale)
     - 至少要提供 code 或 source_run_id 其中一個
     """
     if not code and not source_run_id:

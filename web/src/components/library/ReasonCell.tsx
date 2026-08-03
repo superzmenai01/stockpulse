@@ -45,17 +45,22 @@ export function ReasonCell({ code, runId, legacyReason, onJumpToRun }: ReasonCel
   const { reasons, loading } = useStockReasons(code, runId);
   const [openReason, setOpenReason] = useState<ReasonEntry | null>(null);
 
+  // 大少 Option C (2026-08-04 07:03): hide cross-run cross-algorithm stale reasons
+  // Backend return 所有 reasons (保留 accumulation) + 每個 reason 嘅 is_stale flag
+  // UI filter is_stale=true 嘅 out before render
+  const visibleReasons = reasons.filter((r) => !r.is_stale);
+
   // Loading state
   if (loading) {
     return <Text type="secondary" style={{ fontSize: 11 }}>載入中...</Text>;
   }
 
   // New format: titles list (click to open PopUp)
-  if (reasons.length > 0) {
+  if (visibleReasons.length > 0) {
     return (
       <>
         <Space direction="vertical" size={2} style={{ display: 'block' }}>
-          {reasons.map((r) => (
+          {visibleReasons.map((r) => (
             <Text
               key={r.id}
               style={{
