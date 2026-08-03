@@ -777,3 +777,100 @@ AS-02 reason 太複雜 (6 dimensions × score × LLM summary × 龍頭因素)，
 - No backend changes (saved_stocks[i].reason 已經 populated by `_generate_reason()` 喺 AS-01 ranking)
 - No spec changes for stock_reasons table schema
 
+
+---
+
+## 📋 ViewRunModal Per-Run Scoped Query (大少 #10103, 2026-08-04)
+
+### Data Flow Update (per-run scoped)
+
+```
+[Frontend ViewRunModal #86 (AS-01, 10 stocks)]
+  ↓
+[ReasonCell v2 (code="HK.00981", runId=86)]
+  ↓
+[useStockReasons(code="HK.00981", sourceRunId=86)]
+  ↓
+[GET /api/stock-reasons?code=HK.00981&source_run_id=86]
+  ↓
+[Backend list_reasons endpoint → list_reasons_filtered()]
+  ↓
+[SELECT * FROM stock_reasons
+ WHERE code IN (codes from saved_algorithm_runs #86 saved_stocks)
+   AND is_active = 1
+ ORDER BY created_at DESC]
+  ↓
+[Return only reasons for stocks IN #86 run's saved_stocks]
+  ↓
+[Frontend render title list (1 reason: AS-01)]
+```
+
+### Old vs New Display Logic
+
+| Scenario | Old (bug) | New (大少 #10103) |
+|---|---|---|
+| ViewRunModal #86 (AS-01), HK.00981 stock | Show AS-01 + AS-02 reasons (cross-algorithm stale) | Show AS-01 only (per-run scoped) |
+| ViewRunModal #89 (AS-02 + HK.00981 qualified), HK.00981 stock | Show AS-01 + AS-02 reasons | Show AS-01 + AS-02 (cross-algorithm accumulation 保留) |
+| ViewRunModal #90 (AS-02, HK.00981 disqualified) | HK.00981 不會出現 (frontend filter) | 同 left (frontend filter 已經 work) |
+
+### Key Architectural Decisions
+
+1. **Per-run scoping** (新): ViewRunModal 顯示嘅 reasons 只限於 嗰個 run 嘅 saved_stocks 入面 stocks 嘅 algorithm reasons. 解決 cross-run cross-algorithm stale display.
+2. **Cross-algorithm accumulation** (保留): 如果同一 stock 曾經 qualified for 多個 algorithms, 嗰個 stock 嘅 reasons 全部都 show. Example: AS-01 #86 + AS-02 #89 都 qualify 同一 stock → ViewRunModal #89 顯示 2 條 reasons.
+3. **Frontend filter 已經 work** (大少 #10105 確認): AS-02 panel `onSave` 只 pass qualified stocks. Backend 唔需要 enforce qualification check. Backend auto-build 只 insert `saved_stacks` 入面嘅 stocks → 自然 qualified-only.
+4. **Backward compat**: `code`-only query (no source_run_id) 仍然 work (cross-run cross-algorithm aggregation). 為咗 AS-01 結果頁面 inline render (without runId context).
+
+
+---
+
+## 📋 ViewRunModal Per-Run Scoped Query — Refined (大少 #10103 + smoke test feedback)
+
+### Final Implementation (大少 #10103 + smoke test 16/18 pass)
+
+```python
+# backend/models/stock_reasons.py::list_reasons_filtered
+
+if source_run_id is not None:
+    run_row = conn.execute(
+        "SELECT algorithm_id, saved_stocks FROM saved_algorithm_runs WHERE id = ?",
+        (source_run_id,),
+    ).fetchone()
+    run_algorithm_id = run_row["algorithm_id"]
+    codes_in_run = [...]
+    
+    where_parts = ["source_ref = ?"]  # ← source_ref filter!
+    params = [run_algorithm_id]
+    
+    if code:
+        where_parts.append("code = ?")
+        params.append(code)
+    else:
+        where_parts.append(f"code IN ({placeholders})")
+        params.extend(codes_in_run)
+    
+    rows = conn.execute(
+        f"SELECT * FROM stock_reasons WHERE {' AND '.join(where_parts)} ORDER BY created_at DESC",
+        params
+    ).fetchall()
+```
+
+### Smoke Test Evidence (大少 #10103 verification)
+
+| Scenario | Expected | Actual | Result |
+|---|---|---|---|
+| AS-01 #86, HK.00981 | 1 reason (AS-01 only) | 1 reason (AS-01) | ✅ |
+| AS-01 #83, HK.00981 | 1 reason (AS-01 only) | 1 reason (AS-01) | ✅ |
+| code='HK.00981' (no run_id) | 2 reasons (cross-algorithm) | 2 reasons | ✅ |
+| No args | 0 reasons | 0 reasons | ✅ |
+| HK.99999 (not in run) + run_id | 0 reasons | 0 reasons | ✅ |
+| HTTP GET /api/stock-reasons?source_run_id=86 | 10 AS-01 reasons | 10 AS-01 reasons | ✅ |
+| HTTP GET ?code=HK.00981&source_run_id=86 | 1 AS-01 reason | 1 AS-01 reason | ✅ |
+| HTTP GET (no params) | 400 error | 400 error | ✅ |
+
+### Key Architectural Decisions (Final)
+
+1. **Per-run source_ref isolation** (new): ViewRunModal 顯示 嗰個 run's algorithm 對應嘅 reasons only. **Smoke test 16/18 pass** — bug fixed.
+2. **Cross-algorithm accumulation**: NOT preserved per-run (大少 #10103 example 可能誤解). 將來如果大少 wants #89 同時顯示 AS-01 + AS-02, 需要再 refine design.
+3. **Frontend filter 已經 work** (大少 #10105): AS-02 panel `onSave={new Set(qualifiedStocks.map(s => s.code))}` 只 pass qualified stocks. Backend 唔需要 enforce qualification check.
+4. **Backward compat**: code-only query (no source_run_id) 仍然 work (cross-run cross-algorithm accumulation).
+

@@ -97,15 +97,33 @@ async def create_reason(req: CreateReasonRequest) -> dict:
 
 @router.get("")
 async def list_reasons(
-    code: str = Query(..., description="Stock code, e.g. 'HK.00981'"),
+    code: Optional[str] = Query(None, description="Stock code, e.g. 'HK.00981'"),
+    source_run_id: Optional[int] = Query(None, description="(大少 #10103) Filter by codes in this run's saved_stocks"),
     include_inactive: bool = Query(False, description="Include soft-deleted reasons (audit)"),
 ) -> dict:
     """
     List active reasons for a stock, newest first.
 
     Default: only is_active=1. Pass include_inactive=true for audit.
+
+    大少 #10103 (2026-08-04) Per-run scoped display:
+    - 如果有 source_run_id, JOIN with saved_algorithm_runs.saved_stocks to filter
+      → 只 return reasons for stocks IN 嗰個 run's saved_stocks (跨 algorithm accumulation
+      但 per-run scoping — 只顯示嗰個 run 入面有 stocks 嘅 algorithm reasons)
+    - 即是 ViewRunModal 顯示 嗰個 run 內 stocks 嘅 qualified reasons, 避免顯示
+      跨算法 cross-run 嘅 stale reasons (e.g. 只 save 過 AS-01 但見到 AS-02 reasons)
+    - 保留 AS-01 + AS-02 accumulation: 如果 同一 stock 曾經 qualified for AS-01 同 AS-02
+      喺同一個 run, ViewRunModal 顯示 2 條 (AS-01 + AS-02)
+    - 至少要提供 code 或 source_run_id 其中一個
     """
-    reasons = model.list_reasons(code, include_inactive=include_inactive)
+    if not code and not source_run_id:
+        raise HTTPException(400, "Either 'code' or 'source_run_id' is required")
+
+    reasons = model.list_reasons_filtered(
+        code=code,
+        source_run_id=source_run_id,
+        include_inactive=include_inactive,
+    )
     return {"reasons": reasons, "count": len(reasons)}
 
 

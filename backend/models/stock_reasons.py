@@ -206,6 +206,115 @@ def list_reasons(
     include_inactive: bool = False,
     db_path: Optional[Path] = None,
 ) -> list[dict[str, Any]]:
+    """[大少 #9920] Backward compat — list reasons for a single stock only."""
+    return list_reasons_filtered(code=code, include_inactive=include_inactive, db_path=db_path)
+
+
+def list_reasons_filtered(
+    code: Optional[str] = None,
+    source_run_id: Optional[int] = None,
+    include_inactive: bool = False,
+    db_path: Optional[Path] = None,
+) -> list[dict[str, Any]]:
+    """
+    [大少 #10103 + #10105 fix] List reasons with per-run scoping + source_ref filter.
+
+    Per-run scoping 邏輯 (refined after smoke test #10103):
+    1. 如果 source_run_id provided:
+       - 攞 saved_algorithm_runs #X 入面嘅 algorithm_id + saved_stocks codes
+       - Filter reasons:
+         * code IN (#X stocks) AND source_ref = (#X algorithm_id)
+       - 即是 ViewRunModal #86 (AS-01) 只顯示 AS-01 reasons for #86 stocks
+       - ViewRunModal #89 (AS-02) 只顯示 AS-02 reasons for #89 stocks
+       - 避免顯示 cross-run stale AS-02 reasons for HK.00981 喺 #86 ViewRunModal
+
+    2. 如果 only code provided (e.g. AS-01 結果頁面 inline render, 沒有 runId):
+       - Fallback to code-only query (cross-run cross-algorithm accumulation)
+       - Backward compat for ReasonCell v2 冇 runId 嘅 use case
+
+    Returns: list of reason dicts, newest first
+    """
+    if db_path is None:
+        db_path = DEFAULT_DB_PATH
+
+    if not code and not source_run_id:
+        return []  # caller should validate at least one
+
+    with get_connection(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+
+        if source_run_id is not None:
+            # Get algorithm_id + codes from this run
+            run_row = conn.execute(
+                "SELECT algorithm_id, saved_stocks FROM saved_algorithm_runs WHERE id = ?",
+                (source_run_id,),
+            ).fetchone()
+            if not run_row:
+                return []
+
+            run_algorithm_id = run_row["algorithm_id"]
+            try:
+                import json as _json
+                saved_stocks_list = _json.loads(run_row["saved_stocks"])
+            except (ValueError, TypeError):
+                return []
+
+            codes_in_run = [
+                s.get("code", "")
+                for s in saved_stocks_list
+                if isinstance(s, dict) and s.get("code")
+            ]
+
+            if not codes_in_run:
+                return []
+
+            # 大少 #10103 fix: source_ref filter 嗰個 run's algorithm
+            where_parts: list[str] = ["source_ref = ?"]
+            params: list[Any] = [run_algorithm_id]
+
+            if code:
+                # Caller 有指定單一 stock code → intersect
+                where_parts.append("code = ?")
+                params.append(code)
+                if code not in codes_in_run:
+                    return []  # code 唔喺 嗰個 run 入面
+            else:
+                # Filter by all codes in run
+                placeholders = ",".join(["?"] * len(codes_in_run))
+                where_parts.append(f"code IN ({placeholders})")
+                params.extend(codes_in_run)
+
+            if not include_inactive:
+                where_parts.append("is_active = 1")
+
+            rows = conn.execute(
+                f"SELECT * FROM stock_reasons WHERE {' AND '.join(where_parts)} ORDER BY created_at DESC",
+                params,
+            ).fetchall()
+        else:
+            # Fallback: code-only (cross-run cross-algorithm accumulation)
+            assert code is not None
+            if include_inactive:
+                rows = conn.execute(
+                    "SELECT * FROM stock_reasons WHERE code = ? "
+                    "ORDER BY created_at DESC",
+                    (code,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM stock_reasons WHERE code = ? AND is_active = 1 "
+                    "ORDER BY created_at DESC",
+                    (code,),
+                ).fetchall()
+
+    return [_row_to_dict(r) for r in rows]
+
+
+def list_reasons_legacy(
+    code: str,
+    include_inactive: bool = False,
+    db_path: Optional[Path] = None,
+) -> list[dict[str, Any]]:
     """
     [GET] List all reasons for a stock, newest first.
 

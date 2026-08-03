@@ -453,7 +453,9 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
                 // 大少 #9920 (2026-08-03): ReasonCell v2 — uses useStockReasons(code) hook to render
                 // sanitized HTML titles + PopUp. legacyReason 留 fallback for 舊 data.
                 render: (r: string, record: SavedStockWithIdx) => (
-                  <ReasonCell code={record.code} legacyReason={r} />
+                  // 大少 #10103 (2026-08-04): 傳 run.id 落 ReasonCell 啟用 per-run scoped display
+                  // ViewRunModal 只顯示嗰個 run 內 stocks 嘅 algorithm reasons
+                  <ReasonCell code={record.code} runId={run.id} legacyReason={r} />
                 ),
               },
               {

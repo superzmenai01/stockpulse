@@ -16,7 +16,10 @@ interface UseStockReasonsResult {
   refresh: () => Promise<void>;
 }
 
-export function useStockReasons(code: string | null | undefined): UseStockReasonsResult {
+export function useStockReasons(
+  code: string | null | undefined,
+  sourceRunId?: number | null,
+): UseStockReasonsResult {
   const [reasons, setReasons] = useState<ReasonEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +32,13 @@ export function useStockReasons(code: string | null | undefined): UseStockReason
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(`${API_BASE}/stock-reasons?code=${encodeURIComponent(code)}`);
+      const params = new URLSearchParams({ code });
+      if (sourceRunId) {
+        params.set('source_run_id', String(sourceRunId));
+      }
+      const resp = await fetch(`${API_BASE}/stock-reasons?${params.toString()}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json() as { reasons: ReasonEntry[]; count: number };
+      const data = (await resp.json()) as { reasons: ReasonEntry[]; count: number };
       setReasons(data.reasons || []);
     } catch (e) {
       setError((e as Error).message);
@@ -39,7 +46,7 @@ export function useStockReasons(code: string | null | undefined): UseStockReason
     } finally {
       setLoading(false);
     }
-  }, [code]);
+  }, [code, sourceRunId]);
 
   useEffect(() => {
     void refresh();

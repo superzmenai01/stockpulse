@@ -25,6 +25,13 @@ const { Text } = Typography;
 
 interface ReasonCellProps {
   code: string;
+  /**
+   * 大少 #10103 (2026-08-04) Per-run scoped display:
+   * 如果有 runId, useStockReasons 會 query 嗰個 run's saved_stocks 入面嘅 codes,
+   * 只顯示嗰個 stock 喺嗰個 run 入面有 qualified 過嘅 algorithms reasons.
+   * 如果冇 runId (e.g. AS-01 結果頁面), fallback to code-only cross-run query.
+   */
+  runId?: number;
   /** Legacy plain-text reason (舊 saved_stocks[i].reason). Fallback if no new format reasons. */
   legacyReason?: string;
   /** Optional: jump to source run handler (passed to ReasonPopUp) */
@@ -33,8 +40,9 @@ interface ReasonCellProps {
 
 const DEFAULT_TRUNCATE_LEN = 80;
 
-export function ReasonCell({ code, legacyReason, onJumpToRun }: ReasonCellProps) {
-  const { reasons, loading } = useStockReasons(code);
+export function ReasonCell({ code, runId, legacyReason, onJumpToRun }: ReasonCellProps) {
+  // 大少 #10103: 傳 runId 落 useStockReasons 啟用 per-run scoped display
+  const { reasons, loading } = useStockReasons(code, runId);
   const [openReason, setOpenReason] = useState<ReasonEntry | null>(null);
 
   // Loading state
