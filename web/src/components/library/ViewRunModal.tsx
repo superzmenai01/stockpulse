@@ -423,17 +423,6 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
                 width: 140,
               },
               {
-                title: '板塊',
-                dataIndex: 'plate_name',
-                key: 'plate_name',
-                width: 120,
-                render: (p: string, stock: SavedStockWithIdx) => (
-                  <Tooltip title={stock.plate_code}>
-                    <Tag color="purple">{p || stock.plate_code || '—'}</Tag>
-                  </Tooltip>
-                ),
-              },
-              {
                 title: '現價',
                 dataIndex: 'price',
                 key: 'price',
