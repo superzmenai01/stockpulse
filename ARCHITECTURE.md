@@ -428,16 +428,100 @@ miniapp/
 - **Backend 啟動時必須 FutuOpenD 已運行**，否則 subscribe 全部 fail
 - **LLM call 唔需要 Futu**，可以獨立運作 (Settings + Library 唔靠 Futu)
 - **Frontend dev mode** 可以直接打 backend localhost:18792
+- **Background services** — macOS LaunchAgent 自動管理 (2026-08-03 起) — Vite / Backend / Miniapp / Logrotate，reboot / crash 後 auto-restart
 
 ---
 
 ## 9. Deployment (production reference)
 
-### 本地 dev
-- 後端: `cd backend && python3 main.py` (port 18792)
-- 前端: `cd web && npm run dev` (port 3000)
-- OpenD: 預先啟動 (`/Applications/Futu_OpenD.app`)
-- Miniapp: `cd miniapp && ./start.sh` (port 18793)
+### 本地 dev (LaunchAgent-managed, 2026-08-03 起)
+
+> 所有 background service 由 macOS LaunchAgent 自動管理 — reboot / crash 後 auto-restart。
+> 修咗兩個 deadlock：(1) Vite reboot 後永遠死、(2) log 長期塞爆 disk (96% full)。
+
+#### Service 清單
+
+| Service | Label | Schedule | Port | Process |
+|---------|-------|----------|------|---------|
+| Backend | `com.stockpulse.trigger` | RunAtLoad + KeepAlive | 18792 | uvicorn main:app |
+| Vite dev | `com.user.stockpulse-vite` | RunAtLoad + KeepAlive | 3000 | npm run dev |
+| Miniapp | `com.user.stockpulse-miniapp` | RunAtLoad | 18793 | flask |
+| Logrotate | `com.user.stockpulse-logrotate` | StartInterval=1800s (30min) | — | bash script |
+
+#### 文件路徑
+
+```
+~/stockpulse/
+├── scripts/
+│   ├── start_vite.sh        # Vite launcher (absolute npm/node path)
+│   └── rotate_logs.sh       # Safe rotation (tail + truncate)
+└── logs/
+    ├── vite.log             # Vite stdout/stderr
+    ├── launchd.log          # Backend (uvicorn) log
+    ├── stockpulse.log       # Python logging
+    └── *.log.1 / .2 / .3    # Rotated backups (3 layers max)
+~/Library/LaunchAgents/
+├── com.stockpulse.trigger.plist
+├── com.user.stockpulse-vite.plist
+├── com.user.stockpulse-miniapp.plist
+└── com.user.stockpulse-logrotate.plist
+```
+
+#### 啟動鏈條 (Frontend → Backend)
+
+```
+[User opens http://localhost:3000]
+        ↓
+[macOS launchd: com.user.stockpulse-vite RunAtLoad 已經起咗 Vite]
+        ↓
+Vite dev server 喺 port 3000 listen
+        ↓
+[Frontend 攞 /api/plates]
+        ↓
+[Vite proxy: /api → http://localhost:18792]
+        ↓
+[macOS launchd: com.stockpulse.trigger 已經起咗 Backend]
+        ↓
+Backend (uvicorn) 喺 port 18792 respond
+```
+
+#### 啟動鏈條 (FutuOpenD 報價)
+
+```
+[FutuOpenD 預先由大少人手啟動, port 11111]
+        ↓
+[Backend startup 連 OpenD 攞報價]
+        ↓
+[WebSocket push 落 Frontend]
+```
+
+**⚠️ 重要 — OpenD 唔由 LaunchAgent 管**，要由大少人手啟動 (`/Applications/Futu_OpenD.app`)。
+
+#### 設計原則
+
+1. **絕對 path + export PATH** — LaunchAgent 唔繼承 `~/.zshrc`，要 hard-code `/opt/homebrew/bin/npm` + `export PATH` 確保 child process 都搵到 node
+2. **殺舊 → 釋 port → 起新** — `start_vite.sh` pattern 避免 double-bind (跟 start_trigger.sh)
+3. **KeepAlive with SuccessfulExit=false** — crash 即 restart，但 intentional kill 唔會 loop
+4. **ThrottleInterval=10** — 防 crash loop thrash
+5. **Disk-safe rotation** — `rotate_logs.sh` 用 tail + truncate，**唔用 cp**（會 disk-double，tight space 必 crash）
+
+#### 常用 commands
+
+```bash
+# Check status
+launchctl list | grep stockpulse
+
+# Reload (after edit plist)
+launchctl unload ~/Library/LaunchAgents/com.user.stockpulse-vite.plist
+launchctl load ~/Library/LaunchAgents/com.user.stockpulse-vite.plist
+
+# 手動 trigger log rotation
+bash ~/stockpulse/scripts/rotate_logs.sh
+
+# Tail logs
+tail -f ~/stockpulse/logs/vite.log
+tail -f ~/stockpulse/logs/launchd.log
+```
 
 ### Production (not yet)
 - Backend: Docker + gunicorn
@@ -536,4 +620,4 @@ Miniapp backend (port 18793) 已經喺 QW-1 改 bind `127.0.0.1`：
 
 ---
 
-_最後更新：2026-08-02_
+_最後更新：2026-08-03 (LaunchAgent 永久 fix: Vite + logrotate)_

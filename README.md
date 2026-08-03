@@ -114,6 +114,42 @@ Backend 監聽 `0.0.0.0`，可從手機 / 其他機器訪問。
 
 ---
 
+## 🔄 Background Services (LaunchAgents) ⭐ 新
+
+> 大少 2026-08-03 永久 fix — Backend / Vite / Miniapp / Logrotate 由 macOS LaunchAgent 自動管理。
+> 修咗兩個 deadlock：(1) Vite reboot 後永遠 dead、(2) log 長期塞爆 disk (96% full)。
+
+| Service | Label | Schedule | 用途 |
+|---------|-------|----------|------|
+| **Backend** | `com.stockpulse.trigger` | RunAtLoad + KeepAlive | uvicorn main:app port 18792 |
+| **Vite dev** | `com.user.stockpulse-vite` | RunAtLoad + KeepAlive | npm run dev port 3000 |
+| **Miniapp** | `com.user.stockpulse-miniapp` | RunAtLoad | Telegram bot port 18793 |
+| **Logrotate** | `com.user.stockpulse-logrotate` | StartInterval=1800s (30min) | log files > 500MB 即 truncate |
+
+**Scripts：** `~/stockpulse/scripts/`
+- `start_vite.sh` — Vite launcher (absolute npm/node path，殺舊 → 釋 port → 起新)
+- `rotate_logs.sh` — safe rotation (tail 1000 行 + truncate，**唔 disk-double**)
+
+**Plist：** `~/Library/LaunchAgents/com.user.stockpulse-*.plist`
+
+**常用 commands：**
+```bash
+# Check status
+launchctl list | grep stockpulse
+
+# Reload (after edit plist)
+launchctl unload ~/Library/LaunchAgents/com.user.stockpulse-vite.plist
+launchctl load ~/Library/LaunchAgents/com.user.stockpulse-vite.plist
+
+# View logs
+tail -f ~/stockpulse/logs/vite.log
+tail -f ~/stockpulse/logs/launchd.log
+```
+
+**⚠️ LaunchAgent 唔繼承 `~/.zshrc` PATH**，所以 `start_vite.sh` 用 absolute path (`/opt/homebrew/bin/npm`) + `export PATH` 確保 child process 都搵到 node。
+
+---
+
 ## 🌐 其他電腦訪問 StockPulse
 
 > 想喺屋企用 iPad / 第二部 Mac / Windows PC 訪問 StockPulse？跟住以下步驟。
@@ -297,6 +333,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 | 2026-08 | Fallback chain + retry policy (LLM 穩定性) |
 | 2026-08 | README + PROJECT_SPEC + ARCHITECTURE + API 文檔重整 (本文件) |
 | 2026-08 | AS-02 移除 auto-save: 改為 user 手動點「💾 儲存」(大少 #9700) |
+| **2026-08-03** | **LaunchAgent 永久 fix: Vite + logrotate auto-manage (Vite reboot deadlock + log disk 96% full)** |
 
 ---
 
@@ -339,6 +376,16 @@ git push origin main
 ### Q: 前端無法連接後端
 A: 檢查後端是否運行：`lsof -i :18792`
 
+### Q: Vite dev server 冇起 / frontend 報「載入板塊列表失敗」
+A: LaunchAgent 應該 auto-start，但若手動 kill 後冇 restart：
+1. Check status：`launchctl list | grep stockpulse-vite`
+2. 若 `-` (not running)：`launchctl load ~/Library/LaunchAgents/com.user.stockpulse-vite.plist`
+3. 若 running 但 port 3000 唔通：check `~/stockpulse/logs/vite.log`
+
+### Q: Disk full (log 塞爆)
+A: LaunchAgent `com.user.stockpulse-logrotate` 每 30 min 自動 truncate `*.log > 500MB`
+即刻手動清：`bash ~/stockpulse/scripts/rotate_logs.sh`
+
 ### Q: 富途數據獲取失敗
 A: 確保富途 OpenD 正在運行，Port `11111` (`lsof -i :11111`)
 
@@ -370,4 +417,4 @@ A: 見 `backend/llm/` — fallback chain 已 setup (`minimax/MiniMax-M3-highspee
 
 ---
 
-_最後更新：2026-08-02 (大少 / AI assistant sync)_
+_最後更新：2026-08-03 (大少 / AI assistant sync — LaunchAgent 永久 fix)_

@@ -13,6 +13,7 @@
 | 用途 | 股價分析 WebApp（實時報價、組別管理、策略篩選、日曆） |
 | 技術棧 | Python FastAPI (Backend) + React + Vite + Ant Design (Frontend) |
 | 數據源 | 富途 FutuOpenD (127.0.0.1:11111) |
+| 部署 | macOS LaunchAgent (auto-restart on reboot / crash) |
 
 ---
 
@@ -154,6 +155,45 @@ web/src/
     ├── variables.ts           # CSS 變量
     ├── mixins.ts              # 混合樣式
     └── global.ts              # 全域樣式
+```
+
+---
+
+## 🔄 Background Services (LaunchAgents)
+
+> 大少 2026-08-03 永久 fix — Backend / Vite / Miniapp / Logrotate 由 macOS LaunchAgent 自動管理。
+> 修咗兩個 deadlock：(1) Vite reboot / crash 後永久死、(2) log 長期塞爆 disk。
+
+### Service 清單
+
+| Service | Label | Schedule | Port |
+|---------|-------|----------|------|
+| Backend | `com.stockpulse.trigger` | RunAtLoad + KeepAlive | 18792 |
+| Vite dev | `com.user.stockpulse-vite` | RunAtLoad + KeepAlive | 3000 |
+| Miniapp | `com.user.stockpulse-miniapp` | RunAtLoad | 18793 |
+| Logrotate | `com.user.stockpulse-logrotate` | StartInterval=1800s (30min) | — |
+
+### 文件路徑
+
+| 類型 | 路徑 |
+|------|------|
+| Scripts | `~/stockpulse/scripts/start_vite.sh` / `rotate_logs.sh` |
+| Plists | `~/Library/LaunchAgents/com.user.stockpulse-{vite,logrotate}.plist` |
+| Logs | `~/stockpulse/logs/{vite,launchd,stockpulse}.log` |
+
+### 設計原則
+
+1. **絕對 path + export PATH** — LaunchAgent 唔繼承 shell rc，要 hard-code `/opt/homebrew/bin/npm`
+2. **殺舊 → 釋 port → 起新** — `start_vite.sh` pattern 避免 double-bind
+3. **Disk-safe rotation** — `rotate_logs.sh` 用 tail + truncate，**唔用 cp**（會 disk-double, tight space 必 crash）
+4. **ThrottleInterval** — 防 crash loop thrash
+
+### 常用 commands
+
+```bash
+launchctl list | grep stockpulse
+launchctl load ~/Library/LaunchAgents/com.user.stockpulse-vite.plist
+bash ~/stockpulse/scripts/rotate_logs.sh   # 手動 trigger
 ```
 
 ---
@@ -442,4 +482,4 @@ CREATE TABLE watchlist (
 
 ---
 
-_最後更新：2026-04-26_
+_最後更新：2026-08-03 (大少 / AI assistant sync — LaunchAgent 永久 fix)_
