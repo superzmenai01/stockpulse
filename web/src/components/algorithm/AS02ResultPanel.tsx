@@ -104,7 +104,7 @@ function AS02StockCard({ stock }: { stock: AS02Stock }) {
                 <Progress
                   percent={value}
                   strokeColor={color}
-                  format={(p) => `${p?.toFixed(0) ?? 0}`}
+                  format={(p) => `${p?.toFixed(1) ?? '0.0'}`}
                   size="small"
                 />
               </Space>
