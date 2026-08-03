@@ -133,16 +133,15 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
   const [editableStocks, setEditableStocks] = useState<SavedStock[]>(savedStocks);
   const [addModalOpen, setAddModalOpen] = useState(false);
   // 大少 #8918 (2026-07-29): spec 用 StockSearch 取代 code/name input,
-  //                          板塊/原因 default「手動新增」但可手動改
+  //                          原因 default「手動新增」但可手動改
+  // 大少 #9867 (2026-08-03): 板塊 input 移除, 只剩原因可改
   const [searchedStock, setSearchedStock] = useState<StockSearchResult | null>(null);
-  const [newStockPlate, setNewStockPlate] = useState('手動新增');
   const [newStockReason, setNewStockReason] = useState('手動新增');
   const [saving, setSaving] = useState(false);
 
-  // 大少 #8918: 重置 Add Modal 內部 state (清 searchedStock + 還原 plate/reason defaults)
+  // 大少 #8918: 重置 Add Modal 內部 state (清 searchedStock + 還原 reason default)
   const resetAddStockModal = () => {
     setSearchedStock(null);
-    setNewStockPlate('手動新增');
     setNewStockReason('手動新增');
   };
 
@@ -169,8 +168,10 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
   };
 
   // 大少 #8918 (2026-07-29): refactor — 用 StockSearch 取得 code/name,
-  //                           板塊/原因用 editable state (default「手動新增」但可改)
+  //                           原因用 editable state (default「手動新增」但可改)
   // 大少 #8918 Q3=A: 加入只 setEditableStocks, user 再撳「保存變更」先 PUT
+  // 大少 #9867 (2026-08-03): 板塊 input 移除, plate_code/plate_name set empty string
+  //                           (Leader 仍 required, 但唔再 user-editable)
   const handleAddStock = () => {
     if (!searchedStock) {
       message.warning('請先喺搜尋 box 揀一隻股票');
@@ -178,8 +179,6 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
     }
     const code = searchedStock.code;
     const name = searchedStock.name;
-    // 空 string fallback → 「手動新增」, 符合 spec default
-    const plate = newStockPlate.trim() || '手動新增';
     const reason = newStockReason.trim() || '手動新增';
     if (editableStocks.some((s) => s.code === code)) {
       message.warning(`股票 ${code} 已經喺名單入面`);
@@ -188,8 +187,8 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
     const newStock: SavedStock = {
       code,
       name,
-      plate_code: plate, // 大少 #8918: user 可改, 同 plate_name 一致
-      plate_name: plate,
+      plate_code: '', // 大少 #9867: 板塊 UI 移除, empty string 保留 type compatibility
+      plate_name: '',
       // 冇實時數據 (price / change / mcap / turnover = 0)
       price: 0,
       change_pct: 0,
@@ -516,8 +515,9 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
     >
       <div style={{ padding: '8px 0' }}>
         <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 16 }}>
-          {/* 大少 #8918 (2026-07-29): 用 StockSearch (圖2 template) 取代兩個 <Input>。 */}
-          板塊同原因 default「手動新增」，可手動改成其他字。
+          {/* 大少 #8918 (2026-07-29): 用 StockSearch (圖2 template) 取代 code/name input。
+              大少 #9867 (2026-08-03): 板塊 input 移除, 只剩原因可改。 */}
+          原因 default「手動新增」，可手動改成其他字。
           數值欄位（現價 / 市值 / 換手率）預設為 0。
         </Paragraph>
         <Space direction="vertical" style={{ width: '100%' }} size={12}>
@@ -548,17 +548,6 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
               <Text>{searchedStock.name}</Text>
             </div>
           )}
-          <div>
-            <Text strong style={{ display: 'block', marginBottom: 4 }}>
-              板塊 (可改)
-            </Text>
-            <Input
-              placeholder="手動新增"
-              value={newStockPlate}
-              onChange={(e) => setNewStockPlate(e.target.value)}
-              data-testid="viewrunmodal-add-stock-plate-input"
-            />
-          </div>
           <div>
             <Text strong style={{ display: 'block', marginBottom: 4 }}>
               原因 (可改)
