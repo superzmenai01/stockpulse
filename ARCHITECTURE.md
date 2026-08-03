@@ -716,6 +716,64 @@ _最後更新：2026-08-03 (LaunchAgent 永久 fix: Vite + logrotate)_
 
 ---
 
+## 🎨 Dim-Score Background Pill (大少 #10176, 2026-08-04)
+
+### 設計 Trigger
+
+大少 screenshot #10176 (HK.01347 AS-02 PopUp)：6 個 dimension 紅框（right side `dim-score`）只 show 純文字，score 數字同紅框嘅關聯唔夠 clear。Trigger：紅框加 score 數字 — 但 `dim-score` 已經有 text（`{v:.1f}`），所以 enhancement 純 CSS：將純文字 span 改 background pill。
+
+### 設計 (大少 #10176)
+
+**PopUp** (`ReasonPopUp.module.css`): `.dim-score` 改 background pill — 顯眼嘅 full-color background + 白字。
+
+```css
+/* 大少 #10176: 紅框 background pill — score 數字顯眼 */
+:global(.dim-score) {
+  flex: 0 0 64px;        /* up from 60px (pill 預留空間) */
+  text-align: center;    /* changed from right (text-align center for pill) */
+  font-weight: 700;
+  font-size: 19px;
+  padding: 2px 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);   /* fallback 半透明 */
+  color: rgba(255, 255, 255, 0.95);
+}
+
+:global(.dim-score.score-high) {
+  background: #52c41a;   /* 綠 full-color */
+  color: #fff;
+}
+:global(.dim-score.score-med) {
+  background: #faad14;   /* 黃 full-color */
+  color: #fff;
+}
+:global(.dim-score.score-low) {
+  background: #ff4d4f;   /* 紅 full-color */
+  color: #fff;
+}
+```
+
+**Backend HTML 唔需要改** — `build_as01_reason_html` / `build_as02_reason_html` 入面 `<span class="dim-score">70.0</span>` 已經有 score text，CSS 改即時對 stock_reasons table 入面嘅舊 HTML 生效（sanitize 後 class 保留）。
+
+### AS-02「結果」inline (大少 #10176, AS02ResultPanel.tsx)
+
+AS-02 inline render 用 AntD `<Progress>` component（唔用 `dim-bar` / `dim-score` custom CSS），已經有 `format` 函數顯示分數。原本 `format={(p) => \`${p?.toFixed(0) ?? 0}\`}` 用整數，改做 `${p?.toFixed(1) ?? '0.0'}` 顯示一位小數（與 PopUp 入面 `dim-score` 一致）。Stroke color 已分數 class 顯示（high 綠 / med 黃 / low 紅）。
+
+### AS-01「結果」inline
+
+AS-01「結果」inline (`ResultGrid.tsx`) 用 `ReasonCell` plain text mode（mirror #10097），唔屬 dimension bar 模式，**唔影響**呢個 scope。
+
+### 行為對照 (大少 #10176 verify)
+
+| 位置 | Before (#10176) | After (#10176) |
+|---|---|---|
+| PopUp `dim-score` | 純文字 19px, color by class, 冇 background | Background pill 64px, full-color (高/黃/紅), 白字 |
+| AS-02 inline `Progress` format | 整數 (e.g. 70) | 一位小數 (e.g. 70.0) |
+| AS-01 inline | plain text (ReasonCell) | — (唔變) |
+
+
+---
+
 ## 📦 AS-01 Reason HTML Build Flow (大少 #10075, 2026-08-04)
 
 ### Flow Diagram
