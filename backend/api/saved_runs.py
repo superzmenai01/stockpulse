@@ -145,6 +145,43 @@ async def save_run(req: SaveRunRequest) -> dict:
             logger.warning(f"[save_run] AS-02 auto-build failed: {e}")
             # Don't fail the whole save — reasons are secondary
 
+    # 3. Auto-build AS-01 reasons (大少 #10075, 2026-08-04)
+    # - AS-01 saved_stocks 入面已經有 raw fields (mcap_rank / volume_rank / score / plate_name)
+    #   因為 frontend AS-01 panel 唔 normalize strip 啲 fields
+    # - Backend 自動 detect + call build_as01_reason_html() per stock
+    # - plate_total_stocks = 該板塊內 valid stocks 總數 (用嚟計算 rank 嘅相對 width)
+    if req.algorithm_id == "AS-01" and req.saved_stocks:
+        try:
+            from models.plate import build_as01_reason_html
+            auto_built = 0
+            # Group stocks by plate_code (因為 width 計算 per-plate)
+            plates: dict[str, list[dict]] = {}
+            for stock in req.saved_stocks:
+                if "mcap_rank" in stock and "volume_rank" in stock:  # only raw AS-01 data present
+                    pc = stock.get("plate_code", "")
+                    plates.setdefault(pc, []).append(stock)
+
+            for plate_code, plate_stocks in plates.items():
+                plate_total = len(plate_stocks)
+                for stock in plate_stocks:
+                    html = build_as01_reason_html(stock, plate_total_stocks=plate_total)
+                    all_reasons.append({
+                        "code": stock.get("code", ""),
+                        "source_type": "algorithm",
+                        "source_ref": "AS-01",
+                        "title": "板塊龍頭股篩選",
+                        "html": html,
+                        "source_run_id": new_run_id,
+                    })
+                    auto_built += 1
+            if auto_built > 0:
+                logger.info(
+                    f"[save_run] AS-01 auto-build {auto_built} reasons for run #{new_run_id}"
+                )
+        except Exception as e:
+            logger.warning(f"[save_run] AS-01 auto-build failed: {e}")
+            # Don't fail the whole save — reasons are secondary
+
     # Bulk insert all reasons with smart dedupe
     if all_reasons:
         try:

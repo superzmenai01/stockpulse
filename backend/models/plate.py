@@ -1056,3 +1056,215 @@ def run_plate_leaders(
         raise
     finally:
         ctx.close()
+
+# ============================================================================
+# HTML Builder — 大少 2026-08-04 #10075 (AS-01 reason redesign)
+# AS-01 → stock_reasons.html 嘅 build function.
+# Wrap 板塊龍頭股 ranking factors + composite score + 龍頭因素分析 落 structured HTML.
+# IMPORTANT: Caller responsibility to call services/html_sanitizer.sanitize_html() before persist.
+#
+# Design pattern: 跟 AS-02 嘅 build_as02_reason_html() 一致 (大少 #9920 permanent rule)
+# ============================================================================
+
+# 大少 2026-08-04: 4 個維度嘅中文 labels (跟 AS-02 pattern, display 唔代表 actual algorithm weight)
+AS01_DIMENSION_LABELS_ZH: dict[str, str] = {
+    "mcap_rank": "市值排名",
+    "volume_rank": "成交量排名",
+    "composite_score": "綜合排名",
+    "plate_dominance": "板塊龍頭度",
+}
+
+AS01_DIMENSION_WEIGHTS: dict[str, int] = {
+    "mcap_rank": 40,
+    "volume_rank": 40,
+    "composite_score": 10,
+    "plate_dominance": 10,
+}
+
+
+def _rank_to_score_class(rank: int, total: int) -> str:
+    """Map rank (1=best) to score class (大少 2026-08-04 UX):
+    Rank 1 = score-high (綠), 2-3 = score-med (黃), 4+ = score-low (紅).
+    """
+    if rank <= 1:
+        return "score-high"
+    elif rank <= 3:
+        return "score-med"
+    return "score-low"
+
+
+def _rank_to_width(rank: int, total: int) -> str:
+    """Convert rank (1=best, total=worst) to width class (w-100 for #1 → w-10 for worst).
+    公式: pct = (total - rank) / (total - 1) * 100, round 到 nearest 10.
+    """
+    if total <= 1:
+        return "w-100"
+    pct = max(0, min(100, int(round((total - rank) / (total - 1) * 100 / 10)) * 10))
+    return f"w-{pct}"
+
+
+def _score_class(score: float) -> str:
+    """Map score (0-100) → CSS class (跟 AS-02 _score_class 一樣):
+    ≥75 = score-high (綠), 60-74 = score-med (黃), <60 = score-low (紅).
+    """
+    if score >= 75:
+        return "score-high"
+    elif score >= 60:
+        return "score-med"
+    return "score-low"
+
+
+def _width_class(value: float) -> str:
+    """Round score (0-100) to nearest 10 → CSS class like 'w-70' (跟 AS-02 一樣).
+    """
+    rounded = max(0, min(100, int(round(value / 10.0)) * 10))
+    return f"w-{rounded}"
+
+
+def build_as01_reason_html(result: dict, plate_total_stocks: int = 0) -> str:
+    """
+    [大少 #10075] Wrap AS-01 leader result into HTML for stock_reasons.html storage.
+
+    Args:
+        result: AS-01 _rank_one_plate() per-stock dict:
+            {
+                "code", "name", "price", "change_pct",
+                "mcap", "turnover", "plate_code", "plate_name",
+                "score", "mcap_rank", "volume_rank", "reason"
+            }
+        plate_total_stocks: 該板塊內 valid stocks 總數 (for relative ranking width)
+
+    Returns:
+        Sanitized-safe HTML string. Caller must run sanitize_html() before DB insert.
+
+    Display fields (大少 2026-08-04 UX):
+    - Title block: stock code + name + 板塊來源 + composite score
+    - Bar chart 4 dimensions (中文 labels + 顏色 by rank + class-based widths)
+    - 龍頭因素分析 (qualitative factors — 市值/成交量/雙料龍頭)
+    - Stock snapshot (price/mcap/turnover)
+    - 板塊來源
+    """
+    code = result.get("code", "Unknown")
+    name = result.get("name", "Unknown")
+    plate_name = result.get("plate_name", "Unknown")
+    plate_code = result.get("plate_code", "")
+    score = result.get("score", 0)
+    mcap_rank = result.get("mcap_rank", 0)
+    volume_rank = result.get("volume_rank", 0)
+    price = result.get("price", 0)
+    change_pct = result.get("change_pct", 0)
+    mcap = result.get("mcap", 0)
+    turnover = result.get("turnover", 0)
+
+    # 預設 plate_total_stocks (callers 唔傳嘅 fallback)
+    if plate_total_stocks <= 0:
+        # 用 score 估算 total = worst case (rank 1+rank total = score)
+        plate_total_stocks = max(mcap_rank, volume_rank, 10)
+
+    # 大少 2026-08-04: 4 個維度用 bar chart (跟 AS-02 pattern)
+    breakdown_bars = ""
+
+    # 維度 1: 市值排名 (40%)
+    mcap_sclass = _rank_to_score_class(mcap_rank, plate_total_stocks)
+    mcap_wcls = _rank_to_width(mcap_rank, plate_total_stocks)
+    breakdown_bars += f'''<div class="dim-row">
+  <span class="dim-label">市值排名 <small class="dim-weight">(40%)</small></span>
+  <div class="dim-bar-bg"><div class="dim-bar-fill {mcap_sclass} {mcap_wcls}"></div></div>
+  <span class="dim-score {mcap_sclass}">#{mcap_rank}</span>
+</div>'''
+
+    # 維度 2: 成交量排名 (40%)
+    vol_sclass = _rank_to_score_class(volume_rank, plate_total_stocks)
+    vol_wcls = _rank_to_width(volume_rank, plate_total_stocks)
+    breakdown_bars += f'''<div class="dim-row">
+  <span class="dim-label">成交量排名 <small class="dim-weight">(40%)</small></span>
+  <div class="dim-bar-bg"><div class="dim-bar-fill {vol_sclass} {vol_wcls}"></div></div>
+  <span class="dim-score {vol_sclass}">#{volume_rank}</span>
+</div>'''
+
+    # 維度 3: 綜合排名 (10%) — normalize score 到 0-100 (lower score = better)
+    if plate_total_stocks >= 2:
+        best_score = 2  # rank 1 + rank 1
+        worst_score = 2 * plate_total_stocks  # rank total + rank total
+        normalized_pct = max(0, min(100, int(round((worst_score - score) / (worst_score - best_score) * 100 / 10)) * 10))
+    else:
+        normalized_pct = 100
+    comp_sclass = _score_class(normalized_pct)
+    comp_wcls = _width_class(normalized_pct)
+    breakdown_bars += f'''<div class="dim-row">
+  <span class="dim-label">綜合排名 <small class="dim-weight">(10%)</small></span>
+  <div class="dim-bar-bg"><div class="dim-bar-fill {comp_sclass} {comp_wcls}"></div></div>
+  <span class="dim-score {comp_sclass}">{score}</span>
+</div>'''
+
+    # 維度 4: 板塊龍頭度 (10%) — qualitative score based on rank combinations
+    if mcap_rank == 1 and volume_rank == 1:
+        plate_dominance_pct = 100
+        pd_label = "雙料龍頭"
+    elif mcap_rank == 1 or volume_rank == 1:
+        plate_dominance_pct = 75
+        pd_label = "單料龍頭"
+    elif mcap_rank <= 3 and volume_rank <= 3:
+        plate_dominance_pct = 50
+        pd_label = "綜合 top 3"
+    elif mcap_rank <= 3 or volume_rank <= 3:
+        plate_dominance_pct = 30
+        pd_label = "板塊 top 3"
+    else:
+        plate_dominance_pct = 10
+        pd_label = "板塊中堅"
+    pd_sclass = _score_class(plate_dominance_pct)
+    pd_wcls = _width_class(plate_dominance_pct)
+    breakdown_bars += f'''<div class="dim-row">
+  <span class="dim-label">板塊龍頭度 <small class="dim-weight">(10%)</small></span>
+  <div class="dim-bar-bg"><div class="dim-bar-fill {pd_sclass} {pd_wcls}"></div></div>
+  <span class="dim-score {pd_sclass}">{pd_label}</span>
+</div>'''
+
+    # Stock snapshot
+    snapshot_parts: list[str] = []
+    if price > 0:
+        snapshot_parts.append(f"<b>現價:</b> {price:.2f}")
+    if change_pct != 0:
+        snapshot_parts.append(f"<b>變幅:</b> {change_pct:+.2f}%")
+    if mcap > 0:
+        snapshot_parts.append(f"<b>市值:</b> {format_mcap(mcap)}")
+    if turnover > 0:
+        snapshot_parts.append(f"<b>成交:</b> {turnover / 1e8:.2f}億")
+    snapshot_html = " · ".join(snapshot_parts) if snapshot_parts else "(無實時數據)"
+
+    # 龍頭因素分析 (qualitative factors list)
+    factors: list[str] = []
+    if mcap_rank == 1:
+        factors.append("💰 市值龍頭 (市值排名 #1)")
+    elif mcap_rank <= 3:
+        factors.append(f"💰 市值 top 3 (#{mcap_rank})")
+    if volume_rank == 1:
+        factors.append("📈 成交量龍頭 (成交量排名 #1)")
+    elif volume_rank <= 3:
+        factors.append(f"📈 成交量 top 3 (#{volume_rank})")
+    if mcap_rank == 1 and volume_rank == 1:
+        factors.append("⭐ 雙料龍頭 (市值 + 成交量都係 #1)")
+    elif mcap_rank <= 3 and volume_rank <= 3:
+        factors.append("⭐ 綜合 top 3 (市值同成交量都 top 3)")
+    factors_html = (
+        "<ul>" + "".join(f"<li>{f}</li>" for f in factors) + "</ul>"
+        if factors else "<p><em>(無)</em></p>"
+    )
+
+    return f"""<div class="reason-report as01-report">
+  <h3>{code} {name}</h3>
+  <p>
+    <b>板塊:</b> {plate_name} <small>({plate_code})</small>
+    &nbsp;|&nbsp;
+    <b>綜合分數:</b> <span class="score qualified">{score}</span>
+  </p>
+  <h4>排名明細 (4 個維度)</h4>
+  <div class="dim-rows">{breakdown_bars}</div>
+  <h4>龍頭因素分析</h4>
+  {factors_html}
+  <h4>股票數據</h4>
+  <p>{snapshot_html}</p>
+  <h4>板塊來源</h4>
+  <p><small>{plate_name} ({plate_code})</small></p>
+</div>"""

@@ -713,3 +713,38 @@ _最後更新：2026-08-03 (LaunchAgent 永久 fix: Vite + logrotate)_
 - `web/src/components/library/ReasonPopUp.module.css` — 32 個 `:global()` wrappers (bar chart + score colors + width classes)
 - 將來其他 component 用 innerHTML 都要跟呢條 rule
 
+
+---
+
+## 📦 AS-01 Reason HTML Build Flow (大少 #10075, 2026-08-04)
+
+### Flow Diagram
+
+```
+[AS-01 Algorithm run] → backend/models/plate.py::run_plate_leaders()
+  → per-plate _rank_one_plate() → emit leaders with mcap_rank / volume_rank / score
+  ↓
+[Frontend AS-01 panel] → POST /api/saved-runs {algorithm_id: "AS-01", saved_stocks: [Leader with raw fields]}
+  ↓
+[Backend api/saved_runs.py] → save_run() auto-build block:
+  - Group saved_stocks by plate_code
+  - For each plate, compute plate_total = len(plate_stocks)
+  - Call build_as01_reason_html(stock, plate_total_stocks=plate_total)
+  - Append to all_reasons list
+  - sanitize_html() + upsert_reasons_batch() → SQLite stock_reasons table
+  ↓
+[SQLite stock_reasons table] → UNIQUE(code, source_type, source_ref) ON CONFLICT DO UPDATE
+  ↓
+[Frontend ViewRunModal] → ReasonCell v2 → useStockReasons(code) → GET /api/stock-reasons?code=***
+  ↓
+[Title list rendered] → click title → ReasonPopUp (DOMPurify sanitized HTML, 1000px modal)
+  → 4 個維度 bar chart + 顏色 + 龍頭因素分析
+```
+
+### Key Architectural Decisions (大少 #10075)
+
+1. **Plate-grouping**: Backend auto-build 時按 `plate_code` group stocks — 同一板塊內所有 stocks 嘅 relative rank width 一致 (e.g. 全部 #1 都係 w-100, 全部 #5 都係 w-50)。
+2. **4 個維度 display weights**: 40/40/10/10 (市值/成交量/綜合/龍頭度) — display 而唔係 algorithm weight。實際 AS-01 algorithm 只用 mcap_rank + volume_rank (50/50)。
+3. **Cross-cutting helpers** (`_score_class`, `_width_class`): Duplicated 喺 `models/plate.py` 同 `services/as02_analyzer.py` — 唔 extract 避免 scope creep (將來可抽 `utils/scoring.py`)。
+4. **Generic v2 template pattern**: 每個 algorithm 都用同一個 stock_reasons table (title + html + score_class + width_class) — 將來 AS-03/AS-04 跟同一個 pattern。
+
