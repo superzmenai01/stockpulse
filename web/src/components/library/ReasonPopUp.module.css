@@ -1,0 +1,138 @@
+/* ReasonPopUp.module.css — 大少 2026-08-04 UX update: bar chart + colors + bigger fonts
+ *
+ * IMPORTANT: 所有喺 innerHTML (dangerouslySetInnerHTML) 用嘅 class 都要加 :global()
+ * 因為 Vite CSS Modules 會 scope local class names, 但 innerHTML 嘅 class 係 raw.
+ * 例如 :global(.dim-row) → 喺 compiled CSS 出 ".dim-row" (global),
+ * 然後 raw <div class="dim-row"> 喺 HTML inner 入面 match 到.
+ */
+
+.modal :global(.ant-modal-body) {
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.body {
+  font-size: 17px;  /* up from 14 */
+  line-height: 1.7;
+}
+
+.body :global(h3) {
+  font-size: 26px;  /* up from default ~20 */
+  margin-top: 0;
+  margin-bottom: 16px;
+  color: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding-bottom: 10px;
+}
+
+.body :global(h4) {
+  font-size: 20px;  /* up from default ~16 */
+  margin-top: 24px;
+  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.body :global(p) {
+  font-size: 17px;
+  margin: 12px 0;
+}
+
+.body :global(ul),
+.body :global(ol) {
+  margin: 12px 0;
+  padding-left: 28px;
+}
+
+.body :global(li) {
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+/* Score colors (大少 2026-08-04) */
+.body :global(.classification.qualified) {
+  color: #52c41a;
+  font-weight: 600;
+}
+
+.body :global(.classification.disqualified) {
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.body :global(.score.score-high) {
+  color: #52c41a;
+  font-weight: 700;
+  font-size: 26px;
+}
+
+.body :global(.score.score-med) {
+  color: #faad14;
+  font-weight: 700;
+  font-size: 26px;
+}
+
+.body :global(.score.score-low) {
+  color: #ff4d4f;
+  font-weight: 700;
+  font-size: 26px;
+}
+
+/* Bar chart 6-dim breakdown (大少 2026-08-04 — ALL classes :global() for innerHTML compat) */
+:global(.dim-rows) {
+  margin: 14px 0;
+}
+
+:global(.dim-row) {
+  display: flex;
+  align-items: center;
+  margin: 12px 0;
+  gap: 14px;
+}
+
+:global(.dim-label) {
+  flex: 0 0 140px;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+:global(.dim-weight) {
+  font-size: 13px;
+  opacity: 0.65;
+  margin-left: 4px;
+}
+
+:global(.dim-bar-bg) {
+  flex: 1;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+:global(.dim-bar-fill) {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.4s ease;
+}
+
+:global(.dim-score) {
+  flex: 0 0 60px;
+  text-align: right;
+  font-weight: 700;
+  font-size: 19px;
+}
+
+/* Score class colors (大少 2026-08-04: 綠/黃/紅) */
+:global(.score-high) { background: #52c41a; }
+:global(.score-med)  { background: #faad14; }
+:global(.score-low)  { background: #ff4d4f; }
+
+:global(.dim-score.score-high) { color: #52c41a; }
+:global(.dim-score.score-med)  { color: #faad14; }
+:global(.dim-score.score-low)  { color: #ff4d4f; }
+
+/* Width classes (10-step rounding, 大少 2026-08-04) */
+:global(.w-10) { width: 10%; } :global(.w-20) { width: 20%; } :global(.w-30) { width: 30%; }
+:global(.w-40) { width: 40%; } :global(.w-50) { width: 50%; } :global(.w-60) { width: 60%; }
+:global(.w-70) { width: 70%; } :global(.w-80) { width: 80%; } :global(.w-90) { width: 90%; }
+:global(.w-100) { width: 100%; }

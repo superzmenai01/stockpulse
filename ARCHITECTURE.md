@@ -621,3 +621,95 @@ Miniapp backend (port 18793) 已經喺 QW-1 改 bind `127.0.0.1`：
 ---
 
 _最後更新：2026-08-03 (LaunchAgent 永久 fix: Vite + logrotate)_
+---
+
+## 📦 Stock Reasons Architecture (大少 #9920)
+
+### 改動概要
+
+原本每隻 stock 嘅 reason 喺 `saved_stocks[i].reason` (String, plain text)，新架構獨立 `stock_reasons` table 儲存 sanitized HTML，獨立 components 渲染 PopUp。
+
+### Data Flow
+
+```
+[Algorithm run] → backend/services/<algo>_analyzer.build_<algo>_reason_html(result)
+                ↓
+[Frontend SaveRunModal] → POST /api/saved-runs { ..., reasons: [{code, source_type, source_ref, title, html}] }
+                ↓
+[Backend api/saved_runs.py] → sanitize_html(req.html) → models.stock_reasons.upsert_reasons_batch()
+                ↓
+[SQLite stock_reasons table] → UNIQUE(code, source_type, source_ref) ON CONFLICT DO UPDATE
+                ↓
+[Frontend ViewRunModal] → ReasonCell v2 → useStockReasons(code) → GET /api/stock-reasons?code=X
+                ↓
+[Title list rendered] → click title → ReasonPopUp (DOMPurify sanitized HTML, 900px modal)
+```
+
+### Sanitization Pipeline (defense-in-depth)
+
+1. **Algorithm-side** — `build_<algo>_reason_html()` 寫 structured HTML (no user input)
+2. **Backend write** — `services.html_sanitizer.sanitize_html()` 用 bleach + post-scrub regex 移除 XSS vectors
+3. **Frontend render** — `DOMPurify.sanitize()` client-side 第二重保險
+4. **CSP** (將來 optional) — iframe sandbox 為極端 paranoia level
+
+### 累積語意 (Q1 Smart Dedupe)
+
+- 同 `(code, source_type, source_ref)` 重做 → **overwrite 最新** (RECOVER semantics)
+- 唔同 algorithm (AS-01 vs AS-02) → 分開 row
+- 唔同 source_type (algorithm vs manual) → 分開 row
+- Result: ViewRunModal 入面睇一隻 stock 嘅 reasons = 全部做過嘅 algorithm reports + 任何 manual/news/research
+
+
+---
+
+## ⚠️ CSS Module Scoping in innerHTML (Permanent Rule, 2026-08-04)
+
+**Problem**: 2026-08-04 大少 screenshot 報「什麼 Chart 都沒有」 — bar chart 0 width render 唔出
+
+**Root Cause**:
+```css
+/* Vite CSS Modules 編譯時 scope 變 local */
+.dim-row { display: flex; }     /* → ReasonPopUp_dim-row__abc123 */
+.dim-bar-bg { height: 22px; }  /* → ReasonPopUp_dim-bar-bg__abc123 */
+```
+但 `dangerouslySetInnerHTML` content 嘅 class 係 raw:
+```html
+<div class="dim-row">...</div>  <!-- 仍然係 dim-row -->
+```
+
+**CSS 變 `_dim-row__abc123`，HTML 係 `dim-row` — selector 唔 match，styles 唔 apply**。
+
+### 解決方案
+
+凡係 component 嘅 HTML content 用 `dangerouslySetInnerHTML`，module.css 入面對應嘅 class 必須加 `:global()` 前綴：
+
+```css
+/* Fixed — 用 :global() keep raw class name */
+:global(.dim-row) {
+  display: flex;
+  align-items: center;
+  margin: 12px 0;
+  gap: 14px;
+}
+
+:global(.dim-bar-bg) {
+  flex: 1;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+```
+
+編譯後變:
+```css
+.dim-row { display: flex; ... }   /* global, no scoping */
+.dim-bar-bg { height: 22px; ... }
+```
+
+跟 raw HTML `class="dim-row"` match ✅。
+
+### 應用範圍 (大少 #9920 + #10031)
+
+- `web/src/components/library/ReasonPopUp.module.css` — 32 個 `:global()` wrappers (bar chart + score colors + width classes)
+- 將來其他 component 用 innerHTML 都要跟呢條 rule
+

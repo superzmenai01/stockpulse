@@ -28,6 +28,22 @@ export interface Leader {
   reason: string;
 }
 
+// 大少 2026-08-03 #9920: ReasonEntry — per-stock HTML report entry
+// 原本 reason: string (plain text) 唔夠表達表格/圖表, 改用 sanitized HTML content
+// Generic design — 不只是 algorithm, 可以係 manual / news / research
+export interface ReasonEntry {
+  id: number;
+  code: string;
+  source_type: 'algorithm' | 'manual' | 'news' | 'research';
+  source_ref: string;            // algorithm_id like 'AS-02', or manual ref string
+  source_run_id: number | null;  // link back to saved_algorithm_runs.id (null for non-algorithm sources)
+  title: string;                 // display title e.g. '板塊龍頭股篩選'
+  html: string;                  // sanitized HTML content (≤ 50KB, server-side validated)
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+
 // 大少 2026-07-26 #7566: SavedStock = full Leader snapshot (per saved_stocks DB column)
 export type SavedStock = Leader;
 

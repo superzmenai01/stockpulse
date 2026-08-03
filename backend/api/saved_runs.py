@@ -10,14 +10,21 @@ Modular FastAPI router (大少 modular block architecture):
 
 DB init 喺 main.py lifespan 啟動時呼叫 `init_saved_runs_table()`。
 """
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from models import saved_runs as model
+# 大少 2026-08-03 #9920: stock_reasons model — cross-table insert on save_run
+from models import stock_reasons as reasons_model
+from services.html_sanitizer import sanitize_html
 
 router = APIRouter(prefix="/api/saved-runs", tags=["saved-runs"])
+
+# 大少 2026-08-03 #9920: logger for reasons insert diagnostics
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -40,6 +47,14 @@ class SaveRunRequest(BaseModel):
     metadata: dict = Field(default_factory=dict, description="{plates, top_n, ...}")
     name: Optional[str] = Field(None, description="User-given name (optional, auto-generate if 唔提供)")
     note: Optional[str] = Field(None, description="Optional 備註")
+    # 大少 2026-08-03 #9920: per-stock HTML reasons (algorithm-generated, sanitized server-side)
+    # - Each reason dict: {code, source_type, source_ref, title, html}
+    # - source_run_id auto-set to new run.id after save_run() returns
+    # - Smart Dedupe via UNIQUE(code, source_type, source_ref) ON CONFLICT UPDATE
+    reasons: list[dict] = Field(
+        default_factory=list,
+        description="(大少 #9920) Per-stock HTML reason reports — sanitized server-side + inserted into stock_reasons"
+    )
 
 
 class UpdateRunRequest(BaseModel):
@@ -65,9 +80,11 @@ async def save_run(req: SaveRunRequest) -> dict:
     - name 唔提供 → auto-generate `{algorithm_name} {YYYY-MM-DD} {HHMM}`
     - 撞名 → auto-append `-2`, `-3`
     - 大少 2026-07-26 #7566: 接受 saved_stocks (full snapshot), stocks 自動 derived if 唔提供
+    - 大少 2026-08-03 #9920: 接受 reasons (per-stock HTML reports) — sanitized + inserted into stock_reasons
+      with source_run_id = new run.id. Smart Dedupe via UNIQUE(code, source_type, source_ref).
     """
     try:
-        return model.save_run(
+        saved_run = model.save_run(
             algorithm_id=req.algorithm_id,
             algorithm_name=req.algorithm_name,
             stocks=req.stocks,
@@ -78,6 +95,70 @@ async def save_run(req: SaveRunRequest) -> dict:
         )
     except Exception as e:
         raise HTTPException(500, f"Save failed: {e}")
+
+    new_run_id = saved_run.get("id")
+
+    # 大少 #9920 (2026-08-03 23:30 fix): collect ALL reasons (user-provided + auto-built)
+    all_reasons: list[dict] = []
+
+    # 1. User-provided reasons (frontend explicit — 將來 manual UI / news 等用)
+    if req.reasons:
+        for r in req.reasons:
+            # Sanitize HTML server-side (defense-in-depth)
+            raw_html = r.get("html", "")
+            sanitized = sanitize_html(raw_html)
+            all_reasons.append({
+                "code": r.get("code", ""),
+                "source_type": r.get("source_type", "algorithm"),
+                "source_ref": r.get("source_ref", req.algorithm_id),
+                "title": r.get("title", ""),
+                "html": sanitized,
+                "source_run_id": new_run_id,
+            })
+
+    # 2. Auto-build AS-02 reasons from saved_stocks raw data (大少 #9920 23:30 fix)
+    # - Frontend AS-02 panel send saved_stocks 入面已經有 raw fields (breakdown / reasons / analysis_text)
+    #   因為 AS02Stock extends Leader, qualifiedResults 實際帶晒呢啲 fields
+    # - Backend 自動 detect + call build_as02_reason_html() per stock → 唔使 frontend 額外 wire
+    # - Smart Dedupe: 同 (code, source_type, source_ref) 自動 overwrite → 永遠 latest
+    if req.algorithm_id == "AS-02" and req.saved_stocks:
+        try:
+            from services.as02_analyzer import build_as02_reason_html
+            auto_built = 0
+            for stock in req.saved_stocks:
+                if "breakdown" in stock:  # only if raw AS-02 data present
+                    html = build_as02_reason_html(stock)
+                    all_reasons.append({
+                        "code": stock.get("code", ""),
+                        "source_type": "algorithm",
+                        "source_ref": "AS-02",
+                        "title": "公司質素分析篩選",
+                        "html": html,
+                        "source_run_id": new_run_id,
+                    })
+                    auto_built += 1
+            if auto_built > 0:
+                logger.info(
+                    f"[save_run] AS-02 auto-build {auto_built} reasons for run #{new_run_id}"
+                )
+        except Exception as e:
+            logger.warning(f"[save_run] AS-02 auto-build failed: {e}")
+            # Don't fail the whole save — reasons are secondary
+
+    # Bulk insert all reasons with smart dedupe
+    if all_reasons:
+        try:
+            reasons_model.upsert_reasons_batch(all_reasons)
+            logger.info(
+                f"[save_run] Inserted {len(all_reasons)} reasons for run #{new_run_id}"
+            )
+        except ValueError as e:
+            logger.warning(f"[save_run] reasons insert validation failed: {e}")
+            # Don't fail the whole save — reasons are secondary
+        except Exception as e:
+            logger.error(f"[save_run] reasons insert failed: {e}")
+
+    return saved_run
 
 
 @router.get("")

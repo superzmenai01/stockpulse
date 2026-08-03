@@ -66,7 +66,7 @@ export function useDebugContext(autoPollMs = 5000): UseDebugContextResult {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const resp = await fetch(`${API_BASE}/api/debug/status`);
+      const resp = await fetch(`${API_BASE}/debug/status`);
       if (!resp.ok) throw new Error(`status HTTP ${resp.status}`);
       const data = (await resp.json()) as DebugStatus;
       setStatus(data);
@@ -78,7 +78,7 @@ export function useDebugContext(autoPollMs = 5000): UseDebugContextResult {
 
   const fetchLastRun = useCallback(async () => {
     try {
-      const resp = await fetch(`${API_BASE}/api/debug/last_run`);
+      const resp = await fetch(`${API_BASE}/debug/last_run`);
       if (!resp.ok) throw new Error(`last_run HTTP ${resp.status}`);
       const data = (await resp.json()) as { run: DebugRun | null };
       setLastRun(data.run);

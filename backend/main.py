@@ -23,6 +23,8 @@ from api.network import router as network_router
 from models.saved_runs import init_saved_runs_table
 from models.llm_settings import init_llm_settings_table
 from models.algorithm_dq_log import init_algorithm_dq_log_table
+# 大少 2026-08-03 #9920: stock_reasons table — generic per-stock HTML reason storage
+from models.stock_reasons import init_stock_reasons_table
 from utils.network import detect_lan_ip
 from ws import router as ws_router, init_futu_connection
 
@@ -54,6 +56,9 @@ async def lifespan(app: FastAPI):
     init_llm_settings_table()
     logger.info("[Startup] init algorithm_dq_log table...")
     init_algorithm_dq_log_table()
+    # 大少 2026-08-03 #9920: stock_reasons table init (Q3 table name)
+    logger.info("[Startup] init stock_reasons table...")
+    init_stock_reasons_table()
     yield
     # 關閉時清理（如果有的話）
 

@@ -68,8 +68,8 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
   const [error, setError] = useState<string | null>(null);
 
   const url = algorithmId
-    ? `${API_BASE}/api/saved-runs?algorithm_id=${encodeURIComponent(algorithmId)}`
-    : `${API_BASE}/api/saved-runs`;
+    ? `${API_BASE}/saved-runs?algorithm_id=${encodeURIComponent(algorithmId)}`
+    : `${API_BASE}/saved-runs`;
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -91,7 +91,7 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
   }, [refresh]);
 
   const saveRun = useCallback(async (input: SaveRunInput): Promise<SavedRun> => {
-    const resp = await fetch(`${API_BASE}/api/saved-runs`, {
+    const resp = await fetch(`${API_BASE}/saved-runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
@@ -106,7 +106,7 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
   }, []);
 
   const updateRun = useCallback(async (id: number, input: UpdateRunInput): Promise<SavedRun> => {
-    const resp = await fetch(`${API_BASE}/api/saved-runs/${id}`, {
+    const resp = await fetch(`${API_BASE}/saved-runs/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
@@ -121,7 +121,7 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
   }, []);
 
   const deleteRun = useCallback(async (id: number): Promise<void> => {
-    const resp = await fetch(`${API_BASE}/api/saved-runs/${id}`, {
+    const resp = await fetch(`${API_BASE}/saved-runs/${id}`, {
       method: 'DELETE',
     });
     if (!resp.ok) throw new Error(`Delete failed: HTTP ${resp.status}`);
@@ -129,7 +129,7 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
   }, []);
 
   const getRun = useCallback(async (id: number): Promise<SavedRun | null> => {
-    const resp = await fetch(`${API_BASE}/api/saved-runs/${id}`);
+    const resp = await fetch(`${API_BASE}/saved-runs/${id}`);
     if (resp.status === 404) return null;
     if (!resp.ok) throw new Error(`Get failed: HTTP ${resp.status}`);
     return (await resp.json()) as SavedRun;
@@ -141,7 +141,7 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(`${API_BASE}/api/saved-runs/reorder`, {
+      const resp = await fetch(`${API_BASE}/saved-runs/reorder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ordered_ids }),
@@ -160,7 +160,7 @@ export function useSavedRuns(algorithmId?: string): UseSavedRunsResult {
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(`${API_BASE}/api/saved-runs/${id}/pin`, {
+      const resp = await fetch(`${API_BASE}/saved-runs/${id}/pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pinned }),

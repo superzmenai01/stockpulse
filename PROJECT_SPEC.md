@@ -483,3 +483,118 @@ CREATE TABLE watchlist (
 ---
 
 _最後更新：2026-08-03 (大少 / AI assistant sync — LaunchAgent 永久 fix)_
+
+---
+
+## 📦 Stock Reasons (大少 2026-08-03 #9920)
+
+### 概述
+
+每隻股票嘅 reason 由原本嘅 plain text (string, 唔夠表達表格/圖表) → sanitized HTML 報告，獨立 table 儲存。
+
+### 設計哲學
+
+- **Generic table** — `stock_reasons` 唔只係 algorithm-specific，將來 manual notes / news / research 都用同一 table
+- **Smart Dedupe** — 同一 `(code, source_type, source_ref)` 重做 → overwrite 最新版本 (RECOVER semantics)
+- **Soft delete** — `is_active` flag，永遠保留 audit trail
+- **Cross-run accumulation** — 同一 stock 喺唔同 algorithm runs 入面嘅 reasons 自動累積 (query `WHERE code=X` 攞晒)
+
+### Schema
+
+```sql
+CREATE TABLE stock_reasons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL,                      -- FK → stocks.code (logical)
+  source_type TEXT NOT NULL,               -- 'algorithm' | 'manual' | 'news' | 'research'
+  source_ref TEXT NOT NULL,                -- algorithm_id ('AS-02') or manual ref
+  source_run_id INTEGER,                   -- nullable, FK → saved_algorithm_runs.id (logical)
+  title TEXT NOT NULL,                     -- '板塊龍頭股篩選'
+  html TEXT NOT NULL,                      -- sanitized HTML, ≤ 50KB
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  is_active INTEGER NOT NULL DEFAULT 1,    -- soft delete flag
+  UNIQUE(code, source_type, source_ref)
+);
+
+CREATE INDEX idx_stock_reasons_code ON stock_reasons(code, is_active, created_at DESC);
+CREATE INDEX idx_stock_reasons_run ON stock_reasons(source_run_id) WHERE source_run_id IS NOT NULL;
+```
+
+### Frontend Type
+
+```ts
+export interface ReasonEntry {
+  id: number;
+  code: string;
+  source_type: 'algorithm' | 'manual' | 'news' | 'research';
+  source_ref: string;
+  source_run_id: number | null;
+  title: string;
+  html: string;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+```
+
+### 舊 Data 處理 (大少 Q2)
+
+- 舊 `saved_stocks[i].reason` string — **wipe** (testing data only)
+- ReasonCell v2 提供 fallback: 冇新 format reasons 時，render 舊 truncated text + 「(舊版)」標記
+- 唔做 auto-migration (避免複雜度)
+
+
+---
+
+## 🎨 Stock Reasons Display v2 UX (大少 2026-08-04 #10031)
+
+> **Trigger**: 大少 screenshot HK.00700 嘅 6-dim table — 要求中文 + chart + 顏色 + 大字
+> **Status**: ✅ Done (Backend + Frontend + Restart + Backfill all verified)
+
+### 中文 Labels + Weights
+
+6 個維度跟 AS-02 spec 嘅 weighted score formula (30/20/15/15/10/10):
+
+| English Key | 中文 Label | Weight |
+|---|---|---|
+| `financial` | 財務健康 | 30% |
+| `business` | 業務模式 | 20% |
+| `management` | 管理層 | 15% |
+| `industry` | 行業前景 | 15% |
+| `valuation` | 估值 | 10% |
+| `risk` | 風險 | 10% |
+
+### Bar Chart Format (取代舊 Table)
+
+每個維度一行 (flex layout):
+```html
+<div class="dim-row">
+  <span class="dim-label">財務健康 <small class="dim-weight">(30%)</small></span>
+  <div class="dim-bar-bg"><div class="dim-bar-fill score-med w-70"></div></div>
+  <span class="dim-score score-med">70.0</span>
+</div>
+```
+
+### 顏色 Mapping (大少 2026-08-04)
+
+| Score | Class | Color | Hex |
+|---|---|---|---|
+| ≥ 75 | `score-high` | 綠 | `#52c41a` |
+| 60 - 74 | `score-med` | 黃 | `#faad14` |
+| < 60 | `score-low` | 紅 | `#ff4d4f` |
+
+### 字體 + Modal Sizing
+
+| 項目 | v1 | v2 |
+|---|---|---|
+| Body | 14px | **17px** |
+| h3 | 20px (default) | **26px** |
+| h4 | 16px (default) | **20px** |
+| Modal width | 900px | **1000px** |
+
+### 永久 Rule (2026-08-04)
+
+凡係 component 嘅 HTML content 用 `dangerouslySetInnerHTML` (例如 ReasonPopUp / ReasonCell)，module.css 入面對應嘅 class **必須加 `:global()` 前綴**。原因：Vite CSS Modules 預設 scope local class names (e.g. `_dim-row__abc123`)，但 innerHTML 嘅 class 係 raw (e.g. `dim-row`) — selector 唔 match。
+
+**反面教材**: 2026-08-04 第一次寫 CSS 漏咗 `:global()` 前綴 → 大少 screenshot 報「什麼 Chart 都沒有」— bar chart 0 width 因為 `.dim-row` 變咗 `_dim-row__abc123` 而 HTML 係 raw。
+

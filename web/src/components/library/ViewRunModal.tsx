@@ -450,10 +450,11 @@ function ViewRunModal({ run, onCancel, onUseAsInput, onSelectionChange, onSaved 
                 dataIndex: 'reason',
                 key: 'reason',
                 width: 220,  // 大少 #9557 (2026-08-02 00:00): Fixed ~20 中文字 闊, 展開後 wrap 落多行唔擴闊
-                // 大少 #9494 (2026-08-01): Truncate + onClick expand (方案 A)
-                // 用獨立 ReasonCell component (唔可以 inline useState 喺 column.render
-                // callback 入面, 違反 React Hooks Rules → AntD Cell2 crash).
-                render: (r: string) => <ReasonCell text={r} />,
+                // 大少 #9920 (2026-08-03): ReasonCell v2 — uses useStockReasons(code) hook to render
+                // sanitized HTML titles + PopUp. legacyReason 留 fallback for 舊 data.
+                render: (r: string, record: SavedStockWithIdx) => (
+                  <ReasonCell code={record.code} legacyReason={r} />
+                ),
               },
               {
                 // 大少 #8762 (2026-07-29): 操作 column — icon-only 刪除 button (低頻功能, 唔使常見)

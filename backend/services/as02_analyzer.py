@@ -384,3 +384,158 @@ async def analyze_one_stock(stock_code: str, provider) -> dict:
         "pe": snapshot.get("pe", 0),
         "pb": snapshot.get("pb", 0),
     }
+
+
+# ============================================================================
+# HTML Builder — 大少 2026-08-03 #9920 + UX update 2026-08-04
+# AS-02 → stock_reasons.html 嘅 build function.
+# Wrap 6-dim breakdown + reasons + summary + DQ trigger 落 structured HTML.
+# IMPORTANT: Caller responsibility to call services/html_sanitizer.sanitize_html() before persist.
+#
+# 大少 2026-08-04 UX update: bar chart 取代 table + 中文 labels + 顏色 by score + 大字
+# ============================================================================
+
+# 大少 2026-08-04: 6 個維度嘅中文 labels (跟 AS-02 spec 嘅 30/20/15/15/10/10 weights)
+DIMENSION_LABELS_ZH: dict[str, str] = {
+    "financial": "財務健康",
+    "business": "業務模式",
+    "management": "管理層",
+    "industry": "行業前景",
+    "valuation": "估值",
+    "risk": "風險",
+}
+
+DIMENSION_WEIGHTS: dict[str, int] = {
+    "financial": 30,
+    "business": 20,
+    "management": 15,
+    "industry": 15,
+    "valuation": 10,
+    "risk": 10,
+}
+
+
+def _score_class(score: float) -> str:
+    """Map score (0-100) → CSS class for color (大少 2026-08-04 UX):
+    ≥75 = score-high (綠), 60-74 = score-med (黃), <60 = score-low (紅).
+    Note: bleach 會 strip inline style attribute, 所以用 class 而唔係 inline color.
+    """
+    if score >= 75:
+        return "score-high"
+    elif score >= 60:
+        return "score-med"
+    return "score-low"
+
+
+def _width_class(value: float) -> str:
+    """Round score (0-100) to nearest 10 → CSS class like 'w-70'.
+    大少 2026-08-04 UX: bar chart width 用 class 控制 (10 個 bucket 足夠視覺分辨).
+    """
+    rounded = max(0, min(100, int(round(value / 10.0)) * 10))
+    return f"w-{rounded}"
+
+
+def build_as02_reason_html(result: dict) -> str:
+    """
+    [大少 #9920] Wrap AS-02 analysis result into HTML for stock_reasons.html storage.
+
+    Args:
+        result: AS-02 analyze_one_stock() return dict:
+            {
+                "code", "name", "classification", "score", "breakdown",
+                "reasons", "analysis_text", "data_sources", "financial_data",
+                "price", "change_pct", "mcap", "turnover", "pe", "pb"
+            }
+
+    Returns:
+        Sanitized-safe HTML string. Caller must run sanitize_html() before DB insert.
+
+    Display fields:
+    - Title block: stock code + name + classification badge + score
+    - Score breakdown table (6 dimensions: financial/business/management/industry/valuation/risk)
+    - Hard DQ trigger section (if any)
+    - LLM-derived reasons list
+    - Analysis text summary
+    - Stock snapshot (price/mcap/turnover/PE/PB) — 將來其他 report reuse
+
+    大少 #9920: every new algorithm should have similar `build_<algo>_reason_html()` function
+    following the same template structure.
+    """
+    code = result.get("code", "Unknown")
+    name = result.get("name", "Unknown")
+    classification = result.get("classification", "unknown")
+    score = result.get("score", 0)
+    breakdown = result.get("breakdown", {}) or {}
+    reasons = result.get("reasons", []) or []
+    analysis_text = result.get("analysis_text", "") or ""
+    data_sources = result.get("data_sources", []) or []
+    price = result.get("price", 0)
+    change_pct = result.get("change_pct", 0)
+    mcap = result.get("mcap", 0)
+    turnover = result.get("turnover", 0)
+    pe = result.get("pe", 0)
+    pb = result.get("pb", 0)
+
+    # 大少 2026-08-04: 6 個維度用 bar chart (中文 labels + 顏色 by score + class-based widths)
+    breakdown_bars = ""
+    for k, v in breakdown.items():
+        if isinstance(v, (int, float)):
+            label_zh = DIMENSION_LABELS_ZH.get(k, k)
+            weight_pct = DIMENSION_WEIGHTS.get(k, 0)
+            sclass = _score_class(v)  # score-high / score-med / score-low
+            wcls = _width_class(v)    # w-10 ~ w-100 (rounded to nearest 10)
+            breakdown_bars += (
+                f'<div class="dim-row">'
+                f'<span class="dim-label">{label_zh} '
+                f'<small class="dim-weight">({weight_pct}%)</small></span>'
+                f'<div class="dim-bar-bg"><div class="dim-bar-fill {sclass} {wcls}"></div></div>'
+                f'<span class="dim-score {sclass}">{v:.1f}</span>'
+                f'</div>'
+            )
+
+    # Reasons list
+    if reasons:
+        reasons_html = "<ul>" + "".join(f"<li>{r}</li>" for r in reasons) + "</ul>"
+    else:
+        reasons_html = "<p><em>(無)</em></p>"
+
+    # Snapshot (price/mcap/etc) — only show if non-zero (avoid cluttering)
+    snapshot_parts: list[str] = []
+    if price > 0:
+        snapshot_parts.append(f"<b>現價:</b> {price:.2f}")
+    if change_pct != 0:
+        snapshot_parts.append(f"<b>變幅:</b> {change_pct:+.2f}%")
+    if mcap > 0:
+        snapshot_parts.append(f"<b>市值:</b> {mcap / 1e9:.2f}B")
+    if turnover > 0:
+        snapshot_parts.append(f"<b>換手率:</b> {turnover:.2f}%")
+    if pe > 0:
+        snapshot_parts.append(f"<b>PE:</b> {pe:.2f}")
+    if pb > 0:
+        snapshot_parts.append(f"<b>PB:</b> {pb:.2f}")
+    snapshot_html = " · ".join(snapshot_parts) if snapshot_parts else "(無實時數據)"
+
+    # Data sources
+    sources_html = ", ".join(data_sources) if data_sources else "(無)"
+
+    # Classification badge color
+    cls_class = "qualified" if classification == "qualified" else "disqualified"
+
+    return f"""<div class="reason-report as02-report">
+  <h3>{code} {name}</h3>
+  <p>
+    <b>綜合分數:</b> <span class="score">{score:.1f}</span> / 100
+    &nbsp;|&nbsp;
+    <span class="classification {cls_class}">{classification}</span>
+  </p>
+  <h4>評分明細 (6 個維度)</h4>
+  <div class="dim-rows">{breakdown_bars}</div>
+  <h4>主要觀察</h4>
+  {reasons_html}
+  <h4>總結</h4>
+  <p>{analysis_text or '(無)'}</p>
+  <h4>股票數據</h4>
+  <p>{snapshot_html}</p>
+  <h4>資料來源</h4>
+  <p><small>{sources_html}</small></p>
+</div>"""

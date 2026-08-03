@@ -331,3 +331,90 @@ Health check endpoint.
 | 2026-07-29 | `/api/saved-runs/reorder` + `/api/saved-runs/{id}/pin` 新增 | 大少 #8960 |
 | 2026-07-26 | `save_run` 接受 `saved_stocks` (full snapshot) | 大少 #7566 |
 | 2026-07-24 | 首次落地 saved_runs 5 個 endpoints | 大少 #7051 |
+
+---
+
+## 📦 Stock Reasons API (大少 #9920)
+
+### Endpoints
+
+| Method | Endpoint | Purpose | Body | Response |
+|---|---|---|---|---|
+| `GET` | `/api/stock-reasons?code=HK.00981` | List active reasons for stock (newest first) | — | `{reasons: [...], count: N}` |
+| `GET` | `/api/stock-reasons/{id}` | Single reason by id | — | `ReasonEntry` |
+| `POST` | `/api/stock-reasons` | Create (sanitize + size check + UNIQUE dedupe) | `{code, source_type, source_ref, title, html, source_run_id?}` | `ReasonEntry` |
+| `PUT` | `/api/stock-reasons/{id}` | Update title/html | `{title?, html?}` | `ReasonEntry` |
+| `DELETE` | `/api/stock-reasons/{id}` | Soft delete (is_active=0) | — | `{deleted: true, id}` |
+
+### Query Parameters
+
+- `code` (required for list) — Stock code, e.g. `HK.00981`
+- `include_inactive` (optional, default false) — Show soft-deleted for audit
+
+### Request/Response Schemas
+
+```ts
+interface ReasonEntry {
+  id: number;
+  code: string;
+  source_type: 'algorithm' | 'manual' | 'news' | 'research';
+  source_ref: string;
+  source_run_id: number | null;
+  title: string;
+  html: string;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+```
+
+### save_run Body Extension
+
+`POST /api/saved-runs` 接受新 field `reasons` (optional):
+
+```json
+{
+  "algorithm_id": "AS-02",
+  "algorithm_name": "公司質素分析",
+  "stocks": ["HK.00981"],
+  "saved_stocks": [...],
+  "metadata": {...},
+  "reasons": [
+    {
+      "code": "HK.00981",
+      "source_type": "algorithm",
+      "source_ref": "AS-02",
+      "title": "公司質素分析篩選",
+      "html": "<div>...</div>"
+    }
+  ]
+}
+```
+
+- Backend 自動 sanitize HTML + bulk insert 到 stock_reasons
+- `source_run_id` 自動設為新 run.id
+- Smart Dedupe via UNIQUE constraint
+
+### Sanitization Rules
+
+- **Allowlist tags**: div, span, p, br, hr, h1-h4, strong, em, b, i, u, sub, sup, ul, ol, li, table, thead, tbody, tfoot, tr, th, td, caption, a, code, pre, blockquote, small
+- **Allowlist attrs**: class, id, href, title, target, rel, colspan, rowspan, scope, border
+- **Allowed protocols**: http, https, mailto, tel
+- **Strip**: script, style, iframe, object, embed, on* handlers, javascript:, vbscript:, data:text/html
+- **Size limit**: 50KB post-sanitize (超過 truncate + marker)
+
+
+---
+
+## 📝 Recent Updates (2026-08-04)
+
+| 日期 | 改動 | 大少 reference |
+|---|---|---|
+| 2026-08-04 | **v2 UX**: `build_as02_reason_html()` 改 emit bar chart (取代 table) + 中文 labels + 顏色 by score + class-based widths (w-10 ~ w-100) | 大少 #10031 |
+| 2026-08-04 | **CSS Module `:global()` rule**: `ReasonPopUp.module.css` 加 32 個 `:global()` wrappers (innerHTML compat) | 大少 #10031, fix #10047 |
+| 2026-08-04 | **Backend restart**: New PID 7630 listening on 18792 (started 00:22:20) — 載入所有今日寫嘅新 code | 大少 #9920 |
+| 2026-08-04 | **Backend auto-build on save**: `api/saved_runs.py` save_run endpoint 加 AS-02 auto-build block (唔使 frontend wire) | 大少 #9920 fix #10005 |
+| 2026-08-04 | **Backfill v2**: 3 AS-02 runs × 3 stocks = 9 reasons updated with bar chart HTML | 大少 #9920 |
+| 2026-08-03 | Backend `auto-build AS-02 reasons` on save (前端唔使改) | 大少 #9920 (23:30 fix) |
+| 2026-08-03 | 新 `/api/stock-reasons` 5 endpoints (GET list/single, POST create, PUT update, DELETE soft) | 大少 #9920 |
+
