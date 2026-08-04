@@ -1032,3 +1032,75 @@ const visibleReasons = reasons.filter((r) => !r.is_stale);  // hide stale
 | Frontend 邏輯 | 簡單 (顯示) | 加 1 行 filter |
 | Design intent | 嚴格 per-run algorithm | 保留 accumulation + hide stale |
 
+---
+
+## N. Algorithm Layer — `algorithms/` (AS-03 股票周期判定)
+
+> **新章節 (2026-08-04)** — AS-03 cycle detection sub-project
+
+### 位置
+
+```
+~/stockpulse/algorithms/AS-03-cycle-detection/
+├── README.md           # 入口 + 快速開始
+├── ARCHITECTURE.md     # 完整架構 + 數據流
+├── DECISIONS.md        # D001-D010 ADR 決策記錄
+├── types.ts            # CycleState / Verdict / Report / Alert 共用類型
+├── config.ts           # 所有 tunable thresholds (DEFAULT_CYCLE_CONFIG)
+├── data-loader.ts      # HTTP client → GET /api/kline (cache-aside 沿用)
+├── index.ts            # CycleDetector 主入口 (runModule / analyze)
+├── modules/            # 5 個 peer modules (Module 1-5)
+│   ├── ma-alignment.ts
+│   ├── hl-structure.ts
+│   ├── trendline.ts
+│   ├── indicators.ts
+│   └── volume.ts
+├── orchestrator/       # Module 6 + 7 + 輔助
+│   ├── multi-tf.ts     # Module 6 — HTF 約束 LTF (orchestrator step 0)
+│   ├── synthesize.ts   # Module 7 — placeholder
+│   ├── aggregator.ts   # conflict resolution (placeholder)
+│   └── alert.ts        # regime change reminders
+└── __tests__/smoke.mjs
+```
+
+### 目標
+
+識別股票當前所處嘅周期 (上升 / 下跌 / 橫行 / 轉勢)，輔助大少做交易決策。
+
+### 架構 (7 個點)
+
+- **Module 1-5** (peer modules): MA Alignment, HL Structure, Trendline, Indicators, Volume — 每個都係獨立判斷方法，可單獨調用
+- **Module 6** (orchestrator step 0): MultiTFOrchestrator — HTF 約束 LTF (架構上唔係 peer, 見 D001)
+- **Module 7** (orchestrator): Synthesizer + Aggregator — placeholder majority vote (D004 待大少決定策略)
+- **RegimeChangeAlerter**: 轉勢時 emit alert，大少手動 confirm (D003 唔做 state machine)
+
+### 4 個 Cycle State (D002)
+
+`UP | DOWN | SIDEWAYS | TRANSITION` + 每個 verdict 必填 `interpretation: string` 中文解讀
+
+### 數據來源 (D008)
+
+- **Frontend (data-loader.ts)** HTTP client → `GET /api/kline`
+- **Backend `KlineCache`** (cache-aside) 處理 DB + 當日 OpenD 組合
+- AS-03 唔需要 re-implement cache — backend 已有 (`backend/services/kline_cache.py`)
+
+### 狀態
+
+- **v0.1.0-skeleton** (2026-08-04) — 5 peer modules + orchestrator + alert 全部 return placeholder verdict (`state='TRANSITION'`, `confidence=0`)
+- 等待大少逐個 module 提供詳細做法後實作
+- tsc type-check **EXIT=0**
+
+### 相關文檔
+
+- [AS-03 README](../algorithms/AS-03-cycle-detection/README.md)
+- [AS-03 ARCHITECTURE.md](../algorithms/AS-03-cycle-detection/ARCHITECTURE.md)
+- [AS-03 DECISIONS.md](../algorithms/AS-03-cycle-detection/DECISIONS.md)
+- [AS-03 RESEARCH_LOG](../docs/research/AS-03-cycle-detection/RESEARCH_LOG.md)
+
+### Apply Scope (永久 rules)
+
+- ✅ 6 個 module 全包 (D009 / Q3) — 唔分 priority
+- ✅ 6 個 model 結果都顯示 (D006) — UI 顯示 5 peer + 1 HTF + 1 synthesized = 7 個 verdict card
+- ⚠️ Backtest ground truth (D010 / Q4) — 暫緩，日後先傾
+- ⚠️ Synthesizer 策略 (D004) — 3 選 1 (htf-override / weighted-vote / expert-rules)，最後先定
+

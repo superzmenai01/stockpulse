@@ -1,0 +1,106 @@
+// types.ts — AS-03 股票周期判定 · 共用類型定義
+//
+// 所有 module / orchestrator / alert 嘅介面合約集中呢度。
+// 改呢度 = 改 contract，要小心。
+
+/** 4 個 cycle state — D002 (2026-08-04) */
+export type CycleState = 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION';
+
+/** 5 個 peer module IDs */
+export type CycleModuleId =
+  | 'ma-alignment'
+  | 'hl-structure'
+  | 'trendline'
+  | 'indicators'
+  | 'volume';
+
+/** 支援嘅 timeframe */
+export type Timeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
+
+/** 基本 K 線資料 (OHLCV) */
+export interface KLine {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/** 一條 evidence — 用嚟解釋點解咁判 */
+export interface Evidence {
+  type: string;            // e.g. 'ma-gap' | 'swing-count' | 'macd-position'
+  label: string;           // 中文 label (例如「MA20 gap」)
+  value: number | string;
+  threshold?: number | string;
+  passed: boolean;
+}
+
+/** Module 執行 context */
+export interface CycleContext {
+  symbol: string;
+  ltf: Timeframe;
+  htf?: Timeframe;
+  config?: unknown;        // CycleConfig (避免 circular import)
+}
+
+/**
+ * 統一嘅 verdict 結構 — 每個 module / orchestrator 都 return 呢個 shape
+ *
+ * @property interpretation 中文人話解讀 (D002)
+ */
+export interface CycleVerdict {
+  moduleId: CycleModuleId | 'htf-multi-tf' | 'synthesized';
+  timeframe: Timeframe;
+  state: CycleState;
+  confidence: number;             // 0-1
+  interpretation: string;         // 中文解讀 (必填)
+  evidence: Evidence[];
+  warnings?: string[];
+  meta?: Record<string, unknown>;
+  timestamp: number;
+}
+
+/**
+ * 轉勢提醒 — D003 (2026-08-04)
+ *
+ * 只喺 state 變化時 emit，由 user 手動 confirm / reject
+ * 唔做 auto-state-machine
+ */
+export interface RegimeChangeAlert {
+  symbol: string;
+  timeframe: Timeframe;
+  fromState: CycleState;
+  toState: CycleState;
+  confidence: number;
+  supportingModules: CycleModuleId[];
+  chineseMessage: string;       // 人話提示
+  timestamp: number;
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED';
+}
+
+/**
+ * 最終 cycle report — D006
+ *
+ * 包含 5 個 peer verdicts + 1 HTF verdict + 1 synthesized verdict = 7 個 verdict card
+ * UI 全部顯示 (大少要求「6 個 model 結果都要顯示」+ 1 綜合)
+ */
+export interface CycleReport {
+  symbol: string;
+  ltf: Timeframe;
+  htf?: {
+    timeframe: Timeframe;
+    verdict: CycleVerdict;
+  };
+  moduleVerdicts: CycleVerdict[];     // 5 個 peer module verdicts
+  alerts: RegimeChangeAlert[];        // 轉勢提醒 (empty if no change)
+  synthesized?: CycleVerdict;         // 點 7 — placeholder
+  timestamp: number;
+}
+
+/** Module contract — 5 個 peer modules 都要 implement */
+export interface CycleModule<I = KLine[]> {
+  id: CycleModuleId | 'htf-multi-tf' | 'synthesized';
+  version: string;
+  detect(input: I, ctx: CycleContext): Promise<CycleVerdict>;
+}

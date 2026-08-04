@@ -1,0 +1,22 @@
+{
+  "extends": "../../web/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist",
+    "noEmit": true,
+    "jsx": "preserve"
+  },
+  "include": [
+    "types.ts",
+    "config.ts",
+    "data-loader.ts",
+    "index.ts",
+    "modules/**/*.ts",
+    "orchestrator/**/*.ts"
+  ],
+  "exclude": [
+    "__tests__/**/*",
+    "node_modules",
+    "dist"
+  ]
+}
