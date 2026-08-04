@@ -5,7 +5,7 @@
 // 唔做 state machine auto-progress (TENTATIVE → CONFIRMED)
 // 只 emit alert，等大少手動 confirm / reject
 
-import type { CycleState, CycleModuleId, RegimeChangeAlert, Timeframe } from '../types';
+import type { CycleState, CycleModuleId, RegimeChangeAlert, Timeframe } from '../types.ts';
 
 export interface DetectAlertInput {
   symbol: string;

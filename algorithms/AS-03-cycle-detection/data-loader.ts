@@ -10,7 +10,7 @@
 //
 // AS-03 frontend 角色: 純 HTTP client → 將 response 轉成 KLine[] 餵俾 modules
 
-import type { KLine, Timeframe } from './types';
+import type { KLine, Timeframe } from './types.ts';
 
 export interface LoadKLinesOptions {
   symbol: string;                              // e.g. 'HK.00981', 'US.INTC'

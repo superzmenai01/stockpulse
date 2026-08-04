@@ -9,7 +9,7 @@
 //
 // 當前 placeholder: simple majority vote (no weight, no HTF override)
 
-import type { CycleVerdict } from '../types';
+import type { CycleVerdict } from '../types.ts';
 
 export interface AggregatorInput {
   htf?: CycleVerdict;

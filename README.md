@@ -418,3 +418,13 @@ A: 見 `backend/llm/` — fallback chain 已 setup (`minimax/MiniMax-M3-highspee
 ---
 
 _最後更新：2026-08-03 (大少 / AI assistant sync — LaunchAgent 永久 fix)_
+---
+
+## 📊 算法 (Algorithms)
+
+| 算法 | 狀態 | 描述 |
+|------|------|------|
+| **AS-01** | ✅ Active | 板塊龍頭股 Top N ranking (2-factor: 市值 + 換手率) |
+| **AS-03** | ✅ Module 1 done (2026-08-04 #10332) | 股票周期判定 — 10 條 rule-based 算法 (A-J): 均線 crossover + 量能守則 + 趨勢反轉偵測 |
+
+詳見 `docs/ALGORITHM_SPECS.md` 同 `~/stockpulse/algorithms/AS-03-cycle-detection/`。

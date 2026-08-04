@@ -1104,3 +1104,80 @@ const visibleReasons = reasons.filter((r) => !r.is_stale);  // hide stale
 - ⚠️ Backtest ground truth (D010 / Q4) — 暫緩，日後先傾
 - ⚠️ Synthesizer 策略 (D004) — 3 選 1 (htf-override / weighted-vote / expert-rules)，最後先定
 
+
+---
+
+## 10. AS-03 算法層 (v0.3.0, 2026-08-04 大少 #10332)
+
+AS-03 係 StockPulse 第一個完全實裝嘅 stock analysis algorithm (Module 1 ma-alignment done)。
+
+### 架構圖
+
+```
+┌─────────────────────────────────────────────────────┐
+│  AS-03 Cycle Detector                                │
+│  algorithms/AS-03-cycle-detection/index.ts          │
+└───────────────────┬─────────────────────────────────┘
+                    │
+   ┌────────────────┼────────────────┐
+   ▼                ▼                ▼
+┌────────┐   ┌─────────────┐   ┌──────────┐
+│ 5 Peer │   │ MultiTF     │   │  Synth   │
+│Module  │   │Orchestrator │   │ (Module7)│
+│ 1-5    │   │ (Module 6)  │   │          │
+└───┬────┘   └─────────────┘   └──────────┘
+    │
+    ├─ Module 1: ma-alignment (v0.3.0 ✅ DONE — 19/19 tests pass)
+    ├─ Module 2: hl-structure (⏳ TBD)
+    ├─ Module 3: trendline (⏳ TBD)
+    ├─ Module 4: indicators (⏳ TBD)
+    └─ Module 5: volume OBV (⏳ TBD — 等新 Model)
+```
+
+### Module 1: ma-alignment 嘅 10 條算法 (A-J)
+
+| # | 算法 | 規則 | 對應 state |
+|---|------|------|-----------|
+| A | 上升勢 | 連續 5 日 MA5 > MA60 | UP |
+| B | 下跌勢 | 連續 5 日 MA5 < MA60 | DOWN |
+| C | 橫行向下 | 5 日裡 MA5 > MA60 但當日 low < MA60 | SIDEWAYS |
+| D | 橫行向上 | 5 日裡 MA5 < MA60 但當日 high > MA60 | SIDEWAYS |
+| E | 末位日優先 | C/D 多過一日，最後一日為準 | (隱含) |
+| F | 升勢調整向下 | MA5+MA10 都 > MA60 但 MA5 < MA10 | UP |
+| G | 跌勢調整向上 | MA5+MA10 都 < MA60 但 MA5 > MA10 | DOWN |
+| H | 7 日趨勢反轉 | 1/2/3 日新方向 vs 4-7 日舊方向 (3 sub-case) | TRANSITION |
+| I | 有機會長升狀態 | 連續 5 日 low ≥ MA5 × 0.98 | supplementary |
+| J | 有機會長跌狀態 | 連續 5 日 high ≤ MA5 × 1.02 | supplementary |
+
+### 數據流向
+
+```
+[backend /api/kline] (cache-aside: DB + 當日 OpenD)
+       ↓
+[CycleDetector.analyze(symbol, ltf)]
+       ↓
+[DataLoader.loadKLines()] → KLine[]
+       ↓
+[5 Peer Modules.runModule(KLine[], ctx)]
+       ├─ ma-alignment → CycleVerdict (A-J rules fired)
+       ├─ hl-structure → CycleVerdict (placeholder)
+       ├─ trendline → CycleVerdict (placeholder)
+       ├─ indicators → CycleVerdict (placeholder)
+       └─ volume → CycleVerdict (placeholder)
+       ↓
+[Synthesizer] → Final CycleVerdict (待 D004 strategy 落實)
+       ↓
+[RegimeChangeAlerter] (D003 手動 confirm)
+       ↓
+UI: 5 peer + 1 HTF + 1 synthesized = 7 個 verdict card (D006)
+```
+
+### Spec
+
+- Spec: `~/stockpulse/docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`
+- Code: `~/stockpulse/algorithms/AS-03-cycle-detection/`
+- Tests: 19/19 pass, TSC=0
+
+### 已 Drop (v0.2.0 Kimi 13 個算法)
+
+Step 1-7a-d + magic numbers。原因：三個折扣叠太狠 (worst case 0.31)。

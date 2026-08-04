@@ -8,8 +8,8 @@
 //
 // ⏳ 暫定用 MA Alignment 做 HTF proxy — 大少可以指定用其他 module
 
-import type { CycleContext, CycleVerdict, KLine } from '../types';
-import { MAAlignmentModule } from '../modules/ma-alignment';
+import type { CycleContext, CycleVerdict, KLine } from '../types.ts';
+import { MAAlignmentModule } from '../modules/ma-alignment.ts';
 
 export class MultiTFOrchestrator {
   private readonly htfProxy: MAAlignmentModule;

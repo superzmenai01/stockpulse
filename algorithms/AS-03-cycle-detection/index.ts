@@ -4,18 +4,18 @@
 
 import type {
   CycleContext, CycleModuleId, CycleReport, CycleState, CycleVerdict, KLine,
-} from './types';
+} from './types.ts';
 
-import { MAAlignmentModule } from './modules/ma-alignment';
-import { HLStructureModule } from './modules/hl-structure';
-import { TrendlineModule } from './modules/trendline';
-import { IndicatorsModule } from './modules/indicators';
-import { VolumeModule } from './modules/volume';
+import { MAAlignmentModule } from './modules/ma-alignment.ts';
+import { HLStructureModule } from './modules/hl-structure.ts';
+import { TrendlineModule } from './modules/trendline.ts';
+import { IndicatorsModule } from './modules/indicators.ts';
+import { VolumeModule } from './modules/volume.ts';
 
-import { MultiTFOrchestrator } from './orchestrator/multi-tf';
-import { Synthesizer } from './orchestrator/synthesize';
-import { RegimeChangeAlerter } from './orchestrator/alert';
-import { Aggregator } from './orchestrator/aggregator';
+import { MultiTFOrchestrator } from './orchestrator/multi-tf.ts';
+import { Synthesizer } from './orchestrator/synthesize.ts';
+import { RegimeChangeAlerter } from './orchestrator/alert.ts';
+import { Aggregator } from './orchestrator/aggregator.ts';
 
 export interface AnalyzeOptions {
   symbol: string;
@@ -139,16 +139,16 @@ export class CycleDetector {
 }
 
 // Re-exports
-export * from './types';
-export * from './config';
+export * from './types.ts';
+export * from './config.ts';
 
-export { MAAlignmentModule } from './modules/ma-alignment';
-export { HLStructureModule } from './modules/hl-structure';
-export { TrendlineModule } from './modules/trendline';
-export { IndicatorsModule } from './modules/indicators';
-export { VolumeModule } from './modules/volume';
+export { MAAlignmentModule } from './modules/ma-alignment.ts';
+export { HLStructureModule } from './modules/hl-structure.ts';
+export { TrendlineModule } from './modules/trendline.ts';
+export { IndicatorsModule } from './modules/indicators.ts';
+export { VolumeModule } from './modules/volume.ts';
 
-export { MultiTFOrchestrator } from './orchestrator/multi-tf';
-export { Synthesizer } from './orchestrator/synthesize';
-export { RegimeChangeAlerter } from './orchestrator/alert';
-export { Aggregator } from './orchestrator/aggregator';
+export { MultiTFOrchestrator } from './orchestrator/multi-tf.ts';
+export { Synthesizer } from './orchestrator/synthesize.ts';
+export { RegimeChangeAlerter } from './orchestrator/alert.ts';
+export { Aggregator } from './orchestrator/aggregator.ts';

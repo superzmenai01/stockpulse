@@ -8,14 +8,13 @@
 //
 // ⏳ Skeleton 階段 — 大少提供詳細做法後實作
 
-import type { CycleContext, CycleModule, CycleVerdict, KLine } from '../types';
-import { DEFAULT_CYCLE_CONFIG, type HLStructureConfig } from '../config';
+import type { CycleContext, CycleModule, CycleVerdict, KLine } from '../types.ts';
 
 export class HLStructureModule implements CycleModule<KLine[]> {
   readonly id = 'hl-structure' as const;
   readonly version = '0.1.0-skeleton';
 
-  constructor(private readonly config: HLStructureConfig = DEFAULT_CYCLE_CONFIG.hl) {}
+  constructor() {}
 
   async detect(klines: KLine[], ctx: CycleContext): Promise<CycleVerdict> {
     // TODO: 大少提供詳細做法後實作
@@ -33,7 +32,7 @@ export class HLStructureModule implements CycleModule<KLine[]> {
       interpretation: `[HL Structure skeleton] 待詳細做法 — placeholder verdict`,
       evidence: [],
       warnings: ['此為 skeleton verdict，實際算法未實作'],
-      meta: { configUsed: this.config, inputBars: klines.length },
+      meta: { inputBars: klines.length },
       timestamp: Date.now(),
     };
   }

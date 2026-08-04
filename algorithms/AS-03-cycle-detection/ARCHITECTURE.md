@@ -1,17 +1,12 @@
-# AS-03 · 股票周期判定算法 — 架構
+# AS-03 · 股票周期判定算法 — 架構 (v0.3.0, 大少 #10332)
 
 ## 🎯 目標
 
 識別股票當前所處嘅周期 (上升 / 下跌 / 橫行 / 轉勢)，輔助大少做交易決策。
 
-核心約束:
-- 4 個 cycle state (UP / DOWN / SIDEWAYS / TRANSITION) + 中文解讀
-- 5 個獨立 peer module + 1 個 HTF orchestrator step + 1 個 synthesizer
-- 滯後機制 = 提醒 + 手動判 (唔做 state machine auto-progress)
-- 6 個 model 結果都顯示 (UI 唔隱藏)
-- 所有 threshold 集中 config.ts (calibration friendly)
+**核心改變 (v0.3.0)**：原本 Kimi 8 步算法全部 drop，換上 **大少設計嘅 10 條 rule-based 算法 (A-J)**。
 
-## 📐 架構圖
+## 📐 架構圖 (v0.3.0)
 
 ```
                     ┌─────────────────────────┐
@@ -28,125 +23,90 @@
     │ step 0        │    │                │   │              │
     └───────┬───────┘    └────────┬───────┘   └──────┬───────┘
             │                     │                  │
-            ▼                     ▼                  ▼
-    ┌─────────────────────────────────────────────────────────┐
-    │              CycleReport (output)                       │
-    │  - htf.verdict           (Module 6 結果)                │
-    │  - moduleVerdicts[5]     (Module 1-5 結果)              │
-    │  - synthesized           (Module 7 結果)                │
-    │  - alerts[]              (轉勢提醒, only on change)    │
-    └─────────────────────────────┬───────────────────────────┘
-                                  │
-                                  ▼
-                          ┌───────────────┐
-                          │ RegimeChange  │
-                          │ Alerter       │
-                          │ (alert.ts)    │
-                          └───────────────┘
+            │           ┌─────────┼─────────┐        │
+            │           ▼         ▼         ▼        │
+            │      ┌──────────────────────────────┐  │
+            │      │  Module 1: ma-alignment      │  │
+            │      │  (10 條 rule A-J, 大少設計)  │  │
+            │      │  v0.3.0 ✅ DONE               │  │
+            │      └──────────────────────────────┘  │
+            │           │         │         │        │
+            │      ┌─────────┐ ┌─────────┐ ┌─────┐  │
+            │      │ HL      │ │Trendline│ │ ... │  │
+            │      │Structure│ │         │ │     │  │
+            │      │ ⏳ TBD  │ │ ⏳ TBD  │ │     │  │
+            │      └─────────┘ └─────────┘ └─────┘  │
+            │                                         │
+            └──────────────┬──────────────────────────┘
+                           ▼
+                ┌─────────────────────┐
+                │  RegimeChangeAlerter │
+                │  (D003: 手動 confirm) │
+                └─────────────────────┘
 ```
 
-## 📊 數據流
+## 📊 Module 1: ma-alignment (v0.3.0) — DONE ✅
 
-```
-Input: KLines (LTF + optional HTF)
-       │
-       ▼
-Step 0: MultiTF Orchestrator 跑 HTF analysis (Module 6)
-       │
-       ├─→ HTF Verdict (state + confidence + interpretation)
-       │
-       ▼
-Step 1-5: 5 個 Peer Modules 並列跑 LTF analysis
-       │
-       ├─→ MA Alignment Verdict
-       ├─→ HL Structure Verdict
-       ├─→ Trendline Verdict
-       ├─→ Indicators Verdict
-       └─→ Volume Verdict
-       │
-       ▼
-Step 6: Synthesizer 綜合 HTF + LTF (placeholder, 設計最後先傾)
-       │
-       ├─→ Synthesized Verdict
-       │
-       ▼
-Step 7: RegimeChangeAlerter 對比 previousState
-       │
-       └─→ Alert[] (只喺 state 變化時 emit)
-       │
-       ▼
-Output: CycleReport
-```
+10 條 rule-based 算法：
 
-## 🔌 Module 介面合約
+### ⚙️ Setup (2 個 step)
+| Step | 內容 |
+|------|------|
+| **Step 1** | 取 100 日數據，少過就 fallback，少過 90 日報錯 |
+| **Step 2** | 計 MA5 / MA10 / MA60 嘅 history |
 
-```typescript
-interface CycleModule<I = KLine[]> {
-  id: CycleModuleId | 'htf-multi-tf' | 'synthesized';
-  version: string;
-  detect(input: I, ctx: CycleContext): Promise<CycleVerdict>;
-}
-```
+### 📊 核心 Rule (A-H) — 8 條
+| # | 算法 | 規則 | 對應 state | Strength |
+|---|------|------|-----------|----------|
+| **A** | 上升勢 | 連續 5 日 MA5 > MA60 | UP | strong |
+| **B** | 下跌勢 | 連續 5 日 MA5 < MA60 | DOWN | strong |
+| **C** | 橫行向下 | 5 日裡 MA5 > MA60 但當日 low < MA60 | SIDEWAYS | medium |
+| **D** | 橫行向上 | 5 日裡 MA5 < MA60 但當日 high > MA60 | SIDEWAYS | medium |
+| **E** | 末位日優先 | C/D 多過一日，最後一日為準 | — | — |
+| **F** | 升勢調整向下 | MA5+MA10 > MA60 但 MA5 < MA10 | UP | medium |
+| **G** | 跌勢調整向上 | MA5+MA10 < MA60 但 MA5 > MA10 | DOWN | medium |
+| **H** | 7 日反轉 | 1/2/3 日新方向 vs 4-7 日舊方向 | TRANSITION | strong |
 
-每個 module:
-- ✅ **獨立**: 零耦合，唔 import 其他 module
-- ✅ **可單獨調用**: `detector.runModule(id, klines, ctx)`
-- ✅ **統一輸出**: 返 `CycleVerdict` 結構 (state + confidence + interpretation + evidence)
-- ⚠️ **內部實作獨立**: 大少逐個 module 提供詳細做法後實作
+### 📌 Supplementary Rule (I, J) — 2 條 (大少 #10301 / #10317 typo fix)
+| # | 算法 | 規則 | Strength |
+|---|------|------|----------|
+| **I** | 有機會長升狀態 | 連續 5 日 low ≥ MA5 × (1 - 2%) | weak |
+| **J** | 有機會長跌狀態 | 連續 5 日 high ≤ MA5 × (1 + 2%) | weak |
 
-## 🎚️ Tunable Thresholds (config.ts)
+### State derivation priority
+H > A > B > F > G > C > D > default SIDEWAYS
 
-| Module | 設定 key | 預設值 | 用途 |
-|--------|---------|--------|------|
-| **MA** | `ma.fastPeriods` | `[5, 10]` | 短期 MA 週期 |
-| | `ma.slowPeriods` | `[20, 60]` | 長期 MA 週期 |
-| | `ma.alignmentGapPct` | `0.5` | MA 排列 gap % |
-| | `ma.divergenceSlopePct` | `0.05` | 發散 slope 閾值 |
-| **HL** | `hl.pivotLookback` | `5` | ZigZag lookback |
-| | `hl.pivotThresholdPct` | `5` | pivot 反轉幅度 |
-| | `hl.minSwingsToConfirm` | `3` | 確認趨勢最少 swing |
-| | `hl.boxTolerancePct` | `3` | 箱體容忍 % |
-| **Trendline** | `trendline.fitMethod` | `'ransac'` | RANSAC 或 linear-regression |
-| | `trendline.minTouchPoints` | `2` | 至少 N 個 touch point |
-| | `trendline.tolerancePct` | `2` | 距離 trendline 容差 |
-| | `trendline.breakoutConfirmPct` | `1` | 突破確認幅度 |
-| **Indicators** | `indicators.macd` | `{12, 26, 9}` | MACD 參數 |
-| | `indicators.rsi` | `{14, 70, 30, 50}` | RSI period + OB/OS/midline |
-| | `indicators.bollinger` | `{20, 2, 0.5}` | BB period + stdDev + squeeze threshold |
-| **Volume** | `volume.baselinePeriod` | `5` | vol MA 週期 |
-| | `volume.amplificationRatio` | `1.5` | 放量倍數 |
-| | `volume.shrinkageRatio` | `0.7` | 縮量倍數 |
-| **StateMachine** | `stateMachine.alertOnlyOnRegimeChange` | `true` | 只喺轉勢觸發 reminder |
-| | `stateMachine.confirmationDays` | `5` | reminder 觀察日數 |
-| **Aggregator** | `aggregator.strategy` | `'htf-override'` | 3 選 1 (待定) |
-| | `aggregator.weights` | `{}` | per-module weight (待定) |
-| | `aggregator.htfOverrideConfidence` | `0.7` | HTF override 門檻 |
+### Confidence formula
+- base = 0.7 if any strong rule (A/B/H) fires
+- base = 0.5 if any medium rule (C/D/F/G) fires
+- base = 0.5 else (only weak rules I/J fire 或無 match)
+- +0.10 per weak rule (I/J) fired
+- Cap at 1.0, round 4
 
-## 🔄 Synthesizer (點 7) — 待設計
+## 📦 狀態
 
-3 個候選策略 (大少 2026-08-04 確認: 最後先傾):
+| Module | Status |
+|--------|--------|
+| Module 1: ma-alignment | ✅ v0.3.0 done (19/19 tests pass) |
+| Module 2: HL Structure | ⏳ skeleton placeholder verdict |
+| Module 3: Trendline | ⏳ skeleton placeholder verdict |
+| Module 4: Indicators | ⏳ skeleton placeholder verdict |
+| Module 5: Volume OBV | ⏳ skeleton placeholder verdict |
+| Module 6: Multi-TF | ⏳ orchestrator/multi-tf.ts skeleton |
+| Module 7: Synthesizer | ⏳ orchestrator/synthesize.ts skeleton |
 
-| 策略 | 邏輯 | 優點 | 缺點 |
-|------|------|------|------|
-| **htf-override** | HTF confidence > threshold 就壓倒 LTF | 簡單清晰、HTF 優先 | 忽略 LTF 細節 |
-| **weighted-vote** | 每個 module 有 weight，weighted sum | tunable、平衡 | weight calibration 難 |
-| **expert-rules** | rule-based (e.g.「MA + HL 一致就大膽」) | 解釋性強、可審計 | rule 維護成本高 |
+## 🔄 已 Drop (v0.2.0 Kimi 算法)
 
-當前 placeholder: simple majority vote (`aggregator.ts` / `synthesize.ts`)
+13 個算法全部 drop，原因：
+- 三個折扣叠太狠 (base × vol × slope = 0.7 × 0.65 × 0.7 = 0.31 worst case)
+- Logic 太複雜 (8 步 + 9 個 hardcoded magic numbers)
+- 大少 #10332 直接話「之前 V0.2.0 13 個算法全部不要」
 
-## ⚠️ 設計約束清單
+## 📚 相關 Docs
 
-1. **Module 6 = orchestrator step 0** (架構上唔係 peer)
-2. **4 個 state** (UP/DOWN/SIDEWAYS/TRANSITION) + 中文解讀 (`interpretation` 必填)
-3. **轉勢提醒 ≠ auto-confirm** (大少手動判)
-4. **6 個 model 結果都顯示** (UI 唔隱藏任何 peer module verdict)
-5. **所有 threshold 集中** (`config.ts` 一處改晒)
-6. **零耦合** (modules 之間唔直接 import)
-7. **可單獨調用** (任何 module 都可以 `runModule()` 獨立跑)
+- `~/stockpulse/docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md` — v0.3.0 spec
+- `~/stockpulse/docs/research/AS-03-cycle-detection/RESEARCH_LOG.md` — Timeline + decisions
+- `~/stockpulse/algorithms/AS-03-cycle-detection/DECISIONS.md` — D001-D016 ADR
 
-## 🔗 相關
-
-- [README.md](./README.md) — 入口 + 快速開始
-- [DECISIONS.md](./DECISIONS.md) — 7 個 ADR (D001-D007)
-- [~/stockpulse/docs/research/AS-03-cycle-detection/RESEARCH_LOG.md](../../docs/research/AS-03-cycle-detection/RESEARCH_LOG.md) — 研究筆記
-- [~/stockpulse/docs/ALGORITHM_SPECS.md](../../docs/ALGORITHM_SPECS.md) — 全局算法規格
+**最後更新**: 2026-08-05 (大少 #10332 spec docs sync)
+**維護者**: 大少 + 我 (助手)

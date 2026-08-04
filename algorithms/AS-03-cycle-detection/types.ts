@@ -6,6 +6,24 @@
 /** 4 個 cycle state — D002 (2026-08-04) */
 export type CycleState = 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION';
 
+/**
+ * Raw MA alignment output — 3 states per docx v2.0 algorithm
+ * D011 (2026-08-04): ma-alignment 用 3-state，TRANSITION 由 synthesizer 判
+ */
+export type RawCycle = 'uptrend' | 'downtrend' | 'sideways';
+
+/**
+ * Map RawCycle → CycleState for module output
+ * TRANSITION 由 synthesizer 判 (D011 + D004 pending strategy)
+ */
+export function rawCycleToState(raw: RawCycle): CycleState {
+  switch (raw) {
+    case 'uptrend': return 'UP';
+    case 'downtrend': return 'DOWN';
+    case 'sideways': return 'SIDEWAYS';
+  }
+}
+
 /** 5 個 peer module IDs */
 export type CycleModuleId =
   | 'ma-alignment'

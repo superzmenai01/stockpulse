@@ -598,3 +598,31 @@ export interface ReasonEntry {
 
 **反面教材**: 2026-08-04 第一次寫 CSS 漏咗 `:global()` 前綴 → 大少 screenshot 報「什麼 Chart 都沒有」— bar chart 0 width 因為 `.dim-row` 變咗 `_dim-row__abc123` 而 HTML 係 raw。
 
+
+---
+
+## 📊 算法規格 (AS-XX Series)
+
+### AS-03 · 股票周期判定 (v0.3.0, 2026-08-04 大少 #10332)
+
+**目的**：識別股票當前所處嘅周期 (上升/下跌/橫行/轉勢)，輔助交易決策。
+
+**輸入**：`KLine[]` (從 backend `/api/kline` cache-aside)
+**輸出**：`CycleVerdict` (state/confidence/interpretation/evidence/meta)
+
+**10 條算法 (A-J)**：
+
+| # | 算法 | 規則 | 對應 state |
+|---|------|------|-----------|
+| A | 上升勢 | 連續 5 日 MA5 > MA60 | UP |
+| B | 下跌勢 | 連續 5 日 MA5 < MA60 | DOWN |
+| C | 橫行向下 | 5 日裡 MA5 > MA60 但當日 low < MA60 | SIDEWAYS |
+| D | 橫行向上 | 5 日裡 MA5 < MA60 但當日 high > MA60 | SIDEWAYS |
+| E | 末位日優先 | C/D 多過一日，最後一日為準 | (隱含) |
+| F | 升勢調整向下 | MA5+MA10 都 > MA60 但 MA5 < MA10 | UP |
+| G | 跌勢調整向上 | MA5+MA10 都 < MA60 但 MA5 > MA10 | DOWN |
+| H | 7 日趨勢反轉 | 1/2/3 日新方向 vs 4-7 日舊方向 (3 sub-case) | TRANSITION |
+| I | 有機會長升狀態 (大少 #10301) | 連續 5 日 low ≥ MA5 × (1 - 2%) | supplementary |
+| J | 有機會長跌狀態 (大少 #10301/#10317) | 連續 5 日 high ≤ MA5 × (1 + 2%) | supplementary |
+
+**Status**：Module 1 (ma-alignment) done, 19/19 tests pass, TSC=0

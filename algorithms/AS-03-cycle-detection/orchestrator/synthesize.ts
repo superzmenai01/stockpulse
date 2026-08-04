@@ -9,7 +9,7 @@
 //
 // 當前 placeholder: simple majority vote
 
-import type { CycleVerdict } from '../types';
+import type { CycleVerdict } from '../types.ts';
 
 export interface SynthesizeInput {
   htf?: CycleVerdict;
