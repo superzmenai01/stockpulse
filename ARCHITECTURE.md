@@ -774,6 +774,45 @@ AS-01「結果」inline (`ResultGrid.tsx`) 用 `ReasonCell` plain text mode（mi
 
 ---
 
+## 📌 Update Stockpluse Trigger — 永久 Rule (大少 #10203, 2026-08-04 07:56)
+
+### Trigger Keywords (case insensitive)
+
+| Keyword | 備註 |
+|---|---|
+| `更新Stockpluse` | 大少 typo form (常見) |
+| `Update Stockpluse` | typo form |
+| `Update StockPulse` | correct form |
+| `update stockpluse` / `update stockpulse` | lowercase 都收 |
+
+大少 trigger 任何一個 keyword, 自動執行下面 4 個 steps — **唔再 ask 大少 confirm trigger 邊個** (override `#9664` 嘅「問大少 confirm trigger 邊個」rule)。
+
+### Auto-execute 4 Steps
+
+| Step | Action | File / Repo |
+|---|---|---|
+| **1** | Update ARCHITECTURE.md | `~/stockpulse/ARCHITECTURE.md` (append new feature section) |
+| **2** | Update STOCKPULSE_REFERENCE.md | `~/.openclaw/workspace-main/STOCKPULSE_REFERENCE.md` (append new feature section) |
+| **3** | Daily Log | `~/.openclaw/workspace-main/memory/YYYY-MM-DD.md` (append entry 記錄新 feature + spec update) |
+| **4** | Commit And Push | `~/stockpulse` + `~/.openclaw/workspace-main` 兩個 repos |
+
+### Override `#9664` StockPulse Spec Update Protocol
+
+- ✅ `#9664` rule 仍然 work 但「直接做」4 steps (唔再 ask confirm) 當 trigger keyword match
+- ✅ 其他 trigger (大少「普通 spec update」唔 trigger keyword) 仍然 follow `#9664` 嘅「建議 update + 等大少 confirm」flow
+
+### Apply Scope
+
+- ✅ 所有 StockPulse feature commit 之後大少 trigger「Update Stockpluse」
+- ✅ Override 之前 `#9664` 嘅「問大少 confirm trigger 邊個」rule 對呢個 trigger keyword
+- ❌ 其他 trigger (大少「普通 spec update」) 仍然 follow `#9664` rule
+
+### Trigger Source
+
+- 大少 2026-08-04 07:56:01 GMT+8 message #10203: 「記住以後當我講更新Stockpluse或Update Stockpluse，你就做Update ARCHITECTURE.md + STOCKPULSE_REFERENCE.md ＋ Daily Log ＋ Commit And Push」
+
+---
+
 ## 📦 AS-01 Reason HTML Build Flow (大少 #10075, 2026-08-04)
 
 ### Flow Diagram
