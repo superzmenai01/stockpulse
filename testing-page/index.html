@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockPulse Algorithm Testing Page</title>
+  <link rel="stylesheet" href="testing-page.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🧪 StockPulse Algorithm Testing Page</h1>
+      <p class="subtitle">人手測試 StockPulse 各個算法（generic framework）</p>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="algo-selector">
+          <h2>選擇算法</h2>
+          <select id="algorithm-select">
+            <option value="">載入中...</option>
+          </select>
+        </section>
+
+        <section class="algo-info" id="algo-info">
+          <p style="color: #888;">選擇算法睇 info</p>
+        </section>
+
+        <section class="help" id="algo-help"></section>
+      </aside>
+
+      <main class="main">
+        <section class="inputs">
+          <h2>輸入參數</h2>
+          <form id="inputs-form" onsubmit="return false;"></form>
+          <button id="run-btn" class="primary-btn">跑算法</button>
+          <div id="run-status" class="run-status"></div>
+        </section>
+
+        <section class="result">
+          <h2>結果</h2>
+          <div id="result-panel">
+            <p style="color: #888;">填好輸入參數，撳「跑算法」睇結果</p>
+          </div>
+        </section>
+
+        <section class="chart-section">
+          <div class="chart-header">
+            <h2>📈 日 K 線圖表</h2>
+            <p class="chart-note">
+              用 <code>lightweight-charts</code> v5 render（跟 StockPulse ChartContainer 同 library）。
+              撳完「跑算法」會 auto render 呢隻 stock 嘅 K 線。
+            </p>
+          </div>
+          <div id="chart-container"></div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="footer">
+      <small>
+        📁 Testing page framework · <span id="registry-count">0</span> algorithms registered · 
+        <a href="REGISTRY.md">REGISTRY.md</a>
+      </small>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script type="module" src="testing-page.js"></script>
+</body>
+</html>

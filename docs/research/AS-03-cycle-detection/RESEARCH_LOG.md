@@ -336,3 +336,69 @@ adjustment_log, reason, last_date
 - `~/.openclaw/workspace-main/STOCKPULSE_REFERENCE.md` (928 lines)
 - `~/.openclaw/workspace-main/memory/2026-08-04.md` (今日 daily log)
 - `~/.openclaw/workspace-main/memory/Projects/StockPulse/{ALGORITHM_SPECS,PROGRESS,STRATEGY_CONCEPTS}.md`
+---
+
+## 📅 2026-08-05 09:01-10:49 — Testing Page 開發（generic framework, 大少 #10383 起）
+
+### 背景
+大少想人手測 AS-03 嘅 ma-alignment 10 條 rule，但 StockPulse web/backend 仲未接 AS-03。Generic testing page framework 寫成 vanilla JS standalone HTML，可以畀將來 AS-04/05/06 reuse。
+
+### 大少 trigger timeline
+| Time | Trigger | 動作 |
+|------|---------|------|
+| 08:31 | #10365 | 睇返 AS-03 整體進度 |
+| 08:47 | #10372 | 做 B（補 ALGORITHM_SPECS.md AS-03 entry）|
+| 09:01 | #10383 | 做 A（generic testing page framework）|
+| 09:16 | #10396 | start.command 加 `open` + `nohup + disown` |
+| 09:42 | #10400 | stock code field 改用首頁 StockSearch UX（autocomplete）|
+| 10:01 | #10409 | 加日 K 線圖表（原意 iframe embed StockPulse）|
+| 10:17 | #10423 | chart section 改 layout 左右兩邊（後來改返 vertical + full width）|
+| 10:28 | #10431 | 「我不是要整個 Stockpulse」 — testing page 自己 render K 線圖表 |
+| 10:49 | #10439 | update stockpulse + update sub project AS-03 |
+
+### 7 個 file 寫咗
+
+| File | Purpose |
+|------|---------|
+| `~/stockpulse/algorithms/AS-03-cycle-detection/adapter.mjs` | AS-03 adapter（vanilla JS port of `ma-alignment.ts` v0.3.0）|
+| `~/stockpulse/testing-page/index.html` | 主頁 |
+| `~/stockpulse/testing-page/testing-page.js` | Logic（algorithm registry + dynamic UI + renderChart）|
+| `~/stockpulse/testing-page/testing-page.css` | Style |
+| `~/stockpulse/testing-page/start.command` | 啟動 script（`nohup + open browser`）|
+| `~/stockpulse/testing-page/stop.command` | Stop script |
+| `~/stockpulse/testing-page/REGISTRY.md` | Adapter pattern 永久 contract |
+
+### Key decisions
+
+| # | Decision | Why |
+|---|----------|-----|
+| 1 | Adapter pattern（每 algorithm 寫 `adapter.mjs`）| 加新 AS-XX 只需要寫一個 file + 加 1 行 registry |
+| 2 | Backend fetch 直接打 `/api/kline` + `/api/stocks/search` | 沿用現有 KlineCache + StockSearch |
+| 3 | Stock autocomplete UX 跟首頁 StockSearch | 大少 #10400「和首頁用的那個一樣」|
+| 4 | **K 線圖表自己 render**（CDN lightweight-charts v4.2.3）| 大少 #10431「testing page 自己 render K 線圖表」|
+| 5 | ❌ 唔 iframe embed StockPulse（HomePage default 入面係 watchlist widget，唔係 chart）| 大少 #10431 clarify |
+
+### K 線 render 細節（`testing-page.js` renderChart function）
+
+- lightweight-charts v4.2.3 standalone production CDN
+- `LightweightCharts.createChart()` + `addCandlestickSeries()` + `addHistogramSeries()` for volume
+- Dispose 舊 chart (`chartInstance.remove()`) 再 render 新嘅
+- K 線 field name 正規化（`timestamp` / `time` / `date` 都 support，ms / s 自動 convert）
+- Volume 喺下面 histogram (scaleMargins top: 0.8, bottom: 0)
+- 撳完「跑算法」後 auto-call `renderChart(klines, code, period)`
+
+### Permanent Rules
+
+- ✅ testing page 自己 render K 線圖表（唔 iframe embed StockPulse）
+- ✅ Adapter pattern 永久 reusable 畀將來 AS-XX
+- ✅ Backend CORS 已 enable `allow_origins=["*"]`（開發階段）
+- ✅ StockPulse web/backend 將來接 AS-03 時可以 reuse adapter.mjs 嘅 algorithm logic
+- ⚠️ AS-03 backend endpoint (`/api/as03/run`) 仲未實作 — testing page 直接 call adapter.analyze() 喺 browser
+
+### Spec docs sync (本次)
+
+- ✅ ALGORITHM_SPECS.md AS-03 entry（已 done #10372）
+- ✅ ARCHITECTURE.md §11 Algorithm Testing Page
+- ✅ STOCKPULSE_REFERENCE.md Testing Page section
+- ✅ RESEARCH_LOG.md（本 entry）
+- ✅ DECISIONS.md 加 D017（testing page 開發）

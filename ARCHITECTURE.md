@@ -1181,3 +1181,74 @@ UI: 5 peer + 1 HTF + 1 synthesized = 7 個 verdict card (D006)
 ### 已 Drop (v0.2.0 Kimi 13 個算法)
 
 Step 1-7a-d + magic numbers。原因：三個折扣叠太狠 (worst case 0.31)。
+
+---
+
+## §11 · Algorithm Testing Page（2026-08-05, 大少 #10383）
+
+> **背景：** AS-03 算法已 implement + tested，但 StockPulse web/backend 仲未接。為咗畀大少人手測試，建咗 standalone testing page framework。
+
+### Folder Structure
+
+```
+~/stockpulse/
+├── testing-page/                              ← 中央 testing framework
+│   ├── index.html                             ← 主頁
+│   ├── testing-page.js                        ← Logic (algorithm registry + dynamic UI)
+│   ├── testing-page.css                       ← Style
+│   ├── start.command                          ← 啟動 script（nohup + auto-open browser）
+│   └── REGISTRY.md                            ← Algorithm list + 加新 AS-XX 步驟
+└── algorithms/
+    └── AS-03-cycle-detection/
+        ├── adapter.mjs                        ← AS-03 adapter（vanilla JS port of ma-alignment.ts）
+        └── ... (existing files)
+```
+
+### Adapter Pattern（永久 contract）
+
+每個 algorithm 寫 `adapter.mjs`：
+```javascript
+export const id, name, version, description;
+export const inputs = [...];                  // 'string' | 'number' | 'select' | 'autocomplete'
+export async function analyze(klines, options) { return verdict; }
+export function renderResult(verdict) { return HTML_string; }
+export function getHelp() { return HTML_string; }
+```
+
+Testing page 自動 discover + render。加新 algorithm 只需要：
+1. 寫 `adapter.mjs`
+2. 加 1 行落 `testing-page.js` 嘅 `REGISTRY`
+3. Browser reload
+
+### Backend Integration
+
+| Resource | Endpoint |
+|----------|----------|
+| K 線 | `GET /api/kline?code=***&period=***&count=***` |
+| 股票搜尋 | `GET /api/stocks/search?q=***&market=HK|US&limit=***` |
+| 跑算法 (generic) | TBD — AS-XX 自己實作 `/api/asXX/run` |
+
+### K 線圖表（testing page 自己 render，2026-08-05 大少 #10431）
+
+大少想撳完 AS-03 test 後下邊出日 K 線圖表，full width。原本想 iframe embed StockPulse，但發現 HomePage default 入面係 watchlist widget 唔係 chart（要 user 揀 stock + 登入）。
+
+**最終方案：** CDN load lightweight-charts v4.2.3，vanilla JS render candlestick + volume。
+- ✅ 100% width
+- ✅ height 600px
+- ✅ Auto render 撳完「跑算法」後
+- ✅ Dispose 舊 chart + render 新嘅
+
+**Permanent Rule：** testing page 自己 render chart，唔 iframe embed StockPulse。
+
+### Server Lifecycle
+
+- `start.command` 用 `nohup + disown`（server survive terminal close）
+- Auto `open http://localhost:8765/testing-page/`（大少 #10396）
+- `stop.command` kill server
+- Port 8765 reserved
+
+### Spec
+
+- Adapter pattern: `~/stockpulse/testing-page/REGISTRY.md`
+- AS-03 adapter: `~/stockpulse/algorithms/AS-03-cycle-detection/adapter.mjs`
+- Source: 大少 #10383 / #10396 / #10400 / #10409 / #10423 / #10431

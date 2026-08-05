@@ -460,3 +460,33 @@ Docx 範例用 rounded value，我哋 implementation 用 actual value → 結果
 ### 影響
 - 影響 unit test 嘅 expected value
 - 影響 spec doc (要寫明用 actual value 計算)
+---
+
+## D017 · Testing Page Generic Framework（2026-08-05, 大少 #10383 起）
+
+**日期:** 2026-08-05
+**狀態:** ✅ Accepted
+**Decider:** 架構判斷 + 大少 trigger
+
+### 背景
+大少想人手測 AS-03 嘅 ma-alignment 10 條 rule，但 StockPulse web/backend 仲未接 AS-03。需要一個 generic framework 可以畀將來 AS-04/05/06 reuse。
+
+### 決定
+- 喺 `~/stockpulse/testing-page/` 建中央 testing page framework（vanilla JS standalone HTML）
+- Algorithm 用 adapter pattern（每 algorithm 寫 `adapter.mjs` 喺 algorithm folder）
+- Adapter 提供統一 interface：`id, name, version, description, inputs, analyze(), renderResult(), getHelp()`
+- Testing page 自動 discover adapter via registry，render dropdown + 動態 input form
+- 加新 algorithm：寫 `adapter.mjs` + 加 1 行 `REGISTRY` entry
+
+### 影響
+- ✅ AS-XX 將來寫完 algorithm 可以即時 testing
+- ✅ K 線圖表自己 render（CDN lightweight-charts v4.2.3，唔 iframe embed StockPulse）
+- ✅ Stock autocomplete UX 跟首頁 StockSearch
+- ⚠️ AS-03 backend endpoint (`/api/as03/run`) 仲未實作 — testing page 直接 call adapter.analyze() 喺 browser
+- ⚠️ Vite frontend 將來接 AS-03 時可以 reuse `adapter.mjs` 嘅 algorithm logic（避免重複）
+
+### Source
+- 大少 #10383 — 做 A（generic testing page framework）
+- 大少 #10396 — start.command 自動開 browser
+- 大少 #10400 — stock autocomplete UX 一致
+- 大少 #10409 / #10423 / #10431 — K 線圖表（testing page 自己 render，唔 embed StockPulse）

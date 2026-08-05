@@ -1,0 +1,562 @@
+/* ~/stockpulse/testing-page/testing-page.css
+ *
+ * StockPulse Algorithm Testing Page — Styles
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  margin: 0;
+  padding: 0;
+  background: #f5f5f5;
+  color: #222;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  border-bottom: 2px solid #1890ff;
+  padding-bottom: 15px;
+  margin-bottom: 25px;
+}
+
+.header h1 {
+  margin: 0 0 5px 0;
+  font-size: 28px;
+  color: #1890ff;
+}
+
+.subtitle {
+  margin: 0;
+  color: #888;
+  font-size: 14px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+aside section,
+main section {
+  background: white;
+  padding: 18px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+aside h2,
+main h2 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #333;
+  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 8px;
+}
+
+aside h3 {
+  margin: 0 0 8px 0;
+  font-size: 15px;
+  color: #444;
+}
+
+aside h4 {
+  margin: 12px 0 6px 0;
+  font-size: 13px;
+  color: #555;
+}
+
+#algorithm-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+}
+
+.inputs {
+  display: flex;
+  flex-direction: column;
+}
+
+#inputs-form {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.input-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.input-field label {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.input-field input,
+.input-field select {
+  padding: 6px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+  background: white;
+  font-family: inherit;
+}
+
+.input-field input:focus,
+.input-field select:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+}
+
+/* ===== Autocomplete（大少 #10400 — 跟首頁 StockSearch UX 一致）===== */
+
+.input-autocomplete {
+  grid-column: 1 / -1;  /* 全寬（股票代碼 field 重要） */
+}
+
+.autocomplete-container {
+  position: relative;
+  width: 100%;
+}
+
+.autocomplete-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  font-family: inherit;
+}
+
+.autocomplete-input:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+}
+
+.autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.ac-option {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background 0.15s;
+}
+
+.ac-option:last-child {
+  border-bottom: none;
+}
+
+.ac-option:hover,
+.ac-option.highlighted {
+  background: #e6f7ff;
+}
+
+.ac-code {
+  font-family: 'SF Mono', Monaco, monospace;
+  color: #1890ff;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.ac-name {
+  color: #333;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ac-market {
+  color: #888;
+  font-size: 11px;
+  background: #f0f0f0;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.primary-btn {
+  background: #1890ff;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.2s;
+  align-self: flex-start;
+}
+
+.primary-btn:hover {
+  background: #40a9ff;
+}
+
+.primary-btn:active {
+  background: #096dd9;
+}
+
+.primary-btn:disabled {
+  background: #bae7ff;
+  cursor: not-allowed;
+}
+
+.run-status {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #555;
+  padding: 6px 10px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+#result-panel {
+  min-height: 200px;
+}
+
+/* ===== AS-03 verdict styles ===== */
+
+.as03-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.verdict-header {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 16px;
+  background: linear-gradient(135deg, #fafafa 0%, #f0f5ff 100%);
+  border-radius: 8px;
+}
+
+.state-pill {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 32px;
+  border-radius: 10px;
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.state-label {
+  font-size: 24px;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+
+.state-code {
+  font-size: 11px;
+  opacity: 0.85;
+  font-family: 'SF Mono', Monaco, monospace;
+  letter-spacing: 1.5px;
+}
+
+.confidence {
+  text-align: center;
+}
+
+.conf-pct {
+  font-size: 40px;
+  font-weight: 700;
+  color: #1890ff;
+  line-height: 1;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.conf-label {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.data-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  color: #555;
+  gap: 12px;
+}
+
+.summary-row strong {
+  color: #333;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.interpretation {
+  font-size: 15px;
+  padding: 12px 16px;
+  background: #f0f8ff;
+  border-left: 3px solid #1890ff;
+  border-radius: 4px;
+}
+
+.ma-values {
+  background: #fafafa;
+  padding: 14px;
+  border-radius: 6px;
+}
+
+.ma-values h4 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #555;
+}
+
+.ma-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.ma-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #e8e8e8;
+}
+
+.ma-label {
+  font-size: 13px;
+  color: #555;
+  font-weight: 600;
+}
+
+.ma-value {
+  font-size: 14px;
+  font-family: 'SF Mono', Monaco, monospace;
+  color: #1890ff;
+  font-weight: 600;
+}
+
+.matched-rules h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #555;
+}
+
+.matched-rules ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.matched-rules li {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.matched-rules li strong {
+  font-family: 'SF Mono', Monaco, monospace;
+  margin-right: 4px;
+}
+
+.rule-strong {
+  color: #52c41a;
+}
+
+.rule-strong strong {
+  color: #52c41a;
+}
+
+.rule-medium {
+  color: #faad14;
+}
+
+.rule-medium strong {
+  color: #faad14;
+}
+
+.rule-weak {
+  color: #666;
+}
+
+.rule-weak strong {
+  color: #666;
+}
+
+.meta-details {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #888;
+}
+
+.meta-details summary {
+  cursor: pointer;
+  padding: 6px 0;
+  font-weight: 600;
+}
+
+.meta-details pre {
+  background: #f5f5f5;
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 11px;
+  margin-top: 8px;
+}
+
+.footer {
+  margin-top: 30px;
+  padding-top: 15px;
+  border-top: 1px solid #ddd;
+  text-align: center;
+  color: #888;
+}
+
+.footer a {
+  color: #1890ff;
+  text-decoration: none;
+}
+
+pre {
+  background: #f5f5f5;
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 12px;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+/* ===== Chart section（iframe embed StockPulse ChartContainer）===== */
+
+.chart-section {
+  background: white;
+  padding: 18px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  margin-top: 20px;
+}
+
+.chart-header {
+  margin-bottom: 12px;
+}
+
+.chart-header h2 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  color: #333;
+  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 8px;
+}
+
+.chart-note {
+  margin: 8px 0 0 0;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.chart-note code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  color: #722ed1;
+}
+
+#chart-iframe {
+  width: 100%;
+  height: 800px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fafafa;
+  display: block;
+}
+
+#chart-container {
+  width: 100%;
+  height: 600px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e8e8e8;
+}
+
+#chart-container .chart-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  #inputs-form {
+    grid-template-columns: 1fr;
+  }
+  .verdict-header {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .ma-grid {
+    grid-template-columns: 1fr;
+  }
+}
