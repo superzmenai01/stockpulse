@@ -9,7 +9,7 @@
 import {
   CycleDetector,
   VERSION,
-  DEFAULT_CYCLE_CONFIG,
+  DEFAULT_MA_ALIGNMENT_CONFIG,
   MAAlignmentModule,
   HLStructureModule,
   TrendlineModule,
@@ -40,14 +40,18 @@ async function main() {
   // Test 1: VERSION
   assert('VERSION === "0.1.0-skeleton"', VERSION === '0.1.0-skeleton');
 
-  // Test 2: DEFAULT_CYCLE_CONFIG
+  // Test 2: DEFAULT_MA_ALIGNMENT_CONFIG (v0.3.0)
   assert(
-    'DEFAULT_CYCLE_CONFIG.ma.fastPeriods === [5, 10]',
-    JSON.stringify(DEFAULT_CYCLE_CONFIG.ma.fastPeriods) === JSON.stringify([5, 10])
+    'DEFAULT_MA_ALIGNMENT_CONFIG.dataWindowDays === 100',
+    DEFAULT_MA_ALIGNMENT_CONFIG.dataWindowDays === 100
   );
   assert(
-    'DEFAULT_CYCLE_CONFIG.indicators.rsi.overbought === 70',
-    DEFAULT_CYCLE_CONFIG.indicators.rsi.overbought === 70
+    'DEFAULT_MA_ALIGNMENT_CONFIG.consecutiveDays === 5',
+    DEFAULT_MA_ALIGNMENT_CONFIG.consecutiveDays === 5
+  );
+  assert(
+    'DEFAULT_MA_ALIGNMENT_CONFIG.chanceThresholdPct === 0.02',
+    DEFAULT_MA_ALIGNMENT_CONFIG.chanceThresholdPct === 0.02
   );
 
   // Test 3: 5 個 peer modules instantiate
@@ -63,21 +67,26 @@ async function main() {
   assert('RegimeChangeAlerter instantiable', new RegimeChangeAlerter() instanceof RegimeChangeAlerter);
   assert('Aggregator instantiable', new Aggregator() instanceof Aggregator);
 
-  // Test 5: runModule returns skeleton verdict
+  // Test 5: runModule returns valid verdict
   const detector = new CycleDetector();
-  const maVerdict = await detector.runModule('ma-alignment', [], {
+  const dummyKlines = Array.from({ length: 100 }, (_, i) => ({
+    timestamp: new Date('2026-01-01').getTime() + i * 86400000,
+    open: 100, high: 100, low: 100, close: 100, volume: 1000000,
+  }));
+  const maVerdict = await detector.runModule('ma-alignment', dummyKlines, {
     symbol: 'TEST', ltf: '1d',
   });
   assert("maVerdict.moduleId === 'ma-alignment'", maVerdict.moduleId === 'ma-alignment');
-  assert("maVerdict.state === 'TRANSITION'", maVerdict.state === 'TRANSITION');
-  assert('maVerdict.confidence === 0', maVerdict.confidence === 0);
+  assert('maVerdict.state valid (UP/DOWN/SIDEWAYS/TRANSITION)',
+    ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION'].includes(maVerdict.state));
+  assert('maVerdict.confidence >= 0', maVerdict.confidence >= 0);
   assert('maVerdict.interpretation truthy', typeof maVerdict.interpretation === 'string' && maVerdict.interpretation.length > 0);
   assert('maVerdict.timestamp is number', typeof maVerdict.timestamp === 'number');
 
   // Test 6: analyze() returns CycleReport
   const report = await detector.analyze({
     symbol: 'TEST',
-    ltfKlines: [],
+    ltfKlines: dummyKlines,
     htfKlines: [],
     previousState: 'UP',
   });

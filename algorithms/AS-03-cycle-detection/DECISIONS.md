@@ -490,3 +490,41 @@ Docx 範例用 rounded value，我哋 implementation 用 actual value → 結果
 - 大少 #10396 — start.command 自動開 browser
 - 大少 #10400 — stock autocomplete UX 一致
 - 大少 #10409 / #10423 / #10431 — K 線圖表（testing page 自己 render，唔 embed StockPulse）
+
+---
+
+## D018 · Adapter `.mjs` 同步規則（2026-08-05 整理 session 發現）
+
+**日期:** 2026-08-05
+**狀態:** ✅ Accepted
+**Decider:** 架構判斷（整理 session 期間發現 Issue 3）
+
+### 背景
+`testing-page/testing-page.js` 用 browser ES modules `await import(algo.adapterPath)` 動態 load `adapter.mjs`（vanilla JS，**冇 bundler**）。
+`adapter.mjs` 係 algorithm `.ts` file（e.g. `modules/ma-alignment.ts`）嘅手動 port — testing page 唔可以直接食 .ts。
+
+問題：改 `ma-alignment.ts` 嘅 algorithm 時容易漏 update `adapter.mjs`，導致 testing page 同 production code 唔一致。
+
+### 決定
+1. **永久 Rule**: 任何 algorithm `.ts` file 改動之後，**必須同步 update** 對應嘅 `adapter.mjs`
+2. **Sync 範圍**: 至少要 mirror 嘅 parts：
+   - 5 條 rule (A-J) 嘅 detect logic
+   - State derivation (priority order)
+   - Confidence formula
+   - Default config values
+   - `inputs[]` schema (testing page form fields)
+   - `renderResult()` HTML structure
+3. **Commit checklist**（每次 commit algorithm 改動都要 check）：
+   - [ ] `modules/<name>.ts` 改動
+   - [ ] `adapter.mjs` 已 sync
+   - [ ] `__tests__/<name>.test.mjs` 已 update / pass
+4. **中期目標**: 寫 `scripts/sync_adapter.sh` 用 `tsc --target es2020 --module es2020` 自動 build adapter.mjs（**注意**: `.ts` file 必須可以 standalone 編譯，唔好 import 其他 runtime `.ts` modules — `ma-alignment.ts` 而家 import `types.ts` + `config.ts` 都係 type-only 或 zero-dep runtime，safe）
+
+### 影響
+- ✅ testing page 同 production code 永遠一致
+- ✅ 未來 AS-04/05/06 跟同一個 rule
+- ⚠️ Sync 工作係 manual — commit 之前要 double-check
+- ⚠️ 將來做 sync script 需要 verify 所有 algorithm `.ts` 都可以 standalone compile
+
+### Source
+- 2026-08-05 整理 session · 發現 Issue 3 (adapter.mjs ↔ ma-alignment.ts sync 風險)
