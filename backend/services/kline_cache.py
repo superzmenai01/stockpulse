@@ -1,15 +1,17 @@
 """
-backend/services/kline_cache.py — KlineCache service (大少 #8505)
+backend/services/kline_cache.py — KlineCache service (大少 #8505, #8602)
 
 Cache-aside pattern for K-line data:
 1. Check DB cache first
-2. If gap or missing data, fetch from OpenD + write to DB
-3. Return merged data
+2. Detect gaps by comparing DB dates vs OpenD dates (大少 #8602)
+3. Fill missing dates from OpenD + write to DB
+4. Today's real-time data from OpenD (not in DB, returned to caller)
 
 凡人話 implementation (per大少 push back over-engineer):
 - read DB first (大少 #7987)
 - T-1 only cache, today from OpenD (大少 #7983)
 - missing data auto-fill (大少 #8505)
+- date-based gap detection via OpenD comparison (大少 #8602)
 - 30 years window for daily K (大少 #8484 backtest use case)
 """
 
@@ -116,104 +118,41 @@ class KlineCache:
         finally:
             conn.close()
 
-    async def get_or_fetch(self, code: str, ctx, ktype, period: str = '1d',
-                           start: Optional[str] = None,
-                           end: Optional[str] = None,
-                           max_count: int = 1000) -> dict:
-        """Main entry point — cache-aside.
+    def _insert_klines(self, code: str, period: str, klines: list[dict]) -> int:
+        """大少 #8602: Insert klines into DB. Caller responsible for ensuring
+        dates < today (per 大少 #7983 T-1 only rule).
 
-        大少 #8505: 先查 DB, missing data 即補 from OpenD.
-        Returns: {'klines': [...], 'cached': bool, 'fetch_count': int}
+        Returns number of rows inserted.
         """
-        lock = await _get_lock(code)
-        async with lock:
-            # Step 1: read cache
-            cached = self.get_klines(code, period, start, end)
-            cached_times = {row['time'] for row in cached} if cached else set()
+        if not klines:
+            return 0
+        rows = [
+            (code, period, k['time'], k['open'], k['high'], k['low'],
+             k['close'], k['volume'], None)
+            for k in klines
+        ]
+        conn = sqlite3.connect(self.db_path)
+        try:
+            # 大少 #7983: qfq INSERT OR REPLACE
+            conn.executemany(
+                """INSERT OR REPLACE INTO kline_cache
+                (code, period, time, open, high, low, close, volume, turnover_rate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+            conn.commit()
+            return len(rows)
+        finally:
+            conn.close()
 
-            today = datetime.date.today().isoformat()
-            today_in_range = (not end or end >= today) and (not start or start <= today)
+    async def _fetch_klines(self, ctx, code: str, ktype, period: str,
+                            start: str, end: str,
+                            max_count: int) -> list[dict]:
+        """大少 #8602: Pure OpenD fetch (no DB write). Includes today's real-time data.
 
-            # Step 2: cold cache — fetch full range
-            if not cached:
-                # 大少 #8484: 30 years backtest window
-                fetch_start = start or '1996-01-01'
-                fetch_end = end or today
-                # 大少 #7985: per-period window
-                if period == '1d':
-                    default_years = 30
-                else:
-                    default_years = 10
-                if not start:
-                    earliest = datetime.date.today() - datetime.timedelta(days=default_years * 365)
-                    fetch_start = earliest.isoformat()
-                fetched = await self._fetch_and_store(
-                    ctx, code, ktype, period, fetch_start, fetch_end, max_count
-                )
-                all_klines = sorted(cached + fetched, key=lambda k: k['time'])
-                return {
-                    'klines': all_klines,
-                    'cached': False,
-                    'fetch_count': len(fetched),
-                }
-
-            # Step 3: warm cache + auto-update missing days + today from OpenD
-            # 大少 #8551: Step 3 fetch window 由 (today, today, 1) → (cached_latest+1 或 yesterday, today, 10)
-            # 解決 Issue A (auto-update 28/29 missing) + Issue B (今日 OpenD 數據)
-            fetch_count = 0
-            fetched = []
-            if today_in_range:
-                today_date = datetime.date.today()
-                yesterday_date = today_date - datetime.timedelta(days=1)
-
-                if cached_times:
-                    # cached 最新一日的 next day 作為 fetch start
-                    # 大少 #8573: handle mixed format DB time (富途 SDK 偶爾 return 'YYYY-MM-DD HH:MM:SS')
-                    latest_cached_str = max(cached_times)
-                    if ' ' in latest_cached_str:
-                        latest_cached_str = latest_cached_str.split(' ')[0]
-                    elif 'T' in latest_cached_str:
-                        latest_cached_str = latest_cached_str.split('T')[0]
-                    latest_cached_date = datetime.date.fromisoformat(latest_cached_str)
-                    fetch_start_date = max(
-                        latest_cached_date + datetime.timedelta(days=1),
-                        yesterday_date,
-                    )
-                else:
-                    # cached_times 空 (rare — Step 2 應該已 handle cold cache)
-                    fetch_start_date = yesterday_date
-
-                # 只在 missing days 範圍先 fetch (避免 over-fetch)
-                if fetch_start_date <= today_date:
-                    fetched = await self._fetch_and_store(
-                        ctx, code, ktype, period,
-                        fetch_start_date.isoformat(), today_date.isoformat(), 10
-                    )
-                    fetch_count = len(fetched)
-                    # 大少 #8551: partial failure log warning
-                    expected_days = (today_date - fetch_start_date).days + 1
-                    if len(fetched) < expected_days:
-                        logger.warning(
-                            f"KLineCache partial fetch {code} period={period}: "
-                            f"got {len(fetched)}/{expected_days} days "
-                            f"from {fetch_start_date} to {today_date}"
-                        )
-
-            all_klines = sorted(cached + fetched, key=lambda k: k['time'])
-            return {
-                'klines': all_klines,
-                'cached': len(fetched) == 0,
-                'fetch_count': fetch_count,
-            }
-
-    async def _fetch_and_store(self, ctx, code: str, ktype, period: str,
-                               start: str, end: str,
-                               max_count: int) -> list[dict]:
-        """大少 #8505: OpenD fetch + DB write (skip time >= today per 大少 #7983).
         大少 #8551: retry 2 attempts on ret != 0 OR data is None (網絡抖動 robustness).
+        大少 #8573: normalize time 為 date-only (防止 DB mixed format → fromisoformat 爆).
         """
-
-        # 大少 #8551: retry 2 attempts — 網絡抖動 / SDK 暫時失敗
         ret = -1
         data = None
         last_error = None
@@ -240,18 +179,67 @@ class KlineCache:
             level(f"KLineCache fetch skip for {code} period={period} ktype={ktype}: {last_error}")
             return []
 
-        today = datetime.date.today().isoformat()
-        # 大少 #7983: skip today (T-1 only cache)
         klines = []
-        rows_to_insert = []
         for _, row in data.iterrows():
-            # 大少 #8573: normalize time 為 date-only (防止 DB mixed format → Step 3 fromisoformat 爆)
+            # 大少 #8573: normalize time 為 date-only
             time_str = str(row['time_key'])
             if ' ' in time_str:
                 time_str = time_str.split(' ')[0]
             elif 'T' in time_str:
                 time_str = time_str.split('T')[0]
-            kline = {
+            klines.append({
+                'time': time_str,
+                'open': float(row['open']),
+                'high': float(row['high']),
+                'low': float(row['low']),
+                'close': float(row['close']),
+                'volume': int(row['volume']),
+            })
+        return klines
+
+    @staticmethod
+    def _compute_fetch_max_count(period: str) -> int:
+        """Fix 2: max_count override for OpenD fetch (cold + warm cache 共用).
+
+        大少 #8602 + #8484: max_count 要夠大去 cover 整個 window,
+        唔係就會 miss 早期嘅缺口。
+        30年 daily K ≈ 10950, 10年 ≈ 3650.
+        """
+        if period == '1d':
+            return 30 * 365
+        return 10 * 365
+
+    async def _fetch_today_bar(self, ctx, code: str, ktype,
+                               period: str) -> Optional[dict]:
+        """Fix 3: 拎今日 real-time bar via ctx.get_cur_kline().
+
+        大少 #7983 T-1 rule: today NEVER written to DB.
+        用 get_cur_kline 唔係 request_history_kline, 因為
+        request_history_kline 對 today 可能只 return 已 close 嘅 bar
+        (or 空 if 開市前), get_cur_kline 拎 intraday partial bar.
+
+        Try/except 包住成個 body: mock context or OpenD quirk → return None,
+        唔 crash cache flow.
+        """
+        try:
+            ret, data = ctx.get_cur_kline(
+                code=code, num=1, ktype=ktype, autype='qfq',
+            )
+            if ret != 0 or data is None:
+                return None
+            try:
+                if len(data) == 0:
+                    return None
+            except TypeError:
+                return None
+            row = data.iloc[-1]
+            # 大少 #8573: normalize time 為 date-only
+            time_str = str(row['time_key'])
+            if ' ' in time_str:
+                time_str = time_str.split(' ')[0]
+            elif 'T' in time_str:
+                time_str = time_str.split('T')[0]
+            return {
                 'time': time_str,
                 'open': float(row['open']),
                 'high': float(row['high']),
@@ -259,26 +247,154 @@ class KlineCache:
                 'close': float(row['close']),
                 'volume': int(row['volume']),
             }
-            klines.append(kline)
-            if kline['time'] < today:  # 大少 #7983 rule
-                rows_to_insert.append((
-                    code, period, kline['time'],
-                    kline['open'], kline['high'], kline['low'], kline['close'],
-                    kline['volume'], None,  # turnover_rate skip for now
-                ))
+        except Exception as e:
+            logger.debug(
+                f"KLineCache _fetch_today_bar skip for {code} period={period}: {e}"
+            )
+            return None
 
-        if rows_to_insert:
-            conn = sqlite3.connect(self.db_path)
-            try:
-                # 大少 #7983: qfq INSERT OR REPLACE
-                conn.executemany(
-                    """INSERT OR REPLACE INTO kline_cache
-                    (code, period, time, open, high, low, close, volume, turnover_rate)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    rows_to_insert,
+    async def get_or_fetch(self, code: str, ctx, ktype, period: str = '1d',
+                           start: Optional[str] = None,
+                           end: Optional[str] = None,
+                           max_count: int = 1000) -> dict:
+        """Main entry point — cache-aside.
+
+        大少 #8505: 先查 DB, missing data 即補 from OpenD.
+        大少 #8602: 對標 OpenD 日期 vs DB 日期, 缺咗邊啲補邊啲.
+                   Wide-fetch from earliest_cached to today, diff against DB,
+                   insert missing dates only. Today's real-time from OpenD
+                   (NOT in DB per 大少 #7983 T-1 only) but returned to caller.
+        Fix 4: gap-fill 唔再 gated by today_in_range — fetch window 由
+               earliest_cached 到 today, cached_times = full cache。
+        Fix 3: today's real-time via _fetch_today_bar (get_cur_kline)。
+        Fix 2: cold + warm cache 共用 _compute_fetch_max_count(period)。
+        Returns: {'klines': [...], 'cached': bool, 'fetch_count': int}
+        """
+        lock = await _get_lock(code)
+        async with lock:
+            today = datetime.date.today().isoformat()
+            today_in_range = (not end or end >= today) and (not start or start <= today)
+
+            # Step 1: read user-range cached (for response merge)
+            cached = self.get_klines(code, period, start, end)
+            # Fix 4: 全部 cache times (no filter) for cross-range gap detection
+            all_cache_rows = self.get_klines(code, period) if cached else []
+            cached_times = {row['time'] for row in all_cache_rows} if all_cache_rows else set()
+
+            all_klines_dict: dict[str, dict] = {}
+            fetch_count = 0
+            cached_flag = False
+
+            # Step 2: cold cache — fetch full range (insert all < today)
+            if not cached:
+                # 大少 #8484: 30 years backtest window
+                fetch_start = start or '1996-01-01'
+                fetch_end = end or today
+                # Fix 2: cold cache override max_count (唔再用 caller 嘅 count, 通常得 100)
+                fetch_max_count = self._compute_fetch_max_count(period)
+                fetched = await self._fetch_klines(
+                    ctx, code, ktype, period, fetch_start, fetch_end, fetch_max_count
                 )
-                conn.commit()
-            finally:
-                conn.close()
+                # 大少 #7983: insert all < today, today kept in response only
+                rows_to_insert = [k for k in fetched if k['time'] < today]
+                if rows_to_insert:
+                    self._insert_klines(code, period, rows_to_insert)
+                for k in fetched:
+                    all_klines_dict[k['time']] = k
+                fetch_count = len(fetched)
+                cached_flag = False
+            else:
+                # Step 3: warm cache — gap fill (NOT gated by today_in_range)
+                # 大少 #8602: 唔用交易日曆, 直接 compare DB dates vs OpenD dates.
+                # Wide fetch 由 earliest_cached 到 today, 咁就可以 detect
+                # 中間任何缺口 (e.g. HK.00700 7月28 → 8月4 中間缺口).
+                # Fix 4: Fetch window 用 earliest_cached → today, NOT user start/end.
+                earliest_cached_str = min(cached_times)
+                # 大少 #8573: normalize earliest_cached time format
+                if ' ' in earliest_cached_str:
+                    earliest_cached_str = earliest_cached_str.split(' ')[0]
+                elif 'T' in earliest_cached_str:
+                    earliest_cached_str = earliest_cached_str.split('T')[0]
 
+                fetch_start = earliest_cached_str
+                fetch_end = today
+                # Fix 2: shared helper
+                fetch_max_count = self._compute_fetch_max_count(period)
+
+                fetched = await self._fetch_klines(
+                    ctx, code, ktype, period,
+                    fetch_start, fetch_end, fetch_max_count
+                )
+
+                # Filter fetched by user's start/end (OpenD might return extra)
+                if start:
+                    fetched = [k for k in fetched if k['time'] >= start]
+                if end:
+                    fetched = [k for k in fetched if k['time'] <= end]
+                fetch_count = len(fetched)
+
+                # Fix 4: 對標 OpenD dates vs FULL cache times (唔係 user range)
+                fetched_times = {row['time'] for row in fetched}
+                missing_dates = fetched_times - cached_times
+
+                if missing_dates:
+                    # 大少 #7983: today excluded — kept in response only, never in DB
+                    missing_klines = [
+                        k for k in fetched
+                        if k['time'] in missing_dates and k['time'] < today
+                    ]
+                    if missing_klines:
+                        inserted = self._insert_klines(code, period, missing_klines)
+                        sample = sorted([k['time'] for k in missing_klines])[:5]
+                        logger.info(
+                            f"KLineCache gap-fill {code} period={period}: "
+                            f"filled {inserted} missing dates "
+                            f"(sample: {sample}{'...' if len(missing_klines) > 5 else ''})"
+                        )
+
+                # Merge cached (user-range) + fetched (user-range filtered)
+                for k in cached:
+                    all_klines_dict[k['time']] = k
+                for k in fetched:
+                    all_klines_dict[k['time']] = k
+
+                # 大少 #8551: partial failure log warning
+                expected = (datetime.date.fromisoformat(fetch_end)
+                            - datetime.date.fromisoformat(fetch_start)).days + 1
+                if fetch_count < expected:
+                    logger.debug(
+                        f"KLineCache partial fetch {code} period={period}: "
+                        f"got {fetch_count} OpenD days, expected ~{expected} "
+                        f"(holidays/weekends reduce count)"
+                    )
+
+                cached_flag = (fetch_count == 0)
+
+            # Step 4: Fix 3 — today's real-time from get_cur_kline (independent of path)
+            # 跟 T-1 rule: today NEVER written to DB.
+            # Append 去 all_klines_dict (key = today), 跟住會 overwrite history fetch 嘅 today bar.
+            if today_in_range:
+                today_bar = await self._fetch_today_bar(ctx, code, ktype, period)
+                if today_bar:
+                    all_klines_dict[today_bar['time']] = today_bar
+
+            all_klines = sorted(all_klines_dict.values(), key=lambda k: k['time'])
+
+            return {
+                'klines': all_klines,
+                'cached': cached_flag,
+                'fetch_count': fetch_count,
+            }
+
+    async def _fetch_and_store(self, ctx, code: str, ktype, period: str,
+                               start: str, end: str,
+                               max_count: int) -> list[dict]:
+        """大少 #8505: OpenD fetch + DB write (skip time >= today per 大少 #7983).
+        大少 #8551: retry 2 attempts on ret != 0 OR data is None.
+        大少 #8602: thin wrapper around _fetch_klines + _insert_klines.
+        """
+        klines = await self._fetch_klines(ctx, code, ktype, period, start, end, max_count)
+        today = datetime.date.today().isoformat()
+        rows_to_insert = [k for k in klines if k['time'] < today]
+        self._insert_klines(code, period, rows_to_insert)
         return klines
