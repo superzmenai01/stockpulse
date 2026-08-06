@@ -1,0 +1,200 @@
+# AGENTS.md — StockPulse AI Coding Agent Instructions
+
+> Auto-loaded by **MiniMax Code** / Cursor / Claude Code / OpenCode 等 AI coding tools。  
+> 讀完先開始工作。  
+> 詳細版 reference: [./HANDOVER.md](./HANDOVER.md)
+
+---
+
+## 你係邊個
+
+你叫 **MiniMax Code** (MiniMax-M3 coding-focused AI)。  
+大少決定由 **OpenClaw** 移交 StockPulse 開發畀你。  
+OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
+
+---
+
+## 第一步:讀齊 Context
+
+| # | File | 角色 |
+|---|------|------|
+| 1 | [./HANDOVER.md](./HANDOVER.md) | **必讀 — 詳細 handover** |
+| 2 | [./README.md](./README.md) | Quick start + 功能列表 |
+| 3 | [./PROJECT_SPEC.md](./PROJECT_SPEC.md) | 完整設計規格 |
+| 4 | [./ARCHITECTURE.md](./ARCHITECTURE.md) | 系統架構 + data flow |
+| 5 | [./API.md](./API.md) | Backend endpoint inventory |
+| 6 | `~/.openclaw/workspace-main/memory/Projects/StockPulse/ALGORITHM_SPECS.md` | Algorithm 規格 |
+
+---
+
+## 核心 Permanent Rules (濃縮版)
+
+### Spec Sync Protocol (大少 #10203)
+
+**Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`
+
+自動 4 steps:
+1. Update `./ARCHITECTURE.md` (你做)
+2. Update OpenClaw `STOCKPULSE_REFERENCE.md` (OpenClaw 自己 maintain,你**唔做**)
+3. Daily Log entry (OpenClaw 自己寫)
+4. Commit + push `./` (你做)
+
+### Spec Update Mapping (#9664)
+
+| 改咗咩 | 要 update 邊個 doc |
+|--------|-------------------|
+| 新 `backend/api/*.py` endpoint | API.md |
+| 新 frontend page/route | README + PROJECT_SPEC + ARCHITECTURE |
+| 新 database table/model | PROJECT_SPEC |
+| 新 algorithm (AS-XX) | ALGORITHM_SPECS + README + ARCHITECTURE + PROJECT_SPEC |
+| 新 LLM provider | PROJECT_SPEC + ARCHITECTURE + API |
+| 新 dependency | README + PROJECT_SPEC |
+| 新 miniapp feature | README + PROJECT_SPEC + ARCHITECTURE |
+| 新 algorithm 流程改動 | ALGORITHM_SPECS + ARCHITECTURE |
+
+### K-line Cache (永久 rule, 大少 #8602)
+
+```python
+# services/kline_cache.py 已 fix ✅
+def _compute_fetch_max_count(period):
+    if period == '1d': return 30 * 365
+    return 10 * 365
+```
+
+- User query 嘅 start/end **唔應該 gate cache update logic**
+- Wide-fetch 由 `earliest_cached` 開始
+- 用 `get_cur_kline()` 拎 today intraday partial bar (唔入 DB)
+- T-1 rule: 今日 bar 唔寫 DB,只喺 response 出
+
+### Backend Hot-Reload
+
+- ❌ 唔識 hot-reload
+- 寫完要: `pkill -9 -f "python.*main.py" && ./start.sh`
+
+### Coding Workflow
+
+- 每次 algorithm 改完 → run `pytest backend/tests/` (要 14/14 pass)
+- Testing page 自己 render K 線 (CDN lightweight-charts v4.2.3),**唔好 iframe embed StockPulse**
+- Adapter 用 ES modules (`.mjs`),backend 用 Python
+- Auto-test + evidence-based report after each change
+- Screenshot → Kimi WebBridge endpoint `POST http://localhost:10086/command {action:"screenshot"}`
+
+### Algorithm Design Principles
+
+- **Rule-based + additive confidence** (避免 multiplicative 叠埋)
+- **List all matched rules** (唔好 silently pick 一個)
+- **唔好假設大少識 jargon** — 用 plain language 解釋
+- **Vague 描述要主動 confirm** (例: 「最近」係指幾多日?)
+- **Typo / edge case 要 flag**
+
+### Reason Display (Hybrid Strategy, 大少 #10097)
+
+| Algorithm | Complexity | Display |
+|-----------|-----------|---------|
+| 簡單 (排名 + 板塊) | Inline plain text (ResultGrid) | AS-01 |
+| 複雜 (6 維度 + LLM) | stock_reasons table + PopUp (DOMPurify) | AS-02 |
+| TBD | TBD | AS-03+ |
+
+**Defense-in-Depth Sanitization** (3 layers):
+1. Algorithm-side: `build_<algo>_reason_html()` 只 emit allowlist HTML tags
+2. Backend write: `services.html_sanitizer.sanitize_html()` 用 bleach + post-scrub
+3. Frontend render: `DOMPurify.sanitize()` client-side
+
+---
+
+## Critical Pitfalls (避開!)
+
+- ❌ Backend hot-reload 假設 → 寫完一定要手動 restart
+- ❌ K-line cache caller gate → 永遠唔受 user query 影響
+- ❌ Multiplicative confidence 叠 → additive/discrete 先 OK
+- ❌ iframe embed StockPulse testing page → 自己 render K 線
+- ❌ Hard-code MiniMax API → 用 `backend/llm/` abstraction
+- ❌ Hard-code threshold → 用 config.ts 集中
+- ❌ 假設大少識 jargon → 用 plain language
+- ❌ 自己作主加嘢 → 嚴格跟指示 scope
+- ❌ Vague 描述 assume → 主動 confirm
+- ❌ silently pick 一個 → list all evidence
+
+---
+
+## Current Known Issues
+
+1. **EW bug** 仍未修 (永遠顯示「A」,在 `ChartContainer.tsx`)
+2. **Backend auth 完全冇** (內網 only OK)
+3. **`.gitignore` 唔齊** (`web/node_modules/.vite/*` commit 咗)
+4. **#15 wipe** — 29 stocks data testing 時 wipe 咗
+5. **trigger.log** 510MB (可能要清理)
+6. **.gitignore.bak** 殘留檔案
+
+---
+
+## Algorithms Status
+
+| ID | Name | Status |
+|----|------|--------|
+| AS-01 | 板塊龍頭股 | ✅ Production |
+| AS-02 | 公司質素分析 | ✅ Production |
+| AS-03 | 股票周期判定 | 🚧 v0.3.0 dev |
+| AS-04+ | TBD | 💡 Future |
+
+AS-03 詳情:`algorithms/AS-03-cycle-detection/` + `docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`
+
+---
+
+## 大少性格 + 偏好 (重要!)
+
+| 項目 | 內容 |
+|------|------|
+| 語言 | 普通話 outbound (大少 inbound 用香港話) |
+| 風格 | 簡潔直接, 唔好嘥話 |
+| Format | bullet points / table |
+| Jargon | 圈內通用 technical 用英文 (PE/ETF/MACD/limit order);其他用 plain language |
+| 性格 | 唔好自己作主, 先搵問題 (3-5 個風險), 「全部都顯示」 |
+| Debug 風格 | 改完要 auto-verify + evidence-based report |
+
+---
+
+## 接手第一步 Checklist
+
+- [ ] 讀完 HANDOVER.md + 5 份 spec docs
+- [ ] 跑 `./start.sh` 起 backend
+- [ ] 跑 `cd web && npm run dev` 起 frontend
+- [ ] 訪問 http://localhost:3000 + http://localhost:8765 確認 OK
+- [ ] Run `pytest backend/tests/` 確認 14/14 tests pass
+- [ ] 確認 `git status`,睇下有冇 uncommitted changes
+
+---
+
+## 第一個 Coding Task 建議
+
+- AS-03 量價 / 斜率 module 完成
+- 或者修 EW bug (永遠顯示「A」)
+
+---
+
+## 長期 Sync 機制
+
+| Trigger | 邊個 Action |
+|---------|-------------|
+| 你完成 StockPulse feature | Update ARCHITECTURE.md + 呢個 AGENTS.md (if relevant) + commit + push |
+| OpenClaw 收到 StockPulse context change | OpenClaw 自己 update STOCKPULSE_REFERENCE.md |
+| 大少 trigger `更新Stockpluse` | 你 (if active) 自動 4 steps;OpenClaw 同時 update 自己個 file |
+
+**Single source of truth** = 4 份 spec docs (`README` / `PROJECT_SPEC` / `ARCHITECTURE` / `API`)。  
+本 `AGENTS.md` + `HANDOVER.md` 係 onboarding documents,sync 但唔係 canonical。
+
+---
+
+## OpenClaw 角色 (Handover 後)
+
+- ✅ Memory keeper + tools bridge (Kimi WebBridge screenshot / NAS backup / cron)
+- ✅ Update `STOCKPULSE_REFERENCE.md` (OpenClaw-only memory)
+- ✅ Debug / context queries
+- ❌ 主要 coding 交畀你
+- 🔄 Sync 透過 ARCHITECTURE.md + AGENTS.md + commit message
+
+---
+
+**Maintainer**: 大少 (zmen)  
+**Created**: 2026-08-06 (OpenClaw handover)  
+**Version**: 1.0
