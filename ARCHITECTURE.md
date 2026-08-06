@@ -1323,3 +1323,38 @@ Testing page 自動 discover + render。加新 algorithm 只需要：
 - Adapter pattern: `~/stockpulse/testing-page/REGISTRY.md`
 - AS-03 adapter: `~/stockpulse/algorithms/AS-03-cycle-detection/adapter.mjs`
 - Source: 大少 #10383 / #10396 / #10400 / #10409 / #10423 / #10431
+
+### § Testing Page UI Enhancement (2026-08-06, 大少 #10846 / #10859 / #10871)
+
+**Architecture Overview:**
+- Testing page 用 vanilla JS standalone HTML（CDN lightweight-charts v4.2.3）
+- Backend adapter (`adapter.mjs`) 將 algorithm port 到 JS
+- Frontend render verdict + plain language 解讀
+
+**Recent enhancements (5 commits, 2026-08-06):**
+
+| Commit | Scope | Trigger |
+|--------|-------|---------|
+| `c62d5fcb` | Module 5 VolumePrice + Module 8 SlopeMomentum + option toggle (D019) | #10809 |
+| `4dfe7771` | ARCHITECTURE spec sync + archive quick-draft reference | #10809 |
+| `a9c1dd20` | Testing page checkbox UI for VolumePrice + SlopeMomentum | #10846 |
+| `a4463444` | Testing page REGISTRY cleanup (remove AS-03-VP/SM dropdown) + UI text 繁→普 | #10859 |
+| `2f1f8cc7` | Testing page module section headers + plain language 解讀 templates | #10871 |
+
+**Module Section Pattern (commit `2f1f8cc7`):**
+- 兩粒 module section header: 「量价分析」「斜率动能」
+- 每個 verdict 旁邊加「人話解讀」面板：
+  - 量价: 💰 錢跟價 / ⚠️ 錢唔跟價 / 🔍 無明確信號
+  - 斜率: 🚀 強勢升 / 📉 強勢跌 / 🔄 轉勢中 / ⏸️ 等待方向
+
+**Checkbox UI Pattern (commit `a9c1dd20`):**
+- Adapter `inputs[]` 加 `type: 'checkbox'` field
+- Default `false` — 大少要求 user 主動剔
+- `analyze()` 接受 `enableVolumePrice` + `enableSlopeMomentum` flags
+- Pass 落 backend `enableFlags` 機制 (D019)
+
+**Permanent Rules:**
+- Testing page UI 統一簡體普通話 (commit `a4463444`)
+- Module 5/8 + VolumePrice/SlopeMomentum 都係 optional toggle，MA alignment core mandatory (D019)
+- Synthesizer default = expert-rules (D004 pending decision)
+- Backend emit labels（e.g.「上升勢」「下跌勢」）保持繁體/algorithm context，不強行轉普通話
