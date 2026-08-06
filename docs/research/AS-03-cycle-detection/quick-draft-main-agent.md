@@ -161,7 +161,7 @@ export interface SlopeMomentumConfig {
 - 大少 #10332 — Kimi v0.2.0 multiplicative 算法 drop
 - v0.3.0 ma-alignment.ts — pattern reference
 - DECISIONS.md D012 (volume 角色 Option B) / D013 (slope 角色 Option A → 大少改主意獨立 peer)
-- /tmp/均線系統週期判斷法.txt — Kimi v2.0 量價 + 斜率 multiplicative reference
+- /tmp/均線系統.txt — Kimi v2.0 量價 + 斜率 multiplicative reference
 
 ---
 

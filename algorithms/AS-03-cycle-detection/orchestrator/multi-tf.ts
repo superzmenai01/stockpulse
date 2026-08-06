@@ -1,6 +1,6 @@
 // orchestrator/multi-tf.ts — AS-03 · 點 6: 時間框架統一性 (HTF 約束 LTF)
 //
-// 文檔: 均線系統週期判斷法算法.docx
+// 文檔: 股票周期性判定算法.docx (umbrella)
 // 規則: 大周期決定小周期 — 週線/月線先確認大方向，日線再確認位置
 //
 // ⚠️ D001 (2026-08-04): 架構上係 orchestrator step 0，唔係 peer module

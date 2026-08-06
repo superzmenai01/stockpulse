@@ -1,6 +1,6 @@
 // modules/indicators.ts — AS-03 · 點 4: 技術指標輔助判斷
 //
-// 文檔: 均線系統週期判斷法算法.docx
+// 文檔: 股票周期性判定算法.docx (umbrella)
 // 規則:
 //   - MACD:   上升 — DIF>DEA、histogram>0、放大
 //             下跌 — DIF<DEA、histogram<0、放大

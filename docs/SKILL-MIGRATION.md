@@ -9,7 +9,7 @@
 
 ## 🎯 目標
 
-將 StockPulse AS-XX algorithm（例如 AS-03 均線系統週期判斷法）變成可獨立 distribute 嘅 **OpenClaw Skill**，可以：
+將 StockPulse AS-XX algorithm（例如 AS-03 股票周期性判定 (umbrella — Module 1: 均線系統週期判斷法)）變成可獨立 distribute 嘅 **OpenClaw Skill**，可以：
 
 1. 喺 OpenClaw 環境 invoke (`/skill run <skill-name>`)
 2. Publish 去 ClawHub (`clawhub` skill)
@@ -39,7 +39,7 @@ my-skill/
 ```markdown
 ---
 name: as-03-moving-average-cycle
-description: 均線系統週期判斷法 — 識別股票當前所處周期 (UP/DOWN/SIDEWAYS/TRANSITION)
+description: 股票周期性判定 (umbrella) — Module 1: 均線系統週期判斷法 (MA)。Module 5: 量價分析。Module 8: 斜率動能。 — 識別股票當前所處周期 (UP/DOWN/SIDEWAYS/TRANSITION)
 version: 1.0.0
 author: 大少 + StockPulse team
 license: MIT
@@ -188,7 +188,7 @@ test('下跌勢 — 連續 5 日 MA5 < MA60', async () => {
 # 用 clawhub skill
 clawhub publish my-skill/ \
   --name="as-03-moving-average-cycle" \
-  --description="均線系統週期判斷法" \
+  --description="股票周期性判定 (umbrella)" \
   --category="finance/trading" \
   --tags="stock,cycle-detection,technical-analysis"
 

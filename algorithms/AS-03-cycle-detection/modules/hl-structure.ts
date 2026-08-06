@@ -1,6 +1,6 @@
 // modules/hl-structure.ts — AS-03 · 點 2: 高低點結構法 (Dow Theory)
 //
-// 文檔: 均線系統週期判斷法算法.docx
+// 文檔: 股票周期性判定算法.docx (umbrella)
 // 規則:
 //   - 上升: 一浪高過一浪 — 每個 HH 比前一個高，每個 HL 也比前一個高
 //   - 下跌: 一浪低過一浪 — LH + LL

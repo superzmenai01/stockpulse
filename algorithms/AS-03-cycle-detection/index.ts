@@ -1,4 +1,4 @@
-// index.ts — AS-03 均線系統週期判斷法 · 主入口
+// index.ts — AS-03 股票周期性判定 (umbrella) · 主入口
 //
 // 大少 #10809 (2026-08-06) — v1.0.0
 //   - 加 Module 5 VolumePrice (replaces skeleton VolumeModule)

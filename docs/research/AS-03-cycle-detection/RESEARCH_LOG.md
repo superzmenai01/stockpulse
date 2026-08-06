@@ -1,4 +1,4 @@
-# AS-03 · 均線系統週期判斷法 — 研究筆記
+# AS-03 · 股票周期性判定 (umbrella) — 研究筆記
 
 > 高層設計筆記 + 待辦追蹤 + Open Questions。
 > Code-level 細節睇 [algorithms/AS-03-cycle-detection/DECISIONS.md](../../../algorithms/AS-03-cycle-detection/DECISIONS.md)。
@@ -8,7 +8,7 @@
 ## 📅 2026-08-04 — 起步
 
 ### 來源
-- [均線系統週期判斷法算法.docx](file:///Users/zmenai/Downloads/均線系統週期判斷法算法.docx) — Kimi 整理嘅 6 點判斷方法 + 1 點綜合流程
+- [股票周期性判定算法.docx](file:///Users/zmenai/Downloads/股票周期性判定算法.docx) — Kimi 整理嘅 6 點判斷方法 + 1 點綜合流程
 - [StockPulse 項目](../../../) — 主項目位置
 - [Algorithm Specs 全局文件](../../../ALGORITHM_SPECS.md) — 全算法規格索引
 - [KlineCache 實作](../../../backend/services/kline_cache.py) — 數據 cache-aside 機制 (大少 #8505 #7983 #8484 #8551 #8573)
@@ -217,7 +217,7 @@ Frontend → GET /api/kline?code=HK.00981&period=1d&count=250
 ## 📅 2026-08-04 10:50 — 點 1 詳細做法 (MA Alignment v2.0)
 
 ### 來源
-- `/Users/zmenai/Downloads/均線系統週期判斷法.docx` (Kimi 整理 v2.0)
+- `/Users/zmenai/Downloads/股票周期性判定.docx` (Kimi 整理 v2.0)
 - 對應 module: `algorithms/AS-03-cycle-detection/modules/ma-alignment.ts`
 - 詳細 spec 已寫入: [MODULE-01-MA-ALIGNMENT.md](./MODULE-01-MA-ALIGNMENT.md) (8.9 KB, 8 step 完整算法)
 

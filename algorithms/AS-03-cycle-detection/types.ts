@@ -1,4 +1,4 @@
-// types.ts — AS-03 均線系統週期判斷法 · 共用類型定義
+// types.ts — AS-03 股票周期性判定 (umbrella) · 共用類型定義
 //
 // 所有 module / orchestrator / alert 嘅介面合約集中呢度。
 // 改呢度 = 改 contract，要小心。

@@ -1,4 +1,4 @@
-// config.ts — AS-03 均線系統週期判斷法 · 所有 tunable thresholds
+// config.ts — AS-03 股票周期性判定 (umbrella) · 所有 tunable thresholds
 //
 // 大少 #10332 決定: 全部 Kimi v0.2.0 算法刪走
 //   移除: thresholdPct / baseConfidenceSpread / baseConfidenceSmallSpreadThreshold /
