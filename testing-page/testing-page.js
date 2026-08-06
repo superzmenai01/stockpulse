@@ -31,6 +31,14 @@ const REGISTRY = [
     // 大少 #10859 — module toggle (enableVolumePrice + enableSlopeMomentum) 由
     //   AS-03 entry 入面嘅 checkbox 控制，唔再獨立 expose AS-03-VP / AS-03-SM dropdown
   },
+  // 2026-08-07 大少 + MiniMax Code — Module 2 v0.1.0 (高低點結構法)
+  // 獨立 entry, named export `hlStructureAdapter` 喺 adapter.mjs
+  {
+    id: 'AS-03-HL',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'hlStructureAdapter',
+  },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
 ];
@@ -461,7 +469,17 @@ async function runAlgorithm() {
     }
 
     // 4. 大少 #10431 — 撳完 test 後 render K 線圖表（full width）
-    renderChart(klines, code, period);
+    const chartRefs = renderChart(klines, code, period);
+
+    // 5. 2026-08-07 — Adapter 自己嘅 chart overlay (peaks/troughs markers + 箱體線 + pattern alert)
+    // Generic contract: 每個 algorithm 自己決定點 render 自己嘅 verdict 喺 chart 上面
+    if (currentAdapter.renderChartOverlay) {
+      try {
+        currentAdapter.renderChartOverlay(verdict, klines, chartRefs);
+      } catch (err) {
+        console.warn('[renderChartOverlay] failed:', err);
+      }
+    }
   } catch (err) {
     runStatus.innerHTML = `❌ ${err.message}`;
     resultPanel.innerHTML = `<pre style="color: red; background: #fff2f0; padding: 12px; border-radius: 4px;">${err.stack || err.message}</pre>`;
@@ -577,6 +595,10 @@ function renderChart(klines, code, period) {
 
   chartInstance = chart;
   console.log(`[Chart] rendered ${candleData.length} bars for ${code} (${period})`);
+
+  // 2026-08-07 — Module 2 (高低點結構法) chart overlay
+  // 返 chart + candleSeries 畀 adapter.renderChartOverlay 用
+  return { chart, candleSeries, priceLines: {} };
 }
 
 // ===== Event listeners =====

@@ -116,10 +116,78 @@ export const DEFAULT_ENABLE_FLAGS: EnableFlags = {
  *
  * 將 MA + VolumePrice + SlopeMomentum + EnableFlags 集中喺一個 config object
  */
+/**
+ * HLStructure module config (大少 + MiniMax Code 2026-08-07 — Module 2 v0.1.0)
+ *
+ * 跟 docx `docs/演算法概念SPECS/高低點結構法.docx` v2.0 spec 嘅 13 個 tunable parameters
+ * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md`
+ */
+export interface HLStructureConfig {
+  // Step 0 (data validation)
+  minPairs: number;                    // 3 — 判斷所需最少峰谷對數
+  baseWindow: number;                  // 5 — 極值識別基礎窗口 (日數)
+  tolerancePct: number;                // 0.015 — 趨勢判定基礎容忍度 (1.5%)
+
+  // Step 1 (ATR)
+  enableAtrWindow: boolean;            // true — 開 ATR 自適應窗口
+  atrPeriod: number;                   // 14 — ATR 計算週期
+
+  // Step 5 (volume filter)
+  enableVolumeFilter: boolean;         // true — 開量能過濾
+  volumeConfirmRatio: number;          // 0.7 — 縮量門檻 (相對均量)
+  volumeLookback: number;              // 20 — 量能均線長度
+  volumeBoostRatio: number;            // 1.3 — 放量加成門檻
+  volumeShrinkWeightMultiplier: number;// 0.5 — 縮量 weight 折扣
+  volumeBoostWeightMultiplier: number; // 1.2 — 放量 weight 加成
+
+  // Step 4 (breakout confirmation)
+  breakoutConfirmDays: number;         // 2 — 突破確認延遲日數 (K)
+
+  // Step 8 (time decay)
+  timeDecayLambda: number;             // 0.03 — 指數衰減係數 (0.02~0.05 推薦)
+
+  // Step 13 (pattern alert)
+  enablePatternAlert: boolean;         // true — 開形態預警
+  patternSymmetryTolerance: number;    // 2 — 對稱容忍度倍數 (effective_tolerance × N)
+
+  // Step 15 (freshness)
+  maxExtremeAgeDays: number;           // 20 — 最新極值點過咗 N 日就打折
+  freshnessDecayDays: number;          // 30 — 超過 maxAge 後每 N 日線性打折
+  freshnessMinMultiplier: number;      // 0.4 — 新鮮度折扣下限
+}
+
+export const DEFAULT_HL_STRUCTURE_CONFIG: HLStructureConfig = {
+  minPairs: 3,
+  baseWindow: 5,
+  tolerancePct: 0.015,
+
+  enableAtrWindow: true,
+  atrPeriod: 14,
+
+  enableVolumeFilter: true,
+  volumeConfirmRatio: 0.7,
+  volumeLookback: 20,
+  volumeBoostRatio: 1.3,
+  volumeShrinkWeightMultiplier: 0.5,
+  volumeBoostWeightMultiplier: 1.2,
+
+  breakoutConfirmDays: 2,
+
+  timeDecayLambda: 0.03,
+
+  enablePatternAlert: true,
+  patternSymmetryTolerance: 2,
+
+  maxExtremeAgeDays: 20,
+  freshnessDecayDays: 30,
+  freshnessMinMultiplier: 0.4,
+};
+
 export interface CycleConfig {
   maAlignment: MAAlignmentConfig;
   volumePrice: VolumePriceConfig;
   slopeMomentum: SlopeMomentumConfig;
+  hlStructure: HLStructureConfig;
   enableFlags: EnableFlags;
 }
 
@@ -127,5 +195,6 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = {
   maAlignment: DEFAULT_MA_ALIGNMENT_CONFIG,
   volumePrice: DEFAULT_VOLUME_PRICE_CONFIG,
   slopeMomentum: DEFAULT_SLOPE_MOMENTUM_CONFIG,
+  hlStructure: DEFAULT_HL_STRUCTURE_CONFIG,
   enableFlags: DEFAULT_ENABLE_FLAGS,
 };

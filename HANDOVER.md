@@ -210,6 +210,8 @@ def _compute_fetch_max_count(period):
 
 | 日期 | 動作 |
 |------|------|
+| 2026-08-07 | **Module 2 (高低點結構法) v0.1.0 落地** — MiniMax Code: 18 步 v2.0 algorithm (modules/hl-structure.ts) + config (HLStructureConfig) + tests (12/12 pass) + adapter (`hlStructureAdapter` named export) + testing page integration (REGISTRY entry + `renderChartOverlay` contract) + spec doc (`MODULE-02-HL-STRUCTURE.md`) |
+| 2026-08-07 | **Testing page renderChartOverlay contract** — 通用 contract, 每個 adapter 自己 implement chart overlay (peaks/troughs markers + 箱體線 + 形態預警) |
 | 2026-08-06 | K-line cache gap-fill fix (3 fixes, 14/14 tests pass) |
 | 2026-08-06 | AS-03 量價 + 斜率 module 開發 + plain language 解讀 |
 | 2026-08-05 | Testing page framework + AS-03 dropdown |

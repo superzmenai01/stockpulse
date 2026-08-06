@@ -1481,3 +1481,635 @@ function allStrictlyDecreasing(arr, startIdx, length) {
   }
   return true;
 }
+
+// =============================================================================
+// HL Structure Module (大少 + MiniMax Code 2026-08-07 — Module 2 v0.1.0)
+// =============================================================================
+//
+// 跟 docx `高低點結構法.docx` v2.0 spec 嘅 18 步算法 port 落 vanilla JS
+// 供 StockPulse Testing Page 用
+//
+// Source of truth: ~/stockpulse/algorithms/AS-03-cycle-detection/modules/hl-structure.ts
+// Spec doc: ~/stockpulse/docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md
+
+const DEFAULT_HL_STRUCTURE_CONFIG = {
+  minPairs: 3,
+  baseWindow: 5,
+  tolerancePct: 0.015,
+  enableAtrWindow: true,
+  atrPeriod: 14,
+  enableVolumeFilter: true,
+  volumeConfirmRatio: 0.7,
+  volumeLookback: 20,
+  volumeBoostRatio: 1.3,
+  volumeShrinkWeightMultiplier: 0.5,
+  volumeBoostWeightMultiplier: 1.2,
+  breakoutConfirmDays: 2,
+  timeDecayLambda: 0.03,
+  enablePatternAlert: true,
+  patternSymmetryTolerance: 2,
+  maxExtremeAgeDays: 20,
+  freshnessDecayDays: 30,
+  freshnessMinMultiplier: 0.4,
+};
+
+// ATR 計算
+function calcATR(klines, period) {
+  if (klines.length < period + 1) return 0;
+  const trs = [];
+  for (let i = period; i < klines.length; i++) {
+    const curr = klines[i];
+    const prev = klines[i - 1];
+    const tr1 = curr.high - curr.low;
+    const tr2 = Math.abs(curr.high - prev.close);
+    const tr3 = Math.abs(curr.low - prev.close);
+    trs.push(Math.max(tr1, tr2, tr3));
+  }
+  return trs.reduce((a, b) => a + b, 0) / trs.length;
+}
+
+// 識別 peak/trough
+function detectExtremes(klines, window) {
+  const peaks = [];
+  const troughs = [];
+  for (let i = window; i < klines.length - window; i++) {
+    const curr = klines[i].weightedPrice;
+    const leftW = klines.slice(i - window, i).map(k => k.weightedPrice);
+    const rightW = klines.slice(i + 1, i + window + 1).map(k => k.weightedPrice);
+    const leftMax = Math.max(...leftW);
+    const rightMax = Math.max(...rightW);
+    const leftMin = Math.min(...leftW);
+    const rightMin = Math.min(...rightW);
+
+    if (curr > leftMax && curr > rightMax) {
+      peaks.push(i);
+    } else if (curr < leftMin && curr < rightMin) {
+      troughs.push(i);
+    }
+  }
+  return { peaks, troughs };
+}
+
+// 交替化 peak/trough
+function alternateExtremes(klines, peakIdxs, troughIdxs) {
+  const all = [
+    ...peakIdxs.map(i => ({ idx: i, type: 'peak', k: klines[i] })),
+    ...troughIdxs.map(i => ({ idx: i, type: 'trough', k: klines[i] })),
+  ].sort((a, b) => a.idx - b.idx);
+
+  const result = [];
+  for (const e of all) {
+    const last = result[result.length - 1];
+    if (!last) {
+      result.push(e);
+    } else if (last.type === e.type) {
+      // 同類型,留比較顯著嗰個
+      if (e.type === 'peak' && e.k.high > last.k.high) {
+        result[result.length - 1] = e;
+      } else if (e.type === 'trough' && e.k.low < last.k.low) {
+        result[result.length - 1] = e;
+      }
+    } else {
+      result.push(e);
+    }
+  }
+  return result;
+}
+
+// 趨勢分析
+function analyzeTrend(values, tolerance) {
+  if (values.length < 2) return { trend: 'mixed', consistency: 0 };
+  let risingCount = 0, fallingCount = 0;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] > values[i - 1]) risingCount++;
+    else if (values[i] < values[i - 1]) fallingCount++;
+  }
+  const totalDiff = values.length - 1;
+  const risingPct = risingCount / totalDiff;
+  const fallingPct = fallingCount / totalDiff;
+  const consistency = Math.max(risingPct, fallingPct);
+  const startVal = values[0];
+  const endVal = values[values.length - 1];
+  const overallChange = (endVal - startVal) / startVal;
+
+  if (risingPct >= 0.7 && overallChange > tolerance) {
+    return { trend: 'rising', consistency };
+  } else if (fallingPct >= 0.7 && overallChange < -tolerance) {
+    return { trend: 'falling', consistency };
+  } else if (consistency > 0.6 && Math.abs(overallChange) < tolerance) {
+    return { trend: 'flat', consistency };
+  }
+  return { trend: 'mixed', consistency };
+}
+
+// Main analyze function (vanilla JS port of modules/hl-structure.ts)
+async function analyzeHLStructure(klines, options) {
+  const cfg = { ...DEFAULT_HL_STRUCTURE_CONFIG, ...(options.hlsOverrides || {}) };
+  const n = klines.length;
+
+  // 數據驗證
+  const minRequired = Math.max(
+    (cfg.baseWindow * 2 + 1) * cfg.minPairs * 3,
+    cfg.atrPeriod + cfg.baseWindow * 4,
+    cfg.breakoutConfirmDays + cfg.baseWindow * 4,
+  );
+  if (n < minRequired) {
+    throw new Error(`[HLStructure] Insufficient data: need ≥ ${minRequired} bars, got ${n}`);
+  }
+
+  const window = options.dataWindowDays ? Math.min(options.dataWindowDays, n) : n;
+  const recent = klines.slice(-window);
+
+  // Step 1: ATR + 自適應 window
+  const atr = cfg.enableAtrWindow ? calcATR(recent, cfg.atrPeriod) : 0;
+  const last20Closes = recent.slice(-20).map(k => k.close);
+  const avgClose = last20Closes.reduce((a, b) => a + b, 0) / last20Closes.length;
+  const volatilityRatio = avgClose > 0 ? atr / avgClose : 0;
+  const adaptiveWindow = cfg.enableAtrWindow
+    ? Math.max(2, Math.min(15, Math.round(cfg.baseWindow * (1 + volatilityRatio * 20))))
+    : cfg.baseWindow;
+
+  // Step 2: 加權價 + 動態 tolerance
+  const weighted = recent.map(k => ({
+    ...k,
+    weightedPrice: (k.high + k.low + k.close * 2) / 4,
+  }));
+  let effectiveTolerance = cfg.tolerancePct;
+  if (avgClose < 10) effectiveTolerance = Math.max(cfg.tolerancePct, 0.03);
+  else if (avgClose > 500) effectiveTolerance = Math.min(cfg.tolerancePct, 0.008);
+
+  // Step 3: 識別極值
+  const { peaks: peakIdxs, troughs: troughIdxs } = detectExtremes(weighted, adaptiveWindow);
+
+  if (peakIdxs.length === 0 && troughIdxs.length === 0) {
+    return {
+      symbol: options.code || 'TEST',
+      cycle: 'sideways',
+      cycle_label: '橫行週期',
+      confidence: 0.3,
+      base_confidence: 0.3,
+      peaks: [], troughs: [],
+      peak_trend: 'mixed', trough_trend: 'mixed',
+      structure_score: 0, weighted_structure_score: 0,
+      box_boundary: null,
+      pattern_alert: 'none',
+      latest_extreme: null,
+      price_position: 'between',
+      adaptive_window: adaptiveWindow,
+      effective_tolerance: effectiveTolerance,
+      adjustment_log: ['價格完全無變化,無法識別峰谷'],
+      reason: '價格完全無變化,預設橫行',
+      last_date: String(recent[recent.length - 1].timestamp || recent[recent.length - 1].date || ''),
+    };
+  }
+
+  // Step 4: 突破確認 + Step 5: 量能過濾
+  const alternated = alternateExtremes(weighted, peakIdxs, troughIdxs);
+  const K = cfg.breakoutConfirmDays;
+  for (const e of alternated) {
+    const afterEnd = Math.min(e.idx + 1 + K, weighted.length - 1);
+    const after = weighted.slice(e.idx + 1, afterEnd + 1);
+    if (after.length === 0) continue;
+    if (e.type === 'peak') {
+      e.confirmed = after.every(c => c.close > e.k.close * (1 + effectiveTolerance));
+    } else {
+      e.confirmed = after.every(c => c.close < e.k.close * (1 - effectiveTolerance));
+    }
+    // 量能
+    if (cfg.enableVolumeFilter) {
+      const lookbackStart = Math.max(0, e.idx - cfg.volumeLookback);
+      const slice = weighted.slice(lookbackStart, e.idx);
+      const avgVol = slice.length > 0 ? slice.reduce((a, b) => a + b.volume, 0) / slice.length : 0;
+      e.volumeRatio = avgVol > 0 ? e.k.volume / avgVol : 0;
+      e.weight = 1.0;
+      if (e.volumeRatio < cfg.volumeConfirmRatio) e.weight *= cfg.volumeShrinkWeightMultiplier;
+      else if (e.volumeRatio > cfg.volumeBoostRatio) e.weight *= cfg.volumeBoostWeightMultiplier;
+    } else {
+      e.weight = 1.0;
+      e.volumeRatio = 0;
+    }
+  }
+
+  if (alternated.length < cfg.minPairs * 2) {
+    throw new Error(`[HLStructure] 無法形成足夠交替嘅峰谷結構: 只有 ${alternated.length} 個交替點,需要至少 ${cfg.minPairs * 2}`);
+  }
+
+  // Step 7: 提取最近 N 對
+  const peakExts = alternated.filter(e => e.type === 'peak').slice(-cfg.minPairs);
+  const troughExts = alternated.filter(e => e.type === 'trough').slice(-cfg.minPairs);
+
+  // Step 8: 時間衰減
+  const lastIdx = weighted.length - 1;
+  for (const e of [...peakExts, ...troughExts]) {
+    const daysAgo = lastIdx - e.idx;
+    e.weight *= Math.exp(-cfg.timeDecayLambda * daysAgo);
+  }
+
+  // Step 9: 趨勢分析
+  const peakTrend = analyzeTrend(peakExts.map(e => e.k.close), effectiveTolerance);
+  const troughTrend = analyzeTrend(troughExts.map(e => e.k.close), effectiveTolerance);
+
+  // Step 10: 結構分數
+  let candidate, structureScore, weightedStructureScore;
+  const avgConsistency = (peakTrend.consistency + troughTrend.consistency) / 2;
+  if (peakTrend.trend === 'rising' && troughTrend.trend === 'rising') {
+    candidate = 'uptrend';
+    structureScore = avgConsistency;
+    weightedStructureScore = avgConsistency;
+  } else if (peakTrend.trend === 'falling' && troughTrend.trend === 'falling') {
+    candidate = 'downtrend';
+    structureScore = -avgConsistency;
+    weightedStructureScore = -avgConsistency;
+  } else {
+    candidate = 'sideways';
+    const rawPeakCons = Math.abs(peakTrend.consistency);
+    const rawTroughCons = Math.abs(troughTrend.consistency);
+    structureScore = 1.0 - (rawPeakCons + rawTroughCons) / 2;
+    weightedStructureScore = structureScore;
+  }
+
+  // Step 11: 基礎信心
+  let baseConfidence;
+  if (candidate === 'uptrend' || candidate === 'downtrend') {
+    baseConfidence = (weightedStructureScore + 1) / 2;
+    baseConfidence = Math.max(0, Math.min(1, baseConfidence));
+    const pairBonus = Math.min(1, (peakExts.length - 2) / 3);
+    baseConfidence = baseConfidence * 0.7 + pairBonus * 0.3;
+  } else {
+    const allCloses = [...peakExts.map(e => e.k.close), ...troughExts.map(e => e.k.close)];
+    const rangeMax = Math.max(...allCloses);
+    const rangeMin = Math.min(...allCloses);
+    const avgAll = allCloses.reduce((a, b) => a + b, 0) / allCloses.length;
+    const rangePct = avgAll > 0 ? (rangeMax - rangeMin) / avgAll : 0;
+    baseConfidence = Math.max(0.3, 1.0 - rangePct / (effectiveTolerance * 4));
+  }
+
+  // Step 12: 箱體
+  let boxBoundary = null;
+  if (candidate === 'sideways') {
+    const boxTop = Math.max(...peakExts.map(e => e.k.close));
+    const boxBottom = Math.min(...troughExts.map(e => e.k.close));
+    const boxMid = (boxTop + boxBottom) / 2;
+    const boxHeightPct = boxMid > 0 ? (boxTop - boxBottom) / boxMid : 0;
+    boxBoundary = {
+      top: round(boxTop, 2), bottom: round(boxBottom, 2),
+      mid: round(boxMid, 2), height_pct: round(boxHeightPct, 4),
+    };
+  }
+
+  // Step 13: 形態預警
+  let patternAlert = 'none';
+  let reasonBase = `判定: ${candidate === 'uptrend' ? '上升' : candidate === 'downtrend' ? '下跌' : '橫行'}`;
+  if (cfg.enablePatternAlert && peakExts.length >= 3 && troughExts.length >= 2) {
+    const symTol = effectiveTolerance * cfg.patternSymmetryTolerance;
+    if (peakExts.length >= 3) {
+      const last3 = peakExts.slice(-3);
+      if (last3[1].k.close > last3[0].k.close && last3[1].k.close > last3[2].k.close &&
+          Math.abs(last3[0].k.close - last3[2].k.close) / last3[1].k.close < symTol) {
+        patternAlert = 'head_and_shoulder';
+        reasonBase += '；出現頭肩頂形態預警';
+      }
+    }
+    if (patternAlert === 'none' && troughExts.length >= 3) {
+      const last3 = troughExts.slice(-3);
+      if (Math.abs(last3[0].k.close - last3[2].k.close) / last3[1].k.close < symTol &&
+          last3[1].k.close > last3[0].k.close) {
+        patternAlert = 'double_bottom';
+        reasonBase += '；出現雙底形態預警';
+      }
+    }
+    if (patternAlert === 'none' && peakExts.length >= 3) {
+      const last3 = peakExts.slice(-3);
+      if (Math.abs(last3[0].k.close - last3[2].k.close) / last3[1].k.close < symTol &&
+          last3[1].k.close < last3[0].k.close) {
+        patternAlert = 'double_top';
+        reasonBase += '；出現雙頂形態預警';
+      }
+    }
+  }
+
+  // Step 14: 價格位置
+  const latestPrice = weighted[weighted.length - 1].close;
+  const latestPeak = peakExts[peakExts.length - 1];
+  const latestTrough = troughExts[troughExts.length - 1];
+  const latestExtreme = alternated[alternated.length - 1];
+  const daysAgo = lastIdx - latestExtreme.idx;
+
+  let pricePosition;
+  if (latestPrice > latestPeak.k.close * (1 + effectiveTolerance)) pricePosition = 'above_peak';
+  else if (latestPrice < latestTrough.k.close * (1 - effectiveTolerance)) pricePosition = 'below_trough';
+  else if (latestPrice >= latestTrough.k.close && latestPrice <= latestPeak.k.close) pricePosition = 'between';
+  else pricePosition = 'broken';
+
+  const adjustmentLog = [];
+  let confidenceMultiplier = 1.0;
+
+  if (candidate === 'uptrend') {
+    if (pricePosition === 'below_trough') {
+      adjustmentLog.push('當前價格跌破最近谷點,上升趨勢可能已破壞');
+      confidenceMultiplier *= 0.4;
+    } else if (pricePosition === 'between' && latestExtreme.type === 'peak') {
+      adjustmentLog.push('價格處於回調階段,尚未確認趨勢延續');
+      confidenceMultiplier *= 0.85;
+    }
+  } else if (candidate === 'downtrend') {
+    if (pricePosition === 'above_peak') {
+      adjustmentLog.push('當前價格突破最近峰點,下跌趨勢可能已反轉');
+      confidenceMultiplier *= 0.4;
+    } else if (pricePosition === 'between' && latestExtreme.type === 'trough') {
+      adjustmentLog.push('價格處於反彈階段,尚未確認趨勢延續');
+      confidenceMultiplier *= 0.85;
+    }
+  } else {
+    if (pricePosition === 'above_peak') {
+      adjustmentLog.push('價格突破箱體上沿,可能即將脫離橫行');
+      confidenceMultiplier *= 0.7;
+    } else if (pricePosition === 'below_trough') {
+      adjustmentLog.push('價格跌破箱體下沿,可能即將脫離橫行');
+      confidenceMultiplier *= 0.7;
+    }
+  }
+
+  // Step 15: 新鮮度
+  if (daysAgo > cfg.maxExtremeAgeDays) {
+    const freshness = Math.max(
+      cfg.freshnessMinMultiplier,
+      1.0 - (daysAgo - cfg.maxExtremeAgeDays) / cfg.freshnessDecayDays,
+    );
+    confidenceMultiplier *= freshness;
+    adjustmentLog.push(`最新極值點距今 ${daysAgo} 天,結構信號老化`);
+  }
+
+  // Step 17: 綜合信心
+  const confidence = Math.max(0, Math.min(1, baseConfidence * confidenceMultiplier));
+
+  const cycleLabel = candidate === 'uptrend' ? '上升週期'
+    : candidate === 'downtrend' ? '下跌週期' : '橫行週期';
+
+  const finalReason = adjustmentLog.length > 0
+    ? `${reasonBase}；${adjustmentLog.join('；')}`
+    : reasonBase;
+
+  return {
+    symbol: options.code || 'TEST',
+    cycle: candidate,
+    cycle_label: cycleLabel,
+    confidence: round(confidence, 4),
+    base_confidence: round(baseConfidence, 4),
+    peaks: peakExts.map(e => ({
+      date: String(e.k.timestamp || e.k.date || ''),
+      close: e.k.close, high: e.k.high, low: e.k.low, index: e.idx,
+      volume: e.k.volume, confirmed: e.confirmed || false, weight: round(e.weight || 1, 4),
+    })),
+    troughs: troughExts.map(e => ({
+      date: String(e.k.timestamp || e.k.date || ''),
+      close: e.k.close, high: e.k.high, low: e.k.low, index: e.idx,
+      volume: e.k.volume, confirmed: e.confirmed || false, weight: round(e.weight || 1, 4),
+    })),
+    peak_trend: peakTrend.trend,
+    trough_trend: troughTrend.trend,
+    structure_score: round(structureScore, 4),
+    weighted_structure_score: round(weightedStructureScore, 4),
+    box_boundary: boxBoundary,
+    pattern_alert: patternAlert,
+    latest_extreme: {
+      type: latestExtreme.type,
+      date: String(latestExtreme.k.timestamp || latestExtreme.k.date || ''),
+      close: latestExtreme.k.close, index: latestExtreme.idx, days_ago: daysAgo,
+      confirmed: latestExtreme.confirmed || false,
+    },
+    price_position: pricePosition,
+    adaptive_window: adaptiveWindow,
+    effective_tolerance: round(effectiveTolerance, 6),
+    adjustment_log: adjustmentLog,
+    reason: finalReason,
+    last_date: String(recent[recent.length - 1].timestamp || recent[recent.length - 1].date || ''),
+  };
+}
+
+function renderHLStructureResult(verdict) {
+  const cycleColor = verdict.cycle === 'uptrend' ? '#26BA75' : verdict.cycle === 'downtrend' ? '#EE5151' : '#F39C12';
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+
+  const patternText = {
+    'head_and_shoulder': '⚠️ 頭肩頂 (可能見頂)',
+    'double_bottom': '✓ 雙底 (可能見底)',
+    'double_top': '⚠️ 雙頂 (可能見頂)',
+    'none': '無形態預警',
+  }[verdict.pattern_alert] || '無形態預警';
+
+  return `
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header">📊 高低點結構法 (Peak-Trough Structure)</h3>
+      </div>
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${cycleColor}">
+          <span class="state-label">${verdict.cycle_label}</span>
+          <span class="state-code">${verdict.cycle.toUpperCase()}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">信心指數</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>峰點:</span> <strong>${verdict.peaks.length}</strong></div>
+          <div class="summary-row"><span>谷點:</span> <strong>${verdict.troughs.length}</strong></div>
+          <div class="summary-row"><span>結構分數:</span> <strong>${verdict.structure_score}</strong></div>
+        </div>
+      </div>
+
+      <div class="interpretation">
+        <strong>📌 判斷：</strong>${verdict.reason}
+      </div>
+
+      ${verdict.box_boundary ? `
+      <div class="box-boundary">
+        <h4>📦 箱體邊界 (橫行時)</h4>
+        <div class="box-grid">
+          <div class="box-item"><span class="box-label">上沿</span><span class="box-value">${verdict.box_boundary.top}</span></div>
+          <div class="box-item"><span class="box-label">中軸</span><span class="box-value">${verdict.box_boundary.mid}</span></div>
+          <div class="box-item"><span class="box-label">下沿</span><span class="box-value">${verdict.box_boundary.bottom}</span></div>
+          <div class="box-item"><span class="box-label">箱高 %</span><span class="box-value">${(verdict.box_boundary.height_pct * 100).toFixed(2)}%</span></div>
+        </div>
+      </div>
+      ` : ''}
+
+      <div class="pattern-alert">
+        <h4>🔍 形態預警</h4>
+        <p class="pattern-text">${patternText}</p>
+      </div>
+
+      <div class="position-info">
+        <h4>📍 當前價格位置</h4>
+        <p>位置: <strong>${verdict.price_position}</strong> · 自適應 Window: ${verdict.adaptive_window} · 動態 Tolerance: ${(verdict.effective_tolerance * 100).toFixed(2)}%</p>
+      </div>
+
+      <details class="meta-details">
+        <summary>🔧 技術細節（debug 用）</summary>
+        <pre>峰序列趨勢: ${verdict.peak_trend}
+谷序列趨勢: ${verdict.trough_trend}
+加權結構分數: ${verdict.weighted_structure_score}
+基礎信心: ${verdict.base_confidence}
+最終信心: ${verdict.confidence}
+${verdict.adjustment_log.length > 0 ? '\n調整記錄:\n' + verdict.adjustment_log.map(s => '  • ' + s).join('\n') : ''}</pre>
+      </details>
+    </div>
+  `;
+}
+
+// ===== renderChartOverlay (testing page contract) =====
+// 在 K 線圖上面加 peaks/troughs markers + 箱體線 + 形態預警 banner
+function renderHLStructureChartOverlay(verdict, klines, chart) {
+  if (!chart || !verdict) return;
+
+  // 1. Peaks/Troughs markers (用 lightweight-charts v4.2.3 seriesMarkers API)
+  if (chart.chartInstance && typeof chart.chartInstance === 'function') {
+    // Skip: chart 已經有 seriesMarkers API call
+    return;
+  }
+
+  // 直接用 chart object
+  if (typeof LightweightCharts === 'undefined') return;
+
+  // 2. 用 v4 createSeriesMarkers
+  let series;
+  if (chart.candleSeries) {
+    series = chart.candleSeries;
+  } else {
+    // Fallback: 搵 candlestick series
+    return;
+  }
+
+  if (typeof LightweightCharts.createSeriesMarkers === 'function') {
+    const markers = [];
+    for (const p of verdict.peaks || []) {
+      markers.push({
+        time: normalizeTimeForMarker(p.date),
+        position: 'aboveBar',
+        color: '#EE5151',
+        shape: 'arrowDown',
+        text: `峰 ${p.close.toFixed(1)}`,
+      });
+    }
+    for (const t of verdict.troughs || []) {
+      markers.push({
+        time: normalizeTimeForMarker(t.date),
+        position: 'belowBar',
+        color: '#26BA75',
+        shape: 'arrowUp',
+        text: `谷 ${t.close.toFixed(1)}`,
+      });
+    }
+    if (markers.length > 0) {
+      try {
+        LightweightCharts.createSeriesMarkers(series, markers);
+      } catch (e) {
+        console.warn('[HLStructure] Failed to add markers:', e);
+      }
+    }
+  }
+
+  // 3. 箱體線 (sideways 時)
+  if (verdict.box_boundary && chart.priceLines) {
+    try {
+      chart.priceLines.top = series.createPriceLine({
+        price: verdict.box_boundary.top,
+        color: '#F39C12', lineWidth: 1, lineStyle: 2,
+        axisLabelVisible: true, title: '箱頂',
+      });
+      chart.priceLines.mid = series.createPriceLine({
+        price: verdict.box_boundary.mid,
+        color: '#888', lineWidth: 1, lineStyle: 3,
+        axisLabelVisible: true, title: '中軸',
+      });
+      chart.priceLines.bottom = series.createPriceLine({
+        price: verdict.box_boundary.bottom,
+        color: '#F39C12', lineWidth: 1, lineStyle: 2,
+        axisLabelVisible: true, title: '箱底',
+      });
+    } catch (e) {
+      console.warn('[HLStructure] Failed to add box lines:', e);
+    }
+  }
+}
+
+function normalizeTimeForMarker(dateStr) {
+  if (typeof dateStr === 'number') return dateStr > 1e12 ? Math.floor(dateStr / 1000) : dateStr;
+  if (typeof dateStr === 'string') {
+    const ts = Math.floor(new Date(dateStr).getTime() / 1000);
+    return ts;
+  }
+  return null;
+}
+
+function getHLStructureHelp() {
+  return `
+    <h4>高低點結構法 · Module 2 v0.1.0</h4>
+    <p>基於道氏理論 (Dow Theory),識別股價嘅山頂 (peak) 同山谷 (trough),透過峰谷排列結構判斷週期。</p>
+    <h5>📊 輸入參數</h5>
+    <ul>
+      <li><strong>baseWindow</strong> (5): 極值識別基礎窗口 (日數)</li>
+      <li><strong>minPairs</strong> (3): 最少峰谷對數</li>
+      <li><strong>tolerancePct</strong> (1.5%): 趨勢判定基礎容忍度</li>
+      <li><strong>enableAtrWindow</strong> (true): ATR 自適應窗口</li>
+      <li><strong>breakoutConfirmDays</strong> (2): 突破確認延遲日數</li>
+      <li><strong>timeDecayLambda</strong> (0.03): 時間衰減係數</li>
+    </ul>
+    <h5>🎯 輸出 (3 states)</h5>
+    <ul>
+      <li><strong>uptrend</strong>: higher highs + higher lows</li>
+      <li><strong>downtrend</strong>: lower highs + lower lows</li>
+      <li><strong>sideways</strong>: 範圍內震盪, 自動畀 top/bottom/mid 箱體</li>
+    </ul>
+    <h5>🔍 形態預警</h5>
+    <ul>
+      <li><strong>head_and_shoulder</strong>: 3 個峰, 中間最高</li>
+      <li><strong>double_bottom</strong>: 2 個谷, 價格相近, 中間反彈</li>
+      <li><strong>double_top</strong>: 2 個峰, 價格相近, 中間回調</li>
+    </ul>
+    <p><strong>v2.0 改進:</strong> 自適應 Window · 加權價 · 突破確認 · 量能過濾 · 時間衰減 · 動態 Tolerance · 箱體邊界 · 形態預警</p>
+  `;
+}
+
+export const hlStructureAdapter = {
+  id: 'AS-03-HL',
+  name: '高低點結構法 (Peak-Trough Structure)',
+  version: '0.1.0',
+  description: '基於 Dow Theory, 識別 peak (山頂) 同 trough (山谷) 嘅排列結構判斷週期 (上升/下跌/橫行),自動偵測頭肩頂/雙底/雙頂形態預警',
+  inputs: [
+    {
+      key: 'code',
+      label: '股票代碼',
+      type: 'autocomplete',
+      required: true,
+      endpoint: '/api/stocks/search',
+      queryParam: 'q',
+      placeholder: '輸入代碼或名稱（例: 00981 或 中芯）',
+      limit: 10,
+      marketFn: 'auto',
+    },
+    {
+      key: 'period',
+      label: '時間週期',
+      type: 'select',
+      options: [
+        { value: '1d', label: '日線' },
+        { value: '1w', label: '週線' },
+      ],
+      default: '1d',
+    },
+    {
+      key: 'dataWindowDays',
+      label: '取數據日數',
+      type: 'number',
+      default: 100,
+      min: 60,
+      max: 500,
+    },
+  ],
+  analyze: analyzeHLStructure,
+  renderResult: renderHLStructureResult,
+  renderChartOverlay: renderHLStructureChartOverlay,
+  getHelp: getHLStructureHelp,
+};
