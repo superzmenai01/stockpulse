@@ -146,6 +146,8 @@ function renderInput(input) {
       return renderSelect(input);
     case 'number':
       return renderNumber(input);
+    case 'checkbox':                                  // 大少 #10846 — module toggle checkboxes
+      return renderCheckbox(input);
     default:
       return renderText(input);
   }
@@ -233,6 +235,42 @@ function renderSelect(input) {
   });
 
   wrapper.appendChild(inputEl);
+  return wrapper;
+}
+
+// ===== Checkbox (大少 #10846 — module toggle checkboxes) =====
+//
+// Universal pattern — 所有 algorithm 嘅 inputs 入面如果有 type: 'checkbox' 都會用呢個 render。
+// Adapter.mjs 通過 input.default = false 設置 initial state (大少 clarify: default OFF)。
+// 撳「跑算法」時 currentOptions[key] 會係 boolean，跟住 pass 落 adapter.analyze()。
+
+function renderCheckbox(input) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'input-field input-field-checkbox';
+
+  const label = document.createElement('label');
+  label.className = 'checkbox-label';
+  label.htmlFor = `input-${input.key}`;
+
+  const inputEl = document.createElement('input');
+  inputEl.type = 'checkbox';
+  inputEl.id = `input-${input.key}`;
+  inputEl.name = input.key;
+  // 大少 clarify: default OFF — checkbox 唔可以 auto-checked
+  inputEl.checked = input.default === true;
+  currentOptions[input.key] = inputEl.checked;
+
+  const labelText = document.createElement('span');
+  labelText.textContent = input.label + (input.required ? ' *' : '');
+
+  label.appendChild(inputEl);
+  label.appendChild(labelText);
+
+  inputEl.addEventListener('change', () => {
+    currentOptions[input.key] = inputEl.checked;
+  });
+
+  wrapper.appendChild(label);
   return wrapper;
 }
 

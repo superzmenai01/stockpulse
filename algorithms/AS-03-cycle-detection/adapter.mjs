@@ -91,9 +91,32 @@ export const inputs = [
     max: 10.0,
     step: 0.1,
   },
+  // 大少 #10846 (2026-08-06) — Module toggle checkboxes (UI: default OFF)
+  //   - 量價分析 (VolumePrice) — confirm/disconfirm signal (D020)
+  //   - 斜率動能 (SlopeMomentum) — state override
+  //   - 0/1/2 都可剔，最終由 synthesizer (expert-rules) combine
+  {
+    key: 'enableVolumePrice',
+    label: '量價分析',
+    type: 'checkbox',
+    default: false,
+  },
+  {
+    key: 'enableSlopeMomentum',
+    label: '斜率動能',
+    type: 'checkbox',
+    default: false,
+  },
 ];
 
 // ===== Main analyze function =====
+//
+// 大少 #10846 (2026-08-06) — 從 c62d5fcb commit 嘅 module toggle design 延伸到 testing page UI：
+//   - 永遠 run MA alignment (mandatory)
+//   - options.enableVolumePrice === true  → run VolumePrice module
+//   - options.enableSlopeMomentum === true → run SlopeMomentum module
+//   - 如果有 ≥ 1 個 optional module 跑咗 → 用 expert-rules aggregator 綜合 verdict
+//   - 冇 optional module → 維持 v0.3.0 嘅單 module verdict (backward compat)
 //
 // 5 個 step（port 自 ma-alignment.ts v0.3.0）：
 //   Step 1 — 數據驗證（< minDataDays 報錯）
@@ -103,6 +126,58 @@ export const inputs = [
 //   Step 5 — Confidence derivation (strong 0.7 / medium 0.5 / weak +0.10 bonus)
 
 export async function analyze(klines, options = {}) {
+  // 大少 #10846 — module toggles
+  const enableVolumePrice = options.enableVolumePrice === true;
+  const enableSlopeMomentum = options.enableSlopeMomentum === true;
+
+  // Always run MA alignment (mandatory)
+  const maVerdict = await runMAAlignment(klines, options);
+
+  // Collect optional module verdicts
+  const moduleVerdicts = [maVerdict];
+  if (enableVolumePrice) {
+    moduleVerdicts.push(await analyzeVolumePrice(klines, options));
+  }
+  if (enableSlopeMomentum) {
+    moduleVerdicts.push(await analyzeSlopeMomentum(klines, options));
+  }
+
+  // 如果只有 MA alignment — 維持 backward compat verdict shape
+  if (moduleVerdicts.length === 1) {
+    return maVerdict;
+  }
+
+  // 否則用 expert-rules aggregator 綜合 (port 自 orchestrator/aggregator.ts expertRulesAggregate)
+  const synth = expertRulesSynthesize(moduleVerdicts);
+
+  return {
+    moduleId: id,
+    timeframe: options.period || '1d',
+    state: synth.state,
+    confidence: synth.confidence,
+    interpretation: `[Synthesized · expert-rules] ${synth.reason}。最終: ${synth.state} (信心 ${(synth.confidence * 100).toFixed(1)}%)`,
+    evidence: [],
+    warnings: [],
+    meta: {
+      synthesized: true,
+      synthesizerStrategy: 'expert-rules',
+      synthesizerReason: synth.reason,
+      breakdown: synth.breakdown,
+      enabledModules: moduleVerdicts.map(v => v.moduleId),
+      moduleVerdicts,                  // 大少 #10846 — 全部 verdict 放埋 meta 入面畀 renderResult 取用
+      dataDays: maVerdict.meta.dataDays,
+      configUsed: maVerdict.meta.configUsed,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+// ===== runMAAlignment — extract MA alignment logic (大少 #10846 refactor) =====
+//
+// 原本 analyze() 嘅 MA alignment 部分抽成獨立 helper。
+// 保留所有 ma-alignment.ts v0.3.0 嘅 logic，唔改任何 rule。
+
+async function runMAAlignment(klines, options = {}) {
   const cfg = {
     dataWindowDays: options.dataWindowDays ?? 100,
     minDataDays: Math.min(options.dataWindowDays ?? 100, 90),
@@ -286,7 +361,7 @@ export async function analyze(klines, options = {}) {
   }));
 
   return {
-    moduleId: id,
+    moduleId: 'ma-alignment',
     timeframe: options.period || '1d',
     state,
     confidence,
@@ -303,6 +378,87 @@ export async function analyze(klines, options = {}) {
       configUsed: cfg,
     },
     timestamp: Date.now(),
+  };
+}
+
+// ===== expertRulesSynthesize (大少 #10846 — port 自 orchestrator/aggregator.ts) =====
+//
+// Combine 多個 module verdict 出 final verdict。邏輯跟 backend aggregator.ts 一致：
+//   Step 1 — 取 ma-alignment verdict 做 base state (mandatory)
+//   Step 2 — VolumePrice signal 調整 confidence:
+//             CONFIRM    → +10%
+//             DISCONFIRM → -30%；conf 高 → 改 TRANSITION
+//             NEUTRAL    → 唔影響
+//   Step 3 — SlopeMomentum verdict 影響 state:
+//             TRANSITION (high conf) → 改 TRANSITION
+//             強烈反對 ma-alignment state (high conf) → 改 TRANSITION
+
+function expertRulesSynthesize(moduleVerdicts) {
+  const reasons = [];
+  const breakdown = {};
+
+  for (const v of moduleVerdicts) {
+    breakdown[`${v.moduleId}:${v.state}`] = v.confidence;
+  }
+
+  const ma = moduleVerdicts.find(v => v.moduleId === 'ma-alignment');
+  if (!ma) {
+    return {
+      state: 'TRANSITION',
+      confidence: 0,
+      reason: 'Expert-rules: ma-alignment verdict missing',
+      breakdown,
+    };
+  }
+
+  let finalState = ma.state;
+  let finalConfidence = ma.confidence;
+  reasons.push(`Base ma-alignment: ${ma.state} (${(ma.confidence * 100).toFixed(1)}%)`);
+
+  const volume = moduleVerdicts.find(v => v.moduleId === 'volume');
+  if (volume) {
+    const signal = volume.meta?.signal;
+    if (signal === 'CONFIRM') {
+      finalConfidence = Math.min(1.0, finalConfidence * 1.10);
+      reasons.push(`Volume CONFIRM (+10%)`);
+    } else if (signal === 'DISCONFIRM') {
+      finalConfidence = Math.max(0, finalConfidence * 0.70);
+      reasons.push(`Volume DISCONFIRM (-30%)`);
+      if (volume.confidence > 0.7) {
+        if (finalState !== 'TRANSITION') {
+          reasons.push(`Volume strong DISCONFIRM → TRANSITION`);
+          finalState = 'TRANSITION';
+        }
+      }
+    } else {
+      reasons.push(`Volume NEUTRAL (no change)`);
+    }
+  }
+
+  const slope = moduleVerdicts.find(v => v.moduleId === 'slope-momentum');
+  if (slope) {
+    if (slope.state === 'TRANSITION' && slope.confidence > 0.5) {
+      if (finalState !== 'TRANSITION') {
+        reasons.push(`Slope TRANSITION (high conf) → override → TRANSITION`);
+        finalState = 'TRANSITION';
+      } else {
+        reasons.push(`Slope agrees: TRANSITION`);
+      }
+    } else if (slope.state !== finalState && slope.confidence > 0.6) {
+      reasons.push(`Slope says ${slope.state} (high conf) vs ma-alignment ${finalState} → TRANSITION`);
+      finalState = 'TRANSITION';
+    } else if (slope.state === finalState) {
+      reasons.push(`Slope agrees: ${finalState}`);
+    }
+  }
+
+  finalConfidence = Math.round(finalConfidence * 10000) / 10000;
+
+  return {
+    state: finalState,
+    confidence: finalConfidence,
+    reason: reasons.join('；'),
+    breakdown,
   };
 }
 
@@ -344,8 +500,108 @@ function round(value, decimals) {
 }
 
 // ===== Render result (HTML string for testing page) =====
+//
+// 大少 #10846 — 支援兩種 verdict shape:
+//   1. Backward-compat MA-only verdict (冇 toggled modules)
+//      → 原本 v0.3.0 嘅 UI (single verdict card)
+//   2. Synthesized verdict (有 toggled modules)
+//      → 顯示 synthesized final + 每個 module 嘅 individual verdict card
 
 export function renderResult(verdict) {
+  // Synthesized path: meta.synthesized === true + meta.moduleVerdicts array
+  if (verdict.meta?.synthesized && Array.isArray(verdict.meta.moduleVerdicts)) {
+    return renderSynthesizedResult(verdict);
+  }
+
+  // Backward-compat MA-only path (v0.3.0)
+  return renderMAResult(verdict);
+}
+
+function renderSynthesizedResult(verdict) {
+  const stateColors = {
+    UP: '#52c41a',
+    DOWN: '#ff4d4f',
+    SIDEWAYS: '#faad14',
+    TRANSITION: '#722ed1',
+  };
+  const stateLabels = {
+    UP: '上升',
+    DOWN: '下跌',
+    SIDEWAYS: '橫行',
+    TRANSITION: '轉折',
+  };
+
+  const color = stateColors[verdict.state] || '#666';
+  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const moduleVerdicts = verdict.meta.moduleVerdicts;
+
+  // Render 每個 module 嘅 individual verdict card
+  const moduleCards = moduleVerdicts.map((mv) => {
+    if (mv.moduleId === 'ma-alignment') return renderMAResult(mv);
+    if (mv.moduleId === 'volume') return renderVolumeResult(mv);
+    if (mv.moduleId === 'slope-momentum') return renderSlopeResult(mv);
+    return `<pre>${JSON.stringify(mv, null, 2)}</pre>`;
+  }).join('');
+
+  // Enabled modules list
+  const enabledBadges = moduleVerdicts.map((mv) => {
+    const name = mv.moduleId === 'ma-alignment' ? 'MA Alignment'
+      : mv.moduleId === 'volume' ? '量價分析 (VolumePrice)'
+      : mv.moduleId === 'slope-momentum' ? '斜率動能 (SlopeMomentum)'
+      : mv.moduleId;
+    return `<span class="module-badge">${name}</span>`;
+  }).join('');
+
+  // Breakdown table
+  const breakdownRows = Object.entries(verdict.meta.breakdown || {})
+    .map(([k, v]) => `<div class="summary-row"><span>${k}</span> <strong>${(v * 100).toFixed(1)}%</strong></div>`)
+    .join('');
+
+  return `
+    <div class="as03-verdict as03-synthesized">
+      <div class="verdict-header synthesized-header">
+        <div class="state-pill" style="background: ${color}">
+          <span class="state-label">${stateLabel}</span>
+          <span class="state-code">${verdict.state}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">綜合信心指數</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
+          <div class="summary-row"><span>Strategy:</span> <strong>${verdict.meta.synthesizerStrategy}</strong></div>
+          <div class="summary-row"><span>Enabled Modules:</span> <strong>${moduleVerdicts.length}</strong></div>
+        </div>
+      </div>
+
+      <div class="enabled-modules-bar">
+        <strong>📦 Enabled Modules:</strong> ${enabledBadges}
+      </div>
+
+      <div class="interpretation">
+        <strong>🎯 綜合解讀：</strong>${verdict.interpretation}
+      </div>
+
+      <details class="meta-details">
+        <summary>🔬 Synthesizer Reason (${verdict.meta.synthesizerStrategy})</summary>
+        <p>${verdict.meta.synthesizerReason}</p>
+      </details>
+
+      <details class="meta-details">
+        <summary>📊 Breakdown (per-module state + confidence)</summary>
+        <div class="data-summary">${breakdownRows}</div>
+      </details>
+
+      <h3 style="margin-top: 16px; color: #555; font-size: 14px;">📋 Individual Module Verdicts</h3>
+      ${moduleCards}
+    </div>
+  `;
+}
+
+function renderMAResult(verdict) {
   const stateColors = {
     UP: '#52c41a',
     DOWN: '#ff4d4f',
@@ -363,10 +619,13 @@ export function renderResult(verdict) {
   const stateLabel = stateLabels[verdict.state] || verdict.state;
   const confidencePct = (verdict.confidence * 100).toFixed(1);
 
-  const matchedRulesHtml = verdict.meta.matchedRules.length === 0
+  const matchedRules = verdict.meta?.matchedRules || [];
+  const evidence = verdict.evidence || [];
+
+  const matchedRulesHtml = matchedRules.length === 0
     ? '<li style="color: #888;">無 rule match</li>'
-    : verdict.meta.matchedRules.map((rid) => {
-        const ev = verdict.evidence.find((e) => e.value === rid);
+    : matchedRules.map((rid) => {
+        const ev = evidence.find((e) => e.value === rid);
         const strengthClass = rid.startsWith('H') ? 'strong'
           : ['A', 'B'].includes(rid) ? 'strong'
           : ['I', 'J'].includes(rid) ? 'weak'
@@ -375,7 +634,10 @@ export function renderResult(verdict) {
       }).join('');
 
   return `
-    <div class="as03-verdict">
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h4>📐 MA Alignment (mandatory)</h4>
+      </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
           <span class="state-label">${stateLabel}</span>
@@ -388,7 +650,7 @@ export function renderResult(verdict) {
         <div class="data-summary">
           <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
           <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
-          <div class="summary-row"><span>Matched Rules:</span> <strong>${verdict.meta.matchedRules.length}</strong></div>
+          <div class="summary-row"><span>Matched Rules:</span> <strong>${matchedRules.length}</strong></div>
         </div>
       </div>
 
@@ -406,7 +668,7 @@ export function renderResult(verdict) {
       </div>
 
       <div class="matched-rules">
-        <h4>🎯 Matched Rules（${verdict.meta.matchedRules.length} 條）</h4>
+        <h4>🎯 Matched Rules（${matchedRules.length} 條）</h4>
         <ul>${matchedRulesHtml}</ul>
       </div>
 

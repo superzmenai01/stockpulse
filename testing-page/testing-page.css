@@ -139,6 +139,109 @@ aside h4 {
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
+/* ===== Checkbox（module toggle — 大少 #10846）===== */
+
+.input-field-checkbox {
+  display: flex;
+  align-items: flex-end;
+}
+
+.input-field-checkbox .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+  width: 100%;
+  height: 33px;
+  box-sizing: border-box;
+}
+
+.input-field-checkbox .checkbox-label:hover {
+  background: #f0f8ff;
+  border-color: #1890ff;
+}
+
+.input-field-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #1890ff;
+}
+
+.input-field-checkbox input[type="checkbox"]:checked + span {
+  color: #1890ff;
+  font-weight: 600;
+}
+
+.input-field-checkbox .checkbox-label:has(input:checked) {
+  background: #e6f7ff;
+  border-color: #1890ff;
+}
+
+/* Synthesized verdict (大少 #10846) */
+
+.as03-synthesized {
+  border: 2px solid #722ed1;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.synthesized-header {
+  border: 2px dashed #722ed1;
+}
+
+.module-card-header {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.module-card-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #722ed1;
+}
+
+.as03-module-card {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 14px;
+  margin-top: 12px;
+  background: #fafafa;
+}
+
+.enabled-modules-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0f5ff;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.module-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  background: white;
+  border: 1px solid #1890ff;
+  border-radius: 12px;
+  color: #1890ff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* ===== Autocomplete（大少 #10400 — 跟首頁 StockSearch UX 一致）===== */
 
 .input-autocomplete {
