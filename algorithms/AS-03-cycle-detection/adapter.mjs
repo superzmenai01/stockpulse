@@ -558,6 +558,28 @@ function renderSynthesizedResult(verdict) {
     .map(([k, v]) => `<div class="summary-row"><span>${k}</span> <strong>${(v * 100).toFixed(1)}%</strong></div>`)
     .join('');
 
+  // Synthesized summary panel (大少 #10871 — plain language 點樣用)
+  const synthSummaryPanel = `
+    <div class="interpretation-panel synthesized-summary">
+      <strong>🎯 綜合判定：${stateLabel}（${verdict.state}）</strong>
+      <p style="margin: 6px 0;">${getSynthesizedStateInterpretation(verdict.state)}</p>
+      <div class="module-summary-list">
+        ${moduleVerdicts.map((mv) => {
+          const modName = mv.moduleId === 'ma-alignment' ? 'MA Alignment'
+            : mv.moduleId === 'volume' ? '量价分析 (VolumePrice)'
+            : mv.moduleId === 'slope-momentum' ? '斜率动能 (SlopeMomentum)'
+            : mv.moduleId;
+          const modState = stateLabels[mv.state] || mv.state;
+          const modConf = (mv.confidence * 100).toFixed(1);
+          const modDetail = mv.moduleId === 'volume'
+            ? `信號: ${mv.meta?.signal || 'N/A'}`
+            : `state: ${mv.state}`;
+          return `<div class="module-summary-item"><strong>${modName}</strong>: ${modState} (${modConf}%) — ${modDetail}</div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
   return `
     <div class="as03-verdict as03-synthesized">
       <div class="verdict-header synthesized-header">
@@ -584,6 +606,8 @@ function renderSynthesizedResult(verdict) {
       <div class="interpretation">
         <strong>🎯 綜合解讀：</strong>${verdict.interpretation}
       </div>
+
+      ${synthSummaryPanel}
 
       <details class="meta-details">
         <summary>🔬 Synthesizer Reason (${verdict.meta.synthesizerStrategy})</summary>
@@ -923,7 +947,10 @@ export function renderVolumeResult(verdict) {
       }).join('');
 
   return `
-    <div class="as03-verdict">
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header">量价分析 (VolumePrice)</h3>
+      </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
           <span class="state-label">${stateLabel}</span>
@@ -946,6 +973,10 @@ export function renderVolumeResult(verdict) {
 
       <div class="interpretation">
         <strong>📌 解讀：</strong>${verdict.interpretation}
+      </div>
+
+      <div class="interpretation-panel">
+        <strong>📖 點樣用：</strong>${getVolumeInterpretation(verdict.meta.signal)}
       </div>
 
       <div class="volume-values">
@@ -1226,7 +1257,10 @@ export function renderSlopeResult(verdict) {
       }).join('');
 
   return `
-    <div class="as03-verdict">
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header">斜率动能 (SlopeMomentum)</h3>
+      </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
           <span class="state-label">${stateLabel}</span>
@@ -1245,6 +1279,10 @@ export function renderSlopeResult(verdict) {
 
       <div class="interpretation">
         <strong>📌 解讀：</strong>${verdict.interpretation}
+      </div>
+
+      <div class="interpretation-panel">
+        <strong>📖 點樣用：</strong>${getSlopeInterpretation(verdict.state, verdict.meta.matchedRules)}
       </div>
 
       <div class="slope-values">
@@ -1329,6 +1367,55 @@ export const slopeMomentumAdapter = {
   renderResult: renderSlopeResult,
   getHelp: getSlopeHelp,
 };
+
+// =============================================================================
+// Plain-language 「📖 點樣用」interpretation (大少 #10871 — 2026-08-06)
+// =============================================================================
+//
+// 用淺白中文解釋 verdict 嘅意思 + 點樣用。
+// 只係 UI 顯示 — 唔影響 backend verdict labels / state derivation。
+
+function getVolumeInterpretation(signal) {
+  if (signal === 'CONFIRM') {
+    return '💰 錢跟價 — 資金確認趨勢，AS-03 嘅判斷可靠。可以加倉 / 持倉。';
+  }
+  if (signal === 'DISCONFIRM') {
+    return '⚠️ 錢唔跟價 — 量價背馳，見頂警號 / 拋售衰竭。要小心假突破。';
+  }
+  return '🔍 無明確信號 — 量價中立，唔加強唔削弱 AS-03 判斷。等其他信號。';
+}
+
+function getSlopeInterpretation(state, matchedRules) {
+  const ids = new Set(matchedRules || []);
+  const hasTransition = ids.has('M7') || ids.has('M8');
+  const hasStrongUp = ids.has('M1') || ids.has('M3') || ids.has('M5');
+  const hasStrongDown = ids.has('M2') || ids.has('M4') || ids.has('M6');
+
+  if (hasTransition) {
+    return '🔄 轉勢中 — 短期斜率反轉，留意方向改變。等確認先行動。';
+  }
+  if (state === 'UP' && hasStrongUp) {
+    return '🚀 強勢升 — 均線加速向上，趨勢強。順勢做。';
+  }
+  if (state === 'UP') {
+    return '⬆️ 動能加強 — 短期斜率向上，但中期未確認。';
+  }
+  if (state === 'DOWN' && hasStrongDown) {
+    return '📉 強勢跌 — 均線加速向下，跌勢強。避開 / 減倉。';
+  }
+  if (state === 'DOWN') {
+    return '⬇️ 動能偏弱 — 短期斜率向下，但中期未確認。';
+  }
+  return '⏸️ 等待方向 — 動能弱，等市場給方向。';
+}
+
+function getSynthesizedStateInterpretation(state) {
+  if (state === 'UP') return '上升趨勢 — 多個 module 一致看好，可順勢而行。';
+  if (state === 'DOWN') return '下跌趨勢 — 多個 module 一致看淡，建議避開或減倉。';
+  if (state === 'SIDEWAYS') return '橫行 — 方向不明，等待突破訊號。';
+  if (state === 'TRANSITION') return '轉勢 — module 訊號矛盾或正在改變方向，留意確認。';
+  return '無明確判斷。';
+}
 
 // =============================================================================
 // Shared helpers (VolumePrice + SlopeMomentum use these)

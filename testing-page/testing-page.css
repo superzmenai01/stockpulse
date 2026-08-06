@@ -212,6 +212,66 @@ aside h4 {
   color: #722ed1;
 }
 
+/* Module title (大少 #10871 — 2026-08-06 — 量价分析 / 斜率动能) */
+.module-header {
+  margin: 0;
+  font-size: 16px;
+  color: #1890ff;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Plain-language interpretation panel (大少 #10871 — 📖 點樣用) */
+.interpretation-panel {
+  background: #fffbe6;
+  border-left: 3px solid #faad14;
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #333;
+}
+
+.interpretation-panel strong {
+  color: #d48806;
+  margin-right: 4px;
+}
+
+/* Synthesized summary panel (大少 #10871 — 綜合判定) */
+.synthesized-summary {
+  background: #f9f0ff;
+  border-left-color: #722ed1;
+}
+
+.synthesized-summary strong {
+  color: #722ed1;
+}
+
+.synthesized-summary p {
+  margin: 6px 0;
+  color: #555;
+}
+
+.module-summary-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.module-summary-item {
+  font-size: 13px;
+  color: #444;
+  padding: 4px 8px;
+  background: white;
+  border-radius: 3px;
+  border: 1px solid #e8e8e8;
+}
+
+.module-summary-item strong {
+  color: #1890ff;
+}
+
 .as03-module-card {
   border: 1px solid #d9d9d9;
   border-radius: 8px;
