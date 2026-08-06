@@ -196,6 +196,77 @@ backend/
 
 ---
 
+## 3.5 KlineCache v2 — Date-based Gap Detection (大少 #8602, 2026-08-06)
+
+### 背景
+
+舊 warm cache gap-fill 有 bug — 當 user query 嘅 `end < today`，`if today_in_range:` 跳過成個 Step 3 gap-fill，導致中間缺口（例如 HK.00700 2026-07-28 → 2026-08-04 嘅 7 日 gap）冇自動補返。
+
+### 三個 Fix (OpenCode Daemon 落地)
+
+| Fix | 內容 | 影響 |
+|-----|------|------|
+| **Fix 2** | `_compute_fetch_max_count(period)` helper | Cold + warm 共用 `max_count` override (30 yrs daily, 10 yrs other)；防止 caller 嘅 `max_count=100` miss 早期缺口 |
+| **Fix 3** | `_fetch_today_bar()` 用 `ctx.get_cur_kline(num=1)` | 拎今日 intraday partial bar；T-1 rule 唔寫 DB |
+| **Fix 4** | 刪走 `if today_in_range:` gate | Warm cache gap-fill 唔再受 user query 影響，永遠做 wide-fetch (`earliest_cached` → `today`) |
+
+### Refactor 結構
+
+```
+get_or_fetch(code, ctx, ktype, period, start, end)
+│
+├─ Step 1: get_klines(code, period, start, end)
+│          → user-range cached (for response merge)
+│
+├─ Step 2 (cold): _fetch_klines + _insert_klines(< today)
+│          → full-range fetch 1996→today, insert all < today
+│
+├─ Step 3 (warm): wide-fetch earliest_cached → today
+│          → diff OpenD vs FULL cache, fill missing (< today)
+│          → NOT gated by today_in_range (Fix 4)
+│
+└─ Step 4: _fetch_today_bar (independent of path)
+         → get_cur_kline(num=1), try/except fallback
+         → append to all_klines_dict (overwrite history fetch 嘅 today bar)
+```
+
+### Helper Methods (extracted)
+
+| Method | 角色 |
+|--------|------|
+| `_insert_klines(code, period, klines)` | DB INSERT OR REPLACE；caller 確保 `k['time'] < today` |
+| `_fetch_klines(ctx, code, ktype, period, start, end, max_count)` | Pure OpenD fetch，no DB write |
+| `_fetch_today_bar(ctx, code, ktype, period)` | Today real-time via `get_cur_kline()`；try/except 包住，mock 或 OpenD quirk → return None |
+| `_compute_fetch_max_count(period)` | `1d` → 30×365；else → 10×365 |
+
+### 永久 Rule (大少 #8602)
+
+- ✅ Gap-fill 永遠做 wide-fetch (`earliest_cached → today`)，唔受 user query 嘅 `today_in_range` 影響
+- ✅ Today 用 `get_cur_kline()` 而唔係 `request_history_kline()`（拎 intraday partial bar）
+- ✅ Today NEVER 寫 DB（T-1 rule 不變 — 大少 #7983）
+- ✅ Helper extraction — `_insert_klines` / `_fetch_klines` / `_fetch_today_bar` 拆出嚟，方便獨立 unit test
+- ❌ 唔好再用 `max_count=100` caller default（會 miss 早期缺口）
+
+### Test Coverage
+
+`backend/tests/test_kline_cache.py` **14/14 pass**：
+
+| Test | 驗證 |
+|------|------|
+| `test_gap_fill_db_jump` | DB 缺口自動 wide-fetch 補 |
+| `test_today_in_response_not_in_db` | 今日 bar 喺 response 但唔入 DB |
+| `test_repeat_call_today_not_duplicated` | 重複 call 唔重複今日 data |
+
+### Source
+
+- 大少 trigger #10714-#10721 (2026-08-06 02:15-02:19) — 問題發現 (00700 7-day gap) + workaround
+- 大少 #8602 (OpenCode Daemon session 2026-08-06 02:08) — 3 個 fix 落地
+- `backend/services/kline_cache.py` — 主要改動
+- `backend/tests/test_kline_cache.py` — 14/14 tests pass
+- `memory/2026-08-06-0208.md` — OpenCode session log
+
+---
+
 ## 4. Algorithm Pipeline (AS02 detail)
 
 ```
