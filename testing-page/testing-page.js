@@ -103,9 +103,11 @@ async function onAlgorithmChange() {
 
   currentAdapter = algo.adapter;
 
-  // Algo info
+  // Algo info (大少 #10963 — 綠框 兩行 context: umbrella + current algorithm)
   algoInfo.innerHTML = `
     <h3>${currentAdapter.name}</h3>
+    <p style="margin: 6px 0 2px 0; color: #555;"><strong>股票周期性判定：</strong></p>
+    <p style="margin: 0 0 8px 0; color: #555;"><strong>均線系統週期斷法</strong></p>
     <p><small>${currentAdapter.description || ''}</small></p>
     <p><small>版本: <strong>${currentAdapter.version}</strong></small></p>
   `;

@@ -1,6 +1,6 @@
 // ~/stockpulse/algorithms/AS-03-cycle-detection/adapter.mjs
 //
-// AS-03 股票周期性判定 (umbrella) — Testing Page Adapter
+// AS-03 均線系統週期斷法 — Testing Page Adapter
 //
 // 將 ma-alignment.ts / volume.ts / slope-momentum.ts 嘅算法 port 到 vanilla JS，
 // 供 StockPulse Testing Page (~/stockpulse/testing-page/) 人手測試用。
@@ -23,7 +23,7 @@
 //   - ~/stockpulse/algorithms/AS-03-cycle-detection/modules/slope-momentum.ts (v1.0.0) — 大少 #10809
 
 export const id = 'AS-03';
-export const name = '股票周期性判定';
+export const name = '均線系統週期斷法';
 export const version = '0.3.0';
 export const description = '用 10 條 rule-based 算法 (A-J) 識別股票所處嘅周期（上升 / 下跌 / 橫行 / 轉勢）';
 
