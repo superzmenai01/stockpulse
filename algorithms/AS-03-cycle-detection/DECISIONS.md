@@ -111,26 +111,33 @@
 
 ---
 
-## D006 · 6 個 model 結果都顯示
+## D006 · 6 個 model 結果都顯示 — 大少 #10809 update
 
-**日期:** 2026-08-04
-**狀態:** ✅ Accepted
-**Decider:** 大少確認
+**日期:** 2026-08-04 (original) / 2026-08-06 (update by 大少 #10809)
+**狀態:** ✅ Accepted (original) → ⚠️ Updated by D019 (2026-08-06)
+**Decider:** 大少確認 (original) / 大少 #10809 (update)
 
-### 背景
+### 背景 (original)
 大少要求「6 個 model 結果都要顯示」。
 
-### 決定
+### 決定 (original, 2026-08-04)
 - `CycleReport.moduleVerdicts` 包含 **5 個 peer module verdicts**
 - `CycleReport.htf` 包含 **Module 6 嘅 HTF verdict** (1 個)
 - `CycleReport.synthesized` 包含 **Module 7 結果** (1 個)
 - UI 全部顯示 (冇隱藏)
 - **總共顯示 = 5 + 1 (HTF) + 1 (synth) = 7 個 verdict card**
 
+### Update by 大少 #10809 (2026-08-06)
+- 唔再係「全部顯示」，改做「**已 enable 嘅 module 顯示**」
+- maAlignment 永遠 enabled (D019 core mandatory)
+- 其他 5 個 module 跟 enableFlags 決定
+- CycleDetector.analyze() 自動 filter disable 嘅 module，所以 moduleVerdicts 只包含 enabled
+- UI 顯示 `N enabled + 1 (HTF) + 1 (synth) = N + 2 個 verdict card`
+
 ### 影響
-- ✅ User 見到所有 evidence，唔係黑盒
-- ✅ 大少可以對比 module 間嘅分歧
-- ⚠️ UI 比較複雜 (7 個 verdict card 要清楚表達)
+- ✅ User 見到嘅 evidence 同 enableFlags 一致 (冇黑盒，冇誤導)
+- ✅ 大少可以 disable 重複 module (e.g. slopeMomentum 同 ma-alignment overlap 高)
+- ⚠️ UI 需要顯示「邊啲 module enabled / disabled」(將來 UI 加 toggle button)
 
 ---
 
@@ -177,22 +184,30 @@
 
 ---
 
-## D009 · 6 個 module 全包 (Q3 答案)
+## D009 · 6 個 module 全包 (Q3 答案) — 大少 #10809 update
 
-**日期:** 2026-08-04
-**狀態:** ✅ Accepted
-**Decider:** 大少 Q3 確認
+**日期:** 2026-08-04 (original) / 2026-08-06 (update by 大少 #10809)
+**狀態:** ✅ Accepted (original) → ⚠️ Superseded by D019 (2026-08-06)
+**Decider:** 大少 Q3 確認 (original) / 大少 #10809 (update)
 
-### 背景
+### 背景 (original)
 之前 Q3 問「6 個 module 全部都係 required，定有 priority？」
 
-### 決定
+### 決定 (original, 2026-08-04)
 - 全部 6 個 peer module 都跑 (Q3 = 全包)
 - UI 顯示全部 6 個結果 (D006)
 
+### Update by 大少 #10809 (2026-08-06)
+- 大少改主意：唔係「全部都係 required」，改做 **MA alignment mandatory + 5 個 optional toggle**
+- Module 6 (HTF) 仍然 mandatory (架構 constraint)，但 5 個 peer modules 變 optional
+- 預設 enableFlags: maAlignment=true (locked), volumePrice=true, slopeMomentum=false (高 overlap with MA alignment), hlStructure=true, trendline=true, indicators=true
+- 見 D019 option toggle design
+
 ### 影響
-- ✅ 簡單，唔使 tune priority
-- ⚠️ 多 D 1-2 個 ms response time (5 module 並列跑)
+- ✅ 用戶可以 disable 唔需要嘅 module (e.g. 用戶想 pure MA alignment，可以 disable 其他)
+- ✅ Backtest 可以靈活組合
+- ⚠️ 唔可以 disable ma-alignment (core)
+- ⚠️ Synthesizer 要 handle 部分 module 唔喺度嘅情況 (見 aggregator.ts handle null verdict)
 
 ---
 
@@ -528,3 +543,120 @@ Docx 範例用 rounded value，我哋 implementation 用 actual value → 結果
 
 ### Source
 - 2026-08-05 整理 session · 發現 Issue 3 (adapter.mjs ↔ ma-alignment.ts sync 風險)
+
+---
+
+## D019 · Option Toggle Design (大少 #10809)
+
+**日期:** 2026-08-06
+**狀態:** ✅ Accepted
+**Decider:** 大少 #10809 (trigger 2026-08-06 10:25:06)
+
+### 背景
+原本 D009 講「6 個 module 全包」，但 Slope 同 MA alignment 重疊高 (兩者都睇 MA 趨勢)。
+大少決定：MA alignment 做 core mandatory，其他 5 個 peer module 變 optional toggle。
+
+### 決定
+- **Core mandatory**: MA alignment (永遠 ON, 唔可以 disable)
+- **Optional toggles**: VolumePrice / SlopeMomentum / HL-Structure / Trendline / Indicators
+- **預設 enableFlags**:
+  - maAlignment: `true` (locked)
+  - volumePrice: `true` (預設 ON)
+  - slopeMomentum: `false` (預設 OFF，因為同 MA alignment 重疊高)
+  - hlStructure: `true`
+  - trendline: `true`
+  - indicators: `true`
+
+### 實作 (config.ts + types.ts + index.ts)
+- `config.ts` 新增 `EnableFlags` interface (friendly keys: maAlignment, volumePrice, slopeMomentum, hlStructure, trendline, indicators)
+- `config.ts` 新增 `DEFAULT_ENABLE_FLAGS`
+- `types.ts` `CycleContext.enableFlags?: Partial<Record<CycleModuleId, boolean>>`
+- `index.ts` `AnalyzeOptions.enableFlags?: Partial<EnableFlags>`
+- `index.ts` `CycleDetector.analyze()` filter target modules by enableFlags:
+  - ma-alignment 永遠包 (即使 caller 寫 false 都 override 做 true)
+  - 其他 module: enableFlags[id] === false → skip
+
+### 影響
+- ✅ User 可以 disable 重複嘅 module (e.g. slope-momentum 同 ma-alignment overlap)
+- ✅ Backtest 可以靈活組合
+- ✅ 已 enable 嘅 module 顯示 (D006 update) — UI 唔會誤導
+- ⚠️ Synthesizer 要 handle 部分 module 唔喺度 (見 D020 signal logic)
+- ⚠️ UI 需要 toggle button (將來 sprint)
+
+### Source
+- 大少 #10809 (2026-08-06 10:25:06) trigger
+- quick-draft-main-agent.md (main agent design input)
+
+---
+
+## D020 · VolumePrice Confirm/Disconfirm Signal (D012 Option B 落實)
+
+**日期:** 2026-08-06
+**狀態:** ✅ Accepted
+**Decider:** 大少 #10273 (D012 Option B) + 大少 #10809 (D020 落實)
+
+### 背景
+- D012 (2026-08-04) 揀咗 Option B: ma-alignment 用 docx 邏輯 + 獨立 volume.ts emit signal 而唔係完整 cycle verdict
+- 點解: 量價背馳 vs 量價齊升 嘅 cycle verdict 會同 ma-alignment 嘅 verdict 雙重計
+- 大少 #10809 (2026-08-06) 正式落實: VolumePrice module emit `meta.signal` 而唔係 cycle state
+
+### 決定
+VolumePrice module 嘅 verdict 結構:
+- `state`: 仲係要 emit (UP / DOWN / SIDEWAYS / TRANSITION)，畀 synthesizer 有底線參考
+- `meta.signal`: 額外 emit 一個 `CONFIRM | DISCONFIRM | NEUTRAL` signal 畀 synthesizer
+- Synthesizer (expert-rules): 用 signal 強化或削弱 ma-alignment 嘅 verdict
+
+Signal derivation:
+| Matched Rules | Signal | 原因 |
+|---|---|---|
+| L (見頂警號), S (量能背馳), N (拋售衰竭) | **DISCONFIRM** | 量能反對現有趨勢 |
+| K (量價齊升), M (放量下跌), O (OBV 突破), P (OBV 跌破) | **CONFIRM** | 量能確認現有趨勢 |
+| 其他 (Q/R/T) | **NEUTRAL** | 量能中性 |
+
+### 實作
+- `types.ts` 新增 `SignalType = 'CONFIRM' | 'DISCONFIRM' | 'NEUTRAL'`
+- `types.ts` `CycleVerdict.meta.signal?: SignalType` (optional field)
+- `modules/volume.ts` `deriveSignal()` method
+- `orchestrator/aggregator.ts` expert-rules combine:
+  - VolumePrice CONFIRM → +10% confidence
+  - VolumePrice DISCONFIRM → -30% confidence；如果 vol confidence > 0.7 → 考慮改 TRANSITION
+  - VolumePrice NEUTRAL → 唔影響
+
+### 影響
+- ✅ 避免雙重計問題 (D012 Option B 解決)
+- ✅ 量價邏輯可以獨立 calibrate，唔影響 ma-alignment
+- ✅ Synthesizer 整合 logic 透明 (rule-based)
+- ⚠️ User 見到嘅 volume verdict state 唔直接代表 cycle，必須睇 synthesizer
+
+### Source
+- 大少 #10273 (D012 Option B)
+- 大少 #10809 (D020 落實 signal logic)
+- quick-draft-main-agent.md (Module 5 signal output spec)
+
+---
+
+## 📝 對話歷史 (append)
+
+- 2026-08-06 10:25 — 大少 trigger #10809: 採用 main agent 嘅 option toggle design 建議 (採用 daemon implementation，main agent monitor)
+- 2026-08-06 — 我 (OpenCode Daemon) 實作 Module 5 VolumePrice + Module 8 SlopeMomentum + option toggle design
+  - 寫 D019 + D020
+  - 更新 D009 + D006 (superceded by D019)
+  - 加 `VolumePriceConfig` + `SlopeMomentumConfig` + `EnableFlags` + `CycleConfig` 去 config.ts
+  - 加 `'slope-momentum'` 去 CycleModuleId
+  - 寫 `modules/volume.ts` v1.0.0 (VolumePrice class，10 rule K-T + signal output)
+  - 寫 `modules/slope-momentum.ts` v1.0.0 (SlopeMomentum class，10 rule M1-M10)
+  - 更新 `orchestrator/aggregator.ts` 用 expert-rules strategy (D004 default)
+  - 更新 `orchestrator/synthesize.ts` handle null verdict
+  - 更新 `index.ts` v1.0.0 — export VolumePrice + SlopeMomentum + configs
+  - 寫 `__tests__/volume.test.mjs` (37 assertions)
+  - 寫 `__tests__/slope-momentum.test.mjs` (27 assertions)
+  - 更新 `adapter.mjs` (D018 sync): 加 volumePriceAdapter + slopeMomentumAdapter
+  - 更新 `testing-page/testing-page.js`: 加 REGISTRY entries + adapterExport support
+
+### 統計
+- 4 個 test files: 119 assertions total
+  - volume.test.mjs: 37 assertions (10 rule K-T + signal + state + confidence)
+  - slope-momentum.test.mjs: 27 assertions (10 rule M1-M10 + state + confidence)
+  - ma-alignment.test.mjs: 19 assertions (no regression)
+  - smoke.mjs: 36 assertions (skeleton + cycle-detector + aggregator)
+- TypeScript check: EXIT=0 (zero errors)

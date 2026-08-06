@@ -14,7 +14,8 @@ import {
   HLStructureModule,
   TrendlineModule,
   IndicatorsModule,
-  VolumeModule,
+  VolumePrice,
+  SlopeMomentum,
   MultiTFOrchestrator,
   Synthesizer,
   RegimeChangeAlerter,
@@ -38,7 +39,7 @@ async function main() {
   console.log('🧪 AS-03 cycle-detection skeleton smoke test\n');
 
   // Test 1: VERSION
-  assert('VERSION === "0.1.0-skeleton"', VERSION === '0.1.0-skeleton');
+  assert('VERSION === "1.0.0"', VERSION === '1.0.0');
 
   // Test 2: DEFAULT_MA_ALIGNMENT_CONFIG (v0.3.0)
   assert(
@@ -54,12 +55,13 @@ async function main() {
     DEFAULT_MA_ALIGNMENT_CONFIG.chanceThresholdPct === 0.02
   );
 
-  // Test 3: 5 個 peer modules instantiate
+  // Test 3: 6 個 peer modules instantiate (大少 #10809 — Module 5 VolumePrice + Module 8 SlopeMomentum)
   assert("MAAlignmentModule.id === 'ma-alignment'", new MAAlignmentModule().id === 'ma-alignment');
   assert("HLStructureModule.id === 'hl-structure'", new HLStructureModule().id === 'hl-structure');
   assert("TrendlineModule.id === 'trendline'", new TrendlineModule().id === 'trendline');
   assert("IndicatorsModule.id === 'indicators'", new IndicatorsModule().id === 'indicators');
-  assert("VolumeModule.id === 'volume'", new VolumeModule().id === 'volume');
+  assert("VolumePrice.id === 'volume'", new VolumePrice().id === 'volume');
+  assert("SlopeMomentum.id === 'slope-momentum'", new SlopeMomentum().id === 'slope-momentum');
 
   // Test 4: orchestrator components instantiate
   assert('MultiTFOrchestrator instantiable', new MultiTFOrchestrator() instanceof MultiTFOrchestrator);
@@ -92,7 +94,8 @@ async function main() {
   });
   assert("report.symbol === 'TEST'", report.symbol === 'TEST');
   assert("report.ltf === '1d'", report.ltf === '1d');
-  assert('report.moduleVerdicts.length === 5', report.moduleVerdicts.length === 5);
+  // 大少 #10809 — 預設 enableFlags: maAlignment/volumePrice/hl-structure/trendline/indicators ON, slopeMomentum OFF
+assert('report.moduleVerdicts.length === 5', report.moduleVerdicts.length === 5);
   assert('report.alerts.length === 0 (no HTF klines)', report.alerts.length === 0);
   assert('report.synthesized defined', report.synthesized !== undefined);
   assert('report.timestamp is number', typeof report.timestamp === 'number');

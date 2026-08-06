@@ -18,11 +18,28 @@ const BACKEND_URL = 'http://localhost:18792';
 
 // ===== Algorithm Registry（永久 design）=====
 // 加新 algorithm: 寫 algorithms/AS-XX/adapter.mjs + 加 1 行去呢度
+//
+// adapterExport (optional): 如果 adapter.mjs export 多過一個 adapter，
+//   用呢個 field 指定要攞邊一個 named export
+//   例: adapterExport: 'volumePriceAdapter' 會取 adapter.volumePriceAdapter
 const REGISTRY = [
   {
     id: 'AS-03',
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    // 預設 = 頂層 exports (向後兼容 ma-alignment adapter)
+  },
+  {
+    id: 'AS-03-VP',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'volumePriceAdapter',  // 大少 #10809 — Module 5 VolumePrice
+  },
+  {
+    id: 'AS-03-SM',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'slopeMomentumAdapter', // 大少 #10809 — Module 8 SlopeMomentum
   },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
@@ -54,11 +71,12 @@ async function init() {
 
   for (const algo of REGISTRY) {
     try {
-      const adapter = await import(algo.adapterPath);
-      algo.adapter = adapter;
+      const mod = await import(algo.adapterPath);
+      // 如果有 adapterExport, 用 named export; 否則用 default exports
+      algo.adapter = algo.adapterExport ? mod[algo.adapterExport] : mod;
       const option = document.createElement('option');
       option.value = algo.id;
-      option.textContent = `${algo.id} — ${adapter.name} (v${adapter.version})`;
+      option.textContent = `${algo.id} — ${algo.adapter.name} (v${algo.adapter.version})`;
       algorithmSelect.appendChild(option);
     } catch (err) {
       console.error(`Failed to load ${algo.id}:`, err);

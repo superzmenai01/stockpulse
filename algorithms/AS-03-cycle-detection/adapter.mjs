@@ -2,7 +2,7 @@
 //
 // AS-03 股票周期判定 — Testing Page Adapter
 //
-// 將 ma-alignment.ts 嘅算法 port 到 vanilla JS，
+// 將 ma-alignment.ts / volume.ts / slope-momentum.ts 嘅算法 port 到 vanilla JS，
 // 供 StockPulse Testing Page (~/stockpulse/testing-page/) 人手測試用。
 //
 // 統一 interface (Permanent Contract — 所有 AS-XX adapter 都要 implement):
@@ -12,8 +12,15 @@
 //   export function renderResult(verdict) → HTML string
 //   export function getHelp() → HTML string (optional)
 //
-// Source of truth: ~/stockpulse/algorithms/AS-03-cycle-detection/modules/ma-alignment.ts (v0.3.0)
-// 設計者: 大少 #10297/#10299/#10301/#10317/#10332
+// 三個 peer module adapters (大少 #10809):
+//   - 預設 exports (id/name/version/...) = ma-alignment adapter (保持 backward compat)
+//   - volumePriceAdapter = VolumePrice module adapter
+//   - slopeMomentumAdapter = SlopeMomentum module adapter
+//
+// Source of truth:
+//   - ~/stockpulse/algorithms/AS-03-cycle-detection/modules/ma-alignment.ts (v0.3.0) — 大少 #10297/#10299/#10301/#10317/#10332
+//   - ~/stockpulse/algorithms/AS-03-cycle-detection/modules/volume.ts (v1.0.0) — 大少 #10809
+//   - ~/stockpulse/algorithms/AS-03-cycle-detection/modules/slope-momentum.ts (v1.0.0) — 大少 #10809
 
 export const id = 'AS-03';
 export const name = '股票周期判定';
@@ -431,4 +438,697 @@ export function getHelp() {
     <p><strong>State priority:</strong> H > A > B > F > G > C/D > default SIDEWAYS</p>
     <p><strong>Confidence:</strong> strong 0.7 / medium 0.5 / weak +0.10 bonus, cap 1.0</p>
   `;
+}
+
+// =============================================================================
+// 大少 #10809 — Module 5 VolumePrice (v1.0.0) — 跟 ma-alignment pattern 一致 (D018)
+// =============================================================================
+//
+// 10 條 rule K-T（port 自 modules/volume.ts v1.0.0）：
+//   Step 1 — 數據驗證（< volumeLookback 報錯）
+//   Step 2 — 計算 OBV + 5/20 日均量
+//   Step 3 — 10 條 rule check (K-T)
+//   Step 4 — State derivation (K/O→UP · M/P→DOWN · L/S→TRANSITION · N/T→SIDEWAYS · Q→SIDEWAYS · R→TRANSITION)
+//   Step 5 — Confidence derivation (同 ma-alignment pattern)
+//   Step 6 — Signal derivation (D020 — meta.signal = CONFIRM | DISCONFIRM | NEUTRAL)
+
+const DEFAULT_VOLUME_PRICE_CONFIG = {
+  consecutiveDays: 5,
+  volumeLookback: 20,
+  boostThreshold: 1.2,
+  shrinkThreshold: 0.8,
+  obvLookback: 5,
+  divergenceCorrelation: -0.5,
+};
+
+export async function analyzeVolumePrice(klines, options = {}) {
+  const cfg = { ...DEFAULT_VOLUME_PRICE_CONFIG, ...(options.volumePriceConfig || {}) };
+
+  // Step 1: 數據驗證
+  if (!Array.isArray(klines) || klines.length < cfg.volumeLookback) {
+    throw new Error(
+      `[VolumePrice] Insufficient data: need ≥ ${cfg.volumeLookback} bars, got ${klines?.length ?? 0}`,
+    );
+  }
+  const recent = klines.slice(-Math.max(klines.length, cfg.volumeLookback));
+
+  // Step 2: 計算 OBV + 均量
+  const obvHistory = [0];
+  for (let i = 1; i < recent.length; i++) {
+    const prev = recent[i - 1];
+    const curr = recent[i];
+    if (curr.close > prev.close) {
+      obvHistory.push(obvHistory[i - 1] + curr.volume);
+    } else if (curr.close < prev.close) {
+      obvHistory.push(obvHistory[i - 1] - curr.volume);
+    } else {
+      obvHistory.push(obvHistory[i - 1]);
+    }
+  }
+
+  const volMA5History = [];
+  const volMA20History = [];
+  for (let i = 0; i < recent.length; i++) {
+    volMA5History.push(avgField(recent, i, 5, 'volume'));
+    volMA20History.push(avgField(recent, i, cfg.volumeLookback, 'volume'));
+  }
+
+  const win = cfg.consecutiveDays;
+  const last5 = recent.slice(-win);
+  const lastClose = last5[last5.length - 1].close;
+  const lastVolume = last5[last5.length - 1].volume;
+  const lastOBV = obvHistory[obvHistory.length - 1];
+
+  // Step 3: 10 條 rule check
+  const matchedRules = [];
+
+  // K. 連續 5 日 close ↑ 且 volume ↑ → 量價齊升確認 (strong)
+  if (allIncreasing(last5, 'close') && allIncreasing(last5, 'volume')) {
+    matchedRules.push({ id: 'K', label: '量價齊升確認', strength: 'strong' });
+  }
+
+  // L. close 創 5 日新高但 volume < 5 日均量 → 量價背馳見頂 (strong)
+  const last5Closes = last5.map(k => k.close);
+  const maxClose5 = Math.max(...last5Closes);
+  const last5VolMA = volMA5History.slice(-win);
+  const avgVol5 = last5VolMA[last5VolMA.length - 1];
+  if (lastClose === maxClose5 && lastVolume < avgVol5) {
+    matchedRules.push({ id: 'L', label: '量價背馳（見頂警號）', strength: 'strong' });
+  }
+
+  // M. 連續 5 日 close ↓ 且 volume ↑ → 放量下跌（趨勢確認）(strong)
+  if (allDecreasing(last5, 'close') && allIncreasing(last5, 'volume')) {
+    matchedRules.push({ id: 'M', label: '放量下跌（趨勢確認）', strength: 'strong' });
+  }
+
+  // N. 連續 5 日 close ↓ 但 volume ↓ → 縮量下跌（拋售衰竭）(medium)
+  if (allDecreasing(last5, 'close') && allDecreasing(last5, 'volume')) {
+    matchedRules.push({ id: 'N', label: '縮量下跌（拋售衰竭）', strength: 'medium' });
+  }
+
+  // O. OBV 創 N 日新高 (medium)
+  if (obvHistory.length >= cfg.obvLookback + 1) {
+    const prevOBV = obvHistory.slice(-cfg.obvLookback - 1, -1);
+    const maxPrevOBV = Math.max(...prevOBV);
+    if (lastOBV > maxPrevOBV) {
+      matchedRules.push({ id: 'O', label: 'OBV 創新高', strength: 'medium' });
+    }
+  }
+
+  // P. OBV 創 N 日新低 (medium)
+  if (obvHistory.length >= cfg.obvLookback + 1) {
+    const prevOBV = obvHistory.slice(-cfg.obvLookback - 1, -1);
+    const minPrevOBV = Math.min(...prevOBV);
+    if (lastOBV < minPrevOBV) {
+      matchedRules.push({ id: 'P', label: 'OBV 創新低', strength: 'medium' });
+    }
+  }
+
+  // Q. 縮量橫行整理 (medium)
+  const last5High = Math.max(...last5.map(k => k.high));
+  const last5Low = Math.min(...last5.map(k => k.low));
+  const last5AvgClose = last5Closes.reduce((a, b) => a + b, 0) / last5Closes.length;
+  const maxSpreadPct = last5AvgClose > 0 ? (last5High - last5Low) / last5AvgClose : 0;
+  const lastVolMA5 = volMA5History[volMA5History.length - 1];
+  const lastVolMA20 = volMA20History[volMA20History.length - 1];
+  if (maxSpreadPct < 0.02 && lastVolMA5 < lastVolMA20 * cfg.shrinkThreshold) {
+    matchedRules.push({ id: 'Q', label: '縮量橫行整理', strength: 'medium' });
+  }
+
+  // R. 放量震盪（醞釀突破）(medium)
+  if (maxSpreadPct > 0.03 && lastVolMA5 > lastVolMA20 * cfg.boostThreshold) {
+    matchedRules.push({ id: 'R', label: '放量震盪（醞釀突破）', strength: 'medium' });
+  }
+
+  // S. OBV vs close correlation < threshold → 量能背馳 (strong)
+  let corrValue = null;
+  if (obvHistory.length >= win) {
+    corrValue = correlation(last5.map(k => k.close), obvHistory.slice(-win));
+    if (corrValue < cfg.divergenceCorrelation) {
+      matchedRules.push({ id: 'S', label: '量能背馳 (OBV vs close)', strength: 'strong' });
+    }
+  }
+
+  // T. 5 日均量 < 20 日均量 × 0.5 → 量能不濟 (weak)
+  if (lastVolMA5 < lastVolMA20 * 0.5) {
+    matchedRules.push({ id: 'T', label: '量能不濟', strength: 'weak' });
+  }
+
+  // Step 4: State derivation
+  const state = deriveVolumeState(matchedRules);
+
+  // Step 5: Confidence derivation
+  const confidence = deriveConfidence(matchedRules);
+
+  // Step 6: Signal derivation (D020)
+  const signal = deriveVolumeSignal(matchedRules);
+
+  const interpretation = matchedRules.length > 0
+    ? matchedRules.map(r => r.label).join('；')
+    : '無 match';
+
+  const evidence = matchedRules.map(r => ({
+    type: `rule-${r.id}`,
+    label: r.label,
+    value: r.id,
+    passed: true,
+  }));
+
+  return {
+    moduleId: 'volume',
+    timeframe: options.period || '1d',
+    state,
+    confidence,
+    interpretation,
+    evidence,
+    warnings: [],
+    meta: {
+      matchedRules: matchedRules.map(r => r.id),
+      ruleLabels: matchedRules.map(r => r.label),
+      signal,                                    // D020
+      latestOBV: round(lastOBV, 2),
+      latestVolMA5: round(lastVolMA5, 2),
+      latestVolMA20: round(lastVolMA20, 2),
+      latestClose: round(lastClose, 4),
+      latestVolume: round(lastVolume, 2),
+      maxSpreadPct: round(maxSpreadPct, 4),
+      obvCorrelation: corrValue !== null ? round(corrValue, 4) : null,
+      dataDays: recent.length,
+      configUsed: cfg,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+function deriveVolumeState(rules) {
+  const ids = new Set(rules.map(r => r.id));
+  if (ids.has('K') || ids.has('O')) return 'UP';
+  if (ids.has('M') || ids.has('P')) return 'DOWN';
+  if (ids.has('L') || ids.has('S')) return 'TRANSITION';
+  if (ids.has('N') || ids.has('T')) return 'SIDEWAYS';
+  if (ids.has('Q')) return 'SIDEWAYS';
+  if (ids.has('R')) return 'TRANSITION';
+  return 'SIDEWAYS';
+}
+
+function deriveVolumeSignal(rules) {
+  const ids = new Set(rules.map(r => r.id));
+  if (ids.has('L') || ids.has('S') || ids.has('N')) return 'DISCONFIRM';
+  if (ids.has('K') || ids.has('M') || ids.has('O') || ids.has('P')) return 'CONFIRM';
+  return 'NEUTRAL';
+}
+
+export function renderVolumeResult(verdict) {
+  const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
+  const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
+  const signalColors = { CONFIRM: '#52c41a', DISCONFIRM: '#ff4d4f', NEUTRAL: '#faad14' };
+  const signalLabels = { CONFIRM: '量能確認', DISCONFIRM: '量能反對', NEUTRAL: '中性' };
+
+  const color = stateColors[verdict.state] || '#666';
+  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const signalColor = signalColors[verdict.meta.signal] || '#666';
+  const signalLabel = signalLabels[verdict.meta.signal] || verdict.meta.signal;
+  const confidencePct = (verdict.confidence * 100).toFixed(1);
+
+  const matchedRulesHtml = verdict.meta.matchedRules.length === 0
+    ? '<li style="color: #888;">無 rule match</li>'
+    : verdict.meta.matchedRules.map((rid) => {
+        const ev = verdict.evidence.find((e) => e.value === rid);
+        const strengthClass = ['K', 'L', 'M', 'S'].includes(rid) ? 'strong'
+          : rid === 'T' ? 'weak'
+          : 'medium';
+        return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
+      }).join('');
+
+  return `
+    <div class="as03-verdict">
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${color}">
+          <span class="state-label">${stateLabel}</span>
+          <span class="state-code">${verdict.state}</span>
+        </div>
+        <div class="signal-pill" style="background: ${signalColor}">
+          <span class="signal-label">${signalLabel}</span>
+          <span class="signal-code">${verdict.meta.signal}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">信心指數</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
+          <div class="summary-row"><span>Matched Rules:</span> <strong>${verdict.meta.matchedRules.length}</strong></div>
+        </div>
+      </div>
+
+      <div class="interpretation">
+        <strong>📌 解讀：</strong>${verdict.interpretation}
+      </div>
+
+      <div class="volume-values">
+        <h4>當前 Volume / OBV 值</h4>
+        <div class="vol-grid">
+          <div class="vol-item"><span class="vol-label">Vol MA5</span><span class="vol-value">${verdict.meta.latestVolMA5}</span></div>
+          <div class="vol-item"><span class="vol-label">Vol MA20</span><span class="vol-value">${verdict.meta.latestVolMA20}</span></div>
+          <div class="vol-item"><span class="vol-label">OBV</span><span class="vol-value">${verdict.meta.latestOBV}</span></div>
+          <div class="vol-item"><span class="vol-label">Max Spread</span><span class="vol-value">${(verdict.meta.maxSpreadPct * 100).toFixed(2)}%</span></div>
+        </div>
+      </div>
+
+      <div class="matched-rules">
+        <h4>🎯 Matched Rules（${verdict.meta.matchedRules.length} 條）</h4>
+        <ul>${matchedRulesHtml}</ul>
+      </div>
+
+      <details class="meta-details">
+        <summary>🔧 配置（debug 用）</summary>
+        <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
+      </details>
+    </div>
+  `;
+}
+
+export function getVolumeHelp() {
+  return `
+    <h4>VolumePrice · 10 條 Rule (K-T)</h4>
+    <ul>
+      <li><strong>K</strong> <small>(strong)</small>: 連續 5 日 close ↑ 且 volume ↑ → 量價齊升確認</li>
+      <li><strong>L</strong> <small>(strong)</small>: close 創 5 日新高但 volume < 5 日均量 → 量價背馳見頂</li>
+      <li><strong>M</strong> <small>(strong)</small>: 連續 5 日 close ↓ 且 volume ↑ → 放量下跌</li>
+      <li><strong>N</strong> <small>(medium)</small>: 連續 5 日 close ↓ 但 volume ↓ → 縮量下跌（拋售衰竭）</li>
+      <li><strong>O</strong> <small>(medium)</small>: OBV 創 N 日新高</li>
+      <li><strong>P</strong> <small>(medium)</small>: OBV 創 N 日新低</li>
+      <li><strong>Q</strong> <small>(medium)</small>: 縮量橫行整理 (spread &lt; 2% + volMA5 &lt; volMA20 × 0.8)</li>
+      <li><strong>R</strong> <small>(medium)</small>: 放量震盪 (spread &gt; 3% + volMA5 &gt; volMA20 × 1.2)</li>
+      <li><strong>S</strong> <small>(strong)</small>: OBV vs close 5 日 correlation &lt; -0.5 → 量能背馳</li>
+      <li><strong>T</strong> <small>(weak)</small>: volMA5 &lt; volMA20 × 0.5 → 量能不濟</li>
+    </ul>
+    <p><strong>State priority:</strong> K/O → UP · M/P → DOWN · L/S → TRANSITION · N/T/Q → SIDEWAYS · R → TRANSITION</p>
+    <p><strong>Signal:</strong> K/M/O/P → CONFIRM · L/S/N → DISCONFIRM · Q/R/T → NEUTRAL</p>
+    <p><strong>D012 Option B:</strong> VolumePrice 唔直接出 cycle verdict，出 confirm/disconfirm signal 畀 synthesizer 整合</p>
+  `;
+}
+
+export const volumePriceAdapter = {
+  id: 'AS-03-VP',
+  name: '量價分析 (VolumePrice)',
+  version: '1.0.0',
+  description: '用 10 條 rule (K-T) 識別量價關係，emit confirm/disconfirm signal',
+  inputs: [
+    {
+      key: 'code',
+      label: '股票代碼',
+      type: 'autocomplete',
+      required: true,
+      endpoint: '/api/stocks/search',
+      queryParam: 'q',
+      placeholder: '輸入代碼或名稱（例: 00981 或 中芯）',
+      limit: 10,
+      marketFn: 'auto',
+    },
+    {
+      key: 'period',
+      label: '時間週期',
+      type: 'select',
+      options: [
+        { value: '1d', label: '日線' },
+        { value: '1w', label: '週線' },
+      ],
+      default: '1d',
+    },
+    {
+      key: 'dataWindowDays',
+      label: '取數據日數',
+      type: 'number',
+      default: 100,
+      min: 30,
+      max: 500,
+    },
+  ],
+  analyze: analyzeVolumePrice,
+  renderResult: renderVolumeResult,
+  getHelp: getVolumeHelp,
+};
+
+// =============================================================================
+// 大少 #10809 — Module 8 SlopeMomentum (v1.0.0) — 跟 ma-alignment pattern 一致 (D018)
+// =============================================================================
+//
+// 10 條 rule M1-M10（port 自 modules/slope-momentum.ts v1.0.0）：
+//   Step 1 — 數據驗證（< longPeriod 報錯）
+//   Step 2 — 計算 MA5/MA10/MA60 history + 各 slope history
+//   Step 3 — 10 條 rule check (M1-M10)
+//   Step 4 — State derivation (M7/M8→TRANSITION · M1/M3/M5/M10→UP · M2/M4/M6→DOWN · M9→SIDEWAYS)
+//   Step 5 — Confidence derivation (同 ma-alignment pattern)
+
+const DEFAULT_SLOPE_MOMENTUM_CONFIG = {
+  shortPeriod: 5,
+  midPeriod: 10,
+  longPeriod: 20,
+  shortSlopeThreshold: 0.005,
+  midSlopeThreshold: 0.003,
+  longSlopeThreshold: 0.002,
+  reversalWindow: 5,
+};
+
+export async function analyzeSlopeMomentum(klines, options = {}) {
+  const cfg = { ...DEFAULT_SLOPE_MOMENTUM_CONFIG, ...(options.slopeMomentumConfig || {}) };
+
+  if (!Array.isArray(klines) || klines.length < cfg.longPeriod) {
+    throw new Error(
+      `[SlopeMomentum] Insufficient data: need ≥ ${cfg.longPeriod} bars, got ${klines?.length ?? 0}`,
+    );
+  }
+  const recent = klines.slice(-Math.max(klines.length, cfg.longPeriod * 3));
+
+  const ma5History = [];
+  const ma10History = [];
+  const ma60History = [];
+  for (let i = 0; i < recent.length; i++) {
+    ma5History.push(avgClose(recent, i, 5));
+    ma10History.push(avgClose(recent, i, 10));
+    ma60History.push(avgClose(recent, i, cfg.longPeriod));
+  }
+
+  const slopeMA5 = [];
+  const slopeMA10 = [];
+  const slopeMA60 = [];
+  const slopeMA5Daily = [];
+  for (let i = 0; i < recent.length; i++) {
+    slopeMA5.push(computeSlope(ma5History, i, cfg.shortPeriod));
+    slopeMA10.push(computeSlope(ma10History, i, cfg.midPeriod));
+    slopeMA60.push(computeSlope(ma60History, i, cfg.longPeriod));
+    slopeMA5Daily.push(computeSlope(ma5History, i, 1));
+  }
+
+  const lastIdx = recent.length - 1;
+  const latestSlopeMA5 = slopeMA5[lastIdx];
+  const latestSlopeMA10 = slopeMA10[lastIdx];
+  const latestSlopeMA60 = slopeMA60[lastIdx];
+
+  const matchedRules = [];
+
+  // M1. MA5 短期加速上升 (strong)
+  if (latestSlopeMA5 > cfg.shortSlopeThreshold &&
+      allStrictlyIncreasing(slopeMA5Daily, Math.max(0, lastIdx - 2), 3)) {
+    matchedRules.push({ id: 'M1', label: 'MA5 短期加速上升', strength: 'strong' });
+  }
+
+  // M2. MA5 短期加速下跌 (strong)
+  if (latestSlopeMA5 < -cfg.shortSlopeThreshold &&
+      allStrictlyDecreasing(slopeMA5Daily, Math.max(0, lastIdx - 2), 3)) {
+    matchedRules.push({ id: 'M2', label: 'MA5 短期加速下跌', strength: 'strong' });
+  }
+
+  // M3. MA10 中期斜率上升 (medium)
+  if (latestSlopeMA10 > cfg.midSlopeThreshold) {
+    matchedRules.push({ id: 'M3', label: 'MA10 中期斜率上升', strength: 'medium' });
+  }
+
+  // M4. MA10 中期斜率下跌 (medium)
+  if (latestSlopeMA10 < -cfg.midSlopeThreshold) {
+    matchedRules.push({ id: 'M4', label: 'MA10 中期斜率下跌', strength: 'medium' });
+  }
+
+  // M5. MA60 長期斜率上升 (medium)
+  if (latestSlopeMA60 > cfg.longSlopeThreshold) {
+    matchedRules.push({ id: 'M5', label: 'MA60 長期斜率上升', strength: 'medium' });
+  }
+
+  // M6. MA60 長期斜率下跌 (medium)
+  if (latestSlopeMA60 < -cfg.longSlopeThreshold) {
+    matchedRules.push({ id: 'M6', label: 'MA60 長期斜率下跌', strength: 'medium' });
+  }
+
+  // M7. 短期斜率轉正 (strong)
+  if (slopeCrossedZero(slopeMA5, lastIdx, cfg.reversalWindow, 'positive')) {
+    matchedRules.push({ id: 'M7', label: '短期斜率轉正（趨勢轉強）', strength: 'strong' });
+  }
+
+  // M8. 短期斜率轉負 (strong)
+  if (slopeCrossedZero(slopeMA5, lastIdx, cfg.reversalWindow, 'negative')) {
+    matchedRules.push({ id: 'M8', label: '短期斜率轉負（趨勢轉弱）', strength: 'strong' });
+  }
+
+  // M9. 動能減弱 (weak)
+  if (Math.abs(latestSlopeMA5) < 0.001) {
+    matchedRules.push({ id: 'M9', label: '動能減弱', strength: 'weak' });
+  }
+
+  // M10. 動能加強 (weak)
+  if (Math.abs(latestSlopeMA5) > cfg.shortSlopeThreshold) {
+    matchedRules.push({ id: 'M10', label: '動能加強', strength: 'weak' });
+  }
+
+  const state = deriveSlopeState(matchedRules);
+  const confidence = deriveConfidence(matchedRules);
+  const interpretation = matchedRules.length > 0
+    ? matchedRules.map(r => r.label).join('；')
+    : '無 match';
+
+  const evidence = matchedRules.map(r => ({
+    type: `rule-${r.id}`,
+    label: r.label,
+    value: r.id,
+    passed: true,
+  }));
+
+  return {
+    moduleId: 'slope-momentum',
+    timeframe: options.period || '1d',
+    state,
+    confidence,
+    interpretation,
+    evidence,
+    warnings: [],
+    meta: {
+      matchedRules: matchedRules.map(r => r.id),
+      ruleLabels: matchedRules.map(r => r.label),
+      latestSlopeMA5: round(latestSlopeMA5, 6),
+      latestSlopeMA10: round(latestSlopeMA10, 6),
+      latestSlopeMA60: round(latestSlopeMA60, 6),
+      latestMA5: round(ma5History[lastIdx], 4),
+      latestMA10: round(ma10History[lastIdx], 4),
+      latestMA60: round(ma60History[lastIdx], 4),
+      dataDays: recent.length,
+      configUsed: cfg,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+function deriveSlopeState(rules) {
+  const ids = new Set(rules.map(r => r.id));
+  if (ids.has('M7') || ids.has('M8')) return 'TRANSITION';
+  if (ids.has('M1') || ids.has('M3') || ids.has('M5')) return 'UP';
+  if (ids.has('M2') || ids.has('M4') || ids.has('M6')) return 'DOWN';
+  if (ids.has('M10')) return 'UP';
+  if (ids.has('M9')) return 'SIDEWAYS';
+  return 'SIDEWAYS';
+}
+
+function slopeCrossedZero(slopeHistory, endIdx, window, direction) {
+  const startIdx = Math.max(0, endIdx - window + 1);
+  if (endIdx - startIdx < 1) return false;
+
+  const latestSlope = slopeHistory[endIdx];
+  const targetSign = direction === 'positive' ? 1 : -1;
+
+  // 當前必須係目標 sign (strict)
+  if (latestSlope * targetSign <= 0) return false;
+
+  // 喺 window 範圍內必須有對面 sign
+  for (let i = startIdx; i < endIdx; i++) {
+    if (slopeHistory[i] * (-targetSign) > 0) return true;
+  }
+  return false;
+}
+
+export function renderSlopeResult(verdict) {
+  const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
+  const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
+
+  const color = stateColors[verdict.state] || '#666';
+  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const confidencePct = (verdict.confidence * 100).toFixed(1);
+
+  const matchedRulesHtml = verdict.meta.matchedRules.length === 0
+    ? '<li style="color: #888;">無 rule match</li>'
+    : verdict.meta.matchedRules.map((rid) => {
+        const ev = verdict.evidence.find((e) => e.value === rid);
+        const strengthClass = ['M1', 'M2', 'M7', 'M8'].includes(rid) ? 'strong'
+          : ['M9', 'M10'].includes(rid) ? 'weak'
+          : 'medium';
+        return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
+      }).join('');
+
+  return `
+    <div class="as03-verdict">
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${color}">
+          <span class="state-label">${stateLabel}</span>
+          <span class="state-code">${verdict.state}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">信心指數</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
+          <div class="summary-row"><span>Matched Rules:</span> <strong>${verdict.meta.matchedRules.length}</strong></div>
+        </div>
+      </div>
+
+      <div class="interpretation">
+        <strong>📌 解讀：</strong>${verdict.interpretation}
+      </div>
+
+      <div class="slope-values">
+        <h4>當前 Slope 值</h4>
+        <div class="slope-grid">
+          <div class="slope-item"><span class="slope-label">Slope MA5</span><span class="slope-value">${(verdict.meta.latestSlopeMA5 * 100).toFixed(3)}%</span></div>
+          <div class="slope-item"><span class="slope-label">Slope MA10</span><span class="slope-value">${(verdict.meta.latestSlopeMA10 * 100).toFixed(3)}%</span></div>
+          <div class="slope-item"><span class="slope-label">Slope MA60</span><span class="slope-value">${(verdict.meta.latestSlopeMA60 * 100).toFixed(3)}%</span></div>
+        </div>
+      </div>
+
+      <div class="matched-rules">
+        <h4>🎯 Matched Rules（${verdict.meta.matchedRules.length} 條）</h4>
+        <ul>${matchedRulesHtml}</ul>
+      </div>
+
+      <details class="meta-details">
+        <summary>🔧 配置（debug 用）</summary>
+        <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
+      </details>
+    </div>
+  `;
+}
+
+export function getSlopeHelp() {
+  return `
+    <h4>SlopeMomentum · 10 條 Rule (M1-M10)</h4>
+    <ul>
+      <li><strong>M1</strong> <small>(strong)</small>: slope(MA5, 5) &gt; +0.5% + 連續 3 日 slope(MA5, 1) ↑ → MA5 短期加速上升</li>
+      <li><strong>M2</strong> <small>(strong)</small>: slope(MA5, 5) &lt; -0.5% + 連續 3 日 slope(MA5, 1) ↓ → MA5 短期加速下跌</li>
+      <li><strong>M3</strong> <small>(medium)</small>: slope(MA10, 10) &gt; +0.3% → MA10 中期斜率上升</li>
+      <li><strong>M4</strong> <small>(medium)</small>: slope(MA10, 10) &lt; -0.3% → MA10 中期斜率下跌</li>
+      <li><strong>M5</strong> <small>(medium)</small>: slope(MA60, 20) &gt; +0.2% → MA60 長期斜率上升</li>
+      <li><strong>M6</strong> <small>(medium)</small>: slope(MA60, 20) &lt; -0.2% → MA60 長期斜率下跌</li>
+      <li><strong>M7</strong> <small>(strong)</small>: 短期斜率 5 日內由負轉正（轉折點）→ 趨勢轉強</li>
+      <li><strong>M8</strong> <small>(strong)</small>: 短期斜率 5 日內由正轉負（轉折點）→ 趨勢轉弱</li>
+      <li><strong>M9</strong> <small>(weak)</small>: |slope(MA5, 5)| &lt; 0.1% → 動能減弱</li>
+      <li><strong>M10</strong> <small>(weak)</small>: |slope(MA5, 5)| &gt; 0.5% → 動能加強</li>
+    </ul>
+    <p><strong>State priority:</strong> M7/M8 → TRANSITION · M1/M3/M5/M10 → UP · M2/M4/M6 → DOWN · M9 → SIDEWAYS</p>
+    <p><strong>D013 大少改主意:</strong> Slope 原本屬 MA alignment 嘅 modifier (#10809 獨立做 peer module)</p>
+  `;
+}
+
+export const slopeMomentumAdapter = {
+  id: 'AS-03-SM',
+  name: '斜率動能 (SlopeMomentum)',
+  version: '1.0.0',
+  description: '用 10 條 rule (M1-M10) 分析 MA 短期/中期/長期斜率動能',
+  inputs: [
+    {
+      key: 'code',
+      label: '股票代碼',
+      type: 'autocomplete',
+      required: true,
+      endpoint: '/api/stocks/search',
+      queryParam: 'q',
+      placeholder: '輸入代碼或名稱（例: 00981 或 中芯）',
+      limit: 10,
+      marketFn: 'auto',
+    },
+    {
+      key: 'period',
+      label: '時間週期',
+      type: 'select',
+      options: [
+        { value: '1d', label: '日線' },
+        { value: '1w', label: '週線' },
+      ],
+      default: '1d',
+    },
+    {
+      key: 'dataWindowDays',
+      label: '取數據日數',
+      type: 'number',
+      default: 100,
+      min: 30,
+      max: 500,
+    },
+  ],
+  analyze: analyzeSlopeMomentum,
+  renderResult: renderSlopeResult,
+  getHelp: getSlopeHelp,
+};
+
+// =============================================================================
+// Shared helpers (VolumePrice + SlopeMomentum use these)
+// =============================================================================
+
+function avgField(klines, endIdx, period, field) {
+  const startIdx = Math.max(0, endIdx - period + 1);
+  const slice = klines.slice(startIdx, endIdx + 1);
+  const sum = slice.reduce((acc, k) => acc + k[field], 0);
+  return sum / slice.length;
+}
+
+function allIncreasing(klines, field) {
+  for (let i = 1; i < klines.length; i++) {
+    if (!(klines[i][field] > klines[i - 1][field])) return false;
+  }
+  return klines.length > 1;
+}
+
+function allDecreasing(klines, field) {
+  for (let i = 1; i < klines.length; i++) {
+    if (!(klines[i][field] < klines[i - 1][field])) return false;
+  }
+  return klines.length > 1;
+}
+
+function correlation(xs, ys) {
+  if (xs.length !== ys.length || xs.length < 2) return 0;
+  const n = xs.length;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, denX = 0, denY = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - meanX;
+    const dy = ys[i] - meanY;
+    num += dx * dy;
+    denX += dx * dx;
+    denY += dy * dy;
+  }
+  const den = Math.sqrt(denX * denY);
+  return den === 0 ? 0 : num / den;
+}
+
+function computeSlope(history, i, N) {
+  if (i - N < 0) return 0;
+  const prev = history[i - N];
+  if (prev === 0) return 0;
+  return (history[i] - prev) / prev;
+}
+
+function allStrictlyIncreasing(arr, startIdx, length) {
+  if (startIdx - length + 1 < 0) return false;
+  for (let i = startIdx - length + 1; i < startIdx; i++) {
+    if (!(arr[i + 1] > arr[i])) return false;
+  }
+  return true;
+}
+
+function allStrictlyDecreasing(arr, startIdx, length) {
+  if (startIdx - length + 1 < 0) return false;
+  for (let i = startIdx - length + 1; i < startIdx; i++) {
+    if (!(arr[i + 1] < arr[i])) return false;
+  }
+  return true;
 }

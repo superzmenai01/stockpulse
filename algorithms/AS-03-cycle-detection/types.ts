@@ -24,13 +24,24 @@ export function rawCycleToState(raw: RawCycle): CycleState {
   }
 }
 
-/** 5 個 peer module IDs */
+/**
+ * Confirm/disconfirm signal — D012 (2026-08-04) Option B + D020 (2026-08-06)
+ *
+ * VolumePrice module emit 嘅 signal 而唔係完整 cycle verdict
+ * Synthesizer 用呢個 signal 同 ma-alignment verdict 對齊
+ */
+export type SignalType = 'CONFIRM' | 'DISCONFIRM' | 'NEUTRAL';
+
+/**
+ * 6 個 peer module IDs (大少 #10809 — 加 slope-momentum)
+ */
 export type CycleModuleId =
   | 'ma-alignment'
   | 'hl-structure'
   | 'trendline'
   | 'indicators'
-  | 'volume';
+  | 'volume'
+  | 'slope-momentum';
 
 /** 支援嘅 timeframe */
 export type Timeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
@@ -60,12 +71,20 @@ export interface CycleContext {
   ltf: Timeframe;
   htf?: Timeframe;
   config?: unknown;        // CycleConfig (避免 circular import)
+  /**
+   * Enable flags (大少 #10809 — D019)
+   * undefined / 唔包某 module = enabled by default
+   * explicit false = skip 嗰個 module
+   */
+  enableFlags?: Partial<Record<CycleModuleId, boolean>>;
 }
 
 /**
  * 統一嘅 verdict 結構 — 每個 module / orchestrator 都 return 呢個 shape
  *
  * @property interpretation 中文人話解讀 (D002)
+ * @property meta.signal Confirm/Disconfirm signal (大少 #10809 — D020)
+ *                     VolumePrice module emit 嘅 signal type
  */
 export interface CycleVerdict {
   moduleId: CycleModuleId | 'htf-multi-tf' | 'synthesized';
@@ -75,7 +94,13 @@ export interface CycleVerdict {
   interpretation: string;         // 中文解讀 (必填)
   evidence: Evidence[];
   warnings?: string[];
-  meta?: Record<string, unknown>;
+  meta?: Record<string, unknown> & {
+    /**
+     * D020 — VolumePrice module 嘅 confirm/disconfirm signal
+     * Synthesizer 用呢個 signal 決定強化或削弱 ma-alignment 嘅 verdict
+     */
+    signal?: SignalType;
+  };
   timestamp: number;
 }
 
@@ -98,10 +123,11 @@ export interface RegimeChangeAlert {
 }
 
 /**
- * 最終 cycle report — D006
+ * 最終 cycle report — D006 (2026-08-06 update)
  *
- * 包含 5 個 peer verdicts + 1 HTF verdict + 1 synthesized verdict = 7 個 verdict card
- * UI 全部顯示 (大少要求「6 個 model 結果都要顯示」+ 1 綜合)
+ * 包含已 enable 嘅 peer verdicts + 1 HTF verdict + 1 synthesized verdict
+ * UI 顯示「已 enable 嘅 module + HTF + synthesized」(D006 update)
+ * maAlignment 永遠 enabled (core mandatory)，其他跟 enableFlags 決定
  */
 export interface CycleReport {
   symbol: string;
@@ -110,9 +136,9 @@ export interface CycleReport {
     timeframe: Timeframe;
     verdict: CycleVerdict;
   };
-  moduleVerdicts: CycleVerdict[];     // 5 個 peer module verdicts
+  moduleVerdicts: CycleVerdict[];     // 已 enable 嘅 peer module verdicts (D006 update)
   alerts: RegimeChangeAlert[];        // 轉勢提醒 (empty if no change)
-  synthesized?: CycleVerdict;         // 點 7 — placeholder
+  synthesized?: CycleVerdict;         // 點 7 — expert-rules combine
   timestamp: number;
 }
 
