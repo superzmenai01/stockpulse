@@ -28,18 +28,8 @@ const REGISTRY = [
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     // 預設 = 頂層 exports (向後兼容 ma-alignment adapter)
-  },
-  {
-    id: 'AS-03-VP',
-    folder: 'AS-03-cycle-detection',
-    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    adapterExport: 'volumePriceAdapter',  // 大少 #10809 — Module 5 VolumePrice
-  },
-  {
-    id: 'AS-03-SM',
-    folder: 'AS-03-cycle-detection',
-    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    adapterExport: 'slopeMomentumAdapter', // 大少 #10809 — Module 8 SlopeMomentum
+    // 大少 #10859 — module toggle (enableVolumePrice + enableSlopeMomentum) 由
+    //   AS-03 entry 入面嘅 checkbox 控制，唔再獨立 expose AS-03-VP / AS-03-SM dropdown
   },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
@@ -82,7 +72,7 @@ async function init() {
       console.error(`Failed to load ${algo.id}:`, err);
       const option = document.createElement('option');
       option.value = algo.id;
-      option.textContent = `${algo.id} — ❌ 載入失敗`;
+        option.textContent = `${algo.id} — ❌ 加载失败`;
       option.disabled = true;
       algorithmSelect.appendChild(option);
     }
@@ -98,14 +88,14 @@ async function init() {
     }
     await onAlgorithmChange();
   } else {
-    algoInfo.innerHTML = '<p style="color: red;">⚠️ 冇 algorithm 載到成功</p>';
+    algoInfo.innerHTML = '<p style="color: red;">⚠️ 没有 algorithm 加载成功</p>';
   }
 }
 
 async function onAlgorithmChange() {
   const algo = REGISTRY.find((a) => a.id === algorithmSelect.value);
   if (!algo || !algo.adapter) {
-    algoInfo.innerHTML = '<p style="color: red;">呢個 algorithm 未載到</p>';
+    algoInfo.innerHTML = '<p style="color: red;">这个 algorithm 未加载</p>';
     algoHelp.innerHTML = '';
     inputsForm.innerHTML = '';
     return;
@@ -420,16 +410,16 @@ function escapeHtml(str) {
 
 async function runAlgorithm() {
   if (!currentAdapter) {
-    runStatus.innerHTML = '❌ 冇選擇 algorithm';
+    runStatus.innerHTML = '❌ 没有选择 algorithm';
     return;
   }
 
   if (!currentOptions.code) {
-    runStatus.innerHTML = '❌ 請揀 / 輸入股票代碼';
+    runStatus.innerHTML = '❌ 请选择 / 输入股票代码';
     return;
   }
 
-  runStatus.innerHTML = '⏳ 攞緊 K 線...';
+  runStatus.innerHTML = '⏳ 正在获取 K 线...';
   resultPanel.innerHTML = '';
 
   try {
@@ -449,10 +439,10 @@ async function runAlgorithm() {
     const klines = klineData.klines || klineData.data || klineData;
 
     if (!Array.isArray(klines) || klines.length === 0) {
-      throw new Error(`Backend 冇返 K 線數據 (got ${typeof klines})`);
+      throw new Error(`Backend 未返回 K 线数据 (got ${typeof klines})`);
     }
 
-    runStatus.innerHTML = `✅ 攞到 ${klines.length} 日 K 線 · 跑算法中...`;
+    runStatus.innerHTML = `✅ 已获取 ${klines.length} 日 K 线 · 跑算法中...`;
 
     // 2. Run algorithm
     const startTime = performance.now();
@@ -496,12 +486,12 @@ function renderChart(klines, code, period) {
   }
 
   if (!Array.isArray(klines) || klines.length === 0) {
-    container.innerHTML = '<div class="chart-placeholder">冇 K 線數據</div>';
+    container.innerHTML = '<div class="chart-placeholder">没有 K 线数据</div>';
     return;
   }
 
   if (typeof LightweightCharts === 'undefined') {
-    container.innerHTML = '<div class="chart-placeholder">❌ lightweight-charts 未載到 (CDN fail)</div>';
+    container.innerHTML = '<div class="chart-placeholder">❌ lightweight-charts 未加载 (CDN fail)</div>';
     return;
   }
 
@@ -528,7 +518,7 @@ function renderChart(klines, code, period) {
     .sort((a, b) => a.time - b.time);
 
   if (candleData.length === 0) {
-    container.innerHTML = '<div class="chart-placeholder">❌ K 線數據格式唔啱</div>';
+    container.innerHTML = '<div class="chart-placeholder">❌ K 线数据格式不正确</div>';
     return;
   }
 

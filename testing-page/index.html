@@ -10,20 +10,20 @@
   <div class="container">
     <header class="header">
       <h1>🧪 StockPulse Algorithm Testing Page</h1>
-      <p class="subtitle">人手測試 StockPulse 各個算法（generic framework）</p>
+      <p class="subtitle">手动测试 StockPulse 各算法（generic framework）</p>
     </header>
 
     <div class="layout">
       <aside class="sidebar">
         <section class="algo-selector">
-          <h2>選擇算法</h2>
+          <h2>选择算法</h2>
           <select id="algorithm-select">
-            <option value="">載入中...</option>
+            <option value="">加载中...</option>
           </select>
         </section>
 
         <section class="algo-info" id="algo-info">
-          <p style="color: #888;">選擇算法睇 info</p>
+          <p style="color: #888;">选择算法查看 info</p>
         </section>
 
         <section class="help" id="algo-help"></section>
@@ -31,25 +31,25 @@
 
       <main class="main">
         <section class="inputs">
-          <h2>輸入參數</h2>
+          <h2>输入参数</h2>
           <form id="inputs-form" onsubmit="return false;"></form>
           <button id="run-btn" class="primary-btn">跑算法</button>
           <div id="run-status" class="run-status"></div>
         </section>
 
         <section class="result">
-          <h2>結果</h2>
+          <h2>结果</h2>
           <div id="result-panel">
-            <p style="color: #888;">填好輸入參數，撳「跑算法」睇結果</p>
+            <p style="color: #888;">填好输入参数，点击「跑算法」查看结果</p>
           </div>
         </section>
 
         <section class="chart-section">
           <div class="chart-header">
-            <h2>📈 日 K 線圖表</h2>
+            <h2>📈 日 K 线图表</h2>
             <p class="chart-note">
-              用 <code>lightweight-charts</code> v5 render（跟 StockPulse ChartContainer 同 library）。
-              撳完「跑算法」會 auto render 呢隻 stock 嘅 K 線。
+              用 <code>lightweight-charts</code> v5 render（与 StockPulse ChartContainer 同 library）。
+              点击「跑算法」后会自动 render 该 stock 的 K 线。
             </p>
           </div>
           <div id="chart-container"></div>
