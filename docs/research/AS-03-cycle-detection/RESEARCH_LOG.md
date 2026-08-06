@@ -1,4 +1,4 @@
-# AS-03 · 股票周期判定 — 研究筆記
+# AS-03 · 均線系統週期判斷法 — 研究筆記
 
 > 高層設計筆記 + 待辦追蹤 + Open Questions。
 > Code-level 細節睇 [algorithms/AS-03-cycle-detection/DECISIONS.md](../../../algorithms/AS-03-cycle-detection/DECISIONS.md)。
@@ -8,7 +8,7 @@
 ## 📅 2026-08-04 — 起步
 
 ### 來源
-- [股票周期判定算法.docx](file:///Users/zmenai/Downloads/股票周期判定算法.docx) — Kimi 整理嘅 6 點判斷方法 + 1 點綜合流程
+- [均線系統週期判斷法算法.docx](file:///Users/zmenai/Downloads/均線系統週期判斷法算法.docx) — Kimi 整理嘅 6 點判斷方法 + 1 點綜合流程
 - [StockPulse 項目](../../../) — 主項目位置
 - [Algorithm Specs 全局文件](../../../ALGORITHM_SPECS.md) — 全算法規格索引
 - [KlineCache 實作](../../../backend/services/kline_cache.py) — 數據 cache-aside 機制 (大少 #8505 #7983 #8484 #8551 #8573)

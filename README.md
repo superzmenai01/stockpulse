@@ -425,6 +425,6 @@ _最後更新：2026-08-03 (大少 / AI assistant sync — LaunchAgent 永久 fi
 | 算法 | 狀態 | 描述 |
 |------|------|------|
 | **AS-01** | ✅ Active | 板塊龍頭股 Top N ranking (2-factor: 市值 + 換手率) |
-| **AS-03** | ✅ Module 1 done (2026-08-04 #10332) | 股票周期判定 — 10 條 rule-based 算法 (A-J): 均線 crossover + 量能守則 + 趨勢反轉偵測 |
+| **AS-03** | ✅ Module 1 done (2026-08-04 #10332) | 均線系統週期判斷法 — 10 條 rule-based 算法 (A-J): 均線 crossover + 量能守則 + 趨勢反轉偵測 |
 
 詳見 `docs/ALGORITHM_SPECS.md` 同 `~/stockpulse/algorithms/AS-03-cycle-detection/`。

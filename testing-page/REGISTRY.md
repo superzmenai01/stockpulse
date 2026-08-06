@@ -15,7 +15,7 @@
 
 ```javascript
 export const id = 'AS-03';                    // 唯一 ID
-export const name = '股票周期判定';            // 顯示名
+export const name = '均線系統週期判斷法';            // 顯示名
 export const version = '0.3.0';               // 版本
 export const description = '...';             // 一句解釋
 

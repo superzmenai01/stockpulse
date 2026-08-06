@@ -1,4 +1,4 @@
-// data-loader.ts — AS-03 股票周期判定 · 數據載入器
+// data-loader.ts — AS-03 均線系統週期判斷法 · 數據載入器
 //
 // D008 (2026-08-04): 數據來源 = backend /api/kline (沿用 StockPulse 現有 cache-aside 機制)
 //                    唔需要 re-implement cache，backend 已經處理 DB+OpenD hybrid

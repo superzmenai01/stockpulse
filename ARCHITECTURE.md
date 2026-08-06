@@ -1105,7 +1105,7 @@ const visibleReasons = reasons.filter((r) => !r.is_stale);  // hide stale
 
 ---
 
-## N. Algorithm Layer — `algorithms/` (AS-03 股票周期判定)
+## N. Algorithm Layer — `algorithms/` (AS-03 均線系統週期判斷法)
 
 > **新章節 (2026-08-04)** — AS-03 cycle detection sub-project
 
