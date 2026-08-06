@@ -1493,7 +1493,7 @@ function allStrictlyDecreasing(arr, startIdx, length) {
 // Spec doc: ~/stockpulse/docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md
 
 const DEFAULT_HL_STRUCTURE_CONFIG = {
-  minPairs: 3,
+  minPairs: 2,             // 2026-08-07 — 由 3 改 2 (real-world 100 日 K 線 noise 大,3 pairs 6 alternating 太嚴)
   baseWindow: 5,
   tolerancePct: 0.015,
   enableAtrWindow: true,
@@ -1691,7 +1691,26 @@ async function analyzeHLStructure(klines, options) {
   }
 
   if (alternated.length < cfg.minPairs * 2) {
-    throw new Error(`[HLStructure] 無法形成足夠交替嘅峰谷結構: 只有 ${alternated.length} 個交替點,需要至少 ${cfg.minPairs * 2}`);
+    // 2026-08-07 — Graceful handle (real-world K 線 noise 大): 返 SIDEWAYS verdict 0.5 唔 throw
+    return {
+      symbol: options.code || 'TEST',
+      cycle: 'sideways',
+      cycle_label: '橫行週期',
+      confidence: 0.5,
+      base_confidence: 0.5,
+      peaks: [], troughs: [],
+      peak_trend: 'mixed', trough_trend: 'mixed',
+      structure_score: 0, weighted_structure_score: 0,
+      box_boundary: null,
+      pattern_alert: 'none',
+      latest_extreme: null,
+      price_position: 'between',
+      adaptive_window: adaptiveWindow,
+      effective_tolerance: effectiveTolerance,
+      adjustment_log: [`峰谷結構唔夠清晰 (${alternated.length} < ${cfg.minPairs * 2})`],
+      reason: `峰谷結構唔夠清晰 (只有 ${alternated.length} 個交替峰谷,需要至少 ${cfg.minPairs * 2}),預設橫行`,
+      last_date: String(recent[recent.length - 1].timestamp || recent[recent.length - 1].date || ''),
+    };
   }
 
   // Step 7: 提取最近 N 對

@@ -261,9 +261,45 @@ export class HLStructureModule implements CycleModule<KLine[]> {
     }
 
     if (alternated.length < cfg.minPairs * 2) {
-      throw new Error(
-        `[HLStructure] 無法形成足夠交替嘅峰谷結構: 只有 ${alternated.length} 個交替點, 需要至少 ${cfg.minPairs * 2}`,
-      );
+      // 2026-08-07 — Graceful handle: 真實 K 線 noise 大,alternated 唔夠 strict 要求
+      // 唔 throw,return SIDEWAYS verdict 0.5 (跟 T11 全平 data pattern)
+      return {
+        moduleId: this.id,
+        timeframe: ctx.ltf,
+        state: 'SIDEWAYS',
+        confidence: 0.5,
+        interpretation: `峰谷結構唔夠清晰 (只有 ${alternated.length} 個交替峰谷,需要至少 ${cfg.minPairs * 2}),預設橫行`,
+        evidence: [{
+          type: 'insufficient-alternation',
+          label: `峰谷數量不足 (${alternated.length} < ${cfg.minPairs * 2})`,
+          value: alternated.length,
+          threshold: cfg.minPairs * 2,
+          passed: false,
+        }],
+        warnings: ['峰谷結構唔夠清晰,基於現有結構判定為橫行'],
+        meta: {
+          cycle: 'sideways',
+          cycleLabel: '橫行週期',
+          baseConfidence: 0.5,
+          peaks: [],
+          troughs: [],
+          peakTrend: 'mixed',
+          troughTrend: 'mixed',
+          structureScore: 0,
+          weightedStructureScore: 0,
+          boxBoundary: null,
+          patternAlert: 'none',
+          latestExtreme: null,
+          pricePosition: 'between',
+          adaptiveWindow,
+          effectiveTolerance: round(effectiveTolerance, 6),
+          adjustmentLog: [`峰谷結構唔夠清晰 (${alternated.length} < ${cfg.minPairs * 2})`],
+          lastDate: String(recent[recent.length - 1].timestamp),
+          dataDays: recent.length,
+          configUsed: { ...cfg },
+        },
+        timestamp: Date.now(),
+      };
     }
 
     // ============ Step 7: 提取最近 N 組峰谷 ============

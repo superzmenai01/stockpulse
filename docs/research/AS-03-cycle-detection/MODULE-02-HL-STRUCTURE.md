@@ -209,7 +209,7 @@
 | 突破確認時數據不足 | 標 `confirmed = false`, 仍納入但 weight 降低 |
 | 所有價格完全相同 | 唔能識別極值,返 `sideways`, `confidence = 0.3` |
 | ATR = 0 (停牌) | `volatility_ratio = 0`, `adaptive_window = base_window` |
-| 交替化後數量不足 | 返回錯誤:「無法形成足夠交替嘅峰谷結構」 |
+| 交替化後數量不足 (2026-08-07 fix) | **唔 throw,graceful 返 `sideways` verdict, `confidence = 0.5`** (real-world 100 日 K 線 noise 大,default `minPairs=2` 即需要 4 alternating) |
 | 最新極值點 = 最後一筆 | `days_ago = 0`, 唔觸發新鮮度折扣 |
 
 ---
