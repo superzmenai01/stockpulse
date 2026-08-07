@@ -85,15 +85,31 @@ H > A > B > F > G > C > D > default SIDEWAYS
 
 ## 📦 狀態
 
+### 而家 7 個 modules
 | Module | Status |
 |--------|--------|
 | Module 1: ma-alignment | ✅ v0.3.0 done (19/19 tests pass) |
 | Module 2: HL Structure | ✅ v0.1.0 done (12/12 tests pass) — 2026-08-07 |
-| Module 3: Trendline | ⏳ skeleton placeholder verdict |
-| Module 4: Indicators | ⏳ skeleton placeholder verdict |
-| Module 5: Volume OBV | ⏳ skeleton placeholder verdict |
-| Module 6: Multi-TF | ⏳ orchestrator/multi-tf.ts skeleton |
-| Module 7: Synthesizer | ⏳ orchestrator/synthesize.ts skeleton |
+| Module 3: Trendline | ⏳ Stage 1 (🥈 優先) |
+| Module 4: Indicators | ⏳ Stage 1 (🥉 優先) |
+| Module 5: Volume OBV | ⏳ Stage 1 |
+| Module 6: Multi-TF | ⏳ Stage 1 (🥇 最先做) |
+| Module 7: Synthesizer | ⏳ Stage 1 (最後做) |
+
+### 規劃中 6 個新 modules (詳見 `docs/research/AS-03-cycle-detection/ROADMAP.md`)
+| Module | Stage | 功用 |
+|--------|-------|------|
+| Module 8: Confluence | Stage 3 | 7 modules 加權 0-100 分 |
+| Module 9: Entry Timing | Stage 4 | 🟢🟡🔴 買入時機信號 |
+| Module 10: Probability | Stage 6 | 「5 日內升嘅機率 = X%」 |
+| Module 11: Backtest Timeline | Stage 4 | 過去 90 日 verdict timeline |
+| Module 12: Risk-Reward | Stage 6 | R:R ratio 風險回報比 |
+| Module J: Trade Journal | Stage 5 | 學習機制 + threshold tune |
+
+**完整 roadmap 同 workflow: `~/stockpulse/docs/research/AS-03-cycle-detection/ROADMAP.md`**
+- 7 stages, 每 stage 時間 + 產出
+- Stage 1 內部排序: Multi-TF → Trendline → Indicators → Volume OBV → Synthesizer
+- 每個 module 嘅工作流程 7 步: spec → code → test → verify → testing page → doc → commit
 
 ## 🎨 Chart Overlay (testing page contract, 2026-08-07)
 
@@ -121,5 +137,5 @@ Function name 必須叫 `renderChartOverlay` (testing page contract).
 - `~/stockpulse/docs/research/AS-03-cycle-detection/RESEARCH_LOG.md` — Timeline + decisions
 - `~/stockpulse/algorithms/AS-03-cycle-detection/DECISIONS.md` — D001-D016 ADR
 
-**最後更新**: 2026-08-07 (Module 1 chart overlay + Module 2 v0.1.0 完成)
+**最後更新**: 2026-08-07 (Module 1 chart overlay + Module 2 v0.1.0 完成 + 完整 7 stages roadmap 規劃)
 **維護者**: 大少 + 我 (助手)

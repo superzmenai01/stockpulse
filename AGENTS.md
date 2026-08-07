@@ -134,10 +134,28 @@ def _compute_fetch_max_count(period):
 |----|------|--------|
 | AS-01 | 板塊龍頭股 | ✅ Production |
 | AS-02 | 公司質素分析 | ✅ Production |
-| AS-03 | 股票周期判定 | 🚧 v0.3.0 dev |
+| AS-03 | 股票周期判定 | 🚧 v0.3.0 dev → 完整 7-stages roadmap（6-8 週）|
 | AS-04+ | TBD | 💡 Future |
 
-AS-03 詳情:`algorithms/AS-03-cycle-detection/` + `docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`
+**AS-03 Roadmap（2026-08-07 規劃）：**
+
+12 modules 目標 = 而家 7 個 (1-7) + 新 6 個 (8-12, J)
+
+| Stage | 做咩 | Module 影響 |
+|-------|------|------------|
+| 0. Foundation | 統一 7 module 嘅 interface / config / testing | - |
+| 1. 完成 Module 3-7 | Multi-TF 🥇 → Trendline 🥈 → Indicators 🥉 → Volume OBV → Synthesizer | 1-7 全部 production |
+| 2. 啟動 data collection | DB 加 forward return field | - |
+| 3. Confluence | 7 modules 加權 0-100 分 | Module 8 |
+| 4. Entry Timing + Backtest Timeline | 🟢🟡🔴 信號 + 過去比較 | Module 9 + 11 |
+| 5. Trade Journal UI | 大少 mark 啱/錯 | Module J |
+| 6. Probability + Risk-Reward | 「X% 升」+ R:R | Module 10 + 12 |
+| 7. Bayesian Tuning + 個股化 | 30+ 樣本後 tune | - |
+
+**詳細 spec + workflow:** `docs/research/AS-03-cycle-detection/ROADMAP.md`
+**每 module 詳情:** `docs/research/AS-03-cycle-detection/MODULE-*.md`
+
+**大少指示（2026-08-07）：**「按流程做，每次一個 module，詳細測試和改良，再一步步做下去」— 每次一個 module，7 步流程: spec → code → test → verify → testing page → doc → commit。
 
 ---
 

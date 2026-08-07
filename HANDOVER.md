@@ -89,14 +89,28 @@
 |----|------|--------|----------------|
 | **AS-01** | 板塊龍頭股 | ✅ Production | Inline plain text (ResultGrid) |
 | **AS-02** | 公司質素分析 | ✅ Production | stock_reasons table + PopUp (DOMPurify) |
-| **AS-03** | 股票周期判定 | 🚧 v0.3.0 dev | (TBD) |
+| **AS-03** | 股票周期判定 | 🚧 v0.3.0 dev → 完整 7 stages roadmap | 詳見 `docs/research/AS-03-cycle-detection/ROADMAP.md` |
 | AS-04+ | TBD | 💡 Future | - |
 
-**AS-03 current state**:
-- 10 條 rule (A-J),rule-based,additive confidence (避免 multiplicative)
-- MA alignment (mandatory core) + 5 optional modules (量價 / 斜率 / HL 結構 / 趨勢線 / 指標)
-- 4 個 cycle state: UP / DOWN / SIDEWAYS / TRANSITION
-- 詳細 spec: `algorithms/AS-03-cycle-detection/` + `docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`
+**AS-03 完整 Roadmap（2026-08-07 規劃，6-8 週去到 Phase 2 complete）**
+
+| Stage | 做咩 | Status |
+|-------|------|--------|
+| 0. Foundation | 統一 7 module 嘅 interface / config / testing contract | ⏳ |
+| 1. 完成 Module 3-7 | Multi-TF 🥇, Trendline 🥈, Indicators 🥉, Volume OBV, Synthesizer | ⏳ |
+| 2. 啟動數據收集 | DB 加 forward return field, schedule job | ⏳ |
+| 3. Confluence (Module 8) | 7 modules 加權 0-100 分 | ⏳ |
+| 4. Entry Timing + Backtest Timeline | Module 9 + 11 | ⏳ |
+| 5. Trade Journal UI | Module J | ⏳ |
+| 6. Probability + Risk-Reward | Module 10 + 12（要 trade data）| ⏳ |
+| 7. Bayesian Tuning + 個股化 | 30+ 樣本後 tune | ⏳ |
+
+**AS-03 current state (Stage 0-1 入面)**:
+- Module 1 (ma-alignment) ✅ v0.3.0 — 10 條 rule (A-J), rule-based, additive confidence
+- Module 2 (HL Structure) ✅ v0.1.0 — peaks/troughs + 形態 (頭肩頂/雙底)
+- Module 3-7 ⏳ skeleton — Stage 1 跟 Roadmap 排程做
+- 完整 workflow + status table: **`docs/research/AS-03-cycle-detection/ROADMAP.md`**
+- 各 module 詳細 spec: `docs/research/AS-03-cycle-detection/MODULE-*.md`
 
 ---
 
@@ -210,6 +224,7 @@ def _compute_fetch_max_count(period):
 
 | 日期 | 動作 |
 |------|------|
+| 2026-08-07 | **AS-03 完整 7-stages roadmap 規劃** — MiniMax Code: 大少指示「按流程做，每次一個 module，詳細測試和改良」. 寫咗 `docs/research/AS-03-cycle-detection/ROADMAP.md` (10 section, 12 modules status table, 7-stage 工作流程, 每 module 7 步 workflow, 風險 mitigation). 順序: Stage 0 Foundation → Stage 1 完成 Module 3-7 (Multi-TF 先做) → Stage 2 啟動 data collection → Stage 3 Confluence → Stage 4 Entry + Backtest Timeline → Stage 5 Trade Journal → Stage 6 Probability + Risk-Reward → Stage 7 Bayesian tuning. HANDOVER.md § 5 + ARCHITECTURE.md § 狀態 sync. |
 | 2026-08-07 | **MA chart overlay 完成** — MiniMax Code: testing page 嘅 K 線圖 render MA5/MA10/MA60 三條 trend line (跟股價走嘅斜線, 主流 trading app 風格). 由 `createPriceLine` (水平價線) 改 `addLineSeries` (re-compute MA 歷史 series). `_computeMASeries` skip header `period-1` 點避免 lightweight-charts 將 null 當 0. Function name `renderMAChartOverlay` → `renderChartOverlay` 跟 testing page 嘅 standard contract. 3 commits (`9d77021a` / `ec452c98` / `830927cc`). Tests 12/12 + 19/19 全部 pass. |
 | 2026-08-07 | **Module 2 (高低點結構法) v0.1.0 落地** — MiniMax Code: 18 步 v2.0 algorithm (modules/hl-structure.ts) + config (HLStructureConfig) + tests (12/12 pass) + adapter (`hlStructureAdapter` named export) + testing page integration (REGISTRY entry + `renderChartOverlay` contract) + spec doc (`MODULE-02-HL-STRUCTURE.md`) |
 | 2026-08-07 | **Testing page renderChartOverlay contract** — 通用 contract, 每個 adapter 自己 implement chart overlay (peaks/troughs markers + 箱體線 + 形態預警) |
