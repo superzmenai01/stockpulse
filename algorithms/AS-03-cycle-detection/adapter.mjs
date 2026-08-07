@@ -3108,10 +3108,212 @@ function renderTrendlineResult(verdict) {
         <ul>${matchedRulesHtml}</ul>
       </div>
 
+      ${renderDetailedExplanationTrendline(verdict)}
+      ${renderStrategyAdviceTrendline(verdict)}
+      ${renderUsageGuideTrendline(verdict)}
+
       <details class="meta-details">
         <summary>🔧 配置（debug 用）</summary>
         <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
       </details>
+    </div>
+  `;
+}
+
+// ===== 詳細解讀 section (Trendline) =====
+// 大少 #11056 (2026-08-07) — 永久 rule,所有 Module 都要有詳細解讀/策略建議/點用點睇 (用人話)
+function renderDetailedExplanationTrendline(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const matchedRules = verdict.meta?.matchedRules || [];
+  const support = verdict.meta.supportLine || {};
+  const resistance = verdict.meta.resistanceLine || {};
+  const channel = verdict.meta.channel || { widthPct: 0, percentB: 0.5 };
+  const breakout = verdict.meta.breakout || { support: { type: 'none' }, resistance: { type: 'none' } };
+  const projection = verdict.meta.projection || { days: 0, supportFuture: 0, resistanceFuture: 0, midFuture: 0 };
+
+  // 通道寬度 label
+  const widthPct = (channel.widthPct * 100).toFixed(2);
+  const channelLabel = channel.widthPct < 0.03 ? '窄通道 (鱷魚線貼住,準備爆邊)'
+    : channel.widthPct < 0.10 ? '中等通道 (有波動但唔算大)'
+    : '寬通道 (波動大,通道寬闊)';
+
+  // %B 位置 label
+  const pb = channel.percentB;
+  const pbLabel = pb < 0.2 ? '貼近支撐 (有機會反彈)'
+    : pb < 0.4 ? '通道下半 (偏多)'
+    : pb < 0.6 ? '通道中間 (中性)'
+    : pb < 0.8 ? '通道上半 (偏空)'
+    : '貼近壓力 (有機會回落)';
+
+  // R² label
+  const r2Label = (r2) => r2 >= 0.8 ? '高 (線好直,趨勢明顯)'
+    : r2 >= 0.55 ? '中 (線 OK,趨勢算清晰)'
+    : '低 (線散亂,趨勢唔穩)';
+
+  // Slope 方向 label
+  const slopeLabel = (slope) => slope > 0.001 ? '向上 (升)'
+    : slope < -0.001 ? '向下 (跌)'
+    : '平 (橫)';
+
+  // Breakout label
+  const supportBR = breakout.support;
+  const resistBR = breakout.resistance;
+  const supportBRLabel = supportBR.type === 'true' ? `🔴 真跌破 ${supportBR.daysSince} 日前 — 短期跌穿支撐`
+    : supportBR.type === 'false' ? `🟡 假跌破 (試咗但彈返) — 支撐仲有效`
+    : '🟢 無跌破 — 支撐仲守住';
+  const resistBRLabel = resistBR.type === 'true' ? `🟢 真突破 ${resistBR.daysSince} 日前 — 短期升穿壓力`
+    : resistBR.type === 'false' ? `🟡 假突破 (試咗但跌返) — 壓力仲有效`
+    : '🔴 無突破 — 壓力仲守住';
+
+  // 老化 label
+  const age = verdict.meta.latestExtremeAge;
+  const ageLabel = age < 0 ? 'N/A (冇足夠 extreme points)'
+    : age <= 10 ? `${age} 日前 (新,信號可靠)`
+    : age <= 30 ? `${age} 日前 (中等,可信)`
+    : `${age} 日前 (老化,信號折扣)`;
+
+  return `
+    <div class="detailed-explanation">
+      <h4>📖 詳細解讀 (逐個 field 點樣睇)</h4>
+      <table class="explain-table">
+        <tr><td class="field-name">📊 state (週期類型)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '上升趨勢, 支撐線向上傾' : verdict.state === 'DOWN' ? '下跌趨勢, 壓力線向下傾' : verdict.state === 'TRANSITION' ? '短線反轉, 支撐同壓力都被真突破' : '橫行, 通道窄 / 收斂 / 觸線但無突破'}</td></tr>
+        <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠, 可以作參考' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值, 配合其他指標 confirm' : '🔴 低信心 — 信唔過, 等下一個更明顯訊號'}</td></tr>
+        <tr><td class="field-name">📐 支撐線斜率 (${support.slope?.toFixed(4) ?? 'N/A'})</td><td>${slopeLabel(support.slope || 0)} — 斜率 = 線每升 1 日, 價變幾多。0 以上代表線向上, 0 以下代表線向下</td></tr>
+        <tr><td class="field-name">📐 支撐線 R² (${support.r2?.toFixed(3) ?? 'N/A'})</td><td>${r2Label(support.r2 || 0)} — 1.0 = 完美直線, 0 = 完全散亂。≥0.55 先算有趨勢</td></tr>
+        <tr><td class="field-name">📐 壓力線斜率 (${resistance.slope?.toFixed(4) ?? 'N/A'})</td><td>${slopeLabel(resistance.slope || 0)} — 同上, 0 以上升 / 0 以下跌</td></tr>
+        <tr><td class="field-name">📐 壓力線 R² (${resistance.r2?.toFixed(3) ?? 'N/A'})</td><td>${r2Label(resistance.r2 || 0)} — 同支撐 R² 解讀</td></tr>
+        <tr><td class="field-name">📦 通道寬度 (${widthPct}%)</td><td>${channelLabel} — 通道闊 = 波動大 / 通道窄 = 準備爆邊 (上 / 下)</td></tr>
+        <tr><td class="field-name">📍 %B 位置 (${pb.toFixed(2)})</td><td>${pbLabel} — 0 = 貼住支撐 / 1 = 貼住壓力 / 0.5 = 中位。睇下當前價喺通道邊個位置</td></tr>
+        <tr><td class="field-name">🔻 支撐突破狀態</td><td>${supportBRLabel}</td></tr>
+        <tr><td class="field-name">🔺 壓力突破狀態</td><td>${resistBRLabel}</td></tr>
+        <tr><td class="field-name">📅 觸發 rules (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發, 預設 SIDEWAYS' : matchedRules.map(r => `<strong>${r}</strong> — ${renderTrendlineRuleExplain(r)}`).join(' / ')}</td></tr>
+        <tr><td class="field-name">🔮 5 日投影</td><td>支撐 <strong>${projection.supportFuture?.toFixed(2) ?? 'N/A'}</strong> / 中位 <strong>${projection.midFuture?.toFixed(2) ?? 'N/A'}</strong> / 壓力 <strong>${projection.resistanceFuture?.toFixed(2) ?? 'N/A'}</strong> — 假設趨勢不變, 5 日後嘅線應該喺呢個位</td></tr>
+        <tr><td class="field-name">⏰ 最新極值點距今</td><td>${ageLabel}</td></tr>
+        <tr><td class="field-name">🤚 支撐觸線 (${support.touches ?? 0} 次)</td><td>${(support.touches ?? 0) >= 2 ? `${support.touches} 次反彈, 平均反彈 ${((support.avgBouncePct ?? 0) * 100).toFixed(2)}% — 支撐有實力` : `得 ${support.touches ?? 0} 次觸線, 支撐未算被驗證`}</td></tr>
+        <tr><td class="field-name">🤚 壓力觸線 (${resistance.touches ?? 0} 次)</td><td>${(resistance.touches ?? 0) >= 2 ? `${resistance.touches} 次回落, 平均回落 ${((resistance.avgBouncePct ?? 0) * 100).toFixed(2)}% — 壓力有實力` : `得 ${resistance.touches ?? 0} 次觸線, 壓力未算被驗證`}</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+// 10 條 rule 嘅用人話解釋 (跟 ma-alignment pattern 一致)
+function renderTrendlineRuleExplain(rid) {
+  const explains = {
+    'A': '支撐線上升 (每個 trough 都越嚟越高)',
+    'B': '壓力線下降 (每個 peak 都越嚟越低)',
+    'C': '通道窄 + 中位 — 鱷魚線收埋, 準備爆邊',
+    'D': '收斂三角形 — 支撐升 + 壓力跌, 兩線向中靠攏',
+    'E': '上升楔形 — 支撐升 + 壓力平, 短線向上但通道越嚟越窄',
+    'F': '下降楔形 — 支撐平 + 壓力跌, 短線向下但通道越嚟越窄',
+    'G': '真跌破支撐 — 5 日內 close 跌穿, 之後 stay below 2+ 日',
+    'H': '真突破壓力 — 5 日內 close 升穿, 之後 stay above 2+ 日',
+    'I': '支撐有效 — 觸線 ≥2 次 + 反彈 ≥1%, 支撐有實力',
+    'J': '壓力有效 — 觸線 ≥2 次 + 回落 ≥1%, 壓力有實力',
+  };
+  return explains[rid] || rid;
+}
+
+// ===== 策略建議 section (Trendline) =====
+// 根據 state + confidence + channel + breakout 建議 action
+function renderStrategyAdviceTrendline(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const isHighConf = verdict.confidence >= 0.7;
+  const isLowConf = verdict.confidence < 0.5;
+  const support = verdict.meta.supportLine || {};
+  const resistance = verdict.meta.resistanceLine || {};
+  const channel = verdict.meta.channel || { widthPct: 0, percentB: 0.5 };
+  const pb = channel.percentB || 0.5;
+
+  let stateAdvice = '';
+  if (verdict.state === 'UP') {
+    stateAdvice = `
+      <div class="strategy-up">
+        <h4>🟢 上升趨勢 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 順勢而行, 持倉或慢慢加倉</p>
+        <p><strong>進場策略:</strong> 等回調到支撐線附近 (${support.currentValue?.toFixed(2) ?? 'N/A'}) 再反彈, 呢個係低吸嘅好時機 (pullback entry)</p>
+        <p><strong>風險管理:</strong> 留意支撐線位置 ($${support.currentValue?.toFixed(2) ?? 'N/A'}), 如果價跌穿支撐線 (尤其 R 真跌破) 即停損 / 走人</p>
+        <p><strong>目標位:</strong> 壓力線 ($${resistance.currentValue?.toFixed(2) ?? 'N/A'}) — 升到壓力線附近留意會唔會被壓返落嚟</p>
+        <p><strong>留意警號:</strong> 如果 H+G 同時出現 (上升線跌破 + 上升壓力線突破) → TRANSITION, 短期見頂, 收緊止損</p>
+      </div>
+    `;
+  } else if (verdict.state === 'DOWN') {
+    stateAdvice = `
+      <div class="strategy-down">
+        <h4>🔴 下跌趨勢 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 避開 / 考慮減倉, 唔好接刀</p>
+        <p><strong>進場策略:</strong> 如果要做空, 等反彈到壓力線 ($${resistance.currentValue?.toFixed(2) ?? 'N/A'}) 附近再回落, 確認受壓</p>
+        <p><strong>風險管理:</strong> 留意壓力線位置, 如果真突破 (H rule) 即停損空單, 可能見底</p>
+        <p><strong>目標位:</strong> 支撐線 ($${support.currentValue?.toFixed(2) ?? 'N/A'}) — 跌到支撐線附近留意會唔會彈返</p>
+      </div>
+    `;
+  } else if (verdict.state === 'TRANSITION') {
+    stateAdvice = `
+      <div class="strategy-transition">
+        <h4>🟣 短線反轉 (TRANSITION) · 策略建議</h4>
+        <p><strong>基本動作:</strong> 暫時 hold, 等下個確認信號</p>
+        <p><strong>訊號確認:</strong> H+G 同時觸發, 代表支撐同壓力線都出現真突破 — 趨勢可能反轉</p>
+        <p><strong>進場策略:</strong> 唔好喺 TRANSITION 狀態下新單落場, 等 5-7 日新方向確認 (連續幾日同方向) 先做</p>
+        <p><strong>風險:</strong> TRANSITION 失敗可能係假突破, 確認返之前嘅趨勢可能再返嚟, 要小心</p>
+    `;
+  } else { // SIDEWAYS
+    let pbAdvice = '';
+    if (pb < 0.3) {
+      pbAdvice = `<p><strong>當前位置:</strong> %B = ${pb.toFixed(2)} — 接近支撐線 ($${support.currentValue?.toFixed(2) ?? 'N/A'}), 可以嘗試低吸 (但要設窄止損)</p>`;
+    } else if (pb > 0.7) {
+      pbAdvice = `<p><strong>當前位置:</strong> %B = ${pb.toFixed(2)} — 接近壓力線 ($${resistance.currentValue?.toFixed(2) ?? 'N/A'}), 唔好追高 (回調風險大)</p>`;
+    } else {
+      pbAdvice = `<p><strong>當前位置:</strong> %B = ${pb.toFixed(2)} — 通道中間, 唔好喺中間落場, 等到接近 support ($${support.currentValue?.toFixed(2) ?? 'N/A'}) 或 resistance ($${resistance.currentValue?.toFixed(2) ?? 'N/A'}) 先做</p>`;
+    }
+    stateAdvice = `
+      <div class="strategy-sideways">
+        <h4>🟡 橫行趨勢 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 等方向, 等突破</p>
+        <p><strong>關鍵位:</strong> 上沿 = 壓力線 ($${resistance.currentValue?.toFixed(2) ?? 'N/A'}) / 下沿 = 支撐線 ($${support.currentValue?.toFixed(2) ?? 'N/A'})</p>
+        ${pbAdvice}
+        <p><strong>進場策略:</strong> 唔好喺通道中間進場, 等突破 (H 真突破壓力 → 做多) 或 (G 真跌破支撐 → 做空) 先做</p>
+        <p><strong>止損:</strong> 如果做多後跌返通道, 即 false break, 止損走人</p>
+        <p><strong>特別注意:</strong> 通道窄 (widthPct < 3%) 嘅橫行, 鱷魚線收埋, 隨時大爆邊, 要密切留意</p>
+      </div>
+    `;
+  }
+
+  // 信心調整建議
+  let confidenceNote = '';
+  if (isHighConf) {
+    confidenceNote = `<p class="confidence-high">💪 信心指數 ${confidencePct}% (高) — 判定可靠, 可以作參考落單</p>`;
+  } else if (isLowConf) {
+    confidenceNote = `<p class="confidence-low">⚠️ 信心指數 ${confidencePct}% (低) — 唔好信, 等下一個更明顯訊號</p>`;
+  } else {
+    confidenceNote = `<p class="confidence-med">🤔 信心指數 ${confidencePct}% (中) — 有參考價值, 但要配合其他指標 confirm</p>`;
+  }
+
+  return `
+    <div class="strategy-advice">
+      <h4>🎯 策略建議 (點做)</h4>
+      ${stateAdvice}
+      ${confidenceNote}
+      <p class="caveat">⚠️ 觸發 ${(verdict.meta?.matchedRules || []).length} 條 rule, 每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
+    </div>
+  `;
+}
+
+// ===== 點用 + 點睇 guide section (Trendline) =====
+function renderUsageGuideTrendline(verdict) {
+  return `
+    <div class="usage-guide">
+      <h4>💡 點用呢個結果 (點睇)</h4>
+      <ol>
+        <li><strong>先睇 state 同信心</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=TRANSITION) 同信心百分比, 呢個係最概要嘅判斷</li>
+        <li><strong>睇「觸發 rule」嗰行</strong> — 例如「A」= 支撐線上升 (上升趨勢), 「G」= 真跌破支撐 (見底訊號), 「H」= 真突破壓力 (見頂訊號)。每條 rule 都有具體意思, 睇「📖 詳細解讀」section</li>
+        <li><strong>睇 chart 上面嘅 2 條 trend line</strong> — 🟢 綠色 = 支撐線 / 🔴 紅色 = 壓力線。睇下當前價喺兩線之間嘅邊個位置 (用 %B 量化)</li>
+        <li><strong>留意 R² 數值</strong> — ≥ 0.8 = 線好直, 趨勢可信 / 0.55-0.8 = OK / &lt; 0.55 = 線散亂, 趨勢唔穩, 唔好用</li>
+        <li><strong>留意通道寬度</strong> — &lt; 3% = 鱷魚線收埋, 準備爆邊 (上或下) / 3-10% = 中等 / &gt; 10% = 波動大, 通道闊</li>
+        <li><strong>留意突破狀態</strong> — 短期如果真跌破支撐 (G) 或真突破壓力 (H), 即趨勢可能反轉, 立即 review 你嘅持倉</li>
+        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
+        <li><strong>配合其他 module 一齊睇</strong> — 同時跑 MA alignment / HL structure, compare 唔同 module 嘅判斷。3 個 module 一齊睇先至穩陣</li>
+        <li><strong>永遠配合風險管理</strong> — 呢個 module 嘅策略建議只係 reference, 落單前要自己再睇下基本面 / 消息面 / 板塊走勢</li>
+      </ol>
+      <p class="caveat">⚠️ 呢個 module 係輔助工具, 唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用, 唔好單靠一個 algorithm 落單。</p>
     </div>
   `;
 }
