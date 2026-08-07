@@ -111,11 +111,11 @@ async function onAlgorithmChange() {
 
   currentAdapter = algo.adapter;
 
-  // Algo info (大少 #10963 — 綠框 兩行 context: umbrella + current algorithm)
+  // Algo info (2026-08-07 — generic 化, 移除 hard-code 嘅 umbrella context)
+  // Adapter 自己可以提供 contextLines array, 冇就空白
   algoInfo.innerHTML = `
     <h3>${currentAdapter.name}</h3>
-    <p style="margin: 6px 0 2px 0; color: #555;"><strong>股票周期性判定：</strong></p>
-    <p style="margin: 0 0 8px 0; color: #555;"><strong>均線系統週期斷法</strong></p>
+    ${(currentAdapter.contextLines || []).map(line => `<p style="margin: 4px 0; color: #555;"><strong>${line}</strong></p>`).join('')}
     <p><small>${currentAdapter.description || ''}</small></p>
     <p><small>版本: <strong>${currentAdapter.version}</strong></small></p>
   `;

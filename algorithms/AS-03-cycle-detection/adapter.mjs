@@ -1964,6 +1964,12 @@ function renderHLStructureResult(verdict) {
         <p>位置: <strong>${verdict.price_position}</strong> · 自適應 Window: ${verdict.adaptive_window} · 動態 Tolerance: ${(verdict.effective_tolerance * 100).toFixed(2)}%</p>
       </div>
 
+      ${renderDetailedExplanation(verdict)}
+
+      ${renderStrategyAdvice(verdict)}
+
+      ${renderUsageGuide(verdict)}
+
       <details class="meta-details">
         <summary>🔧 技術細節（debug 用）</summary>
         <pre>峰序列趨勢: ${verdict.peak_trend}
@@ -1973,6 +1979,130 @@ function renderHLStructureResult(verdict) {
 最終信心: ${verdict.confidence}
 ${verdict.adjustment_log.length > 0 ? '\n調整記錄:\n' + verdict.adjustment_log.map(s => '  • ' + s).join('\n') : ''}</pre>
       </details>
+    </div>
+  `;
+}
+
+// ===== 詳細解讀 section =====
+// 用人話逐一解釋 verdict 每個 field 嘅意思
+function renderDetailedExplanation(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const structurePct = (Math.abs(verdict.structure_score) * 100).toFixed(0);
+  const structureLabel = verdict.cycle === 'uptrend' ? '上升一致度' : verdict.cycle === 'downtrend' ? '下跌一致度' : '橫行緊密度';
+
+  const peakTrendLabel = {
+    'rising': '📈 越嚟越高 (上升中)',
+    'falling': '📉 越嚟越低 (下跌中)',
+    'flat': '➡️ 差唔多 (橫行中)',
+    'mixed': '🌪️ 混合 (冇明確方向)',
+  }[verdict.peak_trend] || verdict.peak_trend;
+
+  const troughTrendLabel = {
+    'rising': '📈 越嚟越高 (上升中)',
+    'falling': '📉 越嚟越低 (下跌中)',
+    'flat': '➡️ 差唔多 (橫行中)',
+    'mixed': '🌪️ 混合 (冇明確方向)',
+  }[verdict.trough_trend] || verdict.trough_trend;
+
+  return `
+    <div class="detailed-explanation">
+      <h4>📖 詳細解讀 (逐個 field 點樣睇)</h4>
+      <table class="explain-table">
+        <tr><td class="field-name">📊 cycle (週期類型)</td><td><strong>${verdict.cycle_label}</strong> — ${verdict.cycle === 'uptrend' ? '山頂同山谷一齊越嚟越高' : verdict.cycle === 'downtrend' ? '山頂同山谷一齊越嚟越低' : '山頂山谷塞喺範圍內'}</td></tr>
+        <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠,可以作參考' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值但要再 confirm' : '🔴 低信心 — 信唔過,等下一個更明顯信號'}</td></tr>
+        <tr><td class="field-name">📐 structure_score (${structureLabel} ${structurePct}%)</td><td>${verdict.cycle === 'sideways' ? '越接近 0 越一致,即山頂山谷排列越規律' : '正數 = 一致向上 / 負數 = 一致向下,絕對值越大越穩'}</td></tr>
+        <tr><td class="field-name">🏔️ 峰序列趨勢</td><td>${peakTrendLabel} — 比較最近幾個 peak (山頂) 嘅高低</td></tr>
+        <tr><td class="field-name">🕳️ 谷序列趨勢</td><td>${troughTrendLabel} — 比較最近幾個 trough (山谷) 嘅高低</td></tr>
+        <tr><td class="field-name">📊 峰點 (${verdict.peaks.length} 個)</td><td>識別到嘅山頂,有 confirmed (確認突破) 同 weight (重要性) 標記</td></tr>
+        <tr><td class="field-name">📊 谷點 (${verdict.troughs.length} 個)</td><td>識別到嘅山谷,同樣有 confirmed 同 weight</td></tr>
+        ${verdict.box_boundary ? `<tr><td class="field-name">📦 箱體邊界</td><td>上沿 ${verdict.box_boundary.top} / 中軸 ${verdict.box_boundary.mid} / 下沿 ${verdict.box_boundary.bottom} — 橫行範圍</td></tr>` : ''}
+        <tr><td class="field-name">🔍 形態預警</td><td>${verdict.pattern_alert === 'none' ? '✅ 無特殊形態' : verdict.pattern_alert === 'head_and_shoulder' ? '⚠️ 頭肩頂 — 可能見頂' : verdict.pattern_alert === 'double_bottom' ? '✓ 雙底 — 可能見底' : '⚠️ 雙頂 — 可能見頂'}</td></tr>
+        <tr><td class="field-name">📍 當前價格位置</td><td><strong>${verdict.price_position}</strong> — ${verdict.price_position === 'above_peak' ? '升穿最近峰位,突破中' : verdict.price_position === 'below_trough' ? '跌穿最近谷位,下行中' : verdict.price_position === 'between' ? '塞喺峰谷之間' : '已經中斷結構'}</td></tr>
+        <tr><td class="field-name">🔧 自適應 Window</td><td>${verdict.adaptive_window} 日 — 根據股價波動自動調,大波動用大 window</td></tr>
+        <tr><td class="field-name">📏 動態 Tolerance</td><td>${(verdict.effective_tolerance * 100).toFixed(2)}% — 平股放寬 / 貴股收緊</td></tr>
+        <tr><td class="field-name">📅 最新峰谷距今</td><td>${verdict.latest_extreme ? verdict.latest_extreme.days_ago + ' 日' : 'N/A'} — 超過 20 日會打折</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+// ===== 策略建議 section =====
+// 根據 cycle state + 形態預警 + confidence 建議 action
+function renderStrategyAdvice(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const isHighConf = verdict.confidence >= 0.7;
+  const isLowConf = verdict.confidence < 0.5;
+
+  let stateAdvice = '';
+  if (verdict.cycle === 'uptrend') {
+    stateAdvice = `
+      <div class="strategy-up">
+        <h4>🟢 上升趨勢 · 策略建議</h4>
+        <p><strong>基本動作:</strong>順勢而行,持倉或慢慢加倉</p>
+        <p><strong>風險管理:</strong>留意最新 trough 嗰個谷位 ($${verdict.troughs.length > 0 ? verdict.troughs[verdict.troughs.length - 1].close.toFixed(2) : 'N/A'}),如果價跌穿呢個位就可能見頂,要收緊止損</p>
+        <p><strong>進場訊號:</strong>如果當前價回調到 trough 附近再反彈,係低吸嘅好時機</p>
+        <p><strong>出場訊號:</strong>形態預警 ${verdict.pattern_alert === 'head_and_shoulder' || verdict.pattern_alert === 'double_top' ? '見頂 (頭肩頂/雙頂) — 準備走' : verdict.pattern_alert === 'double_bottom' ? '反而見底訊號 (雙底) — 確認反轉' : '無'}</p>
+      </div>
+    `;
+  } else if (verdict.cycle === 'downtrend') {
+    stateAdvice = `
+      <div class="strategy-down">
+        <h4>🔴 下跌趨勢 · 策略建議</h4>
+        <p><strong>基本動作:</strong>避開 / 考慮減倉</p>
+        <p><strong>風險管理:</strong>留意最新 peak 嗰個峰位 ($${verdict.peaks.length > 0 ? verdict.peaks[verdict.peaks.length - 1].close.toFixed(2) : 'N/A'}),如果價升穿呢個位就可能要見底,準備止損</p>
+        <p><strong>進場訊號:</strong>如果當前價反彈到 peak 附近再回落,係做空嘅機會</p>
+        <p><strong>出場訊號:</strong>形態預警 ${verdict.pattern_alert === 'double_bottom' ? '見底 (雙底) — 準備反轉' : verdict.pattern_alert === 'head_and_shoulder' ? '⚠️ 但留意頭肩頂 — 趨勢可能改' : '無'}</p>
+      </div>
+    `;
+  } else {
+    const box = verdict.box_boundary;
+    stateAdvice = `
+      <div class="strategy-sideways">
+        <h4>🟡 橫行趨勢 · 策略建議</h4>
+        <p><strong>基本動作:</strong>等方向,等突破</p>
+        ${box ? `<p><strong>關鍵位:</strong>箱頂 ${box.top} (升穿 = 確認上升) / 箱底 ${box.bottom} (跌穿 = 確認下跌)</p>` : ''}
+        <p><strong>進場策略:</strong>唔好喺箱中間進場,等突破後順勢入場 (升穿箱頂做多 / 跌穿箱底做空)</p>
+        <p><strong>止損:</strong>如果進場做多但跌返入箱中間,即 false break,止損</p>
+        <p><strong>形態預警:</strong>${verdict.pattern_alert === 'none' ? '無特別形態,等方向' : verdict.pattern_alert === 'head_and_shoulder' || verdict.pattern_alert === 'double_top' ? '⚠️ 見頂形態 — 突破向下機會大' : '✓ 見底形態 — 突破向上機會大'}</p>
+      </div>
+    `;
+  }
+
+  // 信心調整建議
+  let confidenceNote = '';
+  if (isHighConf) {
+    confidenceNote = `<p class="confidence-high">💪 信心指數 ${confidencePct}% (高) — 判定可靠,可以作參考落單</p>`;
+  } else if (isLowConf) {
+    confidenceNote = `<p class="confidence-low">⚠️ 信心指數 ${confidencePct}% (低) — 唔好信,等下一個更明顯訊號</p>`;
+  } else {
+    confidenceNote = `<p class="confidence-med">🤔 信心指數 ${confidencePct}% (中) — 有參考價值,但要配合其他指標 confirm</p>`;
+  }
+
+  return `
+    <div class="strategy-advice">
+      <h4>🎯 策略建議 (點做)</h4>
+      ${stateAdvice}
+      ${confidenceNote}
+    </div>
+  `;
+}
+
+// ===== 點用 + 點睇 guide section =====
+function renderUsageGuide(verdict) {
+  return `
+    <div class="usage-guide">
+      <h4>💡 點用呢個結果 (點睇)</h4>
+      <ol>
+        <li><strong>先睇 cycle 同信心</strong> — 個大色塊 (橙=SIDEWAYS / 綠=UP / 紅=DOWN) 同信心百分比 (大數字),呢個係最概要嘅判斷</li>
+        <li><strong>再睇形態預警</strong> — 如果有「頭肩頂 / 雙頂」要小心見頂;「雙底」可能要見底</li>
+        <li><strong>睇 chart 上面嘅 peak (🔻紅箭嘴) 同 trough (🔺綠箭嘴)</strong> — 視覺化對應返 verdict 嘅 peak/trough 數值,確認算法揾嘅山頂山谷同你肉眼睇嘅一唔一樣</li>
+        <li><strong>橫行時睇箱體線</strong> — chart 上面嘅橙色虛線 (頂/中/底) 顯示橫行範圍,睇下當前價喺箱邊個位置</li>
+        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
+        <li><strong>配合其他 module 一齊睇</strong> — 揀 AS-03 (umbrella) 同時跑 7 個 module,compare 唔同 module 嘅判斷</li>
+        <li><strong>回測用 300+ 日 K 線</strong> — 用更長嘅 data (≥ 300 日) 攞更穩定 verdict</li>
+        <li><strong>同一日多股票</strong> — 比較唔同股票嘅 cycle state,搵同板塊同步 / 背馳嘅機會</li>
+      </ol>
+      <p class="caveat">⚠️ 呢個 module 係輔助工具,唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用,唔好單靠一個 algorithm 落單。</p>
     </div>
   `;
 }
@@ -2096,6 +2226,9 @@ export const hlStructureAdapter = {
   name: '高低點結構法 (Peak-Trough Structure)',
   version: '0.1.0',
   description: '基於 Dow Theory, 識別 peak (山頂) 同 trough (山谷) 嘅排列結構判斷週期 (上升/下跌/橫行),自動偵測頭肩頂/雙底/雙頂形態預警',
+  // 2026-08-07 — Generic framework support: 移除 hard-code context, 用 contextLines (預設空)
+  contextLines: [],
+  inputs: [
   inputs: [
     {
       key: 'code',
