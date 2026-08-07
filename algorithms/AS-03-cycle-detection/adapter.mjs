@@ -2229,7 +2229,6 @@ export const hlStructureAdapter = {
   // 2026-08-07 — Generic framework support: 移除 hard-code context, 用 contextLines (預設空)
   contextLines: [],
   inputs: [
-  inputs: [
     {
       key: 'code',
       label: '股票代碼',
