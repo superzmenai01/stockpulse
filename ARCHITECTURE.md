@@ -1399,18 +1399,19 @@ if (currentAdapter.renderChartOverlay) {
 
 `algorithms/AS-03-cycle-detection/` — 股票週期判定系統,Stage 1 (完成 Module 1-7) Roadmap。
 
-### Module 進度 (5 個 done)
+### Module 進度 (7 個 done + 2 個 hidden 等 Stage 1 done)
 
-| Module | 檔案 | Version | 3 Sections | Status |
-|--------|------|---------|-----------|--------|
-| 1. MA Alignment 均線系統 | `modules/ma-alignment.ts` | v0.3.0 | ✅ | ✅ Production |
-| 2. HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
-| 3. Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
-| 5. VolumePrice 量價分析 | `modules/volume.ts` | v1.0.0 | ✅ | ✅ Production |
-| 8. SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | ✅ | ✅ Production |
-| 4. Indicators (MACD/RSI/Bollinger) | TBD | — | — | 🚧 Pending |
-| 6. Multi-TF (日/週/月) | TBD | — | — | 🚧 Pending |
-| 7. Synthesizer | TBD | — | — | 🚧 Pending |
+| # | Module | 檔案 | Version | 3 Sections | Status |
+|---|--------|------|---------|-----------|--------|
+| 1 | MA Alignment 均線系統 | `modules/ma-alignment.ts` | v0.3.0 | ✅ | ✅ Production |
+| 2 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
+| 3 | Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
+| 4 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ | ✅ Production (RSI + MACD + Bollinger + 背馳 + 衰竭) |
+| 5 | **VolumePrice 成交量價格行為確認** | `modules/volume.ts` | **v2.0.0** | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) |
+| 6 | **Volatility 波動率收縮擴張** | `modules/volatility.ts` | **v1.0.0** | ✅ | ✅ Production (全新, 12 rules S1-S12, 5 setups, 3 failure modes) |
+| 7 | Synthesizer 綜合判定 | TBD | — | — | 🚧 Pending (Stage 1 最後一個) |
+| ⏸️ 隱藏 (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — | ⏸️ Hidden — 大少 2026-08-07 23:15 指示等 Stage 1 全部 done 先做返 |
+| ⏸️ 隱藏 (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — | ⏸️ Hidden — 大少 2026-08-07 23:15 指示等 Stage 1 全部 done 先做返 |
 
 ### 3-Section Rule (大少 #11056, 2026-08-07, 永久)
 
@@ -1436,6 +1437,18 @@ if (currentAdapter.renderChartOverlay) {
 
 詳細 spec: `docs/research/AS-03-cycle-detection/ROADMAP.md` (228 行, 7 stages)
 每 module: `docs/research/AS-03-cycle-detection/MODULE-XX-*.md`
+
+| Module | Spec 連結 | 備註 |
+|--------|-----------|------|
+| 1. MA Alignment | `MODULE-01-MA-ALIGNMENT.md` | v0.3.0 (10 rules A-J) |
+| 2. HL Structure | `MODULE-02-HL-STRUCTURE.md` | v0.1.0 (Peak-Trough) |
+| 3. Trendline | `MODULE-03-TRENDLINE.md` | v0.1.0 (10 rules A-J) |
+| 4. Indicators | `MODULE-04-MOMENTUM-DIVERGENCE.md` | v1.0.0 (RSI/MACD/背馳/衰竭) |
+| 5. VolumePrice v2.0 | `MODULE-05-VOLUME-PRICE-V2.md` | **v2.0 overwrite** (15 rules V1-V15, 5 buy + 4 減分, 9 個根治 vs v1.0) |
+| 6. Volatility | `MODULE-06-VOLATILITY.md` | **v1.0 全新** (12 rules S1-S12, Squeeze + ATR 分解 + VCP, 5 setups, 3 failure modes) |
+| 7. Synthesizer | `MODULE-07-SYNTHESIZER.md` | 草案 (Stage 1 最後一個) |
+| ⏸️ Hidden Multi-TF | — | 已刪除 spec (v1.0 仍喺 archive) |
+| ⏸️ Hidden SlopeMomentum | — | 已刪除 spec (v1.0 仍喺 archive) |
 
 ---
 
@@ -1504,15 +1517,17 @@ if (currentAdapter.renderChartOverlay) {
 - 會影響 AS-03 算法 (MA / Slope 算錯)
 - MA60 喺首 60 條會被負值污染
 
-**Workaround (臨時)**:
-- 唔好 query HK.00700 早過 2014 年 (拆股後) 嘅 data
-- 或 AS-03 algorithm 加 guard: `if close < 0 → skip 該 kline`
+**永久 Fix ✅ Done (大少 #11099, commit `a58ce65c`)**:
+- `backend/services/kline_cache._fetch_klines()` 加 defensive filter: 任何 OHLC < 0 嘅 row skip 咗唔寫入 DB
+- Frontend 算法唔需要再自己 guard (backend 保證 data clean)
+- Commit: `a58ce65c fix(cache): filter negative OHLC (OpenD qfq 復權 bug) + start.sh +x`
 
-**永久 Fix (待辦)**:
-- Backend `kline_cache._fetch_klines()` 加 `autype='none'` option,自己計 qfq factor
-- 或 OpenClaw 報 OpenD bug
+**Workaround (歷史紀錄)**:
+- 之前: 唔好 query HK.00700 早過 2014 年 (拆股後) 嘅 data
+- 之前: AS-03 algorithm 加 guard: `if close < 0 → skip 該 kline`
+- 而家: 唔需要 workaround,backend 已保證 data clean
 
-**Known Issue 編號**: 大少 #11099 (2026-08-07)
+**Known Issue 編號**: 大少 #11099 (2026-08-07, ✅ 永久 fix done `a58ce65c`)
 
 ---
 
@@ -1520,7 +1535,8 @@ if (currentAdapter.renderChartOverlay) {
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
-| 2026-08-07 | 大少「Update Stockpulse」(本 turn) | `bf46c232` + `c2b8b278` + `1dab3422` + `c0152bae` + `ec8b2cfe` + `9aa429fe` | ARCHITECTURE §11-14, API §K-line endpoint, README §Algorithm System, PROJECT_SPEC §Algorithm |
+| 2026-08-08 | 大少「Update Stockpulse」(今 turn) | `6441feef` + `2280f7d0` + `79eaa3ae` + `9de7f0eb` + `47a9e88a` + `a58ce65c` | ARCHITECTURE §11 (Module 5/6 done, 2 hidden, Spec 連結 table), §13.2 (qfq 永久 fix done) |
+| 2026-08-07 | 大少「Update Stockpulse」(上 turn) | `bf46c232` + `c2b8b278` + `1dab3422` + `c0152bae` + `ec8b2cfe` + `9aa429fe` | ARCHITECTURE §11-14, API §K-line endpoint, README §Algorithm System, PROJECT_SPEC §Algorithm |
 | 2026-08-06 | 大少 #8602 KlineCache v2 | `2f1f8cc7` 等 | ARCHITECTURE §3.5 |
 | 2026-08-06 | AS-02 Spec sync | `4dfe7771` | ARCHITECTURE §4 |
 

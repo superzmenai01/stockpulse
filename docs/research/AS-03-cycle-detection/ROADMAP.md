@@ -48,28 +48,35 @@
 
 ## 2. Stage 1 內部排序（最 critical 嘅先做）
 
-| 優先 | Module | 點解先做 |
-|------|--------|----------|
-| 🥇 | **Module 6: Multi-TF** | Entry Timing 嘅基礎 — 唔做就 entry timing 冇 multi-timeframe confirm |
-| 🥈 | **Module 3: Trendline** | 趨勢線畫法對 Entry Timing 嘅 pullback 判斷有幫助 |
-| 🥉 | **Module 4: Indicators** (MACD/RSI/Bollinger) | Confluence 嘅 building block，技術分析 standard |
-| 4 | **Module 5: Volume OBV** | 量能 confirm 重要，但有 VolumePrice 兜住，可以遲少少 |
-| 5 | **Module 7: Synthesizer** | 最後做（要 aggregate 1-6 結果，Confluence 都可以做類似嘢）|
+| 優先 | Module | 狀態 (2026-08-08) | 點解先做 |
+|------|--------|------|----------|
+| 🥇 | ~~Module 6: Multi-TF~~ | ⏸️ Hidden 等 Stage 1 done | Entry Timing 嘅基礎 — 但 testing page 唔支援 multi-timeframe, 大少 2026-08-07 23:15 指示 Stage 1 done 先做返 |
+| 🥈 | Module 3: Trendline | ✅ v0.1.0 done (20/20) | 趨勢線畫法對 Entry Timing 嘅 pullback 判斷有幫助 |
+| 🥉 | Module 4: Indicators (MACD/RSI/Bollinger) | ✅ v1.0.0 done (36/36) | Confluence 嘅 building block，技術分析 standard |
+| 4 | Module 5: VolumePrice v2.0 (overwrite Volume OBV) | ✅ v2.0.0 done (47/47) | 量能 confirm, 完整 9 個根治 vs v1.0 |
+| 5 | Module 6: Volatility (新定義, 取代 Multi-TF) | ✅ v1.0.0 done (32/32) | 波動率收縮擴張, Squeeze + VCP + ATR 分解 |
+| 6 | **Module 7: Synthesizer** | 🚧 Pending (Stage 1 最後一個) | 最後做（要 aggregate 1-6 結果，Confluence 都可以做類似嘢）|
 
 ---
 
 ## 3. 12 Modules 目標設計
 
 ### 而家 7 個 modules (AS-03 既有)
-| # | Module | Status | 功用 |
+| # | Module | Status (2026-08-08) | 功用 |
 |---|--------|--------|------|
 | 1 | MA Alignment | ✅ v0.3.0 done (19/19) | 10 條 rule A-J 識別走勢 + 轉勢 |
 | 2 | HL Structure | ✅ v0.1.0 done (12/12) | peaks/troughs + 形態 (頭肩頂/雙底) |
-| 3 | Trendline | ✅ v0.1.0 done (14/14) | 10 條 rule A-J, 動態 OLS + 觸線 + 真假突破 |
-| 4 | Indicators | ⏳ skeleton | MACD / RSI / Bollinger Bands |
-| 5 | Volume OBV | ⏳ skeleton | OBV + 量能 confirm |
-| 6 | Multi-TF | ⏳ skeleton | 跨時間框架 confirm |
-| 7 | Synthesizer | ⏳ skeleton | 1-6 綜合判決 |
+| 3 | Trendline | ✅ v0.1.0 done (20/20) | 10 條 rule A-J, 動態 OLS + 觸線 + 真假突破 |
+| 4 | Indicators 動能背馳與衰竭 | ✅ v1.0.0 done (36/36) | RSI + MACD + Bollinger + 背馳 + 衰竭 |
+| 5 | VolumePrice 成交量價格行為確認 | ✅ v2.0.0 done (47/47) | 15 rules V1-V15, 9 個根治 vs v1.0 |
+| 6 | Volatility 波動率收縮擴張 | ✅ v1.0.0 done (32/32) | 12 rules S1-S12, Squeeze + VCP + ATR 分解 |
+| 7 | Synthesizer | 🚧 Pending | 1-6 綜合判決 (Stage 1 最後一個) |
+
+### 隱藏 (Stage 1 done 先做返)
+| # | Module | Status | 功用 |
+|---|--------|--------|------|
+| 5-old | Multi-TF | ⏸️ Hidden (testing page 唔支援) | 跨時間框架 confirm |
+| 8-old | SlopeMomentum | ⏸️ Hidden | 斜率動能 |
 
 ### 新 6 個 modules (Roadmap 加)
 | # | Module | Stage | 功用 |

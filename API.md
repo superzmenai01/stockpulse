@@ -368,12 +368,20 @@ Health check endpoint.
 - OpenD 對 HK.00700 1d 真實 history limit = 9 個月 (182 trading days)
 - 清 DB 重新 cold fetch → 拎到 20 年 (4934 條) ✅ (見 ARCHITECTURE §13.1)
 
+**K-line Cache Defensive Filter (大少 #11099, 2026-08-07, 永久 fix done `a58ce65c`)**:
+- 問題: OpenD `autype='qfq'` (前復權) 對 2014 年拆股前嘅早期數據返負值 (e.g. HK.00700 2006-07-24: open=-20.88, high=-20.88, low=-20.90, close=-20.89)
+- 永久 fix: `backend/services/kline_cache._fetch_klines()` 加 defensive filter, 任何 OHLC < 0 嘅 row skip 咗唔寫入 DB
+- 影響: Frontend 算法唔需要再自己 guard (backend 保證 data clean)
+- Commit: `a58ce65c fix(cache): filter negative OHLC (OpenD qfq 復權 bug) + start.sh +x`
+- 詳見 ARCHITECTURE §13.2
+
 ---
 
 ## 📝 Changelog
 
 | 日期 | 改動 | 大少 reference |
 |---|---|---|
+| 2026-08-07 | K-line cache 加 defensive filter 跳過負值 OHLC (OpenD qfq bug 永久 fix) | 大少 #11099 |
 | 2026-08-07 | `/api/kline` 1d default start 改 `count*1.5` + response trim + 新 metadata (`requested_count`/`actual_count`/`data_limited`) | 大少 #11070 |
 | 2026-08-02 | 新建 API.md + 加入 #9700 none-auto-save rule | 大少 #9700 |
 | 2026-08-02 | `/api/as02/run` 行為改: run_id 永遠 null, 唔 auto-save | 大少 #9700 |
