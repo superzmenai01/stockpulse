@@ -989,12 +989,14 @@ export function getHelp() {
 //   Step 6 — Signal derivation (D020 — meta.signal = CONFIRM | DISCONFIRM | NEUTRAL)
 
 const DEFAULT_VOLUME_PRICE_CONFIG = {
-  consecutiveDays: 5,
-  volumeLookback: 20,
-  boostThreshold: 1.2,
-  shrinkThreshold: 0.8,
-  obvLookback: 5,
-  divergenceCorrelation: -0.5,
+  // 大少 2026-08-07 — Module 5 v2.0.0 fields (跟 modules/volume.ts)
+  volumePercentileLookback: 60,
+  vwapPeriod: 20,
+  breakoutConfirmDays: 3,
+  pullbackCorrelationWindow: 10,
+  volumeSurgeMinDays: 2,
+  falseBreakoutRetracePct: 0.5,
+  denseZoneAtrMultiple: 0.5,
 };
 
 // ===== VolumePrice v2.0.0 (大少 2026-08-07 overwrite) =====
@@ -1877,6 +1879,424 @@ export const volumePriceAdapter = {
   analyze: analyzeVolumePrice,
   renderResult: renderVolumeResult,
   getHelp: getVolumeHelp,
+};
+
+// =============================================================================
+// 大少 2026-08-07 — Module 6 Volatility v1.0.0
+// =============================================================================
+// 對應 modules/volatility.ts v1.0.0 + MODULE-06-VOLATILITY.md
+// 簡化: Squeeze (BB vs KC) + ATR 分解 + 5 種 setup + 3 種 failure mode
+
+const DEFAULT_VOLATILITY_CONFIG = {
+  bbPeriod: 20,
+  bbStd: 2.0,
+  kcPeriod: 20,
+  kcAtrMult: 1.5,
+  atrPeriod: 14,
+  squeezeMinDuration: 3,
+  followThroughDays: 5,
+  vcpTolerancePct: 0.02,
+  vcpMinWindows: 2,
+};
+
+export async function analyzeVolatility(klines, options = {}) {
+  const cfg = { ...DEFAULT_VOLATILITY_CONFIG, ...(options.volatilityConfig || {}) };
+  const minData = Math.max(85, cfg.bbPeriod + 50 + cfg.followThroughDays + 10);
+  if (!Array.isArray(klines) || klines.length < minData) {
+    return {
+      moduleId: 'volatility', timeframe: options.period || '1d',
+      state: 'SIDEWAYS', confidence: 0,
+      interpretation: `[Volatility v1.0] 數據不足: need >= ${minData} bars, got ${klines.length}`,
+      evidence: [], warnings: [`數據不足 (${klines.length}/${minData})`],
+      meta: { dataDays: klines.length, configUsed: cfg }, timestamp: Date.now(),
+    };
+  }
+
+  const recent = klines.slice(-Math.max(klines.length, minData));
+  const n = recent.length;
+  const lastIdx = n - 1;
+  const lastBar = recent[lastIdx];
+
+  // ATR (Wilder)
+  const atrValue = (() => {
+    if (n < cfg.atrPeriod + 1) return 0;
+    const trs = [];
+    for (let i = 1; i < n; i++) {
+      trs.push(Math.max(
+        recent[i].high - recent[i].low,
+        Math.abs(recent[i].high - recent[i-1].close),
+        Math.abs(recent[i].low - recent[i-1].close),
+      ));
+    }
+    let atr = trs.slice(0, cfg.atrPeriod).reduce((a,b) => a+b, 0) / cfg.atrPeriod;
+    for (let i = cfg.atrPeriod; i < trs.length; i++) {
+      atr = (atr * (cfg.atrPeriod - 1) + trs[i]) / cfg.atrPeriod;
+    }
+    return atr;
+  })();
+
+  // BB / KC
+  const bbUpper = [], bbLower = [], bbSma = [], kcUpper = [], kcLower = [];
+  for (let i = 0; i < n; i++) {
+    const start = Math.max(0, i - cfg.bbPeriod + 1);
+    let sum = 0, count = 0;
+    for (let j = start; j <= i; j++) { sum += recent[j].close; count++; }
+    const sma = count > 0 ? sum / count : 0;
+    let sqSum = 0;
+    for (let j = start; j <= i; j++) sqSum += (recent[j].close - sma) ** 2;
+    const std = count > 0 ? Math.sqrt(sqSum / count) : 0;
+    bbSma.push(sma);
+    bbUpper.push(sma + cfg.bbStd * std);
+    bbLower.push(sma - cfg.bbStd * std);
+    kcUpper.push(sma + cfg.kcAtrMult * atrValue);
+    kcLower.push(sma - cfg.kcAtrMult * atrValue);
+  }
+
+  // Squeeze detection
+  const squeezeHistory = [];
+  for (let i = 0; i < n; i++) {
+    const wbb = bbSma[i] > 0 ? (bbUpper[i] - bbLower[i]) / bbSma[i] : 0;
+    const wkc = bbSma[i] > 0 ? (kcUpper[i] - kcLower[i]) / bbSma[i] : 0;
+    squeezeHistory.push(wbb < wkc);
+  }
+  const isSqueeze = squeezeHistory[lastIdx];
+  let squeezeDuration = 0;
+  for (let i = lastIdx; i >= 0; i--) {
+    if (squeezeHistory[i]) squeezeDuration++;
+    else break;
+  }
+
+  // Squeeze quality
+  const squeezeStart = Math.max(0, lastIdx - squeezeDuration + 1);
+  const squeezePrices = recent.slice(squeezeStart, lastIdx + 1).map(k => k.close);
+  const pMean = squeezePrices.length > 0 ? squeezePrices.reduce((a,b) => a+b, 0) / squeezePrices.length : 0;
+  const pStd = squeezePrices.length > 0 ? Math.sqrt(squeezePrices.reduce((acc, p) => acc + (p - pMean)**2, 0) / squeezePrices.length) : 0;
+  const priceCV = pMean > 0 ? pStd / pMean : 0;
+
+  // Volume concentration (5 bins entropy)
+  const minP = squeezePrices.length > 0 ? Math.min(...squeezePrices) : 0;
+  const maxP = squeezePrices.length > 0 ? Math.max(...squeezePrices) : 0;
+  const rangeP = maxP - minP;
+  const volBins = new Array(5).fill(0);
+  if (rangeP > 0) {
+    for (const k of recent.slice(squeezeStart, lastIdx + 1)) {
+      const binIdx = Math.min(4, Math.floor((k.close - minP) / (rangeP / 5)));
+      volBins[binIdx] += k.volume;
+    }
+  }
+  const totalVol = volBins.reduce((a,b) => a+b, 0);
+  let entropy = 0;
+  if (totalVol > 0) {
+    for (const v of volBins) {
+      if (v > 0) { const p = v / totalVol; entropy -= p * Math.log(p); }
+    }
+  }
+  const maxEntropy = Math.log(5);
+  const volumeConcentration = maxEntropy > 0 ? 1 - entropy / maxEntropy : 0;
+  const squeezeTrend = squeezePrices.length > 0 ? (squeezePrices[squeezePrices.length-1] - squeezePrices[0]) / squeezePrices[0] : 0;
+  const isHorizontal = Math.abs(squeezeTrend) < 0.02;
+  let qualityScore = 0;
+  if (isHorizontal) qualityScore += 0.3;
+  qualityScore += volumeConcentration * 0.4;
+  qualityScore += (1 - Math.min(1, priceCV / 0.03)) * 0.3;
+  const isGenuineSqueeze = qualityScore >= 0.6 && squeezeDuration >= cfg.squeezeMinDuration;
+
+  // ATR decomposition (linear regression residual)
+  const lookback = 20;
+  const trendAtr = [], noiseAtr = [];
+  for (let i = lookback - 1; i < n; i++) {
+    const seg = recent.slice(i - lookback + 1, i + 1);
+    const xMean = (lookback - 1) / 2;
+    const yMean = seg.reduce((a, k) => a + k.close, 0) / seg.length;
+    let num = 0, denX = 0;
+    for (let j = 0; j < seg.length; j++) {
+      const dx = j - xMean, dy = seg[j].close - yMean;
+      num += dx * dy; denX += dx * dx;
+    }
+    const slope = denX > 0 ? num / denX : 0;
+    const intercept = yMean - slope * xMean;
+    let trendComp = 0;
+    const residuals = [];
+    for (let j = 0; j < seg.length; j++) {
+      const pred = slope * j + intercept;
+      trendComp += Math.abs(seg[j].high - pred) + Math.abs(seg[j].low - pred);
+      residuals.push(seg[j].close - pred);
+    }
+    trendComp = trendComp / (2 * seg.length);
+    const noiseComp = residuals.reduce((a, r) => a + Math.abs(r), 0) / residuals.length;
+    trendAtr.push(trendComp);
+    noiseAtr.push(noiseComp);
+  }
+  const latestTrendAtr = trendAtr[trendAtr.length - 1] || 0;
+  const latestNoiseAtr = noiseAtr[noiseAtr.length - 1] || 0;
+  const snr = latestNoiseAtr > 0 ? latestTrendAtr / latestNoiseAtr : 10;
+  const regime = snr > 2 ? 'trending' : snr < 0.5 ? 'choppy' : 'balanced';
+
+  // VCP (high/low 3-window extema, simplified)
+  const last20 = recent.slice(-20);
+  const highs = [], lows = [];
+  for (let i = 4; i < last20.length - 4; i++) {
+    let isH = true, isL = true;
+    for (let j = i - 3; j <= i + 3; j++) {
+      if (j === i) continue;
+      if (last20[j].high >= last20[i].high) isH = false;
+      if (last20[j].low <= last20[i].low) isL = false;
+    }
+    if (isH) highs.push(last20[i].high);
+    if (isL) lows.push(last20[i].low);
+  }
+  let highLowPairs = 0;
+  let lastH = Infinity, lastL = -Infinity;
+  const minHL = Math.min(highs.length, lows.length);
+  for (let i = 0; i < minHL; i++) {
+    if (highs[i] < lastH && lows[i] > lastL) {
+      highLowPairs++;
+      lastH = highs[i];
+      lastL = lows[i];
+    }
+  }
+  const vcpDetected = highLowPairs >= cfg.vcpMinWindows;
+  let volTightening = false;
+  if (vcpDetected) {
+    const fh = last20.slice(0, 10).reduce((a, k) => a + k.volume, 0) / 10;
+    const sh = last20.slice(-10).reduce((a, k) => a + k.volume, 0) / 10;
+    volTightening = sh < fh * 0.7;
+  }
+
+  // Follow-through
+  const recentRange = recent.slice(-cfg.followThroughDays);
+  const prevRange = recent.slice(-cfg.followThroughDays * 2, -cfg.followThroughDays);
+  const recentHigh = Math.max(...recentRange.map(k => k.high));
+  const prevHigh = Math.max(...prevRange.map(k => k.high));
+  const isBreakout = recentHigh > prevHigh * 1.01;
+  let followScore = 0, priceProgression = 0;
+  if (isBreakout) {
+    const closes = recentRange.map(k => k.close);
+    const higher = closes.slice(1).filter((c, i) => c > closes[i]).length;
+    priceProgression = closes.length > 1 ? higher / (closes.length - 1) : 0;
+    const avgVol = recentRange.reduce((a, k) => a + k.volume, 0) / recentRange.length;
+    const maxHighIdx = recentRange.findIndex(k => k.high === recentHigh);
+    const breakoutDayVol = maxHighIdx >= 0 ? recentRange[maxHighIdx].volume : 0;
+    const postVols = maxHighIdx >= 0 ? recentRange.slice(maxHighIdx + 1) : [];
+    let volumeDecay = 0;
+    if (breakoutDayVol > avgVol * 1.3) {
+      if (postVols.length >= 2) {
+        const postAvg = postVols.reduce((a, k) => a + k.volume, 0) / postVols.length;
+        volumeDecay = postAvg < breakoutDayVol * 0.8 ? 0.8 : 0.4;
+      } else volumeDecay = 0.4;
+    } else volumeDecay = 0.2;
+    followScore = volumeDecay * 0.5 + priceProgression * 0.5;
+  }
+
+  // Failure mode
+  let failureMode = 'none';
+  if (isSqueeze && latestNoiseAtr > latestTrendAtr * 2) failureMode = 'noisy_squeeze';
+  else if (isBreakout && followScore < 0.4) failureMode = 'weak_follow_through';
+
+  // Entry score (5 setups)
+  const wasSqueeze = lastIdx > 0 && (squeezeHistory[lastIdx - 1] || false);
+  const failureMaxCap = failureMode !== 'none' ? 0.4 : 1.0;
+  let entryScore = 0, setupType = 'no_clear_setup', riskReward = 0;
+  if (!isSqueeze && wasSqueeze && qualityScore >= 0.6 && failureMode !== 'weak_follow_through') {
+    entryScore = 0.95 * failureMaxCap; setupType = 'mtf_squeeze_fire'; riskReward = 3.5;
+  } else if (vcpDetected && volTightening && followScore >= 0.5 && failureMode !== 'noisy_squeeze') {
+    entryScore = 0.9 * failureMaxCap; setupType = 'confirmed_vcp_breakout'; riskReward = 3.0;
+  } else if (isGenuineSqueeze && qualityScore >= 0.75) {
+    entryScore = 0.55 * failureMaxCap; setupType = 'genuine_squeeze_forming';
+  } else if (latestNoiseAtr < latestTrendAtr * 0.5 && regime === 'trending' && followScore >= 0.6) {
+    entryScore = 0.7 * failureMaxCap; setupType = 'clean_trend_expansion'; riskReward = 2.0;
+  } else {
+    entryScore = 0.25; setupType = 'no_clear_setup';
+  }
+
+  // 12 條 rules S1-S12
+  const matchedRules = [];
+  if (isSqueeze) matchedRules.push({ id: 'S1', label: '日線 Squeeze', strength: 'medium' });
+  if (qualityScore >= 0.6) matchedRules.push({ id: 'S2', label: 'Squeeze 質量高', strength: 'medium' });
+  if (squeezeDuration >= cfg.squeezeMinDuration) matchedRules.push({ id: 'S3', label: 'Squeeze 持續夠耐', strength: 'medium' });
+  if (snr > 2) matchedRules.push({ id: 'S4', label: '趨勢 ATR 強', strength: 'strong' });
+  if (snr < 0.5) matchedRules.push({ id: 'S5', label: '噪音 ATR 高', strength: 'strong' });
+  const recent5Atr = noiseAtr.slice(-5).reduce((a,b) => a+b, 0) / 5;
+  const prev5Atr = noiseAtr.slice(-10, -5).reduce((a,b) => a+b, 0) / 5;
+  if (recent5Atr < prev5Atr * 0.85) matchedRules.push({ id: 'S6', label: '結構性收縮', strength: 'medium' });
+  if (recent5Atr > prev5Atr * 1.15) matchedRules.push({ id: 'S7', label: '結構性擴張', strength: 'medium' });
+  if (volumeConcentration > 0.6) matchedRules.push({ id: 'S8', label: '籌碼集中', strength: 'medium' });
+  if (vcpDetected) matchedRules.push({ id: 'S9', label: 'VCP 結構', strength: 'medium' });
+  if (volTightening) matchedRules.push({ id: 'S10', label: 'VCP 量縮確認', strength: 'medium' });
+  if (followScore >= 0.5) matchedRules.push({ id: 'S11', label: '突破跟進', strength: 'medium' });
+  if (failureMode !== 'none') matchedRules.push({ id: 'S12', label: '失敗模式 (' + failureMode + ')', strength: 'strong' });
+
+  // Win probability
+  let baseWin;
+  if (setupType === 'mtf_squeeze_fire') baseWin = 0.75;
+  else if (setupType === 'confirmed_vcp_breakout') baseWin = 0.70;
+  else if (setupType === 'clean_trend_expansion') baseWin = 0.62;
+  else if (setupType === 'genuine_squeeze_forming') baseWin = 0.50;
+  else baseWin = 0.35;
+  if (failureMode === 'weak_follow_through') baseWin -= 0.12;
+  if (failureMode === 'noisy_squeeze') baseWin -= 0.10;
+  const winProbability = Math.min(0.82, Math.max(0.25, baseWin));
+
+  // Cycle derivation
+  let cycle, cycleLabel;
+  if (entryScore >= 0.8) { cycle = 'uptrend'; cycleLabel = '高質量蓄力'; }
+  else if (failureMode !== 'none') { cycle = 'downtrend'; cycleLabel = '假蓄力警告'; }
+  else if (regime === 'choppy') { cycle = 'sideways'; cycleLabel = '亂爆階段'; }
+  else { cycle = 'sideways'; cycleLabel = '蓄力觀察'; }
+  const state = cycle === 'uptrend' ? 'UP' : cycle === 'downtrend' ? 'DOWN' : 'SIDEWAYS';
+
+  return {
+    moduleId: 'volatility', timeframe: options.period || '1d', state, confidence: Math.round(entryScore * 10000) / 10000,
+    interpretation: matchedRules.length > 0 ? matchedRules.map(r => r.label).join('；') : '無明確波動率信號',
+    evidence: matchedRules.map(r => ({ type: 'rule-' + r.id, label: r.label, value: r.id, passed: true })),
+    warnings: [],
+    meta: {
+      cycle, cycleLabel, setupType, riskReward,
+      entryScore: Math.round(entryScore * 10000) / 10000,
+      winProbability: Math.round(winProbability * 10000) / 10000,
+      failureMode,
+      squeeze: { isSqueeze, duration: squeezeDuration, qualityScore: Math.round(qualityScore * 10000) / 10000, isGenuine: isGenuineSqueeze },
+      vcpStructure: { detected: vcpDetected, highLowPairs, volTightening },
+      atrDecomposition: {
+        totalAtr: Math.round(atrValue * 100) / 100,
+        trendAtr: Math.round(latestTrendAtr * 100) / 100,
+        noiseAtr: Math.round(latestNoiseAtr * 100) / 100,
+        snr: Math.round(snr * 100) / 100, regime,
+      },
+      followThrough: { followScore: Math.round(followScore * 100) / 100, volumeDecay: 0, priceProgression: Math.round(priceProgression * 100) / 100 },
+      matchedRules: matchedRules.map(r => r.id),
+      ruleLabels: matchedRules.map(r => r.label),
+      rulesFired: matchedRules.length,
+      atr: Math.round(atrValue * 100) / 100,
+      bbWidth: Math.round((bbUpper[lastIdx] - bbLower[lastIdx]) * 100) / 100,
+      kcWidth: Math.round((kcUpper[lastIdx] - kcLower[lastIdx]) * 100) / 100,
+      priceCV: Math.round(priceCV * 10000) / 10000,
+      volumeConcentration: Math.round(volumeConcentration * 10000) / 10000,
+      configUsed: cfg, dataDays: n,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+export function renderVolatilityResult(verdict) {
+  const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
+  const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
+  const setupLabels = {
+    mtf_squeeze_fire: '🏆 黃金 Squeeze Fire',
+    confirmed_vcp_breakout: '🏆 確認 VCP 突破',
+    genuine_squeeze_forming: '⏳ 真 Squeeze 蓄力中',
+    clean_trend_expansion: '🟢 乾淨趨勢擴張',
+    no_clear_setup: '🟡 觀望 (no_clear_setup)',
+  };
+  const failureLabels = {
+    none: '🟢 無', noisy_squeeze: '🔴 噪音 Squeeze',
+    weak_follow_through: '🔴 跟進無力', no_setup: '🟡 冇明確 setup',
+  };
+  const color = stateColors[verdict.state] || '#666';
+  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const cycle = verdict.meta.cycle || 'sideways';
+  const cycleLabel = verdict.meta.cycleLabel || '蓄力觀察';
+  const setupType = verdict.meta.setupType || 'no_clear_setup';
+  const failureMode = verdict.meta.failureMode || 'none';
+  const entryScorePct = ((verdict.meta.entryScore || 0) * 100).toFixed(0);
+  const winProbPct = ((verdict.meta.winProbability || 0) * 100).toFixed(0);
+  const squeeze = verdict.meta.squeeze || {};
+  const vcp = verdict.meta.vcpStructure || {};
+  const atrDecomp = verdict.meta.atrDecomposition || {};
+  const follow = verdict.meta.followThrough || {};
+  const matchedRules = verdict.meta.matchedRules || [];
+  const rulesFired = verdict.meta.rulesFired || 0;
+  const ruleMap = { S1: ['日線 Squeeze', 'medium'], S2: ['Squeeze 質量高', 'medium'], S3: ['Squeeze 持續夠耐', 'medium'], S4: ['趨勢 ATR 強', 'strong'], S5: ['噪音 ATR 高', 'strong'], S6: ['結構性收縮', 'medium'], S7: ['結構性擴張', 'medium'], S8: ['籌碼集中', 'medium'], S9: ['VCP 結構', 'medium'], S10: ['VCP 量縮確認', 'medium'], S11: ['突破跟進', 'medium'], S12: ['失敗模式', 'strong'] };
+  const matchedRulesHtml = matchedRules.length === 0
+    ? '<li style="color: #888;">無 rule 觸發</li>'
+    : matchedRules.map(rid => { const [l, s] = ruleMap[rid] || [rid, 'medium']; return '<li class="rule-' + s + '"><strong>' + rid + '</strong> — ' + l + ' <small>(' + s + ')</small></li>'; }).join('');
+  return `
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header">波動率與市場結構收縮擴張 (Volatility)</h3>
+      </div>
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${color}">
+          <span class="state-label">${cycleLabel}</span>
+          <span class="state-code">${cycle} (${stateLabel})</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${entryScorePct}%</div>
+          <div class="conf-label">入場評分</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>Setup:</span> <strong>${setupLabels[setupType] || setupType}</strong></div>
+          <div class="summary-row"><span>估計勝率:</span> <strong>${winProbPct}%</strong></div>
+          <div class="summary-row"><span>失敗模式:</span> <strong>${failureLabels[failureMode] || failureMode}</strong></div>
+          <div class="summary-row"><span>觸發 Rules:</span> <strong>${rulesFired} 條</strong></div>
+        </div>
+      </div>
+      <div class="interpretation">
+        <strong>📌 波動率結構：</strong>${verdict.interpretation}
+      </div>
+      <div class="key-metrics">
+        <div class="metric-card">
+          <h4>Squeeze 狀態</h4>
+          <p>收縮中: <strong>${squeeze.isSqueeze ? '🟡 是' : '🟢 否'}</strong></p>
+          <p>持續: <strong>${squeeze.duration || 0} 日</strong></p>
+          <p>質量: <strong>${((squeeze.qualityScore || 0) * 100).toFixed(0)}%</strong></p>
+          <p>真 Squeeze: <strong>${squeeze.isGenuine ? '✅' : '❌'}</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4>ATR 分解</h4>
+          <p>Trend ATR: <strong>${atrDecomp.trendAtr || 0}</strong></p>
+          <p>Noise ATR: <strong>${atrDecomp.noiseAtr || 0}</strong></p>
+          <p>SNR: <strong>${atrDecomp.snr || 0}</strong></p>
+          <p>Regime: <strong>${atrDecomp.regime || 'N/A'}</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4>VCP 結構</h4>
+          <p>檢測: <strong>${vcp.detected ? '✅ 是' : '❌ 否'}</strong></p>
+          <p>高低點對: <strong>${vcp.highLowPairs || 0}</strong></p>
+          <p>量縮確認: <strong>${vcp.volTightening ? '✅' : '❌'}</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4>Follow-through</h4>
+          <p>跟進評分: <strong>${((follow.followScore || 0) * 100).toFixed(0)}%</strong></p>
+          <p>量衰: <strong>${((follow.volumeDecay || 0) * 100).toFixed(0)}%</strong></p>
+          <p>價推進: <strong>${((follow.priceProgression || 0) * 100).toFixed(0)}%</strong></p>
+        </div>
+      </div>
+      <div class="matched-rules">
+        <h4>🎯 觸發 Rules (${rulesFired} 條)</h4>
+        <ul>${matchedRulesHtml}</ul>
+      </div>
+      <details class="meta-details">
+        <summary>🔧 配置 (debug 用)</summary>
+        <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
+      </details>
+    </div>
+  `;
+}
+
+export function getVolatilityHelp() {
+  return `<h4>Volatility v1.0 · 12 條 Rule (S1-S12)</h4>
+  <p>對應 MODULE-06-VOLATILITY.md</p>
+  <p><strong>S1-S3 Squeeze</strong>: S1 日線 squeeze / S2 質量 ≥ 0.6 / S3 持續 ≥ 3 日</p>
+  <p><strong>S4-S7 ATR 分解</strong>: S4 趨勢 ATR 強 (snr>2) / S5 噪音 ATR 高 (snr<0.5) / S6 結構性收縮 / S7 結構性擴張</p>
+  <p><strong>S8-S11 VCP + Follow</strong>: S8 籌碼集中 / S9 VCP 結構 / S10 VCP 量縮 / S11 突破跟進 ≥ 0.5</p>
+  <p><strong>S12 失敗模式</strong>: noisy_squeeze / weak_follow_through — 入場 cap 0.4</p>
+  <p><strong>5 種 Setup</strong>: mtf_squeeze_fire 0.95 / confirmed_vcp_breakout 0.9 / clean_trend_expansion 0.7 / genuine_squeeze_forming 0.55 / no_clear_setup 0.25</p>`;
+}
+
+export const volatilityAdapter = {
+  id: 'AS-03-VOL',
+  name: '波動率與市場結構收縮擴張 (Volatility)',
+  version: '1.0.0',
+  description: '用 12 條 rule-based 算法 (S1-S12) 檢測 Squeeze + ATR 分解 + 失敗模式',
+  inputs: [
+    { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
+    { key: 'period', label: '時間週期', type: 'select', options: [{ value: '1d', label: '日線' }, { value: '1w', label: '週線' }], default: '1d' },
+    { key: 'dataWindowDays', label: '取數據日數', type: 'number', default: 100, min: 80, max: 500 },
+  ],
+  analyze: analyzeVolatility,
+  renderResult: renderVolatilityResult,
+  getHelp: getVolatilityHelp,
 };
 
 // =============================================================================

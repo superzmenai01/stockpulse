@@ -80,6 +80,41 @@ export const DEFAULT_VOLUME_PRICE_CONFIG: VolumePriceConfig = {
 };
 
 /**
+ * Volatility module config (大少 2026-08-07 — Module 6 v1.0.0)
+ *
+ * 對應 docx `docs/演算法概念SPECS/06波動率與市場結構收縮擴張檢測法.docx` v2.0 spec
+ * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-06-VOLATILITY.md`
+ *
+ * 簡化 v1.0 (testing page 唔支援 weekly + market data, daily only):
+ *   - Squeeze (BB vs KC) 為主軸
+ *   - ATR 分解 (Trend + Noise)
+ *   - 3 種失敗模式 (簡化 5→3 種)
+ */
+export interface VolatilityConfig {
+  bbPeriod: number;                // 20 — Bollinger Band 週期
+  bbStd: number;                   // 2.0 — BB 標準差倍數
+  kcPeriod: number;                // 20 — Keltner Channel 週期
+  kcAtrMult: number;               // 1.5 — KC ATR 倍數
+  atrPeriod: number;               // 14 — ATR 週期
+  squeezeMinDuration: number;      // 3 — Squeeze 最少持續日數
+  followThroughDays: number;       // 5 — 突破後跟進檢測天數
+  vcpTolerancePct: number;         // 0.02 — VCP 高低點遞減容忍度 (2%)
+  vcpMinWindows: number;           // 2 — VCP 最少需要幾個高低點對
+}
+
+export const DEFAULT_VOLATILITY_CONFIG: VolatilityConfig = {
+  bbPeriod: 20,
+  bbStd: 2.0,
+  kcPeriod: 20,
+  kcAtrMult: 1.5,
+  atrPeriod: 14,
+  squeezeMinDuration: 3,
+  followThroughDays: 5,
+  vcpTolerancePct: 0.02,
+  vcpMinWindows: 2,
+};
+
+/**
  * Enable flags (大少 #10809 — D019)
  *
  * maAlignment = core mandatory (always true, 唔可以 disable)
@@ -237,6 +272,7 @@ export interface CycleConfig {
   hlStructure: HLStructureConfig;
   trendline: TrendlineConfig;
   indicators: IndicatorsConfig;
+  volatility: VolatilityConfig;
   enableFlags: EnableFlags;
 }
 
@@ -275,5 +311,6 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = {
   hlStructure: DEFAULT_HL_STRUCTURE_CONFIG,
   trendline: DEFAULT_TRENDLINE_CONFIG,
   indicators: DEFAULT_INDICATORS_CONFIG,
+  volatility: DEFAULT_VOLATILITY_CONFIG,
   enableFlags: DEFAULT_ENABLE_FLAGS,
 };
