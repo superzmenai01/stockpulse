@@ -269,6 +269,19 @@
 
 ---
 
+## 🎛️ Default Values (2026-08-07 更新)
+
+| 參數 | Default | 說明 |
+|------|---------|------|
+| `minPairs` | **3** (高質量,需要 6 alternating) | 唔再降為 2 (會降精度) |
+| `dataWindowDays` (UI) | **300** 日 (足夠 cover 3 pairs) | 唔再用 100 日 (noise 大,alternating 唔夠) |
+| `dataWindowDays` (UI) `min` | **90** 日 | 防止 user 設太少 |
+| Graceful handle | 仍 keep (alternated < 6 返 SIDEWAYS 0.5) | 處理 300 日都唔夠嘅罕見 case |
+
+**User hint**: 如要更精準 verdict,建議取 ≥ 300 日 K 線 (預設) 或 500+ 日。
+
+---
+
 ## 🚧 Future Plans (唔包 v0.1.0)
 
 1. **同 EW (Elliott Wave) 整合** — Module 2 嘅 peaks/troughs 直接餵畀 `calculateElliottWave`,做更穩嘅 1-8 label (取代而家固定 threshold 嘅 ZigZag)

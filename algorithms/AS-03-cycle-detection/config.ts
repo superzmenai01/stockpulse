@@ -157,7 +157,7 @@ export interface HLStructureConfig {
 }
 
 export const DEFAULT_HL_STRUCTURE_CONFIG: HLStructureConfig = {
-  minPairs: 2,             // 2026-08-07 — 由 3 改 2 (real-world 100 日 K 線 noise 大,3 pairs 6 alternating 太嚴)
+  minPairs: 3,             // 2026-08-07 — 改返 3 (高質量,需要 6 個 alternating)
   baseWindow: 5,
   tolerancePct: 0.015,
 

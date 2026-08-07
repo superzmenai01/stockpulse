@@ -1493,7 +1493,7 @@ function allStrictlyDecreasing(arr, startIdx, length) {
 // Spec doc: ~/stockpulse/docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md
 
 const DEFAULT_HL_STRUCTURE_CONFIG = {
-  minPairs: 2,             // 2026-08-07 — 由 3 改 2 (real-world 100 日 K 線 noise 大,3 pairs 6 alternating 太嚴)
+  minPairs: 3,             // 2026-08-07 — 改返 3 (高質量,需要 6 個 alternating)
   baseWindow: 5,
   tolerancePct: 0.015,
   enableAtrWindow: true,
@@ -2122,9 +2122,9 @@ export const hlStructureAdapter = {
       key: 'dataWindowDays',
       label: '取數據日數',
       type: 'number',
-      default: 100,
-      min: 60,
-      max: 500,
+      default: 300,             // 2026-08-07 — 由 100 改 300 (足夠 3 pairs = 6 alternating 高質量判定)
+      min: 90,                  // 2026-08-07 — 由 60 改 90 (最少 90 日先夠 alternating 結構)
+      max: 1000,
     },
   ],
   analyze: analyzeHLStructure,
