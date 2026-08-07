@@ -157,6 +157,11 @@ class KlineCache:
         data = None
         last_error = None
         for attempt in range(2):
+            # 大少 #11099 (2026-08-07): OpenD qfq 復權對拆股前早期數據有 bug
+            # (例 HK.00700 2006-07-24 返 open=-20.88 負值)。OpenD autype='none'
+            # 對 HK.00700 完全唔 work (hang timeout),所以 keep qfq fetch。
+            # Defensive: 喺 _fetch_klines 過濾負值/極端 close 嘅 row (skip 不入 cache)。
+            # 影響: HK.00700 早期 (2006-2014 拆股前) 唔見咗,但拆股後 (2014+) 數據正常。
             ret, data, _ = ctx.request_history_kline(
                 code=code, ktype=ktype, autype='qfq',
                 max_count=max_count, start=start, end=end,
@@ -180,6 +185,7 @@ class KlineCache:
             return []
 
         klines = []
+        skipped_invalid = 0
         for _, row in data.iterrows():
             # 大少 #8573: normalize time 為 date-only
             time_str = str(row['time_key'])
@@ -187,14 +193,41 @@ class KlineCache:
                 time_str = time_str.split(' ')[0]
             elif 'T' in time_str:
                 time_str = time_str.split('T')[0]
+            try:
+                o = float(row['open'])
+                h = float(row['high'])
+                l = float(row['low'])
+                c = float(row['close'])
+                v = int(row['volume'])
+            except (TypeError, ValueError) as e:
+                skipped_invalid += 1
+                logger.warning(
+                    f"KLineCache skip invalid row {code} {time_str}: {e}"
+                )
+                continue
+            # 大少 #11099 (2026-08-07): OpenD qfq 復權對拆股前早期數據有 bug
+            # (例 HK.00700 2006-07-24 返 open=-20.88)。Defensive filter 跳過
+            # 任何 OHLC 為負值嘅 row (唔入 cache, 唔返 response)。
+            # 影響: HK.00700 拆股前 2006-2014 數據會被 filter,但拆股後正常。
+            if o < 0 or h < 0 or l < 0 or c < 0:
+                skipped_invalid += 1
+                logger.warning(
+                    f"KLineCache skip negative OHLC {code} {time_str}: "
+                    f"o={o}, h={h}, l={l}, c={c} (OpenD qfq 復權 bug)"
+                )
+                continue
             klines.append({
                 'time': time_str,
-                'open': float(row['open']),
-                'high': float(row['high']),
-                'low': float(row['low']),
-                'close': float(row['close']),
-                'volume': int(row['volume']),
+                'open': o,
+                'high': h,
+                'low': l,
+                'close': c,
+                'volume': v,
             })
+        if skipped_invalid:
+            logger.info(
+                f"KLineCache {code} period={period}: filtered {skipped_invalid} invalid rows"
+            )
         return klines
 
     @staticmethod
