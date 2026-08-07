@@ -845,87 +845,140 @@ function renderUsageGuideMA(verdict) {
 }
 
 // ===== Chart Overlay (testing page contract) =====
-// 喺 chart 上面加 MA5/MA10/MA60 三條 price line (跟主 web app ChartContainer.tsx default 顏色)
-// 註: 完整 MA 序列 (historical line) 需要 re-compute, 暫時 render 當前 level
-// 2026-08-07 — 大少要求 3 條 MA 線, 加 MA60; 移除 silent catch, 改 console.error visible
+// 喺 chart 上面加 MA5/MA10/MA60 三條 trend line (跟股價走嘅斜線, 唔係水平價線)
+// 2026-08-07 — 大少要求 3 條 MA 線 (trend line 形式, 唔係 horizontal price line)
 // 2026-08-07 — Bug fix: testing page 嘅 contract 叫 renderChartOverlay, 唔好叫 renderMAChartOverlay,
 // 否則 testing page 嘅 `currentAdapter.renderChartOverlay` check 會 false, 永遠唔 invoke
+// 2026-08-07 — v2: 由 horizontal priceLine → lineSeries (re-compute MA 歷史), 跟大少示範圖
+//
+// Helper: normalize kline time 到 lightweight-charts 嘅 seconds epoch
+function _maNormalizeTime(t) {
+  if (typeof t === 'number') {
+    return t > 1e12 ? Math.floor(t / 1000) : t;  // ms → s
+  }
+  if (typeof t === 'string') {
+    return Math.floor(new Date(t).getTime() / 1000);  // ISO → s
+  }
+  return null;
+}
+
+// Helper: 計 MA 歷史 series (同 ma-alignment.ts 嘅 avgClose 一樣)
+// period = 5 / 10 / 60
+// 頭 period-1 個 point value = null (未夠 data 計 MA)
+function _computeMASeries(klines, period) {
+  const out = [];
+  for (let i = 0; i < klines.length; i++) {
+    const time = _maNormalizeTime(klines[i].time ?? klines[i].timestamp ?? klines[i].date);
+    if (time == null) continue;
+    if (i < period - 1) {
+      out.push({ time, value: null });
+      continue;
+    }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      sum += klines[j].close;
+    }
+    out.push({ time, value: sum / period });
+  }
+  // 確保 sorted by time + unique
+  out.sort((a, b) => a.time - b.time);
+  const dedup = [];
+  for (let i = 0; i < out.length; i++) {
+    if (i === 0 || out[i].time !== out[i - 1].time) dedup.push(out[i]);
+  }
+  return dedup;
+}
+
 export function renderChartOverlay(verdict, klines, chartRefs) {
-  if (!chartRefs || !chartRefs.chart || !chartRefs.candleSeries) {
-    console.warn('[renderChartOverlay] chartRefs 缺失:', { chartRefs });
+  if (!chartRefs || !chartRefs.chart) {
+    console.warn('[renderChartOverlay] chartRefs.chart 缺失:', { chartRefs });
     return;
   }
   if (!verdict || !verdict.meta) {
     console.warn('[renderChartOverlay] verdict 缺失');
     return;
   }
-
-  const ma5 = verdict.meta.latestMA5;
-  const ma10 = verdict.meta.latestMA10;
-  const ma60 = verdict.meta.latestMA60;
-
-  console.log('[renderChartOverlay] Adding MA lines:', { ma5, ma10, ma60 });
-
-  const series = chartRefs.candleSeries;
-  if (!series || typeof series.createPriceLine !== 'function') {
-    console.error('[renderChartOverlay] candleSeries 冇 createPriceLine method, version 可能唔啱');
+  if (!Array.isArray(klines) || klines.length === 0) {
+    console.warn('[renderChartOverlay] klines 缺失或空');
     return;
   }
 
-  // 移除舊 MA lines (如果之前 render 過)
-  if (chartRefs.priceLines) {
-    for (const key of Object.keys(chartRefs.priceLines)) {
-      try { series.removePriceLine(chartRefs.priceLines[key]); } catch (e) { /* ignore */ }
-    }
-  }
-  chartRefs.priceLines = {};
+  const ma5Latest = verdict.meta.latestMA5;
+  const ma10Latest = verdict.meta.latestMA10;
+  const ma60Latest = verdict.meta.latestMA60;
 
-  // 加 MA5 (紅)
-  if (ma5 != null && Number.isFinite(ma5)) {
-    try {
-      chartRefs.priceLines.ma5 = series.createPriceLine({
-        price: ma5,
-        color: '#FF6B6B',  // 紅
-        lineWidth: 1,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: 'MA5 ' + ma5.toFixed(2),
-      });
-    } catch (e) {
-      console.error('[renderChartOverlay] MA5 createPriceLine 失敗:', e);
-    }
+  console.log('[renderChartOverlay] Adding MA trend lines, latest:', {
+    ma5: ma5Latest, ma10: ma10Latest, ma60: ma60Latest,
+  });
+
+  const chart = chartRefs.chart;
+  if (typeof chart.addLineSeries !== 'function') {
+    console.error('[renderChartOverlay] chart 冇 addLineSeries method, lightweight-charts version 可能太舊');
+    return;
   }
 
-  // 加 MA10 (青)
-  if (ma10 != null && Number.isFinite(ma10)) {
-    try {
-      chartRefs.priceLines.ma10 = series.createPriceLine({
-        price: ma10,
-        color: '#4ECDC4',  // 青
-        lineWidth: 1,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: 'MA10 ' + ma10.toFixed(2),
-      });
-    } catch (e) {
-      console.error('[renderChartOverlay] MA10 createPriceLine 失敗:', e);
+  // 移除舊 MA line series (如果之前 render 過)
+  if (chartRefs.maLineSeries) {
+    for (const key of Object.keys(chartRefs.maLineSeries)) {
+      try { chart.removeSeries(chartRefs.maLineSeries[key]); } catch (e) { /* ignore */ }
     }
   }
+  chartRefs.maLineSeries = {};
 
-  // 加 MA60 (藍) — 2026-08-07 大少要求 3 條 MA 線
-  if (ma60 != null && Number.isFinite(ma60)) {
-    try {
-      chartRefs.priceLines.ma60 = series.createPriceLine({
-        price: ma60,
-        color: '#45B7D1',  // 藍
-        lineWidth: 1,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: 'MA60 ' + ma60.toFixed(2),
-      });
-    } catch (e) {
-      console.error('[renderChartOverlay] MA60 createPriceLine 失敗:', e);
-    }
+  // 計 MA 歷史 series
+  const ma5Series = _computeMASeries(klines, 5);
+  const ma10Series = _computeMASeries(klines, 10);
+  const ma60Series = _computeMASeries(klines, 60);
+
+  console.log('[renderChartOverlay] MA series points:', {
+    ma5: ma5Series.length,
+    ma10: ma10Series.length,
+    ma60: ma60Series.length,
+  });
+
+  // MA5 (紅) — 短期趨勢
+  try {
+    const s = chart.addLineSeries({
+      color: '#FF6B6B',
+      lineWidth: 2,
+      title: 'MA5',
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    s.setData(ma5Series);
+    chartRefs.maLineSeries.ma5 = s;
+  } catch (e) {
+    console.error('[renderChartOverlay] MA5 addLineSeries 失敗:', e);
+  }
+
+  // MA10 (青) — 中短期趨勢
+  try {
+    const s = chart.addLineSeries({
+      color: '#4ECDC4',
+      lineWidth: 2,
+      title: 'MA10',
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    s.setData(ma10Series);
+    chartRefs.maLineSeries.ma10 = s;
+  } catch (e) {
+    console.error('[renderChartOverlay] MA10 addLineSeries 失敗:', e);
+  }
+
+  // MA60 (藍) — 中長期趨勢
+  try {
+    const s = chart.addLineSeries({
+      color: '#45B7D1',
+      lineWidth: 2,
+      title: 'MA60',
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    s.setData(ma60Series);
+    chartRefs.maLineSeries.ma60 = s;
+  } catch (e) {
+    console.error('[renderChartOverlay] MA60 addLineSeries 失敗:', e);
   }
 }
 
