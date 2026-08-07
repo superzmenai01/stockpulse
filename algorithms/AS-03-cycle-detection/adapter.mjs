@@ -1267,10 +1267,179 @@ export function renderVolumeResult(verdict) {
         <ul>${matchedRulesHtml}</ul>
       </div>
 
+      ${renderDetailedExplanationVolume(verdict)}
+      ${renderStrategyAdviceVolume(verdict)}
+      ${renderUsageGuideVolume(verdict)}
+
       <details class="meta-details">
         <summary>🔧 配置（debug 用）</summary>
         <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
       </details>
+    </div>
+  `;
+}
+
+// ===== 詳細解讀 section (VolumePrice) =====
+// 大少 #11056 — 永久 rule,所有 Module 都要有 3 個 sections
+function renderDetailedExplanationVolume(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const matchedRules = verdict.meta?.matchedRules || [];
+  const signal = verdict.meta.signal || 'NEUTRAL';
+
+  // Signal label
+  const signalExplain = {
+    'CONFIRM': '量能確認 — 成交量支持你嘅持倉方向, 信號可靠',
+    'DISCONFIRM': '量能反對 — 成交量反對你嘅持倉方向, 要小心',
+    'NEUTRAL': '量能中性 — 成交量無明確支持或反對, 唔好單靠量能決定',
+  }[signal] || signal;
+
+  return `
+    <div class="detailed-explanation">
+      <h4>📖 詳細解讀 (逐個 field 點樣睇)</h4>
+      <table class="explain-table">
+        <tr><td class="field-name">📊 state (週期類型)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '量價齊升, 上升趨勢確認' : verdict.state === 'DOWN' ? '量能配合下跌, 趨勢向下確認' : verdict.state === 'TRANSITION' ? '量價背馳, 短期可能反轉' : '量能中性, 無明確方向'}</td></tr>
+        <tr><td class="field-name">📡 signal (量能訊號)</td><td>${signalExplain}</td></tr>
+        <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值, 配合其他指標 confirm' : '🔴 低信心 — 信唔過'}</td></tr>
+        <tr><td class="field-name">📈 Vol MA5 (5 日均量)</td><td>${verdict.meta.latestVolMA5 ?? 'N/A'} — 短期平均成交量, 對應短期股價活動</td></tr>
+        <tr><td class="field-name">📈 Vol MA20 (20 日均量)</td><td>${verdict.meta.latestVolMA20 ?? 'N/A'} — 中期平均成交量, 對應中期股價活動</td></tr>
+        <tr><td class="field-name">🌊 OBV (能量潮)</td><td>${verdict.meta.latestOBV ?? 'N/A'} — On Balance Volume, 累積量能, 升 = 買入動力強 / 跌 = 賣出動力強</td></tr>
+        <tr><td class="field-name">📏 Max Spread (最大波幅)</td><td>${((verdict.meta.maxSpreadPct || 0) * 100).toFixed(2)}% — 最近 5 日最高最低差, &lt; 2% = 收縮 / &gt; 3% = 擴張</td></tr>
+        ${verdict.meta.obvCorrelation !== null && verdict.meta.obvCorrelation !== undefined
+          ? `<tr><td class="field-name">🔗 OBV vs close 相關性</td><td>${verdict.meta.obvCorrelation.toFixed(3)} — ${verdict.meta.obvCorrelation < -0.5 ? '負相關 (量能背馳, 警號)' : verdict.meta.obvCorrelation > 0.5 ? '正相關 (量能配合, 趨勢確認)' : '中性相關 (量能無明確配合)'}</td></tr>`
+          : ''}
+        <tr><td class="field-name">🎯 觸發 rules (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發' : matchedRules.map(r => `<strong>${r}</strong> — ${renderVolumeRuleExplain(r)}`).join(' / ')}</td></tr>
+        <tr><td class="field-name">💪 Rule 強度</td><td>${matchedRules.some(r => ['K', 'L', 'M', 'S'].includes(r)) ? '強 (K/L/M/S)' : matchedRules.some(r => r === 'T') ? '弱 (T)' : '中 (N/O/P/Q/R)'}</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+// 10 條 rule K-T 嘅用人話解釋
+function renderVolumeRuleExplain(rid) {
+  const explains = {
+    'K': '量價齊升 — 連續 5 日 close 同 volume 都升, 升勢有量能支持',
+    'L': '量價背馳見頂 — 價升但量縮, 升到冇人跟, 小心見頂',
+    'M': '放量下跌 — 連續 5 日 close 跌 + volume 升, 跌勢有量能確認',
+    'N': '縮量下跌拋售衰竭 — 連續 5 日 close 跌 + volume 跌, 拋售力量弱, 可能見底',
+    'O': 'OBV 創新高 — 能量潮破頂, 買入動力強',
+    'P': 'OBV 創新低 — 能量潮破底, 賣出動力強',
+    'Q': '縮量橫行整理 — 收縮 + 縮量, 市場等方向',
+    'R': '放量震盪 — 擴張 + 放量, 醞釀突破 (上或下)',
+    'S': 'OBV vs close 量能背馳 — OBV 同 close 走勢相反, 警號',
+    'T': '量能不濟 — 5 日均量 < 20 日均量 × 0.5, 市場淡靜',
+  };
+  return explains[rid] || rid;
+}
+
+// ===== 策略建議 section (VolumePrice) =====
+function renderStrategyAdviceVolume(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const isHighConf = verdict.confidence >= 0.7;
+  const isLowConf = verdict.confidence < 0.5;
+  const signal = verdict.meta.signal || 'NEUTRAL';
+  const matchedRules = verdict.meta?.matchedRules || [];
+
+  // 4 個 state + signal 嘅策略組合
+  let stateAdvice = '';
+  if (verdict.state === 'UP' && signal === 'CONFIRM') {
+    stateAdvice = `
+      <div class="strategy-up">
+        <h4>🟢 上升 + 量能確認 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 順勢持倉, 量能確認支持上升, 可以慢慢加倉</p>
+        <p><strong>訊號確認:</strong> K rule (量價齊升) 或 O rule (OBV 新高) 觸發, 量能配合價升</p>
+        <p><strong>風險管理:</strong> 留意 L rule (量價背馳見頂), 如果出現就要收緊止損, 升到冇人跟就危險</p>
+        <p><strong>進場策略:</strong> 等回調到 support 附近, 量能縮 (T rule 失效) 就係低吸機會</p>
+      </div>
+    `;
+  } else if (verdict.state === 'UP' && signal === 'DISCONFIRM') {
+    stateAdvice = `
+      <div class="strategy-warning">
+        <h4>🟢 上升 + 量能反對 ⚠️ · 策略建議</h4>
+        <p><strong>基本動作:</strong> 持倉但要小心, 量能反對代表升勢無真支持</p>
+        <p><strong>警號:</strong> S rule (量能背馳) 或 L rule (見頂背馳) 觸發, 升勢可能逆轉</p>
+        <p><strong>風險管理:</strong> 收緊止損, 留意 close 跌穿最近 support 就要走人</p>
+        <p><strong>特別注意:</strong> 價升量縮 = 假突破警號, 唔好加倉</p>
+      </div>
+    `;
+  } else if (verdict.state === 'DOWN' && signal === 'CONFIRM') {
+    stateAdvice = `
+      <div class="strategy-down">
+        <h4>🔴 下跌 + 量能確認 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 避開 / 減倉, 量能確認下跌, 唔好撈底</p>
+        <p><strong>訊號確認:</strong> M rule (放量下跌) 或 P rule (OBV 新低) 觸發, 量能配合價跌</p>
+        <p><strong>風險管理:</strong> 如果持有多單, 立即走人, 唔好等反彈</p>
+        <p><strong>進場策略:</strong> 等見底訊號 (N rule 縮量拋售衰竭) 先考慮撈底</p>
+      </div>
+    `;
+  } else if (verdict.state === 'DOWN' && signal === 'DISCONFIRM') {
+    stateAdvice = `
+      <div class="strategy-warning">
+        <h4>🔴 下跌 + 量能反對 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 跌勢無量, 可能見底</p>
+        <p><strong>警號:</strong> N rule (縮量拋售衰竭) 觸發, 拋售力量弱</p>
+        <p><strong>進場策略:</strong> 等確認見底 (例如連續 2-3 日陽燭) 再考慮撈底</p>
+        <p><strong>風險:</strong> 跌勢無量都可能係下跌中繼, 唔好太早撈底</p>
+      </div>
+    `;
+  } else if (verdict.state === 'TRANSITION') {
+    stateAdvice = `
+      <div class="strategy-transition">
+        <h4>🟣 反轉訊號 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 暫時 hold, 等下個確認信號</p>
+        <p><strong>訊號確認:</strong> L rule (見頂背馳) 或 S rule (量能背馳) 觸發, 量能警號</p>
+        <p><strong>進場策略:</strong> 唔好喺 TRANSITION 狀態下新單落場, 等 5-7 日新方向確認</p>
+        <p><strong>風險:</strong> 量能背馳可以係假警號, 確認返之前嘅趨勢可能再返嚟</p>
+      </div>
+    `;
+  } else { // SIDEWAYS
+    stateAdvice = `
+      <div class="strategy-sideways">
+        <h4>🟡 橫行 / 量能中性 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 等方向, 量能中性代表無明確支持</p>
+        <p><strong>訊號確認:</strong> Q rule (縮量橫行) / R rule (放量震盪) / T rule (量能不濟) 觸發</p>
+        <p><strong>進場策略:</strong> 唔好喺橫行中間進場, 等放量突破 (R rule) 確認方向先做</p>
+        <p><strong>特別注意:</strong> R rule 觸發代表醞釀突破, 密切留意下個交易日方向</p>
+    `;
+  }
+
+  // 信心調整建議
+  let confidenceNote = '';
+  if (isHighConf) {
+    confidenceNote = `<p class="confidence-high">💪 信心指數 ${confidencePct}% (高) — 判定可靠, 可以作參考落單</p>`;
+  } else if (isLowConf) {
+    confidenceNote = `<p class="confidence-low">⚠️ 信心指數 ${confidencePct}% (低) — 唔好信, 等下一個更明顯訊號</p>`;
+  } else {
+    confidenceNote = `<p class="confidence-med">🤔 信心指數 ${confidencePct}% (中) — 有參考價值, 但要配合其他指標 confirm</p>`;
+  }
+
+  return `
+    <div class="strategy-advice">
+      <h4>🎯 策略建議 (點做)</h4>
+      ${stateAdvice}
+      ${confidenceNote}
+      <p class="caveat">⚠️ 觸發 ${matchedRules.length} 條 rule, signal = ${signal}, 每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
+    </div>
+  `;
+}
+
+// ===== 點用 + 點睇 guide section (VolumePrice) =====
+function renderUsageGuideVolume(verdict) {
+  return `
+    <div class="usage-guide">
+      <h4>💡 點用呢個結果 (點睇)</h4>
+      <ol>
+        <li><strong>先睇 state 同 signal</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=TRANSITION) + signal 標籤 (綠 CONFIRM / 紅 DISCONFIRM / 橙 NEUTRAL), 呢個係最概要嘅判斷</li>
+        <li><strong>睇「觸發 rule」嗰行</strong> — 例如「K」= 量價齊升, 「L」= 見頂背馳, 「M」= 放量下跌。每條 rule 都有具體意思, 睇「📖 詳細解讀」section</li>
+        <li><strong>睇 Vol MA5 vs Vol MA20</strong> — MA5 &gt; MA20 = 近期量能擴張 (市場熱) / MA5 &lt; MA20 = 近期量能收縮 (市場淡)</li>
+        <li><strong>睇 OBV 方向</strong> — OBV 升 = 買入動力強 / OBV 跌 = 賣出動力強 / OBV 創新高 = O rule / OBV 創新低 = P rule</li>
+        <li><strong>留意 Max Spread</strong> — &lt; 2% = 市場靜 / &gt; 3% = 市場動, 配合 Q/R rule 一齊睇</li>
+        <li><strong>留意 OBV vs close 相關性</strong> — 負相關 &lt; -0.5 = 量能背馳 (S rule 警號)</li>
+        <li><strong>signal 點解讀</strong> — CONFIRM = 量能支持你嘅持倉方向 / DISCONFIRM = 量能反對 / NEUTRAL = 量能無明確訊號</li>
+        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
+        <li><strong>配合其他 module 一齊睇</strong> — VolumePrice 專門睇量能, 同 MA alignment (睇趨勢) / HL structure (睇形態) / Trendline (睇支撐壓力) 配合用, 4 個 module 一齊睇先至穩陣</li>
+        <li><strong>永遠配合風險管理</strong> — 呢個 module 嘅策略建議只係 reference, 落單前要自己再睇下基本面 / 消息面 / 板塊走勢</li>
+      </ol>
+      <p class="caveat">⚠️ 呢個 module 係輔助工具, 唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用, 唔好單靠一個 algorithm 落單。</p>
     </div>
   `;
 }
@@ -1572,10 +1741,163 @@ export function renderSlopeResult(verdict) {
         <ul>${matchedRulesHtml}</ul>
       </div>
 
+      ${renderDetailedExplanationSlope(verdict)}
+      ${renderStrategyAdviceSlope(verdict)}
+      ${renderUsageGuideSlope(verdict)}
+
       <details class="meta-details">
         <summary>🔧 配置（debug 用）</summary>
         <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
       </details>
+    </div>
+  `;
+}
+
+// ===== 詳細解讀 section (SlopeMomentum) =====
+// 大少 #11056 — 永久 rule,所有 Module 都要有 3 個 sections
+function renderDetailedExplanationSlope(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const matchedRules = verdict.meta?.matchedRules || [];
+  const s5 = (verdict.meta.latestSlopeMA5 || 0) * 100;
+  const s10 = (verdict.meta.latestSlopeMA10 || 0) * 100;
+  const s60 = (verdict.meta.latestSlopeMA60 || 0) * 100;
+
+  // Slope value 解讀
+  const slopeLabel = (s) => s > 0.5 ? '明顯上升 (≥+0.5%)'
+    : s > 0.1 ? '微升 (+0.1% 至 +0.5%)'
+    : s > -0.1 ? '橫行 (-0.1% 至 +0.1%)'
+    : s > -0.5 ? '微跌 (-0.5% 至 -0.1%)'
+    : '明顯下跌 (≤-0.5%)';
+
+  return `
+    <div class="detailed-explanation">
+      <h4>📖 詳細解讀 (逐個 field 點樣睇)</h4>
+      <table class="explain-table">
+        <tr><td class="field-name">📊 state (週期類型)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '短期 / 中期 / 長期斜率向上, 趨勢確認' : verdict.state === 'DOWN' ? '短期 / 中期 / 長期斜率向下, 趨勢向下' : verdict.state === 'TRANSITION' ? '短期斜率轉向 (M7/M8), 趨勢可能反轉' : '斜率接近 0, 動能減弱'}</td></tr>
+        <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值, 配合其他指標 confirm' : '🔴 低信心 — 信唔過'}</td></tr>
+        <tr><td class="field-name">📈 Slope MA5 (短期, 5 日)</td><td>${s5.toFixed(3)}% — ${slopeLabel(s5)} — 短期動能, 對應短線交易</td></tr>
+        <tr><td class="field-name">📈 Slope MA10 (中期, 10 日)</td><td>${s10.toFixed(3)}% — ${slopeLabel(s10)} — 中期動能, 對應中線交易</td></tr>
+        <tr><td class="field-name">📈 Slope MA60 (長期, 20 日)</td><td>${s60.toFixed(3)}% — ${slopeLabel(s60)} — 長期動能, 對應長線 / 趨勢</td></tr>
+        <tr><td class="field-name">🎯 觸發 rules (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發' : matchedRules.map(r => `<strong>${r}</strong> — ${renderSlopeRuleExplain(r)}`).join(' / ')}</td></tr>
+        <tr><td class="field-name">💪 Rule 強度</td><td>${matchedRules.some(r => ['M1', 'M2', 'M7', 'M8'].includes(r)) ? '強 (M1/M2/M7/M8)' : matchedRules.some(r => ['M9', 'M10'].includes(r)) ? '弱 (M9/M10)' : '中 (M3-M6)'}</td></tr>
+        <tr><td class="field-name">⏱️ 時間框架</td><td>短期 (M1/M2/M7/M8/M9/M10) = 5 日 / 中期 (M3/M4) = 10 日 / 長期 (M5/M6) = 20 日</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+// 10 條 rule M1-M10 嘅用人話解釋
+function renderSlopeRuleExplain(rid) {
+  const explains = {
+    'M1': 'MA5 短期加速上升 — 短期動能爆發, 升勢強勁',
+    'M2': 'MA5 短期加速下跌 — 短期動能急跌, 跌勢強勁',
+    'M3': 'MA10 中期斜率上升 — 中期動能向上, 趨勢健康',
+    'M4': 'MA10 中期斜率下跌 — 中期動能向下, 趨勢轉弱',
+    'M5': 'MA60 長期斜率上升 — 長期趨勢向上, 大方向好',
+    'M6': 'MA60 長期斜率下跌 — 長期趨勢向下, 大方向差',
+    'M7': '短期斜率轉正 (由負轉正) — 短期動能轉強, 趨勢反轉點',
+    'M8': '短期斜率轉負 (由正轉負) — 短期動能轉弱, 趨勢反轉點',
+    'M9': '動能減弱 — |slope| 細, 短期動力不足, 等待新方向',
+    'M10': '動能加強 — |slope| 大, 短期動力強, 跟住落去就係突破',
+  };
+  return explains[rid] || rid;
+}
+
+// ===== 策略建議 section (SlopeMomentum) =====
+function renderStrategyAdviceSlope(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const isHighConf = verdict.confidence >= 0.7;
+  const isLowConf = verdict.confidence < 0.5;
+  const matchedRules = verdict.meta?.matchedRules || [];
+  const s5 = (verdict.meta.latestSlopeMA5 || 0) * 100;
+  const s10 = (verdict.meta.latestSlopeMA10 || 0) * 100;
+  const s60 = (verdict.meta.latestSlopeMA60 || 0) * 100;
+
+  let stateAdvice = '';
+  if (verdict.state === 'UP') {
+    stateAdvice = `
+      <div class="strategy-up">
+        <h4>🟢 上升動能 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 順勢持倉, 短期 / 中期 / 長期斜率都向上, 趨勢強</p>
+        <p><strong>訊號確認:</strong> ${matchedRules.includes('M1') ? 'M1 (短期加速) 觸發, 動能爆發中' : matchedRules.includes('M3') || matchedRules.includes('M5') ? 'M3/M5 (中長期斜率) 觸發, 趨勢健康' : '多條 rule 同時確認'}</p>
+        <p><strong>進場策略:</strong> 等回調到 MA5/MA10 附近 (短期 / 中期回歸) 再反彈入場, 唔好追高</p>
+        <p><strong>風險管理:</strong> 留意 M8 (短期斜率轉負) — 如果出現就係趨勢反轉先兆, 收緊止損</p>
+        <p><strong>特別注意:</strong> 短期動能可能會領先中長期, 留意短期斜率變化 (M7 轉正 / M8 轉負)</p>
+      </div>
+    `;
+  } else if (verdict.state === 'DOWN') {
+    stateAdvice = `
+      <div class="strategy-down">
+        <h4>🔴 下跌動能 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 避開 / 減倉, 短期 / 中期 / 長期斜率都向下, 趨勢弱</p>
+        <p><strong>訊號確認:</strong> ${matchedRules.includes('M2') ? 'M2 (短期加速) 觸發, 跌勢急' : matchedRules.includes('M4') || matchedRules.includes('M6') ? 'M4/M6 (中長期斜率) 觸發, 趨勢轉差' : '多條 rule 同時確認'}</p>
+        <p><strong>進場策略:</strong> 唔好撈底, 等 M7 (短期斜率轉正) 確認先考慮</p>
+      </div>
+    `;
+  } else if (verdict.state === 'TRANSITION') {
+    stateAdvice = `
+      <div class="strategy-transition">
+        <h4>🟣 反轉訊號 (M7/M8) · 策略建議</h4>
+        <p><strong>基本動作:</strong> 暫時 hold, 等下個確認信號</p>
+        <p><strong>訊號確認:</strong> M7 (短期斜率由負轉正) 或 M8 (短期斜率由正轉負) 觸發, 係趨勢反轉先兆</p>
+      </div>
+    `;
+  } else { // SIDEWAYS
+    stateAdvice = `
+      <div class="strategy-sideways">
+        <h4>🟡 動能減弱 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 等方向, 短期 / 中期斜率都接近 0, 動能不足</p>
+        <p><strong>訊號確認:</strong> M9 (動能減弱) 觸發, 短期 |slope| &lt; 0.1%</p>
+        <p><strong>進場策略:</strong> 唔好喺動能減弱時進場, 等 M1/M2 (短期加速) 或 M3-M6 (中長期斜率) 確認方向先做</p>
+        <p><strong>特別注意:</strong> 動能減弱可能係爆邊前嘅寂靜, 留意下個突破訊號</p>
+      </div>
+    `;
+  }
+
+  // 信心調整建議
+  let confidenceNote = '';
+  if (isHighConf) {
+    confidenceNote = `<p class="confidence-high">💪 信心指數 ${confidencePct}% (高) — 判定可靠, 可以作參考落單</p>`;
+  } else if (isLowConf) {
+    confidenceNote = `<p class="confidence-low">⚠️ 信心指數 ${confidencePct}% (低) — 唔好信, 等下一個更明顯訊號</p>`;
+  } else {
+    confidenceNote = `<p class="confidence-med">🤔 信心指數 ${confidencePct}% (中) — 有參考價值, 但要配合其他指標 confirm</p>`;
+  }
+
+  return `
+    <div class="strategy-advice">
+      <h4>🎯 策略建議 (點做)</h4>
+      ${stateAdvice}
+      ${confidenceNote}
+      <p class="caveat">⚠️ 觸發 ${matchedRules.length} 條 rule (短期 ${s5.toFixed(2)}% / 中期 ${s10.toFixed(2)}% / 長期 ${s60.toFixed(2)}%), 每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
+    </div>
+  `;
+}
+
+// ===== 點用 + 點睇 guide section (SlopeMomentum) =====
+function renderUsageGuideSlope(verdict) {
+  return `
+    <div class="usage-guide">
+      <h4>💡 點用呢個結果 (點睇)</h4>
+      <ol>
+        <li><strong>先睇 state 同信心</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=TRANSITION) 同信心百分比, 呢個係最概要嘅判斷</li>
+        <li><strong>睇「觸發 rule」嗰行</strong> — 例如「M1」= MA5 短期加速上升, 「M7」= 短期斜率轉正 (反轉點), 「M9」= 動能減弱</li>
+        <li><strong>睇 Slope MA5/MA10/MA60 三個值</strong> — 短期 / 中期 / 長期動能:
+          <ul>
+            <li>3 條 slope 都 &gt; 0 = 三個時間框架都向上, 強勢 UP</li>
+            <li>3 條 slope 都 &lt; 0 = 三個時間框架都向下, 強勢 DOWN</li>
+            <li>短期斜率領先中長期, 留意短期變化 (M7/M8 反轉點)</li>
+          </ul>
+        </li>
+        <li><strong>留意 Slope 數值</strong> — ≥+0.5% = 明顯上升 / +0.1 至 +0.5 = 微升 / ±0.1% = 橫行 / -0.5 至 -0.1 = 微跌 / ≤-0.5% = 明顯下跌</li>
+        <li><strong>留意 M7 (轉正) 同 M8 (轉負)</strong> — 呢 2 個係 TRANSITION 觸發 rule, 代表短期動能反轉, 趨勢可能改變方向</li>
+        <li><strong>留意 M1 (加速上升) 同 M2 (加速下跌)</strong> — 短期動能爆發, 跟住落去就係大波動</li>
+        <li><strong>留意 M9 (動能減弱)</strong> — 動能接近 0, 短期可能見頂 / 見底, 留意其他 module 確認</li>
+        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
+        <li><strong>配合其他 module 一齊睇</strong> — SlopeMomentum 專門睇動能, 同 MA alignment (睇趨勢) / VolumePrice (睇量能) / Trendline (睇支撐壓力) 配合用, 4 個 module 一齊睇先至穩陣</li>
+        <li><strong>永遠配合風險管理</strong> — 呢個 module 嘅策略建議只係 reference, 落單前要自己再睇下基本面 / 消息面 / 板塊走勢</li>
+      </ol>
+      <p class="caveat">⚠️ 呢個 module 係輔助工具, 唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用, 唔好單靠一個 algorithm 落單。</p>
     </div>
   `;
 }
