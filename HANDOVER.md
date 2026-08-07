@@ -210,6 +210,7 @@ def _compute_fetch_max_count(period):
 
 | 日期 | 動作 |
 |------|------|
+| 2026-08-07 | **MA chart overlay 完成** — MiniMax Code: testing page 嘅 K 線圖 render MA5/MA10/MA60 三條 trend line (跟股價走嘅斜線, 主流 trading app 風格). 由 `createPriceLine` (水平價線) 改 `addLineSeries` (re-compute MA 歷史 series). `_computeMASeries` skip header `period-1` 點避免 lightweight-charts 將 null 當 0. Function name `renderMAChartOverlay` → `renderChartOverlay` 跟 testing page 嘅 standard contract. 3 commits (`9d77021a` / `ec452c98` / `830927cc`). Tests 12/12 + 19/19 全部 pass. |
 | 2026-08-07 | **Module 2 (高低點結構法) v0.1.0 落地** — MiniMax Code: 18 步 v2.0 algorithm (modules/hl-structure.ts) + config (HLStructureConfig) + tests (12/12 pass) + adapter (`hlStructureAdapter` named export) + testing page integration (REGISTRY entry + `renderChartOverlay` contract) + spec doc (`MODULE-02-HL-STRUCTURE.md`) |
 | 2026-08-07 | **Testing page renderChartOverlay contract** — 通用 contract, 每個 adapter 自己 implement chart overlay (peaks/troughs markers + 箱體線 + 形態預警) |
 | 2026-08-06 | K-line cache gap-fill fix (3 fixes, 14/14 tests pass) |

@@ -1358,3 +1358,37 @@ Testing page 自動 discover + render。加新 algorithm 只需要：
 - Module 5/8 + VolumePrice/SlopeMomentum 都係 optional toggle，MA alignment core mandatory (D019)
 - Synthesizer default = expert-rules (D004 pending decision)
 - Backend emit labels（e.g.「上升勢」「下跌勢」）保持繁體/algorithm context，不強行轉普通話
+
+### § Testing Page Chart Overlay Contract (2026-08-07, 大少指示)
+
+Generic contract 畀 testing page 嘅 K 線圖加多 module 自己嘅 visual overlay (peaks/troughs / MA trend lines / pattern box)：
+
+```javascript
+// testing-page/testing-page.js line 476
+if (currentAdapter.renderChartOverlay) {
+  currentAdapter.renderChartOverlay(verdict, klines, chartRefs);
+}
+```
+
+`chartRefs` 結構 (testing-page.js line 601):
+```javascript
+{ chart, candleSeries, priceLines: {} }
+// chartRefs.maLineSeries (line series refs) — adapter 自己儲, framework 唔 hard-code
+```
+
+**Module 1 (MA alignment) 嘅 overlay (commit `830927cc`):**
+- **Trend lines (唔係水平價線)** — 大少要「跟股價走」嘅斜線, 主流 trading app 風格
+- 用 `chart.addLineSeries({ color, lineWidth: 2, lastValueVisible: true })` 加 3 條 line series:
+  - MA5: 紅 `#FF6B6B`
+  - MA10: 青 `#4ECDC4`
+  - MA60: 藍 `#45B7D1`
+- Re-compute MA 歷史 series (`_computeMASeries(klines, period)` in adapter.mjs) — 頭 `period-1` 個 point 直接 skip (唔 emit null, 避免 lightweight-charts 將 null 當 0 畫)
+- 跟 ma-alignment.ts 嘅 `avgClose` 一樣嘅算法, period = 5 / 10 / 60
+
+**Module 2 (高低點結構法) 嘅 overlay:** peaks/troughs markers + 箱體線 + 形態預警 banner (commit `4950de63`)
+
+**Permanent Rules:**
+- **Function name 必須叫 `renderChartOverlay`** (testing page 嘅 contract, 唔好 alias) — 之前 `renderMAChartOverlay` 命名錯咗導致 function 永遠 skip (commit `9d77021a`)
+- **Trend line 唔好水平價線** — 大少要 `addLineSeries` 跟股價走嘅斜線, 唔係 `createPriceLine` 嘅水平線
+- **Skip 唔夠 data 嘅 point, 唔好 emit null** — lightweight-charts v4.2.3 將 null 當 0 處理, 會拉到 y-axis 底部
+- 每個 module 自己 implement `renderChartOverlay`, framework 唔 hard-code 任何 algorithm 嘅 visual

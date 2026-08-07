@@ -88,12 +88,25 @@ H > A > B > F > G > C > D > default SIDEWAYS
 | Module | Status |
 |--------|--------|
 | Module 1: ma-alignment | ✅ v0.3.0 done (19/19 tests pass) |
-| Module 2: HL Structure | ⏳ skeleton placeholder verdict |
+| Module 2: HL Structure | ✅ v0.1.0 done (12/12 tests pass) — 2026-08-07 |
 | Module 3: Trendline | ⏳ skeleton placeholder verdict |
 | Module 4: Indicators | ⏳ skeleton placeholder verdict |
 | Module 5: Volume OBV | ⏳ skeleton placeholder verdict |
 | Module 6: Multi-TF | ⏳ orchestrator/multi-tf.ts skeleton |
 | Module 7: Synthesizer | ⏳ orchestrator/synthesize.ts skeleton |
+
+## 🎨 Chart Overlay (testing page contract, 2026-08-07)
+
+Module 1 (ma-alignment) 喺 testing page 嘅 K 線圖上面 render 3 條 MA trend line：
+- **MA5 紅 `#FF6B6B`** / **MA10 青 `#4ECDC4`** / **MA60 藍 `#45B7D1`**
+- 用 `chart.addLineSeries` 跟股價走嘅斜線 (唔係水平價線 — 大少要 trend line 風格, 主流 trading app 風格)
+- Re-compute MA 歷史 (`_computeMASeries` in adapter.mjs) — 同 ma-alignment.ts 嘅 `avgClose` 一樣
+- lineWidth 2, `lastValueVisible: true` (右邊顯示當前值)
+- Header `period-1` 個 point 直接 skip (避免 lightweight-charts 將 null 當 0 畫)
+
+Module 2 (HL Structure) 同時 render peaks/troughs markers + 箱體線 + 形態預警 banner.
+
+Function name 必須叫 `renderChartOverlay` (testing page contract).
 
 ## 🔄 已 Drop (v0.2.0 Kimi 算法)
 
@@ -108,5 +121,5 @@ H > A > B > F > G > C > D > default SIDEWAYS
 - `~/stockpulse/docs/research/AS-03-cycle-detection/RESEARCH_LOG.md` — Timeline + decisions
 - `~/stockpulse/algorithms/AS-03-cycle-detection/DECISIONS.md` — D001-D016 ADR
 
-**最後更新**: 2026-08-05 (大少 #10332 spec docs sync)
+**最後更新**: 2026-08-07 (Module 1 chart overlay + Module 2 v0.1.0 完成)
 **維護者**: 大少 + 我 (助手)
