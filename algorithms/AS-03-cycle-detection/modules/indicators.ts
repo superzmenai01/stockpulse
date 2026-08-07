@@ -12,8 +12,9 @@
 // - 勝率估算 + 歷史機會回顧
 // - 統一 cycle state 派生: buy→UP, sell→DOWN, hold→SIDEWAYS
 //
-// 跟 ma-alignment.ts / hl-structure.ts / trendline.ts / volume.ts / slope-momentum.ts
+// 跟 ma-alignment.ts / hl-structure.ts / trendline.ts / volume.ts
 // pattern 一致 (rule-based + additive confidence + list all matched rules)
+// 大少 2026-08-07 23:15 — slope-momentum.ts 暫時隱藏,Stage 1 done 最後先做返
 //
 // 永久 Rules:
 // - Rule-based + additive confidence (大少 #10097)

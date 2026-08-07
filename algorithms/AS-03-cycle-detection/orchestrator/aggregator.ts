@@ -16,9 +16,7 @@
 //             CONFIRM    → +10% (強化)
 //             DISCONFIRM → -30% (削弱)；如果 vol confidence 高 → 考慮改 TRANSITION
 //             NEUTRAL    → 唔影響
-//   Step 3 — SlopeMomentum verdict 影響 state:
-//             講 TRANSITION (high conf) → 改 TRANSITION
-//             強烈反對 ma-alignment state (high conf) → 改 TRANSITION
+//   Step 3 — 大少 2026-08-07 23:15 SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
 //   Step 4 — 其他 enabled peer modules (hl-structure / trendline / indicators) 暫時 skip (未實作)
 //
 // Handle null verdict:
@@ -70,7 +68,7 @@ export class Aggregator {
    * Expert-rules aggregate (大少 #10809 default):
    *   ma-alignment = base
    *   volume signal = CONFIRM/DISCONFIRM/NEUTRAL 調整 confidence
-   *   slope-momentum = TRANSITION/disagreement 時 override state
+   *   大少 2026-08-07 23:15 — slope-momentum 暫時隱藏,Stage 1 done 最後先做返
    */
   private expertRulesAggregate(input: AggregatorInput): AggregatorResult {
     const reasons: string[] = [];
@@ -128,24 +126,8 @@ export class Aggregator {
       }
     }
 
-    // === Step 3: SlopeMomentum verdict 影響 state ===
-    const slope = validVerdicts.find(v => v.moduleId === 'slope-momentum');
-    if (slope) {
-      if (slope.state === 'TRANSITION' && slope.confidence > 0.5) {
-        if (finalState !== 'TRANSITION') {
-          reasons.push(`Slope TRANSITION (high conf) → override → TRANSITION`);
-          finalState = 'TRANSITION';
-        } else {
-          reasons.push(`Slope agrees: TRANSITION`);
-        }
-      } else if (slope.state !== finalState && slope.confidence > 0.6) {
-        // Slope 強烈反對 ma-alignment → TRANSITION
-        reasons.push(`Slope says ${slope.state} (high conf) vs ma-alignment ${finalState} → TRANSITION`);
-        finalState = 'TRANSITION';
-      } else if (slope.state === finalState) {
-        reasons.push(`Slope agrees: ${finalState}`);
-      }
-    }
+    // === Step 3: 大少 2026-08-07 23:15 SlopeMomentum verdict 處理暫時隱藏 ===
+    //   等 Stage 1 全部 done 最後先做返,將來由 git history 拎返呢段 block
 
     // === Step 4: HTF verdict override ===
     if (input.htf && input.htf.confidence > 0.8) {

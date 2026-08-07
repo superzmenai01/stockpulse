@@ -33,15 +33,15 @@ export function rawCycleToState(raw: RawCycle): CycleState {
 export type SignalType = 'CONFIRM' | 'DISCONFIRM' | 'NEUTRAL';
 
 /**
- * 6 個 peer module IDs (大少 #10809 — 加 slope-momentum)
+ * 5 個 peer module IDs (大少 #10809 — 加 slope-momentum,大少 2026-08-07 23:15 隱藏)
  */
 export type CycleModuleId =
   | 'ma-alignment'
   | 'hl-structure'
   | 'trendline'
   | 'indicators'
-  | 'volume'
-  | 'slope-momentum';
+  | 'volume';
+//   | 'slope-momentum'  // 大少 2026-08-07 23:15 暫時隱藏,Stage 1 done 最後先做返
 
 /** 支援嘅 timeframe */
 export type Timeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';

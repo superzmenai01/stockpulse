@@ -2,7 +2,7 @@
 //
 // AS-03 均線系統週期斷法 — Testing Page Adapter
 //
-// 將 ma-alignment.ts / volume.ts / slope-momentum.ts 嘅算法 port 到 vanilla JS，
+// 將 ma-alignment.ts / volume.ts 嘅算法 port 到 vanilla JS，
 // 供 StockPulse Testing Page (~/stockpulse/testing-page/) 人手測試用。
 //
 // 統一 interface (Permanent Contract — 所有 AS-XX adapter 都要 implement):
@@ -12,15 +12,17 @@
 //   export function renderResult(verdict) → HTML string
 //   export function getHelp() → HTML string (optional)
 //
-// 三個 peer module adapters (大少 #10809):
+// 兩個 peer module adapters (大少 #10809):
 //   - 預設 exports (id/name/version/...) = ma-alignment adapter (保持 backward compat)
 //   - volumePriceAdapter = VolumePrice module adapter
-//   - slopeMomentumAdapter = SlopeMomentum module adapter
 //
 // Source of truth:
 //   - ~/stockpulse/algorithms/AS-03-cycle-detection/modules/ma-alignment.ts (v0.3.0) — 大少 #10297/#10299/#10301/#10317/#10332
 //   - ~/stockpulse/algorithms/AS-03-cycle-detection/modules/volume.ts (v1.0.0) — 大少 #10809
-//   - ~/stockpulse/algorithms/AS-03-cycle-detection/modules/slope-momentum.ts (v1.0.0) — 大少 #10809
+//
+// 大少 2026-08-07 23:15 — Module 8 SlopeMomentum 暫時隱藏,等 Stage 1 全部 done 最後先做
+//   隱藏範圍: 移除 SM adapter + config + index + orchestrator + types 嘅 references
+//   將來恢復: 從 git history 拎返 + 加返呢個 file 嘅 SM block
 
 export const id = 'AS-03';
 export const name = '均線系統週期斷法';
@@ -93,17 +95,11 @@ export const inputs = [
   },
   // 大少 #10846 (2026-08-06) — Module toggle checkboxes (UI: default OFF)
   //   - 量價分析 (VolumePrice) — confirm/disconfirm signal (D020)
-  //   - 斜率動能 (SlopeMomentum) — state override
-  //   - 0/1/2 都可剔，最終由 synthesizer (expert-rules) combine
+  //   - 0/1 都可剔，最終由 synthesizer (expert-rules) combine
+  //   - 大少 2026-08-07 23:15 — SlopeMomentum toggle 暫時隱藏 (Stage 1 done 最後先做返)
   {
     key: 'enableVolumePrice',
     label: '量價分析',
-    type: 'checkbox',
-    default: false,
-  },
-  {
-    key: 'enableSlopeMomentum',
-    label: '斜率動能',
     type: 'checkbox',
     default: false,
   },
@@ -114,7 +110,7 @@ export const inputs = [
 // 大少 #10846 (2026-08-06) — 從 c62d5fcb commit 嘅 module toggle design 延伸到 testing page UI：
 //   - 永遠 run MA alignment (mandatory)
 //   - options.enableVolumePrice === true  → run VolumePrice module
-//   - options.enableSlopeMomentum === true → run SlopeMomentum module
+//   - 大少 2026-08-07 23:15 — SlopeMomentum toggle 暫時隱藏 (Stage 1 done 最後先做返)
 //   - 如果有 ≥ 1 個 optional module 跑咗 → 用 expert-rules aggregator 綜合 verdict
 //   - 冇 optional module → 維持 v0.3.0 嘅單 module verdict (backward compat)
 //
@@ -128,7 +124,7 @@ export const inputs = [
 export async function analyze(klines, options = {}) {
   // 大少 #10846 — module toggles
   const enableVolumePrice = options.enableVolumePrice === true;
-  const enableSlopeMomentum = options.enableSlopeMomentum === true;
+  // 大少 2026-08-07 23:15 — SlopeMomentum toggle 暫時隱藏 (Stage 1 done 最後先做返)
 
   // Always run MA alignment (mandatory)
   const maVerdict = await runMAAlignment(klines, options);
@@ -137,9 +133,6 @@ export async function analyze(klines, options = {}) {
   const moduleVerdicts = [maVerdict];
   if (enableVolumePrice) {
     moduleVerdicts.push(await analyzeVolumePrice(klines, options));
-  }
-  if (enableSlopeMomentum) {
-    moduleVerdicts.push(await analyzeSlopeMomentum(klines, options));
   }
 
   // 如果只有 MA alignment — 維持 backward compat verdict shape
@@ -389,9 +382,7 @@ async function runMAAlignment(klines, options = {}) {
 //             CONFIRM    → +10%
 //             DISCONFIRM → -30%；conf 高 → 改 TRANSITION
 //             NEUTRAL    → 唔影響
-//   Step 3 — SlopeMomentum verdict 影響 state:
-//             TRANSITION (high conf) → 改 TRANSITION
-//             強烈反對 ma-alignment state (high conf) → 改 TRANSITION
+//   Step 3 — 大少 2026-08-07 23:15 隱藏 SlopeMomentum verdict (Stage 1 done 最後先做返)
 
 function expertRulesSynthesize(moduleVerdicts) {
   const reasons = [];
@@ -435,22 +426,8 @@ function expertRulesSynthesize(moduleVerdicts) {
     }
   }
 
-  const slope = moduleVerdicts.find(v => v.moduleId === 'slope-momentum');
-  if (slope) {
-    if (slope.state === 'TRANSITION' && slope.confidence > 0.5) {
-      if (finalState !== 'TRANSITION') {
-        reasons.push(`Slope TRANSITION (high conf) → override → TRANSITION`);
-        finalState = 'TRANSITION';
-      } else {
-        reasons.push(`Slope agrees: TRANSITION`);
-      }
-    } else if (slope.state !== finalState && slope.confidence > 0.6) {
-      reasons.push(`Slope says ${slope.state} (high conf) vs ma-alignment ${finalState} → TRANSITION`);
-      finalState = 'TRANSITION';
-    } else if (slope.state === finalState) {
-      reasons.push(`Slope agrees: ${finalState}`);
-    }
-  }
+  // 大少 2026-08-07 23:15 — SlopeMomentum verdict 處理暫時隱藏
+  //   等 Stage 1 全部 done 最後先做返,將來從 git history 拎返呢段 block
 
   finalConfidence = Math.round(finalConfidence * 10000) / 10000;
 
@@ -540,7 +517,7 @@ function renderSynthesizedResult(verdict) {
   const moduleCards = moduleVerdicts.map((mv) => {
     if (mv.moduleId === 'ma-alignment') return renderMAResult(mv);
     if (mv.moduleId === 'volume') return renderVolumeResult(mv);
-    if (mv.moduleId === 'slope-momentum') return renderSlopeResult(mv);
+    // 大少 2026-08-07 23:15 — SlopeMomentum render 暫時隱藏 (Stage 1 done 最後先做返)
     return `<pre>${JSON.stringify(mv, null, 2)}</pre>`;
   }).join('');
 
@@ -548,7 +525,7 @@ function renderSynthesizedResult(verdict) {
   const enabledBadges = moduleVerdicts.map((mv) => {
     const name = mv.moduleId === 'ma-alignment' ? 'MA Alignment'
       : mv.moduleId === 'volume' ? '量價分析 (VolumePrice)'
-      : mv.moduleId === 'slope-momentum' ? '斜率動能 (SlopeMomentum)'
+      // 大少 2026-08-07 23:15 — SlopeMomentum badge 暫時隱藏
       : mv.moduleId;
     return `<span class="module-badge">${name}</span>`;
   }).join('');
@@ -567,7 +544,7 @@ function renderSynthesizedResult(verdict) {
         ${moduleVerdicts.map((mv) => {
           const modName = mv.moduleId === 'ma-alignment' ? 'MA Alignment'
             : mv.moduleId === 'volume' ? '量价分析 (VolumePrice)'
-            : mv.moduleId === 'slope-momentum' ? '斜率动能 (SlopeMomentum)'
+            // 大少 2026-08-07 23:15 — SlopeMomentum name 暫時隱藏
             : mv.moduleId;
           const modState = stateLabels[mv.state] || mv.state;
           const modConf = (mv.confidence * 100).toFixed(1);
@@ -1507,461 +1484,15 @@ export const volumePriceAdapter = {
 };
 
 // =============================================================================
-// 大少 #10809 — Module 8 SlopeMomentum (v1.0.0) — 跟 ma-alignment pattern 一致 (D018)
+// 大少 2026-08-07 23:15 — Module 8 SlopeMomentum (斜率動能) 隱藏
 // =============================================================================
 //
-// 10 條 rule M1-M10（port 自 modules/slope-momentum.ts v1.0.0）：
-//   Step 1 — 數據驗證（< longPeriod 報錯）
-//   Step 2 — 計算 MA5/MA10/MA60 history + 各 slope history
-//   Step 3 — 10 條 rule check (M1-M10)
-//   Step 4 — State derivation (M7/M8→TRANSITION · M1/M3/M5/M10→UP · M2/M4/M6→DOWN · M9→SIDEWAYS)
-//   Step 5 — Confidence derivation (同 ma-alignment pattern)
-
-const DEFAULT_SLOPE_MOMENTUM_CONFIG = {
-  shortPeriod: 5,
-  midPeriod: 10,
-  longPeriod: 20,
-  shortSlopeThreshold: 0.005,
-  midSlopeThreshold: 0.003,
-  longSlopeThreshold: 0.002,
-  reversalWindow: 5,
-};
-
-export async function analyzeSlopeMomentum(klines, options = {}) {
-  const cfg = { ...DEFAULT_SLOPE_MOMENTUM_CONFIG, ...(options.slopeMomentumConfig || {}) };
-
-  if (!Array.isArray(klines) || klines.length < cfg.longPeriod) {
-    throw new Error(
-      `[SlopeMomentum] Insufficient data: need ≥ ${cfg.longPeriod} bars, got ${klines?.length ?? 0}`,
-    );
-  }
-  const recent = klines.slice(-Math.max(klines.length, cfg.longPeriod * 3));
-
-  const ma5History = [];
-  const ma10History = [];
-  const ma60History = [];
-  for (let i = 0; i < recent.length; i++) {
-    ma5History.push(avgClose(recent, i, 5));
-    ma10History.push(avgClose(recent, i, 10));
-    ma60History.push(avgClose(recent, i, cfg.longPeriod));
-  }
-
-  const slopeMA5 = [];
-  const slopeMA10 = [];
-  const slopeMA60 = [];
-  const slopeMA5Daily = [];
-  for (let i = 0; i < recent.length; i++) {
-    slopeMA5.push(computeSlope(ma5History, i, cfg.shortPeriod));
-    slopeMA10.push(computeSlope(ma10History, i, cfg.midPeriod));
-    slopeMA60.push(computeSlope(ma60History, i, cfg.longPeriod));
-    slopeMA5Daily.push(computeSlope(ma5History, i, 1));
-  }
-
-  const lastIdx = recent.length - 1;
-  const latestSlopeMA5 = slopeMA5[lastIdx];
-  const latestSlopeMA10 = slopeMA10[lastIdx];
-  const latestSlopeMA60 = slopeMA60[lastIdx];
-
-  const matchedRules = [];
-
-  // M1. MA5 短期加速上升 (strong)
-  if (latestSlopeMA5 > cfg.shortSlopeThreshold &&
-      allStrictlyIncreasing(slopeMA5Daily, Math.max(0, lastIdx - 2), 3)) {
-    matchedRules.push({ id: 'M1', label: 'MA5 短期加速上升', strength: 'strong' });
-  }
-
-  // M2. MA5 短期加速下跌 (strong)
-  if (latestSlopeMA5 < -cfg.shortSlopeThreshold &&
-      allStrictlyDecreasing(slopeMA5Daily, Math.max(0, lastIdx - 2), 3)) {
-    matchedRules.push({ id: 'M2', label: 'MA5 短期加速下跌', strength: 'strong' });
-  }
-
-  // M3. MA10 中期斜率上升 (medium)
-  if (latestSlopeMA10 > cfg.midSlopeThreshold) {
-    matchedRules.push({ id: 'M3', label: 'MA10 中期斜率上升', strength: 'medium' });
-  }
-
-  // M4. MA10 中期斜率下跌 (medium)
-  if (latestSlopeMA10 < -cfg.midSlopeThreshold) {
-    matchedRules.push({ id: 'M4', label: 'MA10 中期斜率下跌', strength: 'medium' });
-  }
-
-  // M5. MA60 長期斜率上升 (medium)
-  if (latestSlopeMA60 > cfg.longSlopeThreshold) {
-    matchedRules.push({ id: 'M5', label: 'MA60 長期斜率上升', strength: 'medium' });
-  }
-
-  // M6. MA60 長期斜率下跌 (medium)
-  if (latestSlopeMA60 < -cfg.longSlopeThreshold) {
-    matchedRules.push({ id: 'M6', label: 'MA60 長期斜率下跌', strength: 'medium' });
-  }
-
-  // M7. 短期斜率轉正 (strong)
-  if (slopeCrossedZero(slopeMA5, lastIdx, cfg.reversalWindow, 'positive')) {
-    matchedRules.push({ id: 'M7', label: '短期斜率轉正（趨勢轉強）', strength: 'strong' });
-  }
-
-  // M8. 短期斜率轉負 (strong)
-  if (slopeCrossedZero(slopeMA5, lastIdx, cfg.reversalWindow, 'negative')) {
-    matchedRules.push({ id: 'M8', label: '短期斜率轉負（趨勢轉弱）', strength: 'strong' });
-  }
-
-  // M9. 動能減弱 (weak)
-  if (Math.abs(latestSlopeMA5) < 0.001) {
-    matchedRules.push({ id: 'M9', label: '動能減弱', strength: 'weak' });
-  }
-
-  // M10. 動能加強 (weak)
-  if (Math.abs(latestSlopeMA5) > cfg.shortSlopeThreshold) {
-    matchedRules.push({ id: 'M10', label: '動能加強', strength: 'weak' });
-  }
-
-  const state = deriveSlopeState(matchedRules);
-  const confidence = deriveConfidence(matchedRules);
-  const interpretation = matchedRules.length > 0
-    ? matchedRules.map(r => r.label).join('；')
-    : '無 match';
-
-  const evidence = matchedRules.map(r => ({
-    type: `rule-${r.id}`,
-    label: r.label,
-    value: r.id,
-    passed: true,
-  }));
-
-  return {
-    moduleId: 'slope-momentum',
-    timeframe: options.period || '1d',
-    state,
-    confidence,
-    interpretation,
-    evidence,
-    warnings: [],
-    meta: {
-      matchedRules: matchedRules.map(r => r.id),
-      ruleLabels: matchedRules.map(r => r.label),
-      latestSlopeMA5: round(latestSlopeMA5, 6),
-      latestSlopeMA10: round(latestSlopeMA10, 6),
-      latestSlopeMA60: round(latestSlopeMA60, 6),
-      latestMA5: round(ma5History[lastIdx], 4),
-      latestMA10: round(ma10History[lastIdx], 4),
-      latestMA60: round(ma60History[lastIdx], 4),
-      dataDays: recent.length,
-      configUsed: cfg,
-    },
-    timestamp: Date.now(),
-  };
-}
-
-function deriveSlopeState(rules) {
-  const ids = new Set(rules.map(r => r.id));
-  if (ids.has('M7') || ids.has('M8')) return 'TRANSITION';
-  if (ids.has('M1') || ids.has('M3') || ids.has('M5')) return 'UP';
-  if (ids.has('M2') || ids.has('M4') || ids.has('M6')) return 'DOWN';
-  if (ids.has('M10')) return 'UP';
-  if (ids.has('M9')) return 'SIDEWAYS';
-  return 'SIDEWAYS';
-}
-
-function slopeCrossedZero(slopeHistory, endIdx, window, direction) {
-  const startIdx = Math.max(0, endIdx - window + 1);
-  if (endIdx - startIdx < 1) return false;
-
-  const latestSlope = slopeHistory[endIdx];
-  const targetSign = direction === 'positive' ? 1 : -1;
-
-  // 當前必須係目標 sign (strict)
-  if (latestSlope * targetSign <= 0) return false;
-
-  // 喺 window 範圍內必須有對面 sign
-  for (let i = startIdx; i < endIdx; i++) {
-    if (slopeHistory[i] * (-targetSign) > 0) return true;
-  }
-  return false;
-}
-
-export function renderSlopeResult(verdict) {
-  const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
-  const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
-
-  const color = stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
-  const confidencePct = (verdict.confidence * 100).toFixed(1);
-
-  const matchedRulesHtml = verdict.meta.matchedRules.length === 0
-    ? '<li style="color: #888;">無 rule match</li>'
-    : verdict.meta.matchedRules.map((rid) => {
-        const ev = verdict.evidence.find((e) => e.value === rid);
-        const strengthClass = ['M1', 'M2', 'M7', 'M8'].includes(rid) ? 'strong'
-          : ['M9', 'M10'].includes(rid) ? 'weak'
-          : 'medium';
-        return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
-      }).join('');
-
-  return `
-    <div class="as03-verdict as03-module-card">
-      <div class="module-card-header">
-        <h3 class="module-header">斜率动能 (SlopeMomentum)</h3>
-      </div>
-      <div class="verdict-header">
-        <div class="state-pill" style="background: ${color}">
-          <span class="state-label">${stateLabel}</span>
-          <span class="state-code">${verdict.state}</span>
-        </div>
-        <div class="confidence">
-          <div class="conf-pct">${confidencePct}%</div>
-          <div class="conf-label">信心指數</div>
-        </div>
-        <div class="data-summary">
-          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
-          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
-          <div class="summary-row"><span>Matched Rules:</span> <strong>${verdict.meta.matchedRules.length}</strong></div>
-        </div>
-      </div>
-
-      <div class="interpretation">
-        <strong>📌 解讀：</strong>${verdict.interpretation}
-      </div>
-
-      <div class="interpretation-panel">
-        <strong>📖 點樣用：</strong>${getSlopeInterpretation(verdict.state, verdict.meta.matchedRules)}
-      </div>
-
-      <div class="slope-values">
-        <h4>當前 Slope 值</h4>
-        <div class="slope-grid">
-          <div class="slope-item"><span class="slope-label">Slope MA5</span><span class="slope-value">${(verdict.meta.latestSlopeMA5 * 100).toFixed(3)}%</span></div>
-          <div class="slope-item"><span class="slope-label">Slope MA10</span><span class="slope-value">${(verdict.meta.latestSlopeMA10 * 100).toFixed(3)}%</span></div>
-          <div class="slope-item"><span class="slope-label">Slope MA60</span><span class="slope-value">${(verdict.meta.latestSlopeMA60 * 100).toFixed(3)}%</span></div>
-        </div>
-      </div>
-
-      <div class="matched-rules">
-        <h4>🎯 Matched Rules（${verdict.meta.matchedRules.length} 條）</h4>
-        <ul>${matchedRulesHtml}</ul>
-      </div>
-
-      ${renderDetailedExplanationSlope(verdict)}
-      ${renderStrategyAdviceSlope(verdict)}
-      ${renderUsageGuideSlope(verdict)}
-
-      <details class="meta-details">
-        <summary>🔧 配置（debug 用）</summary>
-        <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
-      </details>
-    </div>
-  `;
-}
-
-// ===== 詳細解讀 section (SlopeMomentum) =====
-// 大少 #11056 — 永久 rule,所有 Module 都要有 3 個 sections
-function renderDetailedExplanationSlope(verdict) {
-  const confidencePct = (verdict.confidence * 100).toFixed(0);
-  const matchedRules = verdict.meta?.matchedRules || [];
-  const s5 = (verdict.meta.latestSlopeMA5 || 0) * 100;
-  const s10 = (verdict.meta.latestSlopeMA10 || 0) * 100;
-  const s60 = (verdict.meta.latestSlopeMA60 || 0) * 100;
-
-  // Slope value 解讀
-  const slopeLabel = (s) => s > 0.5 ? '明顯上升 (≥+0.5%)'
-    : s > 0.1 ? '微升 (+0.1% 至 +0.5%)'
-    : s > -0.1 ? '橫行 (-0.1% 至 +0.1%)'
-    : s > -0.5 ? '微跌 (-0.5% 至 -0.1%)'
-    : '明顯下跌 (≤-0.5%)';
-
-  return `
-    <div class="detailed-explanation">
-      <h4>📖 詳細解讀 (逐個 field 點樣睇)</h4>
-      <table class="explain-table">
-        <tr><td class="field-name">📊 state (週期類型)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '短期 / 中期 / 長期斜率向上, 趨勢確認' : verdict.state === 'DOWN' ? '短期 / 中期 / 長期斜率向下, 趨勢向下' : verdict.state === 'TRANSITION' ? '短期斜率轉向 (M7/M8), 趨勢可能反轉' : '斜率接近 0, 動能減弱'}</td></tr>
-        <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值, 配合其他指標 confirm' : '🔴 低信心 — 信唔過'}</td></tr>
-        <tr><td class="field-name">📈 Slope MA5 (短期, 5 日)</td><td>${s5.toFixed(3)}% — ${slopeLabel(s5)} — 短期動能, 對應短線交易</td></tr>
-        <tr><td class="field-name">📈 Slope MA10 (中期, 10 日)</td><td>${s10.toFixed(3)}% — ${slopeLabel(s10)} — 中期動能, 對應中線交易</td></tr>
-        <tr><td class="field-name">📈 Slope MA60 (長期, 20 日)</td><td>${s60.toFixed(3)}% — ${slopeLabel(s60)} — 長期動能, 對應長線 / 趨勢</td></tr>
-        <tr><td class="field-name">🎯 觸發 rules (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發' : matchedRules.map(r => `<strong>${r}</strong> — ${renderSlopeRuleExplain(r)}`).join(' / ')}</td></tr>
-        <tr><td class="field-name">💪 Rule 強度</td><td>${matchedRules.some(r => ['M1', 'M2', 'M7', 'M8'].includes(r)) ? '強 (M1/M2/M7/M8)' : matchedRules.some(r => ['M9', 'M10'].includes(r)) ? '弱 (M9/M10)' : '中 (M3-M6)'}</td></tr>
-        <tr><td class="field-name">⏱️ 時間框架</td><td>短期 (M1/M2/M7/M8/M9/M10) = 5 日 / 中期 (M3/M4) = 10 日 / 長期 (M5/M6) = 20 日</td></tr>
-      </table>
-    </div>
-  `;
-}
-
-// 10 條 rule M1-M10 嘅用人話解釋
-function renderSlopeRuleExplain(rid) {
-  const explains = {
-    'M1': 'MA5 短期加速上升 — 短期動能爆發, 升勢強勁',
-    'M2': 'MA5 短期加速下跌 — 短期動能急跌, 跌勢強勁',
-    'M3': 'MA10 中期斜率上升 — 中期動能向上, 趨勢健康',
-    'M4': 'MA10 中期斜率下跌 — 中期動能向下, 趨勢轉弱',
-    'M5': 'MA60 長期斜率上升 — 長期趨勢向上, 大方向好',
-    'M6': 'MA60 長期斜率下跌 — 長期趨勢向下, 大方向差',
-    'M7': '短期斜率轉正 (由負轉正) — 短期動能轉強, 趨勢反轉點',
-    'M8': '短期斜率轉負 (由正轉負) — 短期動能轉弱, 趨勢反轉點',
-    'M9': '動能減弱 — |slope| 細, 短期動力不足, 等待新方向',
-    'M10': '動能加強 — |slope| 大, 短期動力強, 跟住落去就係突破',
-  };
-  return explains[rid] || rid;
-}
-
-// ===== 策略建議 section (SlopeMomentum) =====
-function renderStrategyAdviceSlope(verdict) {
-  const confidencePct = (verdict.confidence * 100).toFixed(0);
-  const isHighConf = verdict.confidence >= 0.7;
-  const isLowConf = verdict.confidence < 0.5;
-  const matchedRules = verdict.meta?.matchedRules || [];
-  const s5 = (verdict.meta.latestSlopeMA5 || 0) * 100;
-  const s10 = (verdict.meta.latestSlopeMA10 || 0) * 100;
-  const s60 = (verdict.meta.latestSlopeMA60 || 0) * 100;
-
-  let stateAdvice = '';
-  if (verdict.state === 'UP') {
-    stateAdvice = `
-      <div class="strategy-up">
-        <h4>🟢 上升動能 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 順勢持倉, 短期 / 中期 / 長期斜率都向上, 趨勢強</p>
-        <p><strong>訊號確認:</strong> ${matchedRules.includes('M1') ? 'M1 (短期加速) 觸發, 動能爆發中' : matchedRules.includes('M3') || matchedRules.includes('M5') ? 'M3/M5 (中長期斜率) 觸發, 趨勢健康' : '多條 rule 同時確認'}</p>
-        <p><strong>進場策略:</strong> 等回調到 MA5/MA10 附近 (短期 / 中期回歸) 再反彈入場, 唔好追高</p>
-        <p><strong>風險管理:</strong> 留意 M8 (短期斜率轉負) — 如果出現就係趨勢反轉先兆, 收緊止損</p>
-        <p><strong>特別注意:</strong> 短期動能可能會領先中長期, 留意短期斜率變化 (M7 轉正 / M8 轉負)</p>
-      </div>
-    `;
-  } else if (verdict.state === 'DOWN') {
-    stateAdvice = `
-      <div class="strategy-down">
-        <h4>🔴 下跌動能 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 避開 / 減倉, 短期 / 中期 / 長期斜率都向下, 趨勢弱</p>
-        <p><strong>訊號確認:</strong> ${matchedRules.includes('M2') ? 'M2 (短期加速) 觸發, 跌勢急' : matchedRules.includes('M4') || matchedRules.includes('M6') ? 'M4/M6 (中長期斜率) 觸發, 趨勢轉差' : '多條 rule 同時確認'}</p>
-        <p><strong>進場策略:</strong> 唔好撈底, 等 M7 (短期斜率轉正) 確認先考慮</p>
-      </div>
-    `;
-  } else if (verdict.state === 'TRANSITION') {
-    stateAdvice = `
-      <div class="strategy-transition">
-        <h4>🟣 反轉訊號 (M7/M8) · 策略建議</h4>
-        <p><strong>基本動作:</strong> 暫時 hold, 等下個確認信號</p>
-        <p><strong>訊號確認:</strong> M7 (短期斜率由負轉正) 或 M8 (短期斜率由正轉負) 觸發, 係趨勢反轉先兆</p>
-      </div>
-    `;
-  } else { // SIDEWAYS
-    stateAdvice = `
-      <div class="strategy-sideways">
-        <h4>🟡 動能減弱 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 等方向, 短期 / 中期斜率都接近 0, 動能不足</p>
-        <p><strong>訊號確認:</strong> M9 (動能減弱) 觸發, 短期 |slope| &lt; 0.1%</p>
-        <p><strong>進場策略:</strong> 唔好喺動能減弱時進場, 等 M1/M2 (短期加速) 或 M3-M6 (中長期斜率) 確認方向先做</p>
-        <p><strong>特別注意:</strong> 動能減弱可能係爆邊前嘅寂靜, 留意下個突破訊號</p>
-      </div>
-    `;
-  }
-
-  // 信心調整建議
-  let confidenceNote = '';
-  if (isHighConf) {
-    confidenceNote = `<p class="confidence-high">💪 信心指數 ${confidencePct}% (高) — 判定可靠, 可以作參考落單</p>`;
-  } else if (isLowConf) {
-    confidenceNote = `<p class="confidence-low">⚠️ 信心指數 ${confidencePct}% (低) — 唔好信, 等下一個更明顯訊號</p>`;
-  } else {
-    confidenceNote = `<p class="confidence-med">🤔 信心指數 ${confidencePct}% (中) — 有參考價值, 但要配合其他指標 confirm</p>`;
-  }
-
-  return `
-    <div class="strategy-advice">
-      <h4>🎯 策略建議 (點做)</h4>
-      ${stateAdvice}
-      ${confidenceNote}
-      <p class="caveat">⚠️ 觸發 ${matchedRules.length} 條 rule (短期 ${s5.toFixed(2)}% / 中期 ${s10.toFixed(2)}% / 長期 ${s60.toFixed(2)}%), 每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
-    </div>
-  `;
-}
-
-// ===== 點用 + 點睇 guide section (SlopeMomentum) =====
-function renderUsageGuideSlope(verdict) {
-  return `
-    <div class="usage-guide">
-      <h4>💡 點用呢個結果 (點睇)</h4>
-      <ol>
-        <li><strong>先睇 state 同信心</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=TRANSITION) 同信心百分比, 呢個係最概要嘅判斷</li>
-        <li><strong>睇「觸發 rule」嗰行</strong> — 例如「M1」= MA5 短期加速上升, 「M7」= 短期斜率轉正 (反轉點), 「M9」= 動能減弱</li>
-        <li><strong>睇 Slope MA5/MA10/MA60 三個值</strong> — 短期 / 中期 / 長期動能:
-          <ul>
-            <li>3 條 slope 都 &gt; 0 = 三個時間框架都向上, 強勢 UP</li>
-            <li>3 條 slope 都 &lt; 0 = 三個時間框架都向下, 強勢 DOWN</li>
-            <li>短期斜率領先中長期, 留意短期變化 (M7/M8 反轉點)</li>
-          </ul>
-        </li>
-        <li><strong>留意 Slope 數值</strong> — ≥+0.5% = 明顯上升 / +0.1 至 +0.5 = 微升 / ±0.1% = 橫行 / -0.5 至 -0.1 = 微跌 / ≤-0.5% = 明顯下跌</li>
-        <li><strong>留意 M7 (轉正) 同 M8 (轉負)</strong> — 呢 2 個係 TRANSITION 觸發 rule, 代表短期動能反轉, 趨勢可能改變方向</li>
-        <li><strong>留意 M1 (加速上升) 同 M2 (加速下跌)</strong> — 短期動能爆發, 跟住落去就係大波動</li>
-        <li><strong>留意 M9 (動能減弱)</strong> — 動能接近 0, 短期可能見頂 / 見底, 留意其他 module 確認</li>
-        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
-        <li><strong>配合其他 module 一齊睇</strong> — SlopeMomentum 專門睇動能, 同 MA alignment (睇趨勢) / VolumePrice (睇量能) / Trendline (睇支撐壓力) 配合用, 4 個 module 一齊睇先至穩陣</li>
-        <li><strong>永遠配合風險管理</strong> — 呢個 module 嘅策略建議只係 reference, 落單前要自己再睇下基本面 / 消息面 / 板塊走勢</li>
-      </ol>
-      <p class="caveat">⚠️ 呢個 module 係輔助工具, 唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用, 唔好單靠一個 algorithm 落單。</p>
-    </div>
-  `;
-}
-
-export function getSlopeHelp() {
-  return `
-    <h4>SlopeMomentum · 10 條 Rule (M1-M10)</h4>
-    <ul>
-      <li><strong>M1</strong> <small>(strong)</small>: slope(MA5, 5) &gt; +0.5% + 連續 3 日 slope(MA5, 1) ↑ → MA5 短期加速上升</li>
-      <li><strong>M2</strong> <small>(strong)</small>: slope(MA5, 5) &lt; -0.5% + 連續 3 日 slope(MA5, 1) ↓ → MA5 短期加速下跌</li>
-      <li><strong>M3</strong> <small>(medium)</small>: slope(MA10, 10) &gt; +0.3% → MA10 中期斜率上升</li>
-      <li><strong>M4</strong> <small>(medium)</small>: slope(MA10, 10) &lt; -0.3% → MA10 中期斜率下跌</li>
-      <li><strong>M5</strong> <small>(medium)</small>: slope(MA60, 20) &gt; +0.2% → MA60 長期斜率上升</li>
-      <li><strong>M6</strong> <small>(medium)</small>: slope(MA60, 20) &lt; -0.2% → MA60 長期斜率下跌</li>
-      <li><strong>M7</strong> <small>(strong)</small>: 短期斜率 5 日內由負轉正（轉折點）→ 趨勢轉強</li>
-      <li><strong>M8</strong> <small>(strong)</small>: 短期斜率 5 日內由正轉負（轉折點）→ 趨勢轉弱</li>
-      <li><strong>M9</strong> <small>(weak)</small>: |slope(MA5, 5)| &lt; 0.1% → 動能減弱</li>
-      <li><strong>M10</strong> <small>(weak)</small>: |slope(MA5, 5)| &gt; 0.5% → 動能加強</li>
-    </ul>
-    <p><strong>State priority:</strong> M7/M8 → TRANSITION · M1/M3/M5/M10 → UP · M2/M4/M6 → DOWN · M9 → SIDEWAYS</p>
-    <p><strong>D013 大少改主意:</strong> Slope 原本屬 MA alignment 嘅 modifier (#10809 獨立做 peer module)</p>
-  `;
-}
-
-export const slopeMomentumAdapter = {
-  id: 'AS-03-SM',
-  name: '斜率動能 (SlopeMomentum)',
-  version: '1.0.0',
-  description: '用 10 條 rule (M1-M10) 分析 MA 短期/中期/長期斜率動能',
-  inputs: [
-    {
-      key: 'code',
-      label: '股票代碼',
-      type: 'autocomplete',
-      required: true,
-      endpoint: '/api/stocks/search',
-      queryParam: 'q',
-      placeholder: '輸入代碼或名稱（例: 00981 或 中芯）',
-      limit: 10,
-      marketFn: 'auto',
-    },
-    {
-      key: 'period',
-      label: '時間週期',
-      type: 'select',
-      options: [
-        { value: '1d', label: '日線' },
-        { value: '1w', label: '週線' },
-      ],
-      default: '1d',
-    },
-    {
-      key: 'dataWindowDays',
-      label: '取數據日數',
-      type: 'number',
-      default: 100,
-      min: 30,
-      max: 500,
-    },
-  ],
-  analyze: analyzeSlopeMomentum,
-  renderResult: renderSlopeResult,
-  getHelp: getSlopeHelp,
-};
+// 等 Stage 1 全部 done 最後先做返,將來由 git history 拎返:
+//   - 10 條 rule M1-M10
+//   - analyzeSlopeMomentum + renderSlopeResult + 3 sections
+//   - slopeMomentumAdapter entry
+//   - DEFAULT_SLOPE_MOMENTUM_CONFIG
+//   - enableSlopeMomentum checkbox + display name fallback
 
 // =============================================================================
 // Plain-language 「📖 點樣用」interpretation (大少 #10871 — 2026-08-06)
@@ -2013,7 +1544,7 @@ function getSynthesizedStateInterpretation(state) {
 }
 
 // =============================================================================
-// Shared helpers (VolumePrice + SlopeMomentum use these)
+// Shared helpers (VolumePrice uses these — 大少 2026-08-07 23:15 SlopeMomentum 暫時隱藏)
 // =============================================================================
 
 function avgField(klines, endIdx, period, field) {

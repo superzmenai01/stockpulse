@@ -2,7 +2,7 @@
 //
 // 大少 #10809 (2026-08-06) — v1.0.0
 //   - 加 Module 5 VolumePrice (replaces skeleton VolumeModule)
-//   - 加 Module 8 SlopeMomentum (新獨立 peer module)
+//   - 加 Module 8 SlopeMomentum (新獨立 peer module) — 大少 2026-08-07 23:15 隱藏
 //   - 採用 option toggle design (D019): MA core mandatory + 5 個 optional toggle
 //   - Synthesizer default = expert-rules (D004 pending 嘅 default 選擇)
 //   - Handle enableFlags + null verdict gracefully
@@ -16,7 +16,8 @@ import { HLStructureModule } from './modules/hl-structure.ts';
 import { TrendlineModule } from './modules/trendline.ts';
 import { IndicatorsModule } from './modules/indicators.ts';
 import { VolumePrice } from './modules/volume.ts';
-import { SlopeMomentum } from './modules/slope-momentum.ts';
+// 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
+// import { SlopeMomentum } from './modules/slope-momentum.ts';
 
 import { MultiTFOrchestrator } from './orchestrator/multi-tf.ts';
 import { Synthesizer } from './orchestrator/synthesize.ts';
@@ -43,7 +44,7 @@ function enableFlagsToRecord(flags: EnableFlags): Record<CycleModuleId, boolean>
   return {
     'ma-alignment': flags.maAlignment,
     'volume': flags.volumePrice,
-    'slope-momentum': flags.slopeMomentum,
+    // 大少 2026-08-07 23:15 — slope-momentum 暫時隱藏,Stage 1 done 最後先做返
     'hl-structure': flags.hlStructure,
     'trendline': flags.trendline,
     'indicators': flags.indicators,
@@ -61,7 +62,8 @@ export const VERSION = '1.0.0';
  *
  * 大少 #10809 — D019 option toggle design:
  *   - maAlignment = core mandatory (always on)
- *   - 其他 5 個 module 跟 enableFlags 決定 (預設: VolumePrice ON, SlopeMomentum OFF)
+ *   - 其他 4 個 module 跟 enableFlags 決定 (預設: VolumePrice ON)
+ *   - 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
  */
 export class CycleDetector {
   private readonly modules: Record<CycleModuleId, {
@@ -79,7 +81,7 @@ export class CycleDetector {
       'trendline': new TrendlineModule(),
       'indicators': new IndicatorsModule(),
       'volume': new VolumePrice(),
-      'slope-momentum': new SlopeMomentum(),
+      // 大少 2026-08-07 23:15 — slope-momentum 暫時隱藏,Stage 1 done 最後先做返
     };
     this.multiTF = new MultiTFOrchestrator();
     this.synthesizer = new Synthesizer();
@@ -219,7 +221,8 @@ export { HLStructureModule } from './modules/hl-structure.ts';
 export { TrendlineModule } from './modules/trendline.ts';
 export { IndicatorsModule } from './modules/indicators.ts';
 export { VolumePrice } from './modules/volume.ts';
-export { SlopeMomentum } from './modules/slope-momentum.ts';
+// 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
+// export { SlopeMomentum } from './modules/slope-momentum.ts';
 
 export { MultiTFOrchestrator } from './orchestrator/multi-tf.ts';
 export { Synthesizer } from './orchestrator/synthesize.ts';

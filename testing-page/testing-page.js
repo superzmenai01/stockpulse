@@ -29,8 +29,9 @@ const REGISTRY = [
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     // 預設 = 頂層 exports (向後兼容 ma-alignment adapter)
-    // 大少 #10859 — module toggle (enableVolumePrice + enableSlopeMomentum) 由
-    //   AS-03 entry 入面嘅 checkbox 控制，唔再獨立 expose AS-03-VP / AS-03-SM dropdown
+    // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
+    //   唔再獨立 expose AS-03-VP dropdown
+    // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
   },
   // 2026-08-07 大少 + MiniMax Code — Module 2 v0.1.0 (高低點結構法)
   // 獨立 entry, named export `hlStructureAdapter` 喺 adapter.mjs
