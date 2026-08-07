@@ -321,10 +321,60 @@ Health check endpoint.
 
 ---
 
+## 📦 K-line API 改動 (大少 #11070, 2026-08-07)
+
+### `GET /api/kline`
+
+**改動 commit**: `c2b8b278`
+
+**Query Parameters**:
+
+| Param | Required | Type | Default | Description |
+|-------|----------|------|---------|-------------|
+| `code` | ✅ | str | — | 股票代碼 (例 `HK.00700`, `US.INTC`) |
+| `period` | ❌ | str | `1d` | K 線週期 (`1m` / `1d` / `1M` / `1y`) |
+| `count` | ❌ | int | 100 | Response 返幾多條 (取最尾 N 條 recent) |
+| `start` | ❌ | str (YYYY-MM-DD) | 動態 | 開始日期 (override default) |
+| `end` | ❌ | str (YYYY-MM-DD) | today | 結束日期 |
+
+**Default start (1d period) 改動** (永久 rule, 大少 #11070):
+- 1d 默認 `start_date = count × 1.5` calendar days back
+- 1 trading day ≈ 1.5 calendar days (cover weekends + holidays)
+- 例: `count=300` → start = 450 calendar days 前
+
+**Response Schema (改動)**:
+
+```json
+{
+  "code": "HK.00700",
+  "name": "HK.00700",
+  "period": "1d",
+  "klines": [...],
+  "mock": false,
+  "cached": true,
+  "fetch_count": 182,
+  "requested_count": 300,    // ← 新增
+  "actual_count": 182,        // ← 新增
+  "data_limited": true        // ← 新增 (true if actual < requested)
+}
+```
+
+**Frontend 對應** (testing-page.js line 465-481):
+- `runStatus` 顯示「✅ 完成 · 182 日 (設定 300 / 實際 182 — 數據限制) · 4ms」
+- User 即時知道 backend 返幾多條
+
+**Verify**:
+- `curl ?code=HK.00700&period=1d&count=300` → `actual_count=182, data_limited=True` ✅
+- OpenD 對 HK.00700 1d 真實 history limit = 9 個月 (182 trading days)
+- 清 DB 重新 cold fetch → 拎到 20 年 (4934 條) ✅ (見 ARCHITECTURE §13.1)
+
+---
+
 ## 📝 Changelog
 
 | 日期 | 改動 | 大少 reference |
 |---|---|---|
+| 2026-08-07 | `/api/kline` 1d default start 改 `count*1.5` + response trim + 新 metadata (`requested_count`/`actual_count`/`data_limited`) | 大少 #11070 |
 | 2026-08-02 | 新建 API.md + 加入 #9700 none-auto-save rule | 大少 #9700 |
 | 2026-08-02 | `/api/as02/run` 行為改: run_id 永遠 null, 唔 auto-save | 大少 #9700 |
 | 2026-08-02 | `/api/as02/run` response.stocks 加 `price/change_pct/mcap/turnover/pe/pb` (Pydantic schema bug fix) — 令 ViewRunModal 唔再顯示「—」 | 大少 #9700 follow-up |

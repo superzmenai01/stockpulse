@@ -391,7 +391,64 @@ CREATE TABLE watchlist (
   FOREIGN KEY (stock_code) REFERENCES stocks(code),
   UNIQUE(user_id, stock_code)
 );
+
+-- K 線 cache (大少 #7987, #8505, 永久 rule T-1)
+CREATE TABLE kline_cache (
+  code TEXT NOT NULL,
+  period TEXT NOT NULL,
+  time TEXT NOT NULL,
+  open REAL, high REAL, low REAL, close REAL,
+  volume INTEGER, turnover_rate REAL,
+  last_fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (code, period, time)
+);
+CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 ```
+
+---
+
+## 🧠 AS-03 Stock Cycle Detection (2026-08-07)
+
+`algorithms/AS-03-cycle-detection/` — 股票週期判定系統,Stage 1 (完成 Module 1-7) 進行中。
+
+### 5 個 Module 結構 (全部 production)
+
+| Module | 主檔 | Version | 3 Sections |
+|--------|------|---------|-----------|
+| MA Alignment | `modules/ma-alignment.ts` | v0.3.0 | ✅ |
+| HL Structure | `modules/hl-structure.ts` | v0.1.0 | ✅ |
+| Trendline | `modules/trendline.ts` | v0.1.0 | ✅ |
+| VolumePrice (toggle) | `modules/volume.ts` | v1.0.0 | ✅ |
+| SlopeMomentum (toggle) | `modules/slope-momentum.ts` | v1.0.0 | ✅ |
+
+### 3-Section 永久 Rule (大少 #11056)
+
+每個 module 嘅 `render{Module}Result()` 必須 render 3 個 sections:
+1. **📖 詳細解讀** — 17+ field 逐個用人話解
+2. **🎯 策略建議** — 按 state (UP/DOWN/SIDEWAYS/TRANSITION) 各自建議
+3. **💡 點用點睇** — 9-10 步 step-by-step guide
+
+### 統一 Algorithm Design Principles
+
+- **Rule-based + additive confidence** (避免 multiplicative 叠埋)
+- **List all matched rules** (唔好 silently pick 一個)
+- **State priority 一致**: H > A > B > F > G > C > D > SIDEWAYS + H+G → TRANSITION
+- 假設大少只識 PE / ETF / MACD / limit order, 其他 technical term 第一次用要 plain language 解
+
+### Testing Page (大少 #11085 UX, 2026-08-07)
+
+`http://localhost:8765/testing-page/`
+- Vanilla JS standalone HTML (CDN lightweight-charts v4.2.3)
+- 唔 embed StockPulse main app
+- 3 algorithms registered: AS-03-MA, AS-03-HL, AS-03-TL
+- Dropdown 顯示用 `displayName` (e.g. `AS-03-MA`); 內部 id 維持 `AS-03` 唔變
+- **切算法即清結果** (runStatus / resultPanel / chart, 3 個 sections 都喺 resultPanel)
+- runStatus 顯示「設定 X 日 / 實際 Y 日 (數據限制)」
+
+### Spec / Roadmap
+
+詳細 spec: `docs/research/AS-03-cycle-detection/ROADMAP.md` (228 行, 7 stages)
+每 module: `docs/research/AS-03-cycle-detection/MODULE-XX-*.md`
 
 ---
 

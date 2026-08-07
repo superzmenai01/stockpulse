@@ -1392,3 +1392,135 @@ if (currentAdapter.renderChartOverlay) {
 - **Trend line 唔好水平價線** — 大少要 `addLineSeries` 跟股價走嘅斜線, 唔係 `createPriceLine` 嘅水平線
 - **Skip 唔夠 data 嘅 point, 唔好 emit null** — lightweight-charts v4.2.3 將 null 當 0 處理, 會拉到 y-axis 底部
 - 每個 module 自己 implement `renderChartOverlay`, framework 唔 hard-code 任何 algorithm 嘅 visual
+
+---
+
+## 11. AS-03 Cycle Detection — Module 1-7 進度 + 3-Section Rule (2026-08-07, 大少 #11056)
+
+`algorithms/AS-03-cycle-detection/` — 股票週期判定系統,Stage 1 (完成 Module 1-7) Roadmap。
+
+### Module 進度 (5 個 done)
+
+| Module | 檔案 | Version | 3 Sections | Status |
+|--------|------|---------|-----------|--------|
+| 1. MA Alignment 均線系統 | `modules/ma-alignment.ts` | v0.3.0 | ✅ | ✅ Production |
+| 2. HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
+| 3. Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
+| 5. VolumePrice 量價分析 | `modules/volume.ts` | v1.0.0 | ✅ | ✅ Production |
+| 8. SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | ✅ | ✅ Production |
+| 4. Indicators (MACD/RSI/Bollinger) | TBD | — | — | 🚧 Pending |
+| 6. Multi-TF (日/週/月) | TBD | — | — | 🚧 Pending |
+| 7. Synthesizer | TBD | — | — | 🚧 Pending |
+
+### 3-Section Rule (大少 #11056, 2026-08-07, 永久)
+
+**所有 AS-03 module 必須有 3 個 sections**(adapter.mjs 強制):每個 module 嘅 `render{Module}Result()` 必須 render 呢 3 段,缺一唔得。
+
+1. **📖 詳細解讀** — 17+ 個 algorithm 輸出 field,逐個用人話解釋(plain language,大少只識 PE/ETF/MACD/limit order 嘅 level)
+2. **🎯 策略建議** — 按 state (UP/DOWN/SIDEWAYS/TRANSITION) 各自建議用戶點做
+3. **💡 點用點睇** — 9-10 步 step-by-step guide 教 user 點睇呢個結果
+
+**Helper function 命名**:
+- `renderDetailedExplanation{Module}` / `renderStrategyAdvice{Module}` / `renderUsageGuide{Module}` (5 個 modules × 3 = 15 helper)
+- MA/HL 例外:`renderDetailedExplanation` / `renderStrategyAdvice` / `renderUsageGuide` (冇 suffix, 之前已寫)
+
+### 永久 Rules (大少 #11056 + 之前)
+
+- ✅ Rule-based + additive confidence (唔用 multiplicative, 大少 #10097)
+- ✅ List all matched rules (唔好 silently pick 一個)
+- ✅ State priority 一致: H > A > B > F > G > C > D > SIDEWAYS + H+G → TRANSITION
+- ✅ 假設大少只識 PE/ETF/MACD/limit order 嘅 trading term, 其他 technical term 第一次用要 plain language 解
+- ✅ 3 sections 必須齊 (📖 + 🎯 + 💡) — 大少 #11056
+
+### Spec 連結
+
+詳細 spec: `docs/research/AS-03-cycle-detection/ROADMAP.md` (228 行, 7 stages)
+每 module: `docs/research/AS-03-cycle-detection/MODULE-XX-*.md`
+
+---
+
+## 12. K-line Endpoint 改動 (大少 #11070, 2026-08-07) + Testing Page UX (大少 #11085)
+
+### 12.1 dataWindowDays 對齊 backend 永久 Rule (大少 #11070)
+
+**Root cause (before fix)**:
+- 1d 默認 start = 6 個月前 (~120 trading days)
+- Response 唔 trim 落 user count
+- Frontend 改 dataWindowDays 冇效 — chart 仲係顯示 100 日 (cache wide-fetch 鎖死咗 earliest)
+
+**Fix (commit `c2b8b278`)**:
+- `backend/api/kline.py` line 117-122: 1d default `start_date = count * 1.5` calendar days back
+  - 1 trading day ≈ 1.5 calendar days (cover weekends + holidays)
+  - count=300 → start=450 calendar days ago → ~300 trading days target
+- Response trim: `klines = klines[-requested_count:]`
+- Response metadata 4 個新 field: `requested_count` / `actual_count` / `data_limited` / `fetch_count`
+- `testing-page.js` line 465-481: runStatus 顯示「設定 X 日 / 實際 Y 日 — 數據限制」hint
+
+**Verify**: count=300 → actual=182 (OpenD 1d history 限), data_limited=True ✅
+
+### 12.2 Testing Page UX 改動 (大少 #11085, 2026-08-07)
+
+| 改動 | Commit | Detail |
+|------|--------|--------|
+| Rename `AS-03` → `AS-03-MA` (display only) | `bf46c232` | REGISTRY entry 加 `displayName: 'AS-03-MA'` field, 內部 id 維持 `AS-03` 唔變 (避免影響 code + backend + log) |
+| 切算法時清空結果 | `bf46c232` | `resetResultPanel()` function 在 `onAlgorithmChange()` 開頭 invoke: 清 runStatus + resultPanel + chart (3 個 sections 都喺 resultPanel 入面, 清 resultPanel 即清晒) |
+
+**Permanent Rule (大少 #11085)**:
+- ✅ Dropdown 顯示一律跟 `displayName || id`
+- ✅ 切算法 = 清結果 (runStatus / resultPanel / chart)
+- ✅ Internal id 唔好改 (影響連鎖), 用 displayName 做 user-facing 層
+
+---
+
+## 13. Cache 永久 Rule + Known Issue (2026-08-07)
+
+### 13.1 Cold Cache Wide-fetch 永久 Rule (大少發現, 2026-08-07)
+
+**Root cause discovery**:
+- 之前 cold cache 第一次 fetch 用咗 caller 嘅 `max_count=100` (太細)
+- OpenD 對 HK.00700 1d 返 181 條 (~9 個月),earliest_cached 鎖死喺 2025-11-10
+- 之後所有 warm cache wide-fetch 由 `earliest_cached` 開始, 永遠拎唔到 20 年歷史
+- 結果: `dataWindowDays=500` 都係得 181 條
+
+**Fix verification**:
+- 清 HK.00700 1d row → cold cache path trigger → fetch 4934 條 (2006-07-24 上市起 → 2026-08-07, 20.0 年) ✅
+- DB 寫入 4933 條 (差 1 = today, T-1 rule 唔寫)
+- 對比: HK.00981 4916 條 (2006-07-14 開始) — OpenD 1d 真實 limit 係 20 年+
+
+**永久 Rule** (commit `c2b8b278` 之前已落 `_compute_fetch_max_count`):
+- ✅ 1d period cold + warm cache 必須用 `max_count = 30 * 365 = 10950` (30 年 window)
+- ✅ Other period 用 `10 * 365 = 3650`
+- ✅ caller 傳嘅 `max_count` 只作 trim response 用, 唔可以影響 cache fetch window
+
+### 13.2 Known Issue: OpenD qfq 復權 2006 數據負值 (大少發現, 2026-08-07)
+
+**症狀**:
+- HK.00700 2006-07-24 嗰條 kline: `open=-20.88, high=-20.88, low=-20.90, close=-20.89` (全部負值!)
+- 對比實際: 騰訊 2006 年股價約 3-5 蚊
+- OpenD `autype='qfq'` (前復權) 對 2014 年 1:5 拆股前嘅早期數據計算錯誤
+
+**影響**:
+- 唔影響 cache / fetch 邏輯 (data 已經 persist)
+- 會影響 AS-03 算法 (MA / Slope 算錯)
+- MA60 喺首 60 條會被負值污染
+
+**Workaround (臨時)**:
+- 唔好 query HK.00700 早過 2014 年 (拆股後) 嘅 data
+- 或 AS-03 algorithm 加 guard: `if close < 0 → skip 該 kline`
+
+**永久 Fix (待辦)**:
+- Backend `kline_cache._fetch_klines()` 加 `autype='none'` option,自己計 qfq factor
+- 或 OpenClaw 報 OpenD bug
+
+**Known Issue 編號**: 大少 #11099 (2026-08-07)
+
+---
+
+## 14. Spec Sync Activity Log (大少 #10203 trigger)
+
+| Date | Trigger | Commits | Doc updates |
+|------|---------|---------|-------------|
+| 2026-08-07 | 大少「Update Stockpulse」(本 turn) | `bf46c232` + `c2b8b278` + `1dab3422` + `c0152bae` + `ec8b2cfe` + `9aa429fe` | ARCHITECTURE §11-14, API §K-line endpoint, README §Algorithm System, PROJECT_SPEC §Algorithm |
+| 2026-08-06 | 大少 #8602 KlineCache v2 | `2f1f8cc7` 等 | ARCHITECTURE §3.5 |
+| 2026-08-06 | AS-02 Spec sync | `4dfe7771` | ARCHITECTURE §4 |
+

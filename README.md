@@ -288,8 +288,22 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 
 ### 🧠 Algorithm System (AS-XX)
 - **入口：** `/algorithms` 頁
-- **核心算法：** AS02 (公司質素分析) — `backend/services/as02_analyzer.py`
-- **Pipeline：** 股票清單 → 財務數據 → LLM 分析 → 結果顯示（auto DQ log）
+- **核心算法：**
+  - **AS02** (公司質素分析) — `backend/services/as02_analyzer.py`
+  - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — 5 個 module 已 production
+- **AS03 模組 (2026-08-07 狀態):**
+
+  | Module | 算法 | 用途 | Version |
+  |--------|------|------|---------|
+  | AS-03-MA | 均線系統週期斷法 | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
+  | AS-03-HL | 高低點結構法 | Peaks/Troughs + 形態預警 | v0.1.0 |
+  | AS-03-TL | 趨勢線法 | 支撐/壓力線 + 突破檢測 | v0.1.0 |
+  | AS-03-VP | 量價分析 (toggle) | 錢跟價 / 唔跟價 / 無明確 | v1.0.0 |
+  | AS-03-SM | 斜率動能 (toggle) | 強勢升/跌/轉勢/等待 | v1.0.0 |
+
+  **3-Section Rule (永久, 大少 #11056)**: 每個 module 嘅結果必須有 📖 詳細解讀 + 🎯 策略建議 + 💡 點用點睇 (plain language)。
+- **AS02 Pipeline：** 股票清單 → 財務數據 → LLM 分析 → 結果顯示（auto DQ log）
+- **AS03 Testing Page：** `http://localhost:8765/testing-page/` (vanilla JS, CDN lightweight-charts v4.2.3, 唔 embed StockPulse)
 - **儲存：** User 手動點前端「💾 儲存 N 隻合格股票」button → SaveRunModal → POST `/api/saved-runs`（大少 #9700 永久 rule：runtime endpoint 唔可以 auto-save）
 - **結果庫：** `/library` 頁 (`/api/saved-runs`)
 
