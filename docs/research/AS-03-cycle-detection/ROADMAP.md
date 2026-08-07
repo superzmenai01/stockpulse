@@ -65,7 +65,7 @@
 |---|--------|--------|------|
 | 1 | MA Alignment | ✅ v0.3.0 done (19/19) | 10 條 rule A-J 識別走勢 + 轉勢 |
 | 2 | HL Structure | ✅ v0.1.0 done (12/12) | peaks/troughs + 形態 (頭肩頂/雙底) |
-| 3 | Trendline | ⏳ skeleton | 趨勢線 + support/resistance |
+| 3 | Trendline | ✅ v0.1.0 done (14/14) | 10 條 rule A-J, 動態 OLS + 觸線 + 真假突破 |
 | 4 | Indicators | ⏳ skeleton | MACD / RSI / Bollinger Bands |
 | 5 | Volume OBV | ⏳ skeleton | OBV + 量能 confirm |
 | 6 | Multi-TF | ⏳ skeleton | 跨時間框架 confirm |

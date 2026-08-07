@@ -39,6 +39,14 @@ const REGISTRY = [
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'hlStructureAdapter',
   },
+  // 2026-08-07 大少 + MiniMax Code — Module 3 v0.1.0 (趨勢線法)
+  // 獨立 entry, named export `trendlineAdapter` 喺 adapter.mjs
+  {
+    id: 'AS-03-TL',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'trendlineAdapter',
+  },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
 ];

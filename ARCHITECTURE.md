@@ -1199,8 +1199,8 @@ AS-03 係 StockPulse 第一個完全實裝嘅 stock analysis algorithm (Module 1
 └───┬────┘   └─────────────┘   └──────────┘
     │
     ├─ Module 1: ma-alignment (v0.3.0 ✅ DONE — 19/19 tests pass)
-    ├─ Module 2: hl-structure (⏳ TBD)
-    ├─ Module 3: trendline (⏳ TBD)
+    ├─ Module 2: hl-structure (v0.1.0 ✅ DONE)
+    ├─ Module 3: trendline (v0.1.0 ✅ DONE — 14/14 tests pass, 大少 #11031)
     ├─ Module 4: indicators (⏳ TBD)
     └─ Module 5: volume OBV (⏳ TBD — 等新 Model)
 ```

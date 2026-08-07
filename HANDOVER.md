@@ -97,7 +97,7 @@
 | Stage | 做咩 | Status |
 |-------|------|--------|
 | 0. Foundation | 統一 7 module 嘅 interface / config / testing contract | ⏳ |
-| 1. 完成 Module 3-7 | Multi-TF 🥇, Trendline 🥈, Indicators 🥉, Volume OBV, Synthesizer | ⏳ |
+| 1. 完成 Module 3-7 | Multi-TF 🥇, Trendline ✅ (v0.1.0), Indicators 🥉, Volume OBV, Synthesizer | 🚧 進行中 |
 | 2. 啟動數據收集 | DB 加 forward return field, schedule job | ⏳ |
 | 3. Confluence (Module 8) | 7 modules 加權 0-100 分 | ⏳ |
 | 4. Entry Timing + Backtest Timeline | Module 9 + 11 | ⏳ |
@@ -108,7 +108,8 @@
 **AS-03 current state (Stage 0-1 入面)**:
 - Module 1 (ma-alignment) ✅ v0.3.0 — 10 條 rule (A-J), rule-based, additive confidence
 - Module 2 (HL Structure) ✅ v0.1.0 — peaks/troughs + 形態 (頭肩頂/雙底)
-- Module 3-7 ⏳ skeleton — Stage 1 跟 Roadmap 排程做
+- Module 3 (Trendline) ✅ v0.1.0 — 10 條 rule (A-J), 動態 OLS + 觸線 + 真假突破
+- Module 4-7 ⏳ skeleton — Stage 1 跟 Roadmap 排程做
 - 完整 workflow + status table: **`docs/research/AS-03-cycle-detection/ROADMAP.md`**
 - 各 module 詳細 spec: `docs/research/AS-03-cycle-detection/MODULE-*.md`
 
@@ -225,6 +226,8 @@ def _compute_fetch_max_count(period):
 | 日期 | 動作 |
 |------|------|
 | 2026-08-07 | **AS-03 完整 7-stages roadmap 規劃** — MiniMax Code: 大少指示「按流程做，每次一個 module，詳細測試和改良」. 寫咗 `docs/research/AS-03-cycle-detection/ROADMAP.md` (10 section, 12 modules status table, 7-stage 工作流程, 每 module 7 步 workflow, 風險 mitigation). 順序: Stage 0 Foundation → Stage 1 完成 Module 3-7 (Multi-TF 先做) → Stage 2 啟動 data collection → Stage 3 Confluence → Stage 4 Entry + Backtest Timeline → Stage 5 Trade Journal → Stage 6 Probability + Risk-Reward → Stage 7 Bayesian tuning. HANDOVER.md § 5 + ARCHITECTURE.md § 狀態 sync. |
+| 2026-08-07 | **Module 3 (趨勢線法) v0.1.0 落地** — MiniMax Code: 從 `docs/演算法概念SPECS/3趨勢線法.docx` v2.0 (Kimi RANSAC/成交量加權/ATR 統計模型) 簡化為大少 rule-based 風格, 10 條 rule A-J (支撐線上升/壓力線下降/通道窄/收斂三角形/上升楔形/下降楔形/真跌破/真突破/支持有效/壓力有效). 動態 OLS (3-8 points by R²) + 觸線統計 + 真假突破判定. 5/7 step done: spec (`MODULE-03-TRENDLINE.md`) + code (`modules/trendline.ts` + port `adapter.mjs`) + 14/14 tests pass + testing page verify (HK.00700 SIDEWAYS 65%, I+J 觸發, 紅綠 2 條 trend line render OK). Step 6-7: doc update + commit (待大少 review). |
+| 2026-08-07 | **MA chart overlay 完成** — MiniMax Code: testing page 嘅 K 線圖 render MA5/MA10/MA60 三條 trend line (跟股價走嘅斜線, 主流 trading app 風格). 由 `createPriceLine` (水平價線) 改 `addLineSeries` (re-compute MA 歷史 series). `_computeMASeries` skip header `period-1` 點避免 lightweight-charts 將 null 當 0. Function name `renderMAChartOverlay` → `renderChartOverlay` 跟 testing page 嘅 standard contract. 3 commits (`9d77021a` / `ec452c98` / `830927cc`). Tests 12/12 + 19/19 全部 pass. |
 | 2026-08-07 | **MA chart overlay 完成** — MiniMax Code: testing page 嘅 K 線圖 render MA5/MA10/MA60 三條 trend line (跟股價走嘅斜線, 主流 trading app 風格). 由 `createPriceLine` (水平價線) 改 `addLineSeries` (re-compute MA 歷史 series). `_computeMASeries` skip header `period-1` 點避免 lightweight-charts 將 null 當 0. Function name `renderMAChartOverlay` → `renderChartOverlay` 跟 testing page 嘅 standard contract. 3 commits (`9d77021a` / `ec452c98` / `830927cc`). Tests 12/12 + 19/19 全部 pass. |
 | 2026-08-07 | **Module 2 (高低點結構法) v0.1.0 落地** — MiniMax Code: 18 步 v2.0 algorithm (modules/hl-structure.ts) + config (HLStructureConfig) + tests (12/12 pass) + adapter (`hlStructureAdapter` named export) + testing page integration (REGISTRY entry + `renderChartOverlay` contract) + spec doc (`MODULE-02-HL-STRUCTURE.md`) |
 | 2026-08-07 | **Testing page renderChartOverlay contract** — 通用 contract, 每個 adapter 自己 implement chart overlay (peaks/troughs markers + 箱體線 + 形態預警) |

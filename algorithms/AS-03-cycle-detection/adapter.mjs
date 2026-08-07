@@ -2537,3 +2537,748 @@ export const hlStructureAdapter = {
   renderChartOverlay: renderHLStructureChartOverlay,
   getHelp: getHLStructureHelp,
 };
+
+// =============================================================================
+// 2026-08-07 — Module 3 Trendline (趨勢線法) v0.1.0 — 跟 ma-alignment pattern 一致
+// =============================================================================
+//
+// 10 條 rule A-J (port 自 modules/trendline.ts v0.1.0):
+//   Step 1 — 數據驗證 (< 30 bars 報錯, 跟 ma-alignment minDataDays 一致)
+//   Step 2 — 識別極值點 (peaks + troughs) 用 extremeWindow windowing
+//   Step 3 — 動態最優點數 + 簡單 OLS 線性回歸 (support + resistance line)
+//   Step 4 — 通道 + %B 計算
+//   Step 5 — 觸線統計 (touches) + 突破判定 (breakout)
+//   Step 6 — 投影 (projection 5 日)
+//   Step 7 — 10 條 rule check (A-J)
+//   Step 8 — State derivation (priority H > A > B > F > G > C > D > default SIDEWAYS)
+//   Step 9 — Confidence derivation (strong 0.7 / medium 0.5 / weak +0.10 bonus)
+//   Step 10 — Evidence + Meta output
+//
+// 由 Kimi v2.0 docx (RANSAC + 成交量加權 + ATR normalized + R² dynamic + 真假突破 + %B) 簡化:
+//   移除: RANSAC / 成交量加權 / ATR 歸一化 / 假突破 multiplier / %B 指標
+//   改用: 簡單 OLS 線性回歸 + 10 條 rule (A-J), additive confidence
+//   跟 ma-alignment.ts / hl-structure.ts style 一致 (大少 rule-based 風格)
+
+const DEFAULT_TRENDLINE_CONFIG = {
+  extremeWindow: 3,
+  minLinePoints: 3,
+  maxLinePoints: 8,
+  minR2: 0.55,
+  touchTolerancePct: 0.015,
+  breakoutWindow: 5,
+  breakoutConfirmDays: 2,
+  projectionDays: 5,
+  flatSlopeThreshold: 0.001,
+  maxExtremeAgeDays: 30,
+};
+
+export async function analyzeTrendline(klines, options = {}) {
+  const cfg = { ...DEFAULT_TRENDLINE_CONFIG, ...(options.trendlineConfig || {}) };
+  const n = klines.length;
+
+  // Step 1: 數據驗證
+  const minRequired = 30;
+  if (n < minRequired) {
+    throw new Error(
+      `[Trendline] Insufficient data: need ≥ ${minRequired} bars, got ${n}`,
+    );
+  }
+
+  const dataWindowDays = options.dataWindowDays ?? n;
+  const recent = klines.slice(-Math.min(dataWindowDays, n));
+  const recentN = recent.length;
+
+  // Step 2: 識別極值點 (peaks + troughs)
+  const peaks = [];
+  const troughs = [];
+  const halfWindow = cfg.extremeWindow;
+
+  for (let i = halfWindow; i < recentN - halfWindow; i++) {
+    const curr = recent[i];
+    let isPeak = true;
+    let isTrough = true;
+    for (let j = i - halfWindow; j <= i + halfWindow; j++) {
+      if (j === i) continue;
+      if (curr.high <= recent[j].high) isPeak = false;
+      if (curr.low >= recent[j].low) isTrough = false;
+      if (!isPeak && !isTrough) break;
+    }
+    if (isPeak) {
+      peaks.push({
+        index: i,
+        date: String(curr.timestamp ?? curr.date ?? ''),
+        high: curr.high,
+        low: curr.low,
+        close: curr.close,
+        volume: curr.volume,
+        type: 'peak',
+      });
+    }
+    if (isTrough) {
+      troughs.push({
+        index: i,
+        date: String(curr.timestamp ?? curr.date ?? ''),
+        high: curr.high,
+        low: curr.low,
+        close: curr.close,
+        volume: curr.volume,
+        type: 'trough',
+      });
+    }
+  }
+
+  // 極值點不足 → fallback SIDEWAYS
+  if (peaks.length < cfg.minLinePoints || troughs.length < cfg.minLinePoints) {
+    return {
+      moduleId: 'trendline',
+      timeframe: options.period || '1d',
+      state: 'SIDEWAYS',
+      confidence: 0.3,
+      interpretation: `極值點不足 (peaks=${peaks.length}, troughs=${troughs.length}, 需要 ≥ ${cfg.minLinePoints} 個), 預設橫行 (信心 0.3)`,
+      evidence: [
+        {
+          type: 'insufficient-data',
+          label: `極值點不足 (peaks=${peaks.length}, troughs=${troughs.length})`,
+          value: recent.length,
+          threshold: cfg.minLinePoints,
+          passed: false,
+        },
+      ],
+      warnings: [`極值點不足 (peaks=${peaks.length}, troughs=${troughs.length}, 需要 ≥ ${cfg.minLinePoints} 個)`],
+      meta: {
+        matchedRules: [],
+        ruleLabels: [],
+        baseConfidence: 0.3,
+        dataDays: recent.length,
+        configUsed: cfg,
+      },
+      timestamp: Date.now(),
+    };
+  }
+
+  // Step 3: 動態最優點數 + 簡單 OLS 擬合
+  const supportFit = fitLine(troughs, 'support', cfg);
+  const resistanceFit = fitLine(peaks, 'resistance', cfg);
+
+  // Step 4: Channel + %B
+  const latestIdx = recentN - 1;
+  const supportVal = supportFit.intercept + supportFit.slope * latestIdx;
+  const resistanceVal = resistanceFit.intercept + resistanceFit.slope * latestIdx;
+  const latestClose = recent[latestIdx].close;
+  const channelWidth = resistanceVal - supportVal;
+  const mid = (supportVal + resistanceVal) / 2;
+  const channelWidthPct = mid > 0 ? channelWidth / mid : 0;
+  const percentB = channelWidth > 0 ? (latestClose - supportVal) / channelWidth : 0.5;
+
+  // Step 5: 觸線統計 + 突破判定
+  const supportTouch = analyzeTouches(supportFit, 'support', recent, cfg);
+  const resistanceTouch = analyzeTouches(resistanceFit, 'resistance', recent, cfg);
+  const supportBreakout = detectBreakout(supportFit, 'support', recent, cfg);
+  const resistanceBreakout = detectBreakout(resistanceFit, 'resistance', recent, cfg);
+
+  // Step 6: 投影 (5 日)
+  const futureIdx = latestIdx + cfg.projectionDays;
+  const supportFuture = supportFit.intercept + supportFit.slope * futureIdx;
+  const resistanceFuture = resistanceFit.intercept + resistanceFit.slope * futureIdx;
+  const midFuture = (supportFuture + resistanceFuture) / 2;
+
+  // Step 7: 10 條 rule check
+  const matchedRules = [];
+  if (supportFit.slope > 0 && supportFit.r2 >= cfg.minR2) {
+    matchedRules.push({ id: 'A', label: '支撐線上升', strength: 'strong' });
+  }
+  if (resistanceFit.slope < 0 && resistanceFit.r2 >= cfg.minR2) {
+    matchedRules.push({ id: 'B', label: '壓力線下降', strength: 'strong' });
+  }
+  if (channelWidthPct < 0.03 && percentB >= 0.4 && percentB <= 0.6) {
+    matchedRules.push({ id: 'C', label: '通道窄 + 中位', strength: 'medium' });
+  }
+  if (supportFit.slope > 0 && resistanceFit.slope < 0) {
+    matchedRules.push({ id: 'D', label: '收斂三角形', strength: 'medium' });
+  }
+  if (supportFit.slope > 0 && Math.abs(resistanceFit.slope) <= cfg.flatSlopeThreshold) {
+    matchedRules.push({ id: 'E', label: '上升楔形', strength: 'medium' });
+  }
+  if (Math.abs(supportFit.slope) <= cfg.flatSlopeThreshold && resistanceFit.slope < 0) {
+    matchedRules.push({ id: 'F', label: '下降楔形', strength: 'medium' });
+  }
+  if (supportBreakout.isBreakout && supportBreakout.type === 'true') {
+    matchedRules.push({ id: 'G', label: '真跌破支撐', strength: 'strong' });
+  }
+  if (resistanceBreakout.isBreakout && resistanceBreakout.type === 'true') {
+    matchedRules.push({ id: 'H', label: '真突破壓力', strength: 'strong' });
+  }
+  if (supportTouch.touches >= 2 && supportTouch.avgBouncePct >= 0.01) {
+    matchedRules.push({ id: 'I', label: '支撐有效', strength: 'weak' });
+  }
+  if (resistanceTouch.touches >= 2 && resistanceTouch.avgBouncePct >= 0.01) {
+    matchedRules.push({ id: 'J', label: '壓力有效', strength: 'weak' });
+  }
+
+  // Step 8: State derivation
+  const state = deriveTrendlineState(matchedRules);
+
+  // Step 9: Confidence derivation
+  const { baseConfidence, confidence, adjustmentLog } = deriveTrendlineConfidence(
+    matchedRules, supportFit, resistanceFit, latestIdx, recentN, cfg
+  );
+
+  // 計算 latest extreme age
+  const allExtrema = [...peaks, ...troughs];
+  const lastExtremeIdx = allExtrema.length > 0
+    ? Math.max(...allExtrema.map(p => p.index))
+    : 0;
+  const latestExtremeAge = allExtrema.length > 0 ? recentN - 1 - lastExtremeIdx : -1;
+
+  // Step 10: Evidence + Meta
+  const evidence = [
+    {
+      type: 'support-slope',
+      label: `支撐線斜率: ${supportFit.slope.toFixed(4)}`,
+      value: supportFit.slope,
+      threshold: 0,
+      passed: supportFit.slope > 0,
+    },
+    {
+      type: 'support-r2',
+      label: `支撐線 R²: ${supportFit.r2.toFixed(3)}`,
+      value: supportFit.r2,
+      threshold: cfg.minR2,
+      passed: supportFit.r2 >= cfg.minR2,
+    },
+    {
+      type: 'resistance-slope',
+      label: `壓力線斜率: ${resistanceFit.slope.toFixed(4)}`,
+      value: resistanceFit.slope,
+      threshold: 0,
+      passed: resistanceFit.slope < 0,
+    },
+    {
+      type: 'resistance-r2',
+      label: `壓力線 R²: ${resistanceFit.r2.toFixed(3)}`,
+      value: resistanceFit.r2,
+      threshold: cfg.minR2,
+      passed: resistanceFit.r2 >= cfg.minR2,
+    },
+    {
+      type: 'channel',
+      label: `通道寬度: ${(channelWidthPct * 100).toFixed(2)}% (%B = ${percentB.toFixed(3)})`,
+      value: channelWidthPct,
+      threshold: 0.03,
+      passed: channelWidthPct < 0.03,
+    },
+    {
+      type: 'support-breakout',
+      label: supportBreakout.isBreakout
+        ? `支撐突破: ${supportBreakout.type} (${supportBreakout.daysSince} 日前)`
+        : '支撐線: 無突破',
+      value: supportBreakout.isBreakout,
+      passed: !supportBreakout.isBreakout,
+    },
+    {
+      type: 'resistance-breakout',
+      label: resistanceBreakout.isBreakout
+        ? `壓力突破: ${resistanceBreakout.type} (${resistanceBreakout.daysSince} 日前)`
+        : '壓力線: 無突破',
+      value: resistanceBreakout.isBreakout,
+      passed: !resistanceBreakout.isBreakout,
+    },
+    {
+      type: 'matched-rules',
+      label: `觸發 rules: ${matchedRules.map(r => r.id).join(', ') || '無'}`,
+      value: matchedRules.map(r => r.id).join(','),
+      passed: matchedRules.length > 0,
+    },
+  ];
+
+  const interpretation = buildTrendlineReason(
+    state, matchedRules, supportFit, resistanceFit,
+    channelWidthPct, percentB, supportBreakout, resistanceBreakout
+  );
+
+  return {
+    moduleId: 'trendline',
+    timeframe: options.period || '1d',
+    state,
+    confidence: round(confidence, 4),
+    interpretation,
+    evidence,
+    warnings: [],
+    meta: {
+      matchedRules: matchedRules.map(r => r.id),
+      ruleLabels: matchedRules.map(r => r.label),
+      baseConfidence: round(baseConfidence, 4),
+      supportLine: {
+        slope: round(supportFit.slope, 6),
+        r2: round(supportFit.r2, 4),
+        numPoints: supportFit.numPoints,
+        intercept: round(supportFit.intercept, 2),
+        currentValue: round(supportVal, 2),
+        touches: supportTouch.touches,
+        avgBouncePct: round(supportTouch.avgBouncePct, 4),
+      },
+      resistanceLine: {
+        slope: round(resistanceFit.slope, 6),
+        r2: round(resistanceFit.r2, 4),
+        numPoints: resistanceFit.numPoints,
+        intercept: round(resistanceFit.intercept, 2),
+        currentValue: round(resistanceVal, 2),
+        touches: resistanceTouch.touches,
+        avgBouncePct: round(resistanceTouch.avgBouncePct, 4),
+      },
+      channel: {
+        widthPct: round(channelWidthPct, 4),
+        percentB: round(percentB, 4),
+      },
+      breakout: {
+        support: supportBreakout.isBreakout
+          ? { type: supportBreakout.type, daysSince: supportBreakout.daysSince }
+          : { type: 'none', daysSince: -1 },
+        resistance: resistanceBreakout.isBreakout
+          ? { type: resistanceBreakout.type, daysSince: resistanceBreakout.daysSince }
+          : { type: 'none', daysSince: -1 },
+      },
+      latestClose: round(latestClose, 2),
+      latestExtremeAge,
+      projection: {
+        days: cfg.projectionDays,
+        supportFuture: round(supportFuture, 2),
+        resistanceFuture: round(resistanceFuture, 2),
+        midFuture: round(midFuture, 2),
+      },
+      adjustmentLog,
+      dataDays: recentN,
+      configUsed: cfg,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+// ===== Trendline helpers =====
+
+function fitLine(points, lineType, cfg) {
+  const ys = lineType === 'support' ? points.map(p => p.low) : points.map(p => p.high);
+  const xs = points.map(p => p.index);
+
+  let bestFit = null;
+  let bestR2 = -Infinity;
+  const maxN = Math.min(cfg.maxLinePoints, points.length);
+  for (let n = cfg.minLinePoints; n <= maxN; n++) {
+    const xSubset = xs.slice(-n);
+    const ySubset = ys.slice(-n);
+    const pointsSubset = points.slice(-n);
+    const { slope, intercept, r2 } = linearRegression(xSubset, ySubset);
+    if (r2 > bestR2) {
+      bestR2 = r2;
+      bestFit = { slope, intercept, r2, numPoints: n, usedPoints: pointsSubset };
+    }
+  }
+  if (!bestFit) return { slope: 0, intercept: 0, r2: 0, numPoints: 0, usedPoints: [] };
+  return bestFit;
+}
+
+function linearRegression(xs, ys) {
+  const n = xs.length;
+  if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
+  const xMean = xs.reduce((a, b) => a + b, 0) / n;
+  const yMean = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, denom = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - xMean) * (ys[i] - yMean);
+    denom += (xs[i] - xMean) ** 2;
+  }
+  const slope = denom === 0 ? 0 : num / denom;
+  const intercept = yMean - slope * xMean;
+  let ssRes = 0, ssTot = 0;
+  for (let i = 0; i < n; i++) {
+    const yPred = slope * xs[i] + intercept;
+    ssRes += (ys[i] - yPred) ** 2;
+    ssTot += (ys[i] - yMean) ** 2;
+  }
+  const r2 = ssTot === 0 ? 0 : Math.max(0, 1 - ssRes / ssTot);
+  return { slope, intercept, r2 };
+}
+
+function analyzeTouches(fit, lineType, recent, cfg) {
+  const fittedIndices = new Set(fit.usedPoints.map(p => p.index));
+  const n = recent.length;
+  let touches = 0;
+  const bounces = [];
+  for (let i = 0; i < n - 4; i++) {
+    if (fittedIndices.has(i)) continue;
+    const lineValue = fit.intercept + fit.slope * i;
+    const tolerance = lineValue * cfg.touchTolerancePct;
+    const bar = recent[i];
+    let isTouch = false;
+    let bouncePct = 0;
+    if (lineType === 'support') {
+      if (bar.low <= lineValue * (1 + cfg.touchTolerancePct) ||
+          Math.abs(bar.low - lineValue) <= tolerance) {
+        isTouch = true;
+        let futureHigh = 0;
+        for (let j = i + 1; j < Math.min(n, i + 5); j++) {
+          futureHigh = Math.max(futureHigh, recent[j].high);
+        }
+        if (futureHigh > 0 && bar.close > 0) bouncePct = (futureHigh - bar.close) / bar.close;
+      }
+    } else {
+      if (bar.high >= lineValue * (1 - cfg.touchTolerancePct) ||
+          Math.abs(bar.high - lineValue) <= tolerance) {
+        isTouch = true;
+        let futureLow = Infinity;
+        for (let j = i + 1; j < Math.min(n, i + 5); j++) {
+          futureLow = Math.min(futureLow, recent[j].low);
+        }
+        if (futureLow < Infinity && bar.close > 0) bouncePct = (bar.close - futureLow) / bar.close;
+      }
+    }
+    if (isTouch) {
+      touches++;
+      bounces.push(bouncePct);
+    }
+  }
+  const avgBouncePct = bounces.length > 0
+    ? bounces.reduce((a, b) => a + b, 0) / bounces.length
+    : 0;
+  return { touches, avgBouncePct, bounceScores: bounces };
+}
+
+function detectBreakout(fit, lineType, recent, cfg) {
+  const n = recent.length;
+  const latestIdx = n - 1;
+  const windowStart = Math.max(0, latestIdx - cfg.breakoutWindow);
+  let isBreakout = false;
+  let direction = 'none';
+  let breakoutType = 'unknown';
+  let breakoutIdx = -1;
+
+  for (let i = windowStart + 1; i <= latestIdx; i++) {
+    const lineCurr = fit.intercept + fit.slope * i;
+    const linePrev = fit.intercept + fit.slope * (i - 1);
+    const prevClose = recent[i - 1].close;
+    const currClose = recent[i].close;
+    if (lineType === 'support') {
+      if (prevClose >= linePrev && currClose < lineCurr) {
+        isBreakout = true;
+        direction = 'support';
+        breakoutIdx = i;
+        let daysBelow = 0;
+        for (let j = i + 1; j <= Math.min(latestIdx, i + cfg.breakoutConfirmDays); j++) {
+          const lineJ = fit.intercept + fit.slope * j;
+          if (recent[j].close < lineJ) daysBelow++;
+        }
+        breakoutType = daysBelow >= cfg.breakoutConfirmDays ? 'true' : 'false';
+        break;
+      }
+    } else {
+      if (prevClose <= linePrev && currClose > lineCurr) {
+        isBreakout = true;
+        direction = 'resistance';
+        breakoutIdx = i;
+        let daysAbove = 0;
+        for (let j = i + 1; j <= Math.min(latestIdx, i + cfg.breakoutConfirmDays); j++) {
+          const lineJ = fit.intercept + fit.slope * j;
+          if (recent[j].close > lineJ) daysAbove++;
+        }
+        breakoutType = daysAbove >= cfg.breakoutConfirmDays ? 'true' : 'false';
+        break;
+      }
+    }
+  }
+  const daysSince = breakoutIdx >= 0 ? latestIdx - breakoutIdx : -1;
+  return { isBreakout, direction, type: breakoutType, daysSince, breakoutIdx };
+}
+
+function deriveTrendlineState(rules) {
+  const ids = new Set(rules.map(r => r.id));
+  if (ids.has('H') && ids.has('G')) return 'TRANSITION';
+  if (ids.has('H')) return 'UP';
+  if (ids.has('A')) return 'UP';
+  if (ids.has('B')) return 'DOWN';
+  if (ids.has('F')) return 'DOWN';
+  if (ids.has('G')) return 'DOWN';
+  if (ids.has('C') || ids.has('D')) return 'SIDEWAYS';
+  return 'SIDEWAYS';
+}
+
+function deriveTrendlineConfidence(rules, supportFit, resistanceFit, latestIdx, recentN, cfg) {
+  const adjustmentLog = [];
+  let base = 0.5;
+  if (rules.some(r => r.strength === 'strong')) base = 0.7;
+
+  let conf = base;
+  for (const r of rules) {
+    if (r.strength === 'weak') conf += 0.10;
+  }
+
+  if (supportFit.r2 < cfg.minR2 && resistanceFit.r2 < cfg.minR2) {
+    conf -= 0.10;
+    adjustmentLog.push('兩條趨勢線 R² 均低於 minR2, 信心 -0.10');
+  } else if (supportFit.r2 < cfg.minR2) {
+    conf -= 0.05;
+    adjustmentLog.push('支撐線 R² 偏低, 信心 -0.05');
+  } else if (resistanceFit.r2 < cfg.minR2) {
+    conf -= 0.05;
+    adjustmentLog.push('壓力線 R² 偏低, 信心 -0.05');
+  }
+
+  const lastFitIdx = supportFit.usedPoints.length > 0
+    ? Math.max(...supportFit.usedPoints.map(p => p.index))
+    : 0;
+  const latestExtremeAge = recentN - 1 - lastFitIdx;
+  if (latestExtremeAge > cfg.maxExtremeAgeDays) {
+    conf -= 0.10;
+    adjustmentLog.push(`趨勢線最舊極值點距今 ${latestExtremeAge} 日, 信號老化, 信心 -0.10`);
+  }
+
+  const clamped = Math.max(0, Math.min(1, conf));
+  return { baseConfidence: base, confidence: clamped, adjustmentLog };
+}
+
+function buildTrendlineReason(state, rules, supportFit, resistanceFit, channelWidthPct, percentB, supportBreakout, resistanceBreakout) {
+  if (rules.length === 0) return '趨勢線信號唔清晰, 預設橫行';
+  const stateText = { UP: '上升趨勢', DOWN: '下跌趨勢', SIDEWAYS: '橫行', TRANSITION: '短線反轉' };
+  const ruleStr = rules.map(r => r.id).join('+');
+  const channelStr = channelWidthPct < 0.03 ? '窄通道' : channelWidthPct < 0.10 ? '中等通道' : '寬通道';
+  if (state === 'TRANSITION') {
+    return `短線反轉: 支撐同壓力線都出現真突破訊號 (${ruleStr}), 趨勢可能反轉`;
+  }
+  return `${stateText[state]}: 觸發 ${ruleStr} rules, 支撐 R²=${supportFit.r2.toFixed(2)}, 壓力 R²=${resistanceFit.r2.toFixed(2)}, ${channelStr}, %B=${percentB.toFixed(2)}`;
+}
+
+// ===== Trendline result renderer =====
+function renderTrendlineResult(verdict) {
+  const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
+  const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
+  const color = stateColors[verdict.state] || '#666';
+  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const matchedRules = verdict.meta?.matchedRules || [];
+  const evidence = verdict.evidence || [];
+
+  const matchedRulesHtml = matchedRules.length === 0
+    ? '<li style="color: #888;">無 rule match</li>'
+    : matchedRules.map((rid) => {
+        const ev = evidence.find((e) => e.value === rid);
+        const strengthClass = ['A', 'B', 'G', 'H'].includes(rid) ? 'strong'
+          : ['I', 'J'].includes(rid) ? 'weak'
+          : 'medium';
+        return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
+      }).join('');
+
+  return `
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header">📈 趨勢線法 (Trendline)</h3>
+      </div>
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${color}">
+          <span class="state-label">${stateLabel}</span>
+          <span class="state-code">${verdict.state}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">信心指數</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
+          <div class="summary-row"><span>Matched Rules:</span> <strong>${matchedRules.length}</strong></div>
+        </div>
+      </div>
+
+      <div class="interpretation">
+        <strong>📌 解讀：</strong>${verdict.interpretation}
+      </div>
+
+      <div class="trendline-values">
+        <h4>當前 Trendline 值</h4>
+        <div class="ma-grid">
+          <div class="ma-item"><span class="ma-label">支撐斜率</span><span class="ma-value">${verdict.meta.supportLine?.slope ?? 'N/A'}</span></div>
+          <div class="ma-item"><span class="ma-label">支撐 R²</span><span class="ma-value">${verdict.meta.supportLine?.r2 ?? 'N/A'}</span></div>
+          <div class="ma-item"><span class="ma-label">壓力斜率</span><span class="ma-value">${verdict.meta.resistanceLine?.slope ?? 'N/A'}</span></div>
+          <div class="ma-item"><span class="ma-label">壓力 R²</span><span class="ma-value">${verdict.meta.resistanceLine?.r2 ?? 'N/A'}</span></div>
+          <div class="ma-item"><span class="ma-label">通道寬度</span><span class="ma-value">${(verdict.meta.channel?.widthPct * 100).toFixed(2)}%</span></div>
+          <div class="ma-item"><span class="ma-label">%B</span><span class="ma-value">${verdict.meta.channel?.percentB ?? 'N/A'}</span></div>
+        </div>
+      </div>
+
+      <div class="matched-rules">
+        <h4>🎯 Matched Rules（${matchedRules.length} 條）</h4>
+        <ul>${matchedRulesHtml}</ul>
+      </div>
+
+      <details class="meta-details">
+        <summary>🔧 配置（debug 用）</summary>
+        <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
+      </details>
+    </div>
+  `;
+}
+
+// ===== Trendline chart overlay (testing page contract) =====
+// 喺 chart 上面加 support line + resistance line (2 條 trend line)
+// 從 verdict.meta.supportLine / resistanceLine 嘅 intercept + slope 計算每個 bar 嘅 value
+// 跟 stockpulse testing page 嘅 renderChartOverlay contract 一致
+function _trendlineNormalizeTime(t) {
+  if (typeof t === 'number') return t > 1e12 ? Math.floor(t / 1000) : t;
+  if (typeof t === 'string') return Math.floor(new Date(t).getTime() / 1000);
+  return null;
+}
+
+function _computeTrendlineSeries(klines, line) {
+  // line = { slope, intercept, numPoints }  ← 從 verdict.meta 取
+  if (!line || typeof line.slope !== 'number' || typeof line.intercept !== 'number') {
+    return [];
+  }
+  const out = [];
+  // 線只覆蓋 line.usedPoints 範圍, 但我哋 fit 嘅 usedPoints 唔喺 verdict meta 內
+  // 所以用支持/壓力線 喺每個 bar 嘅 value 算
+  for (let i = 0; i < klines.length; i++) {
+    const time = _trendlineNormalizeTime(klines[i].time ?? klines[i].timestamp ?? klines[i].date);
+    if (time == null) continue;
+    const value = line.intercept + line.slope * i;
+    out.push({ time, value });
+  }
+  out.sort((a, b) => a.time - b.time);
+  const dedup = [];
+  for (let i = 0; i < out.length; i++) {
+    if (i === 0 || out[i].time !== out[i - 1].time) dedup.push(out[i]);
+  }
+  return dedup;
+}
+
+function renderTrendlineChartOverlay(verdict, klines, chartRefs) {
+  if (!chartRefs || !chartRefs.chart) {
+    console.warn('[renderTrendlineChartOverlay] chartRefs.chart 缺失');
+    return;
+  }
+  if (!verdict || !verdict.meta) {
+    console.warn('[renderTrendlineChartOverlay] verdict 缺失');
+    return;
+  }
+  if (!Array.isArray(klines) || klines.length === 0) {
+    console.warn('[renderTrendlineChartOverlay] klines 缺失或空');
+    return;
+  }
+  const support = verdict.meta.supportLine;
+  const resistance = verdict.meta.resistanceLine;
+  if (!support || !resistance) {
+    console.warn('[renderTrendlineChartOverlay] verdict.meta 冇 supportLine/resistanceLine (可能係 fallback SIDEWAYS)');
+    return;
+  }
+
+  const chart = chartRefs.chart;
+  if (typeof chart.addLineSeries !== 'function') {
+    console.error('[renderTrendlineChartOverlay] chart 冇 addLineSeries method');
+    return;
+  }
+
+  // 移除舊 trendline series
+  if (chartRefs.trendlineLineSeries) {
+    for (const key of Object.keys(chartRefs.trendlineLineSeries)) {
+      try { chart.removeSeries(chartRefs.trendlineLineSeries[key]); } catch (e) { /* ignore */ }
+    }
+  }
+  chartRefs.trendlineLineSeries = {};
+
+  // Support line (綠)
+  try {
+    const supportSeries = _computeTrendlineSeries(klines, support);
+    if (supportSeries.length > 0) {
+      const s = chart.addLineSeries({
+        color: '#2ecc71',
+        lineWidth: 2,
+        title: '支撐線',
+        priceLineVisible: false,
+        lastValueVisible: true,
+      });
+      s.setData(supportSeries);
+      chartRefs.trendlineLineSeries.support = s;
+    }
+  } catch (e) {
+    console.error('[renderTrendlineChartOverlay] support line 失敗:', e);
+  }
+
+  // Resistance line (紅)
+  try {
+    const resistanceSeries = _computeTrendlineSeries(klines, resistance);
+    if (resistanceSeries.length > 0) {
+      const s = chart.addLineSeries({
+        color: '#e74c3c',
+        lineWidth: 2,
+        title: '壓力線',
+        priceLineVisible: false,
+        lastValueVisible: true,
+      });
+      s.setData(resistanceSeries);
+      chartRefs.trendlineLineSeries.resistance = s;
+    }
+  } catch (e) {
+    console.error('[renderTrendlineChartOverlay] resistance line 失敗:', e);
+  }
+}
+
+function getTrendlineHelp() {
+  return `
+    <h4>趨勢線法 (Trendline) · 10 條 Rule (A-J)</h4>
+    <ul>
+      <li><strong>A</strong> <small>(strong)</small>: 支撐線上升 + R² ≥ 0.55 → 上升趨勢</li>
+      <li><strong>B</strong> <small>(strong)</small>: 壓力線下降 + R² ≥ 0.55 → 下跌趨勢</li>
+      <li><strong>C</strong> <small>(medium)</small>: 通道窄 (&lt; 3%) + 中位 (%B 0.4-0.6) → 橫行</li>
+      <li><strong>D</strong> <small>(medium)</small>: 收斂三角形 (支撐升 + 壓力跌) → 橫行</li>
+      <li><strong>E</strong> <small>(medium)</small>: 上升楔形 (支撐升 + 壓力平) → 上升</li>
+      <li><strong>F</strong> <small>(medium)</small>: 下降楔形 (支撐平 + 壓力跌) → 下跌</li>
+      <li><strong>G</strong> <small>(strong)</small>: 真跌破支撐 (5 日內穿越 + stay ≥ 2 日) → 下跌</li>
+      <li><strong>H</strong> <small>(strong)</small>: 真突破壓力 (5 日內穿越 + stay ≥ 2 日) → 上升</li>
+      <li><strong>I</strong> <small>(weak)</small>: 支撐有效 (觸線 ≥ 2 次 + 反彈 ≥ 1%) → +0.10 conf</li>
+      <li><strong>J</strong> <small>(weak)</small>: 壓力有效 (觸線 ≥ 2 次 + 反彈 ≥ 1%) → +0.10 conf</li>
+    </ul>
+    <p><strong>State priority:</strong> H+G → TRANSITION · H > A > B > F > G > C/D > default SIDEWAYS</p>
+    <p><strong>Confidence:</strong> strong 0.7 / medium 0.5 / weak +0.10 bonus, cap 1.0</p>
+    <p><strong>v0.1.0 簡化 (從 Kimi v2.0 移除):</strong> RANSAC / 成交量加權 / ATR 歸一化 / 假突破 multiplier / %B 指標,改用簡單 OLS 線性回歸</p>
+  `;
+}
+
+export const trendlineAdapter = {
+  id: 'AS-03-TL',
+  name: '趨勢線法 (Trendline)',
+  version: '0.1.0',
+  description: '用 10 條 rule (A-J) 識別股票趨勢線 (支撐/壓力), 判定週期 (上升/下跌/橫行/反轉)',
+  contextLines: [],
+  inputs: [
+    {
+      key: 'code',
+      label: '股票代碼',
+      type: 'autocomplete',
+      required: true,
+      endpoint: '/api/stocks/search',
+      queryParam: 'q',
+      placeholder: '輸入代碼或名稱（例: 00981 或 中芯）',
+      limit: 10,
+      marketFn: 'auto',
+    },
+    {
+      key: 'period',
+      label: '時間週期',
+      type: 'select',
+      options: [
+        { value: '1d', label: '日線' },
+        { value: '1w', label: '週線' },
+      ],
+      default: '1d',
+    },
+    {
+      key: 'dataWindowDays',
+      label: '取數據日數',
+      type: 'number',
+      default: 100,
+      min: 30,
+      max: 500,
+    },
+  ],
+  analyze: analyzeTrendline,
+  renderResult: renderTrendlineResult,
+  renderChartOverlay: renderTrendlineChartOverlay,
+  getHelp: getTrendlineHelp,
+};

@@ -107,7 +107,7 @@ export const DEFAULT_ENABLE_FLAGS: EnableFlags = {
   volumePrice: true,                 // 量價預設 ON
   slopeMomentum: false,              // 斜率預設 OFF (高 overlap with MA alignment)
   hlStructure: true,
-  trendline: true,
+  trendline: true,                   // 趨勢線預設 ON
   indicators: true,
 };
 
@@ -156,6 +156,60 @@ export interface HLStructureConfig {
   freshnessMinMultiplier: number;      // 0.4 — 新鮮度折扣下限
 }
 
+/**
+ * Trendline module config (大少 + MiniMax Code 2026-08-07 — Module 3 v0.1.0)
+ *
+ * 跟 docx `docs/演算法概念SPECS/3趨勢線法.docx` v2.0 spec 嘅 9 個 tunable parameters
+ * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md`
+ *
+ * 從 Kimi v2.0 簡化: 移除 RANSAC / 成交量加權 / ATR normalized / 假突破 multiplier / %B 指標
+ * 改用 10 條 rule-based (A-J), additive confidence, 簡單 OLS 線性回歸
+ */
+export interface TrendlineConfig {
+  // Step 0 (extreme detection)
+  extremeWindow: number;              // 3 — 識別極值點嘅左右觀察窗口
+  minLinePoints: number;              // 3 — 趨勢線最少擬合點數
+  maxLinePoints: number;              // 8 — 趨勢線最多擬合點數 (動態選 R² 最高)
+
+  // Step 2 (fit quality)
+  minR2: number;                      // 0.55 — 最低 R² 要求 (rule A/B 觸發條件)
+
+  // Step 4 (touch detection)
+  touchTolerancePct: number;          // 0.015 — 觸線判定容忍度 (1.5%)
+
+  // Step 5 (breakout)
+  breakoutWindow: number;             // 5 — 過去 N 日內突破先當 breakout
+  breakoutConfirmDays: number;       // 2 — 突破後 stay on other side 最少日數
+
+  // Step 6 (projection)
+  projectionDays: number;             // 5 — 趨勢線目標價投影天數
+
+  // Step 7 (rule E/F flat threshold)
+  flatSlopeThreshold: number;         // 0.001 — |slope| < 0.001 視為平 (rule E/F)
+
+  // Step 9 (freshness)
+  maxExtremeAgeDays: number;          // 30 — 趨勢線最舊極值點老化門檻
+}
+
+export const DEFAULT_TRENDLINE_CONFIG: TrendlineConfig = {
+  extremeWindow: 3,
+  minLinePoints: 3,
+  maxLinePoints: 8,
+
+  minR2: 0.55,
+
+  touchTolerancePct: 0.015,
+
+  breakoutWindow: 5,
+  breakoutConfirmDays: 2,
+
+  projectionDays: 5,
+
+  flatSlopeThreshold: 0.001,
+
+  maxExtremeAgeDays: 30,
+};
+
 export const DEFAULT_HL_STRUCTURE_CONFIG: HLStructureConfig = {
   minPairs: 3,             // 2026-08-07 — 改返 3 (高質量,需要 6 個 alternating)
   baseWindow: 5,
@@ -188,6 +242,7 @@ export interface CycleConfig {
   volumePrice: VolumePriceConfig;
   slopeMomentum: SlopeMomentumConfig;
   hlStructure: HLStructureConfig;
+  trendline: TrendlineConfig;
   enableFlags: EnableFlags;
 }
 
@@ -196,5 +251,6 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = {
   volumePrice: DEFAULT_VOLUME_PRICE_CONFIG,
   slopeMomentum: DEFAULT_SLOPE_MOMENTUM_CONFIG,
   hlStructure: DEFAULT_HL_STRUCTURE_CONFIG,
+  trendline: DEFAULT_TRENDLINE_CONFIG,
   enableFlags: DEFAULT_ENABLE_FLAGS,
 };
