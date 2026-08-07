@@ -844,17 +844,19 @@ function renderUsageGuideMA(verdict) {
   `;
 }
 
-// ===== MA Chart Overlay (renderChartOverlay for default AS-03 export) =====
+// ===== Chart Overlay (testing page contract) =====
 // 喺 chart 上面加 MA5/MA10/MA60 三條 price line (跟主 web app ChartContainer.tsx default 顏色)
 // 註: 完整 MA 序列 (historical line) 需要 re-compute, 暫時 render 當前 level
 // 2026-08-07 — 大少要求 3 條 MA 線, 加 MA60; 移除 silent catch, 改 console.error visible
-export function renderMAChartOverlay(verdict, klines, chartRefs) {
+// 2026-08-07 — Bug fix: testing page 嘅 contract 叫 renderChartOverlay, 唔好叫 renderMAChartOverlay,
+// 否則 testing page 嘅 `currentAdapter.renderChartOverlay` check 會 false, 永遠唔 invoke
+export function renderChartOverlay(verdict, klines, chartRefs) {
   if (!chartRefs || !chartRefs.chart || !chartRefs.candleSeries) {
-    console.warn('[renderMAChartOverlay] chartRefs 缺失:', { chartRefs });
+    console.warn('[renderChartOverlay] chartRefs 缺失:', { chartRefs });
     return;
   }
   if (!verdict || !verdict.meta) {
-    console.warn('[renderMAChartOverlay] verdict 缺失');
+    console.warn('[renderChartOverlay] verdict 缺失');
     return;
   }
 
@@ -862,11 +864,11 @@ export function renderMAChartOverlay(verdict, klines, chartRefs) {
   const ma10 = verdict.meta.latestMA10;
   const ma60 = verdict.meta.latestMA60;
 
-  console.log('[renderMAChartOverlay] Adding MA lines:', { ma5, ma10, ma60 });
+  console.log('[renderChartOverlay] Adding MA lines:', { ma5, ma10, ma60 });
 
   const series = chartRefs.candleSeries;
   if (!series || typeof series.createPriceLine !== 'function') {
-    console.error('[renderMAChartOverlay] candleSeries 冇 createPriceLine method, version 可能唔啱');
+    console.error('[renderChartOverlay] candleSeries 冇 createPriceLine method, version 可能唔啱');
     return;
   }
 
@@ -890,7 +892,7 @@ export function renderMAChartOverlay(verdict, klines, chartRefs) {
         title: 'MA5 ' + ma5.toFixed(2),
       });
     } catch (e) {
-      console.error('[renderMAChartOverlay] MA5 createPriceLine 失敗:', e);
+      console.error('[renderChartOverlay] MA5 createPriceLine 失敗:', e);
     }
   }
 
@@ -906,7 +908,7 @@ export function renderMAChartOverlay(verdict, klines, chartRefs) {
         title: 'MA10 ' + ma10.toFixed(2),
       });
     } catch (e) {
-      console.error('[renderMAChartOverlay] MA10 createPriceLine 失敗:', e);
+      console.error('[renderChartOverlay] MA10 createPriceLine 失敗:', e);
     }
   }
 
@@ -922,7 +924,7 @@ export function renderMAChartOverlay(verdict, klines, chartRefs) {
         title: 'MA60 ' + ma60.toFixed(2),
       });
     } catch (e) {
-      console.error('[renderMAChartOverlay] MA60 createPriceLine 失敗:', e);
+      console.error('[renderChartOverlay] MA60 createPriceLine 失敗:', e);
     }
   }
 }
