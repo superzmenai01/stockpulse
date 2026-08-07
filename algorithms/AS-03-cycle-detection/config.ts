@@ -41,26 +41,42 @@ export const DEFAULT_MA_ALIGNMENT_CONFIG: MAAlignmentConfig = {
 };
 
 /**
- * VolumePrice module config (大少 #10809 — Module 5 v1.0.0)
+ * VolumePrice module config (大少 2026-08-07 — Module 5 v2.0.0)
  *
- * 跟 quick-draft-main-agent.md Section Module 5 嘅 10 rule K-T
+ * 對應 docx `docs/演算法概念SPECS/05成交量價格行為確認法.docx` v2.0 spec
+ * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md`
+ *
+ * 跟 quick-draft v1.0 嘅 10 rule K-T 比較,大少 2026-08-07 approved overwrite v1.0 → v2.0
+ *   v2.0 根治 v1.0 嘅 9 個硬傷 (見 spec §1),15 條 rule V1-V15 取代 10 條 rule K-T
  */
 export interface VolumePriceConfig {
-  consecutiveDays: number;           // 5 — K/L/M/N 連續日數
-  volumeLookback: number;            // 20 — Q/R 均量比較長度
-  boostThreshold: number;            // 1.2 — 放量門檻 (5日/20日 均量比)
-  shrinkThreshold: number;           // 0.8 — 縮量門檻
-  obvLookback: number;               // 5 — OBV 突破/跌破窗口 (O/P)
-  divergenceCorrelation: number;     // -0.5 — 量能背馳 correlation 門檻 (S)
+  // Step 0 (data validation)
+  volumePercentileLookback: number;   // 60 — 成交量歷史百分位回顧天數
+  vwapPeriod: number;                 // 20 — VWAP 計算週期
+  breakoutConfirmDays: number;        // 3 — 突破後回撤確認天數
+  pullbackCorrelationWindow: number;   // 10 — 回調深度-量相關計算窗口
+
+  // Step 2 (volume pattern)
+  volumeSurgeMinDays: number;         // 2 — 放量最少持續日數(避免單日異常)
+
+  // Step 4 (breakout)
+  falseBreakoutRetracePct: number;    // 0.5 — 假突破回撤判定比例 (50%)
+
+  // Step 6 (dense zones)
+  denseZoneAtrMultiple: number;       // 0.5 — 密集區分箱寬度(幾倍 ATR)
 }
 
 export const DEFAULT_VOLUME_PRICE_CONFIG: VolumePriceConfig = {
-  consecutiveDays: 5,
-  volumeLookback: 20,
-  boostThreshold: 1.2,
-  shrinkThreshold: 0.8,
-  obvLookback: 5,
-  divergenceCorrelation: -0.5,
+  volumePercentileLookback: 60,
+  vwapPeriod: 20,
+  breakoutConfirmDays: 3,
+  pullbackCorrelationWindow: 10,
+
+  volumeSurgeMinDays: 2,
+
+  falseBreakoutRetracePct: 0.5,
+
+  denseZoneAtrMultiple: 0.5,
 };
 
 /**

@@ -997,424 +997,796 @@ const DEFAULT_VOLUME_PRICE_CONFIG = {
   divergenceCorrelation: -0.5,
 };
 
+// ===== VolumePrice v2.0.0 (大少 2026-08-07 overwrite) =====
+//
+// 對應 modules/volume.ts v2.0.0 — 跟 ma-alignment / hl-structure / trendline / indicators pattern 一致
+// 跟 docx `05成交量價格行為確認法.docx` v2.0 spec
+// Spec doc: `docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md`
+//
+// 15 條 rule V1-V15 (對應 modules/volume.ts 嘅 MatchedRule detection)
+// 11 個 step algorithm (data validation → basic indicators → volume filter →
+// weighted OBV → breakout detection → pullback health → ATR dynamic bins →
+// rolling volume-price correlation → volume regime → rule engine → output)
+//
+// State 派生: cycle (uptrend / downtrend / sideways) + signal (CONFIRM / DISCONFIRM / NEUTRAL)
+
 export async function analyzeVolumePrice(klines, options = {}) {
   const cfg = { ...DEFAULT_VOLUME_PRICE_CONFIG, ...(options.volumePriceConfig || {}) };
 
-  // Step 1: 數據驗證
-  if (!Array.isArray(klines) || klines.length < cfg.volumeLookback) {
-    throw new Error(
-      `[VolumePrice] Insufficient data: need ≥ ${cfg.volumeLookback} bars, got ${klines?.length ?? 0}`,
-    );
+  // ============ Step 0: 輸入驗證 ============
+  const minData = Math.max(80, cfg.volumePercentileLookback + cfg.vwapPeriod + cfg.breakoutConfirmDays + 20);
+  if (!Array.isArray(klines) || klines.length < minData) {
+    return {
+      moduleId: 'volume',
+      timeframe: options.period || '1d',
+      state: 'SIDEWAYS',
+      confidence: 0,
+      interpretation: `[VolumePrice v2.0] 數據不足: need >= ${minData} bars, got ${klines.length}`,
+      evidence: [],
+      warnings: [`數據不足 (${klines.length}/${minData})`],
+      meta: { dataDays: klines.length, configUsed: cfg },
+      timestamp: Date.now(),
+    };
   }
-  const recent = klines.slice(-Math.max(klines.length, cfg.volumeLookback));
 
-  // Step 2: 計算 OBV + 均量
-  const obvHistory = [0];
-  for (let i = 1; i < recent.length; i++) {
-    const prev = recent[i - 1];
-    const curr = recent[i];
-    if (curr.close > prev.close) {
-      obvHistory.push(obvHistory[i - 1] + curr.volume);
-    } else if (curr.close < prev.close) {
-      obvHistory.push(obvHistory[i - 1] - curr.volume);
+  const recent = klines.slice(-Math.max(klines.length, minData));
+  const n = recent.length;
+  const lastIdx = n - 1;
+  const lastBar = recent[lastIdx];
+  const currentPrice = lastBar.close;
+
+  // ============ Step 1: 計算基礎指標 ============
+  // ATR (Wilder 14)
+  const atrValue = computeATR_v2(recent, 14);
+  // VWAP
+  const vwapValue = computeVWAP_v2(recent, cfg.vwapPeriod);
+  // Volume percentile
+  const volPercentile = computeVolumePercentile_v2(recent, cfg.volumePercentileLookback);
+  // Turnover rate
+  const sharesOutstanding = options.sharesOutstanding ?? null;
+  const turnoverRate = sharesOutstanding ? lastBar.volume / sharesOutstanding : null;
+
+  // ============ Step 2: 成交量標準差過濾 ============
+  const vol20 = recent.slice(-20).map(k => k.volume);
+  const volMean20 = vol20.reduce((a, b) => a + b, 0) / 20;
+  const volStd20 = Math.sqrt(vol20.reduce((acc, v) => acc + (v - volMean20) ** 2, 0) / 20);
+  const volZScore = volStd20 > 0 ? (lastBar.volume - volMean20) / volStd20 : 0;
+  const prevVol1 = n >= 3 ? recent[n - 2].volume : 0;
+  const prevVol2 = n >= 3 ? recent[n - 3].volume : 0;
+  const isAnomalySpike = volZScore > 3.0
+    && prevVol1 < volMean20 * 1.5
+    && prevVol2 < volMean20 * 1.5
+    && lastBar.volume >= volMean20 * 5;
+
+  // 連續放量
+  let consecutiveSurge = 0;
+  for (let i = lastIdx; i >= Math.max(0, lastIdx - 9); i--) {
+    if (recent[i].volume / volMean20 >= 1.3) consecutiveSurge++;
+    else break;
+  }
+  const isSustainedVolume = consecutiveSurge >= cfg.volumeSurgeMinDays && !isAnomalySpike;
+
+  // ============ Step 3: 加權 OBV (Tanh) ============
+  const weightedObv = [0];
+  for (let i = 1; i < n; i++) {
+    const priceChangePct = (recent[i].close - recent[i - 1].close) / recent[i - 1].close;
+    const weight = Math.tanh(priceChangePct * 10);
+    weightedObv.push(weightedObv[i - 1] + recent[i].volume * weight);
+  }
+  const obvSma20 = computeSMA_v2(weightedObv, 20);
+  const obvTrend = weightedObv[lastIdx] > obvSma20[lastIdx] * 1.03 ? 'rising'
+    : weightedObv[lastIdx] < obvSma20[lastIdx] * 0.97 ? 'falling' : 'flat';
+  const recentCloses20 = recent.slice(-20).map(k => k.close);
+  const recentObv20 = weightedObv.slice(-20);
+  const obvPriceCorr = pearsonCorrelation_v2(recentCloses20, recentObv20);
+
+  // ============ Step 4: 放量突破檢測 ============
+  const last20Closes = recent.slice(-20).map(k => k.close);
+  const recent20High = Math.max(...last20Closes);
+  const last40Closes = recent.slice(-40, -20).map(k => k.close);
+  const prevPeriodHigh = last40Closes.length > 0 ? Math.max(...last40Closes) : recent20High;
+  const breakoutWindow = recent.slice(-(cfg.breakoutConfirmDays + 1)).map(k => k.close);
+  const maxCloseInBreakoutWindow = Math.max(...breakoutWindow);
+  const isPriceBreakout = maxCloseInBreakoutWindow > recent20High * 0.998;
+
+  let breakoutPattern = 'none';
+  let breakoutStrength = 0;
+  let falseBreakoutRisk = 0;
+
+  if (isPriceBreakout && n >= 4) {
+    const baseline7 = recent.slice(n - 9, n - 2).map(k => k.volume);
+    const preAvg = baseline7.reduce((a, b) => a + b, 0) / baseline7.length;
+    const preBreakoutVols = [recent[n - 4].volume, recent[n - 3].volume, recent[n - 2].volume];
+
+    const gradualBuildup = preBreakoutVols.every(v => v > preAvg * 1.1)
+      && lastBar.volume > preAvg * 1.5
+      && !isAnomalySpike;
+    const surgeBreakout = lastBar.volume > preAvg * 2.0 && consecutiveSurge >= 2;
+
+    if (gradualBuildup) {
+      breakoutPattern = 'gradual_buildup';
+      breakoutStrength = 0.9;
+    } else if (surgeBreakout && !isAnomalySpike) {
+      breakoutPattern = 'sustained_surge';
+      breakoutStrength = 0.75;
+    } else if (lastBar.volume > preAvg * 1.5) {
+      breakoutPattern = 'single_spike';
+      breakoutStrength = 0.4;
+      falseBreakoutRisk = 0.4;
     } else {
-      obvHistory.push(obvHistory[i - 1]);
+      breakoutPattern = 'low_volume';
+      breakoutStrength = 0.15;
+      falseBreakoutRisk = 0.7;
+    }
+
+    if (breakoutStrength >= 0.4 && n >= cfg.breakoutConfirmDays + 1) {
+      const postBreakoutLows = recent.slice(-cfg.breakoutConfirmDays).map(k => k.low);
+      const postBreakoutLow = Math.min(...postBreakoutLows);
+      const breakoutLevel = recent20High;
+      const range = breakoutLevel - prevPeriodHigh > 0 ? breakoutLevel - prevPeriodHigh : 1;
+      const retracePct = (breakoutLevel - postBreakoutLow) / range;
+      if (retracePct > cfg.falseBreakoutRetracePct) {
+        falseBreakoutRisk += 0.3;
+      }
     }
   }
 
-  const volMA5History = [];
-  const volMA20History = [];
-  for (let i = 0; i < recent.length; i++) {
-    volMA5History.push(avgField(recent, i, 5, 'volume'));
-    volMA20History.push(avgField(recent, i, cfg.volumeLookback, 'volume'));
+  const isBreakoutConfirmed = breakoutPattern === 'none' ? false
+    : breakoutStrength < 0.4 ? false
+    : n < cfg.breakoutConfirmDays + 1 ? 'pending'
+    : (falseBreakoutRisk < 0.6);
+
+  // ============ Step 5: 回調健康度 ============
+  const last20 = recent.slice(-20);
+  let recentPeakIdx = 0;
+  let recentPeakPrice = last20[0].close;
+  for (let i = 1; i < last20.length; i++) {
+    if (last20[i].close > recentPeakPrice) {
+      recentPeakPrice = last20[i].close;
+      recentPeakIdx = i;
+    }
+  }
+  const recentPeakFullIdx = (n - 20) + recentPeakIdx;
+  const pullbackDays = lastIdx - recentPeakFullIdx;
+  const isPullback = currentPrice < recentPeakPrice * 0.97;
+
+  let pullbackIsHealthy = false;
+  let depthVolCorr = 0;
+  let supportZone = null;
+  let daysToSupport = null;
+
+  if (isPullback && pullbackDays <= 20 && pullbackDays >= 2) {
+    const pullbackSegment = recent.slice(recentPeakFullIdx);
+    const depths = [];
+    const volumes = [];
+    for (const k of pullbackSegment) {
+      depths.push((recentPeakPrice - k.close) / recentPeakPrice);
+      volumes.push(k.volume);
+    }
+    if (depths.length >= 5) {
+      depthVolCorr = pearsonCorrelation_v2(depths, volumes);
+      if (depthVolCorr < -0.3) {
+        pullbackIsHealthy = true;
+        if (currentPrice > vwapValue * 0.99) {
+          supportZone = 'vwap';
+          daysToSupport = 0;
+        } else {
+          supportZone = 'dense_zone_pending';
+          daysToSupport = 0;
+        }
+      } else if (depthVolCorr > 0.3) {
+        pullbackIsHealthy = false;
+      } else {
+        pullbackIsHealthy = 'unclear';
+      }
+    }
   }
 
-  const win = cfg.consecutiveDays;
-  const last5 = recent.slice(-win);
-  const lastClose = last5[last5.length - 1].close;
-  const lastVolume = last5[last5.length - 1].volume;
-  const lastOBV = obvHistory[obvHistory.length - 1];
+  // ============ Step 6: ATR 動態分箱 ============
+  const binWidth = atrValue > 0 ? atrValue * cfg.denseZoneAtrMultiple : currentPrice * 0.01;
+  const bins = new Map();
+  for (let i = Math.max(0, n - 60); i < n; i++) {
+    const center = Math.round(recent[i].close / binWidth) * binWidth;
+    if (!bins.has(center)) {
+      bins.set(center, { totalVol: 0, high: recent[i].high, low: recent[i].low, count: 0 });
+    }
+    const b = bins.get(center);
+    b.totalVol += recent[i].volume;
+    b.high = Math.max(b.high, recent[i].high);
+    b.low = Math.min(b.low, recent[i].low);
+    b.count++;
+  }
+  const overallAvgVol = recent.slice(-60).reduce((acc, k) => acc + k.volume, 0) / 60;
+  const sortedBins = [...bins.entries()].sort((a, b) => b[1].totalVol - a[1].totalVol).slice(0, 3);
+  const denseZones = [];
+  for (const [center, data] of sortedBins) {
+    const avgVolInBin = data.totalVol / data.count;
+    if (avgVolInBin > overallAvgVol * 1.3) {
+      const zoneType = currentPrice > center + binWidth / 2 ? 'support'
+        : currentPrice < center - binWidth / 2 ? 'resistance' : 'neutral';
+      denseZones.push({
+        priceLevelLow: Math.round(data.low * 100) / 100,
+        priceLevelHigh: Math.round(data.high * 100) / 100,
+        priceLevelMid: Math.round(center * 100) / 100,
+        totalVolume: data.totalVol,
+        volumeRatio: Math.round((avgVolInBin / overallAvgVol) * 100) / 100,
+        type: zoneType,
+        distancePct: Math.round(((currentPrice - center) / center) * 10000) / 10000,
+      });
+      if (zoneType === 'support' && supportZone === 'dense_zone_pending') {
+        supportZone = `dense_zone_${Math.round(center)}`;
+      }
+    }
+  }
 
-  // Step 3: 10 條 rule check
+  // ============ Step 7: 滾動量价相關 ============
+  const last15 = recent.slice(-15);
+  const priceChanges = [];
+  const volumeChanges = [];
+  for (let i = 1; i < last15.length; i++) {
+    priceChanges.push((last15[i].close - last15[i - 1].close) / last15[i - 1].close);
+    volumeChanges.push(last15[i - 1].volume > 0
+      ? (last15[i].volume - last15[i - 1].volume) / last15[i - 1].volume
+      : 0);
+  }
+  const corrRecent = priceChanges.length >= 10
+    ? pearsonCorrelation_v2(priceChanges.slice(5, 10), volumeChanges.slice(5, 10))
+    : 0;
+  const corrEarlier = priceChanges.length >= 5
+    ? pearsonCorrelation_v2(priceChanges.slice(0, 5), volumeChanges.slice(0, 5))
+    : 0;
+  const correlationDecay = corrEarlier - corrRecent;
+  const divergenceDetected = correlationDecay > 0.4 && Math.abs(corrRecent) < 0.2;
+  const divergenceType = divergenceDetected
+    ? (currentPrice > last15[last15.length - 6].close ? 'bearish_vp' : 'bullish_vp')
+    : undefined;
+
+  // ============ Step 8: 成交量體制 ============
+  const priceTrend10d = (n >= 11 ? (recent[n - 1].close - recent[n - 11].close) / recent[n - 11].close : 0);
+  const priceRising = priceTrend10d > 0.02;
+  const priceFalling = priceTrend10d < -0.02;
+  let accumulationScore = 0;
+  let distributionScore = 0;
+  if (obvTrend === 'rising' && volPercentile < 0.3) accumulationScore += 0.3;
+  if (pullbackIsHealthy === true) accumulationScore += 0.25;
+  if (breakoutPattern === 'gradual_buildup') accumulationScore += 0.25;
+  if (priceRising && obvTrend === 'rising') accumulationScore += 0.2;
+  if (obvTrend === 'falling' && volPercentile > 0.7) distributionScore += 0.3;
+  if (divergenceType === 'bearish_vp') distributionScore += 0.25;
+  if (breakoutPattern === 'single_spike' && falseBreakoutRisk > 0.5) distributionScore += 0.2;
+  if (priceFalling && obvTrend === 'falling') distributionScore += 0.2;
+  const volumeRegime = accumulationScore > distributionScore && accumulationScore > 0.4 ? 'accumulation'
+    : distributionScore > accumulationScore && distributionScore > 0.4 ? 'distribution' : 'neutral';
+
+  // ============ Step 9: 15 條 rule V1-V15 觸發 ============
   const matchedRules = [];
+  const RULES = [
+    { id: 'V1', label: 'ATR 波動充足', strength: 'weak' },
+    { id: 'V2', label: 'VWAP 支撐', strength: 'weak' },
+    { id: 'V3', label: '成交量百分位正常', strength: 'weak' },
+    { id: 'V4', label: '連續堆量', strength: 'medium' },
+    { id: 'V5', label: '異常爆量過濾', strength: 'strong' },
+    { id: 'V6', label: '加權 OBV 上升', strength: 'medium' },
+    { id: 'V7', label: '加權 OBV 下跌', strength: 'medium' },
+    { id: 'V8', label: 'OBV 與價格同向', strength: 'strong' },
+    { id: 'V9', label: '溫和堆量突破', strength: 'strong' },
+    { id: 'V10', label: '放量突破確認', strength: 'strong' },
+    { id: 'V11', label: '縮量突破警告', strength: 'strong' },
+    { id: 'V12', label: '假突破識別', strength: 'strong' },
+    { id: 'V13', label: '健康回調', strength: 'medium' },
+    { id: 'V14', label: '拋售拋壓', strength: 'strong' },
+    { id: 'V15', label: '量价背馳', strength: 'strong' },
+  ];
+  if (atrValue > currentPrice * 0.005) matchedRules.push(RULES[0]);
+  if (currentPrice > vwapValue * 0.99) matchedRules.push(RULES[1]);
+  if (volPercentile >= 0 && volPercentile <= 1) matchedRules.push(RULES[2]);
+  if (isSustainedVolume) matchedRules.push(RULES[3]);
+  if (isAnomalySpike) matchedRules.push(RULES[4]);
+  if (obvTrend === 'rising') matchedRules.push(RULES[5]);
+  if (obvTrend === 'falling') matchedRules.push(RULES[6]);
+  if (obvPriceCorr > 0.5) matchedRules.push(RULES[7]);
+  if (breakoutPattern === 'gradual_buildup') matchedRules.push(RULES[8]);
+  if (breakoutPattern === 'sustained_surge' && isBreakoutConfirmed === true) matchedRules.push(RULES[9]);
+  if (breakoutPattern === 'low_volume' || falseBreakoutRisk > 0.5) matchedRules.push(RULES[10]);
+  if (falseBreakoutRisk > 0.6) matchedRules.push(RULES[11]);
+  if (pullbackIsHealthy === true) matchedRules.push(RULES[12]);
+  if (depthVolCorr > 0.3) matchedRules.push(RULES[13]);
+  if (divergenceDetected) matchedRules.push(RULES[14]);
 
-  // K. 連續 5 日 close ↑ 且 volume ↑ → 量價齊升確認 (strong)
-  if (allIncreasing(last5, 'close') && allIncreasing(last5, 'volume')) {
-    matchedRules.push({ id: 'K', label: '量價齊升確認', strength: 'strong' });
+  // ============ Step 10: 規則引擎 (5 buy + 4 減分) ============
+  let buyTimingScore = 0.3;
+  const buyReasons = [];
+  const falseSignalFlags = [];
+
+  if (breakoutPattern === 'gradual_buildup' && isBreakoutConfirmed === true
+      && obvPriceCorr > 0.5 && !divergenceDetected) {
+    buyTimingScore = 0.9;
+    buyReasons.push('V9 溫和堆量突破確認 + V8 OBV 同步,黃金買點');
+  } else if (pullbackIsHealthy === true && supportZone !== null
+      && volumeRegime === 'accumulation' && obvTrend === 'rising') {
+    buyTimingScore = 0.75;
+    buyReasons.push(`V13 健康回調至 ${supportZone},V6 OBV 資金流入`);
+  } else if (divergenceType === 'bullish_vp' && volPercentile < 0.2 && obvTrend !== 'falling') {
+    buyTimingScore = 0.6;
+    buyReasons.push('V15 拋壓枯竭,試探性買入');
+  } else if (currentPrice > vwapValue * 0.995 && currentPrice < vwapValue * 1.02
+      && volPercentile < 0.5 && obvTrend === 'rising') {
+    buyTimingScore = 0.55;
+    buyReasons.push('V2 VWAP 支撐反彈,量縮');
+  } else {
+    buyReasons.push('暫無明確成交量買入模式');
   }
 
-  // L. close 創 5 日新高但 volume < 5 日均量 → 量價背馳見頂 (strong)
-  const last5Closes = last5.map(k => k.close);
-  const maxClose5 = Math.max(...last5Closes);
-  const last5VolMA = volMA5History.slice(-win);
-  const avgVol5 = last5VolMA[last5VolMA.length - 1];
-  if (lastClose === maxClose5 && lastVolume < avgVol5) {
-    matchedRules.push({ id: 'L', label: '量價背馳（見頂警號）', strength: 'strong' });
+  if (falseBreakoutRisk > 0.6) {
+    buyTimingScore *= 0.5;
+    falseSignalFlags.push('high_false_breakout_risk');
+    buyReasons.push('警告:假突破風險極高');
+  }
+  if (divergenceType === 'bearish_vp' && volPercentile > 0.8) {
+    buyTimingScore *= 0.4;
+    falseSignalFlags.push('distribution_with_price_rise');
+    buyReasons.push('警告:放量滯漲,主力可能出貨');
+  }
+  if (isAnomalySpike) {
+    buyTimingScore *= 0.6;
+    falseSignalFlags.push('anomaly_volume_spike');
+    buyReasons.push('警告:單日異常爆量,信號不可靠');
+  }
+  if (obvPriceCorr < -0.3) {
+    buyTimingScore *= 0.7;
+    falseSignalFlags.push('obv_price_divergence');
+    buyReasons.push('警告:OBV 與價格背馳,資金暗中流出');
+  }
+  if (obvTrend === 'falling' && volPercentile > 0.8 && priceTrend10d > 0.02) {
+    buyTimingScore *= 0.5;
+    falseSignalFlags.push('distribution_with_price_rise');
+    buyReasons.push('警告:放量滯漲,主力可能出貨');
   }
 
-  // M. 連續 5 日 close ↓ 且 volume ↑ → 放量下跌（趨勢確認）(strong)
-  if (allDecreasing(last5, 'close') && allIncreasing(last5, 'volume')) {
-    matchedRules.push({ id: 'M', label: '放量下跌（趨勢確認）', strength: 'strong' });
+  // ============ Step 11: Signal 推導 ============
+  let signal = 'NEUTRAL';
+  if (volumeRegime === 'distribution' || falseSignalFlags.length >= 2
+      || (obvTrend === 'falling' && volPercentile > 0.7)) {
+    signal = 'DISCONFIRM';
+  } else if (buyTimingScore >= 0.55 && volumeRegime !== 'distribution'
+      && falseSignalFlags.length === 0 && obvTrend !== 'falling') {
+    signal = 'CONFIRM';
   }
 
-  // N. 連續 5 日 close ↓ 但 volume ↓ → 縮量下跌（拋售衰竭）(medium)
-  if (allDecreasing(last5, 'close') && allDecreasing(last5, 'volume')) {
-    matchedRules.push({ id: 'N', label: '縮量下跌（拋售衰竭）', strength: 'medium' });
-  }
+  // ============ Step 12: Cycle 推導 ============
+  const cycle = buyTimingScore >= 0.55 ? 'uptrend'
+    : volumeRegime === 'distribution' ? 'downtrend' : 'sideways';
+  const cycleLabel = buyTimingScore >= 0.55 ? '資金流入'
+    : volumeRegime === 'distribution' ? '資金流出' : '資金觀望';
+  const state = cycle === 'uptrend' ? 'UP'
+    : cycle === 'downtrend' ? 'DOWN' : 'SIDEWAYS';
 
-  // O. OBV 創 N 日新高 (medium)
-  if (obvHistory.length >= cfg.obvLookback + 1) {
-    const prevOBV = obvHistory.slice(-cfg.obvLookback - 1, -1);
-    const maxPrevOBV = Math.max(...prevOBV);
-    if (lastOBV > maxPrevOBV) {
-      matchedRules.push({ id: 'O', label: 'OBV 創新高', strength: 'medium' });
-    }
-  }
+  // ============ Step 13: 勝率估算 ============
+  let baseWin;
+  if (buyTimingScore >= 0.85) baseWin = 0.68;
+  else if (buyTimingScore >= 0.7) baseWin = 0.60;
+  else if (buyTimingScore >= 0.55) baseWin = 0.52;
+  else baseWin = 0.40;
+  if (falseSignalFlags.length > 0) baseWin -= 0.08 * falseSignalFlags.length;
+  const winProbability = Math.min(0.80, Math.max(0.25, baseWin));
 
-  // P. OBV 創 N 日新低 (medium)
-  if (obvHistory.length >= cfg.obvLookback + 1) {
-    const prevOBV = obvHistory.slice(-cfg.obvLookback - 1, -1);
-    const minPrevOBV = Math.min(...prevOBV);
-    if (lastOBV < minPrevOBV) {
-      matchedRules.push({ id: 'P', label: 'OBV 創新低', strength: 'medium' });
-    }
-  }
-
-  // Q. 縮量橫行整理 (medium)
-  const last5High = Math.max(...last5.map(k => k.high));
-  const last5Low = Math.min(...last5.map(k => k.low));
-  const last5AvgClose = last5Closes.reduce((a, b) => a + b, 0) / last5Closes.length;
-  const maxSpreadPct = last5AvgClose > 0 ? (last5High - last5Low) / last5AvgClose : 0;
-  const lastVolMA5 = volMA5History[volMA5History.length - 1];
-  const lastVolMA20 = volMA20History[volMA20History.length - 1];
-  if (maxSpreadPct < 0.02 && lastVolMA5 < lastVolMA20 * cfg.shrinkThreshold) {
-    matchedRules.push({ id: 'Q', label: '縮量橫行整理', strength: 'medium' });
-  }
-
-  // R. 放量震盪（醞釀突破）(medium)
-  if (maxSpreadPct > 0.03 && lastVolMA5 > lastVolMA20 * cfg.boostThreshold) {
-    matchedRules.push({ id: 'R', label: '放量震盪（醞釀突破）', strength: 'medium' });
-  }
-
-  // S. OBV vs close correlation < threshold → 量能背馳 (strong)
-  let corrValue = null;
-  if (obvHistory.length >= win) {
-    corrValue = correlation(last5.map(k => k.close), obvHistory.slice(-win));
-    if (corrValue < cfg.divergenceCorrelation) {
-      matchedRules.push({ id: 'S', label: '量能背馳 (OBV vs close)', strength: 'strong' });
-    }
-  }
-
-  // T. 5 日均量 < 20 日均量 × 0.5 → 量能不濟 (weak)
-  if (lastVolMA5 < lastVolMA20 * 0.5) {
-    matchedRules.push({ id: 'T', label: '量能不濟', strength: 'weak' });
-  }
-
-  // Step 4: State derivation
-  const state = deriveVolumeState(matchedRules);
-
-  // Step 5: Confidence derivation
-  const confidence = deriveConfidence(matchedRules);
-
-  // Step 6: Signal derivation (D020)
-  const signal = deriveVolumeSignal(matchedRules);
-
-  const interpretation = matchedRules.length > 0
-    ? matchedRules.map(r => r.label).join('；')
-    : '無 match';
-
-  const evidence = matchedRules.map(r => ({
-    type: `rule-${r.id}`,
-    label: r.label,
-    value: r.id,
-    passed: true,
-  }));
-
+  // ============ Step 14: 組裝輸出 ============
   return {
     moduleId: 'volume',
     timeframe: options.period || '1d',
     state,
-    confidence,
-    interpretation,
-    evidence,
+    confidence: Math.round(buyTimingScore * 10000) / 10000,
+    interpretation: buyReasons.join('；'),
+    evidence: matchedRules.map(r => ({ type: `rule-${r.id}`, label: r.label, value: r.id, passed: true })),
     warnings: [],
     meta: {
+      cycle,
+      cycleLabel,
+      signal,
+      buyTimingScore: Math.round(buyTimingScore * 10000) / 10000,
+      winProbability: Math.round(winProbability * 10000) / 10000,
+      falseSignalFlags,
+      volumeRegime,
+      accumulationScore: Math.round(accumulationScore * 100) / 100,
+      distributionScore: Math.round(distributionScore * 100) / 100,
+      breakoutStatus: {
+        isBreakout: isPriceBreakout,
+        isConfirmed: isBreakoutConfirmed,
+        pattern: breakoutPattern,
+        strength: Math.round(breakoutStrength * 100) / 100,
+        falseBreakoutRisk: Math.round(falseBreakoutRisk * 100) / 100,
+      },
+      pullbackHealth: {
+        isHealthy: pullbackIsHealthy,
+        depthVolCorrelation: Math.round(depthVolCorr * 10000) / 10000,
+        supportZone,
+        daysToSupport,
+      },
+      vwapAnalysis: {
+        vwapValue: Math.round(vwapValue * 100) / 100,
+        priceVsVwapPct: Math.round(((currentPrice - vwapValue) / vwapValue) * 10000) / 10000,
+        vwapSupportStrength: currentPrice > vwapValue * 1.01 ? 'strong'
+          : currentPrice > vwapValue * 0.99 ? 'testing' : 'broken',
+      },
+      volumePercentile: Math.round(volPercentile * 10000) / 10000,
+      turnoverRate: turnoverRate !== null ? Math.round(turnoverRate * 1000000) / 1000000 : null,
+      denseZones,
+      volumePriceCorrelation: {
+        pearsonRecent: Math.round(corrRecent * 10000) / 10000,
+        pearsonEarlier: Math.round(corrEarlier * 10000) / 10000,
+        correlationDecay: Math.round(correlationDecay * 10000) / 10000,
+        divergenceDetected,
+        divergenceType,
+      },
+      obvAnalysis: {
+        obvTrend,
+        obvPriceCorrelation: Math.round(obvPriceCorr * 10000) / 10000,
+        weightedObvValue: Math.round(weightedObv[lastIdx]),
+      },
       matchedRules: matchedRules.map(r => r.id),
       ruleLabels: matchedRules.map(r => r.label),
-      signal,                                    // D020
-      latestOBV: round(lastOBV, 2),
-      latestVolMA5: round(lastVolMA5, 2),
-      latestVolMA20: round(lastVolMA20, 2),
-      latestClose: round(lastClose, 4),
-      latestVolume: round(lastVolume, 2),
-      maxSpreadPct: round(maxSpreadPct, 4),
-      obvCorrelation: corrValue !== null ? round(corrValue, 4) : null,
-      dataDays: recent.length,
+      rulesFired: matchedRules.length,
+      atr: Math.round(atrValue * 100) / 100,
+      vwap: Math.round(vwapValue * 100) / 100,
+      consecutiveSurge,
+      isAnomalySpike,
       configUsed: cfg,
+      dataDays: n,
     },
     timestamp: Date.now(),
   };
 }
 
-function deriveVolumeState(rules) {
-  const ids = new Set(rules.map(r => r.id));
-  if (ids.has('K') || ids.has('O')) return 'UP';
-  if (ids.has('M') || ids.has('P')) return 'DOWN';
-  if (ids.has('L') || ids.has('S')) return 'TRANSITION';
-  if (ids.has('N') || ids.has('T')) return 'SIDEWAYS';
-  if (ids.has('Q')) return 'SIDEWAYS';
-  if (ids.has('R')) return 'TRANSITION';
-  return 'SIDEWAYS';
+// ===== v2.0 helpers (port from modules/volume.ts) =====
+
+function computeATR_v2(klines, period) {
+  if (klines.length < period + 1) return 0;
+  const trs = [];
+  for (let i = 1; i < klines.length; i++) {
+    const tr = Math.max(
+      klines[i].high - klines[i].low,
+      Math.abs(klines[i].high - klines[i - 1].close),
+      Math.abs(klines[i].low - klines[i - 1].close),
+    );
+    trs.push(tr);
+  }
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trs.length; i++) {
+    atr = (atr * (period - 1) + trs[i]) / period;
+  }
+  return atr;
 }
 
-function deriveVolumeSignal(rules) {
-  const ids = new Set(rules.map(r => r.id));
-  if (ids.has('L') || ids.has('S') || ids.has('N')) return 'DISCONFIRM';
-  if (ids.has('K') || ids.has('M') || ids.has('O') || ids.has('P')) return 'CONFIRM';
-  return 'NEUTRAL';
+function computeVWAP_v2(klines, period) {
+  const startIdx = Math.max(0, klines.length - period);
+  let cumPV = 0, cumVol = 0;
+  for (let i = startIdx; i < klines.length; i++) {
+    const typicalPrice = (klines[i].high + klines[i].low + klines[i].close) / 3;
+    cumPV += typicalPrice * klines[i].volume;
+    cumVol += klines[i].volume;
+  }
+  if (cumVol === 0) {
+    const slice = klines.slice(startIdx);
+    return slice.reduce((acc, k) => acc + k.close, 0) / slice.length;
+  }
+  return cumPV / cumVol;
+}
+
+function computeVolumePercentile_v2(klines, lookback) {
+  const startIdx = Math.max(0, klines.length - lookback);
+  const recentVols = klines.slice(startIdx).map(k => k.volume);
+  if (recentVols.length === 0) return 0;
+  const sorted = [...recentVols].sort((a, b) => a - b);
+  const latestVol = recentVols[recentVols.length - 1];
+  const rank = sorted.filter(v => v <= latestVol).length;
+  return rank / sorted.length;
+}
+
+function computeSMA_v2(series, period) {
+  const sma = [];
+  for (let i = 0; i < series.length; i++) {
+    if (i < period - 1) { sma.push(NaN); continue; }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += series[j];
+    sma.push(sum / period);
+  }
+  return sma;
+}
+
+function pearsonCorrelation_v2(xs, ys) {
+  const n = Math.min(xs.length, ys.length);
+  if (n < 2) return 0;
+  const xSlice = xs.slice(-n);
+  const ySlice = ys.slice(-n);
+  const xMean = xSlice.reduce((a, b) => a + b, 0) / n;
+  const yMean = ySlice.reduce((a, b) => a + b, 0) / n;
+  let num = 0, denX = 0, denY = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xSlice[i] - xMean;
+    const dy = ySlice[i] - yMean;
+    num += dx * dy;
+    denX += dx * dx;
+    denY += dy * dy;
+  }
+  const den = Math.sqrt(denX * denY);
+  return den === 0 ? 0 : num / den;
 }
 
 export function renderVolumeResult(verdict) {
   const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
   const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
   const signalColors = { CONFIRM: '#52c41a', DISCONFIRM: '#ff4d4f', NEUTRAL: '#faad14' };
-  const signalLabels = { CONFIRM: '量能確認', DISCONFIRM: '量能反對', NEUTRAL: '中性' };
+  const signalLabels = { CONFIRM: '支持上升', DISCONFIRM: '反對上升', NEUTRAL: '中性' };
+  const regimeLabels = { accumulation: '吸籌 (大戶低調買入)', distribution: '派發 (大戶高調賣出)', neutral: '中性' };
+  const patternLabels = {
+    gradual_buildup: '溫和堆量 (最可信)',
+    sustained_surge: '持續放量 (可信)',
+    single_spike: '單日爆量 (有水分)',
+    low_volume: '縮量突破 (高風險)',
+    none: '無突破',
+  };
 
   const color = stateColors[verdict.state] || '#666';
   const stateLabel = stateLabels[verdict.state] || verdict.state;
-  const signalColor = signalColors[verdict.meta.signal] || '#666';
-  const signalLabel = signalLabels[verdict.meta.signal] || verdict.meta.signal;
+  const signal = verdict.meta.signal || 'NEUTRAL';
+  const signalColor = signalColors[signal] || '#faad14';
+  const cycle = verdict.meta.cycle || 'sideways';
+  const cycleLabel = verdict.meta.cycleLabel || '資金觀望';
+  const volumeRegime = verdict.meta.volumeRegime || 'neutral';
+  const breakoutStatus = verdict.meta.breakoutStatus || {};
+  const pullbackHealth = verdict.meta.pullbackHealth || {};
+  const vwapAnalysis = verdict.meta.vwapAnalysis || {};
+  const volumePriceCorrelation = verdict.meta.volumePriceCorrelation || {};
+  const obvAnalysis = verdict.meta.obvAnalysis || {};
+  const buyTimingScore = verdict.meta.buyTimingScore || 0;
+  const winProbability = verdict.meta.winProbability || 0;
+  const falseSignalFlags = verdict.meta.falseSignalFlags || [];
+  const matchedRules = verdict.meta.matchedRules || [];
+  const rulesFired = verdict.meta.rulesFired || 0;
   const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const winProbPct = (winProbability * 100).toFixed(0);
+  const buyScorePct = (buyTimingScore * 100).toFixed(0);
 
-  const matchedRulesHtml = verdict.meta.matchedRules.length === 0
-    ? '<li style="color: #888;">無 rule match</li>'
-    : verdict.meta.matchedRules.map((rid) => {
-        const ev = verdict.evidence.find((e) => e.value === rid);
-        const strengthClass = ['K', 'L', 'M', 'S'].includes(rid) ? 'strong'
-          : rid === 'T' ? 'weak'
-          : 'medium';
-        return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
+  const matchedRulesHtml = matchedRules.length === 0
+    ? '<li style="color: #888;">無 rule 觸發</li>'
+    : matchedRules.map(rid => {
+        const ruleInfo = (typeof getRuleInfo === 'function' ? getRuleInfo(rid) : null) || { label: rid, strength: 'medium' };
+        return `<li class="rule-${ruleInfo.strength}"><strong>${rid}</strong> — ${ruleInfo.label} <small>(${ruleInfo.strength})</small></li>`;
       }).join('');
+
+  const denseZonesHtml = (verdict.meta.denseZones || []).map(z =>
+    `<tr><td>${z.priceLevelLow.toFixed(2)} - ${z.priceLevelHigh.toFixed(2)}</td>
+     <td>${z.type === 'support' ? '🟢 支撐' : z.type === 'resistance' ? '🔴 壓力' : '🟡 中性'}</td>
+     <td>${z.distancePct > 0 ? '+' : ''}${(z.distancePct * 100).toFixed(2)}%</td>
+     <td>${z.volumeRatio.toFixed(2)}x</td></tr>`
+  ).join('');
+
+  const flagsHtml = falseSignalFlags.length === 0
+    ? '<span style="color: #52c41a;">無</span>'
+    : falseSignalFlags.map(f => `<span class="false-flag">⚠️ ${f}</span>`).join(' ');
 
   return `
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
-        <h3 class="module-header">量价分析 (VolumePrice)</h3>
+        <h3 class="module-header">成交量價格行為確認法 v2.0 (VolumePrice)</h3>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
-          <span class="state-label">${stateLabel}</span>
-          <span class="state-code">${verdict.state}</span>
-        </div>
-        <div class="signal-pill" style="background: ${signalColor}">
-          <span class="signal-label">${signalLabel}</span>
-          <span class="signal-code">${verdict.meta.signal}</span>
+          <span class="state-label">${cycleLabel}</span>
+          <span class="state-code">${cycle} (${stateLabel})</span>
         </div>
         <div class="confidence">
-          <div class="conf-pct">${confidencePct}%</div>
-          <div class="conf-label">信心指數</div>
+          <div class="conf-pct">${buyScorePct}%</div>
+          <div class="conf-label">買入時機評分</div>
         </div>
         <div class="data-summary">
-          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
-          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
-          <div class="summary-row"><span>Matched Rules:</span> <strong>${verdict.meta.matchedRules.length}</strong></div>
+          <div class="summary-row"><span>綜合信心:</span> <strong>${confidencePct}%</strong></div>
+          <div class="summary-row"><span>估計勝率:</span> <strong>${winProbPct}%</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays || 0}</strong></div>
+          <div class="summary-row"><span>觸發 Rules:</span> <strong>${rulesFired} 條</strong></div>
         </div>
       </div>
 
       <div class="interpretation">
-        <strong>📌 解讀：</strong>${verdict.interpretation}
+        <strong>📌 資金判斷：</strong>${verdict.interpretation}
       </div>
 
-      <div class="interpretation-panel">
-        <strong>📖 點樣用：</strong>${getVolumeInterpretation(verdict.meta.signal)}
+      <div class="signal-row">
+        <span class="signal-pill" style="background: ${signalColor}">Signal: ${signalLabels[signal]}</span>
+        <span class="regime-pill">體制: ${regimeLabels[volumeRegime]}</span>
+        ${breakoutStatus.pattern ? `<span class="pattern-pill">突破: ${patternLabels[breakoutStatus.pattern]}</span>` : ''}
       </div>
 
-      <div class="volume-values">
-        <h4>當前 Volume / OBV 值</h4>
-        <div class="vol-grid">
-          <div class="vol-item"><span class="vol-label">Vol MA5</span><span class="vol-value">${verdict.meta.latestVolMA5}</span></div>
-          <div class="vol-item"><span class="vol-label">Vol MA20</span><span class="vol-value">${verdict.meta.latestVolMA20}</span></div>
-          <div class="vol-item"><span class="vol-label">OBV</span><span class="vol-value">${verdict.meta.latestOBV}</span></div>
-          <div class="vol-item"><span class="vol-label">Max Spread</span><span class="vol-value">${(verdict.meta.maxSpreadPct * 100).toFixed(2)}%</span></div>
+      <div class="key-metrics">
+        <div class="metric-card">
+          <h4>VWAP 分析</h4>
+          <p>VWAP: <strong>${vwapAnalysis.vwapValue || 'N/A'}</strong></p>
+          <p>價 vs VWAP: <strong>${vwapAnalysis.priceVsVwapPct !== undefined ? (vwapAnalysis.priceVsVwapPct * 100).toFixed(2) + '%' : 'N/A'}</strong></p>
+          <p>支撐力: <strong>${vwapAnalysis.vwapSupportStrength || 'N/A'}</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4>加權 OBV</h4>
+          <p>趨勢: <strong>${obvAnalysis.obvTrend || 'N/A'}</strong></p>
+          <p>OBV-Price 相關: <strong>${obvAnalysis.obvPriceCorrelation !== undefined ? obvAnalysis.obvPriceCorrelation.toFixed(3) : 'N/A'}</strong></p>
+          <p>加權 OBV 值: <strong>${obvAnalysis.weightedObvValue || 0}</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4>突破狀態</h4>
+          <p>模式: <strong>${breakoutStatus.pattern || 'none'}</strong></p>
+          <p>強度: <strong>${breakoutStatus.strength !== undefined ? (breakoutStatus.strength * 100).toFixed(0) + '%' : 'N/A'}</strong></p>
+          <p>假突破風險: <strong>${breakoutStatus.falseBreakoutRisk !== undefined ? (breakoutStatus.falseBreakoutRisk * 100).toFixed(0) + '%' : 'N/A'}</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4>量价背馳</h4>
+          <p>背馳檢測: <strong>${volumePriceCorrelation.divergenceDetected ? '🟡 是' : '🟢 否'}</strong></p>
+          <p>背馳類型: <strong>${volumePriceCorrelation.divergenceType || '無'}</strong></p>
+          <p>相關性衰減: <strong>${volumePriceCorrelation.correlationDecay !== undefined ? volumePriceCorrelation.correlationDecay.toFixed(3) : 'N/A'}</strong></p>
         </div>
       </div>
 
+      <div class="false-flags">
+        <strong>⚠️ 假信號警告：</strong> ${flagsHtml}
+      </div>
+
       <div class="matched-rules">
-        <h4>🎯 Matched Rules（${verdict.meta.matchedRules.length} 條）</h4>
+        <h4>🎯 觸發 Rules (${rulesFired} 條)</h4>
         <ul>${matchedRulesHtml}</ul>
       </div>
+
+      ${denseZonesHtml ? `
+      <div class="dense-zones">
+        <h4>📊 成交量密集區 (Top 3)</h4>
+        <table class="zones-table">
+          <tr><th>價位區間</th><th>類型</th><th>距離現價</th><th>成交量比</th></tr>
+          ${denseZonesHtml}
+        </table>
+      </div>
+      ` : ''}
 
       ${renderDetailedExplanationVolume(verdict)}
       ${renderStrategyAdviceVolume(verdict)}
       ${renderUsageGuideVolume(verdict)}
 
       <details class="meta-details">
-        <summary>🔧 配置（debug 用）</summary>
+        <summary>🔧 配置 (debug 用)</summary>
         <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
       </details>
     </div>
   `;
 }
 
-// ===== 詳細解讀 section (VolumePrice) =====
-// 大少 #11056 — 永久 rule,所有 Module 都要有 3 個 sections
-function renderDetailedExplanationVolume(verdict) {
-  const confidencePct = (verdict.confidence * 100).toFixed(0);
-  const matchedRules = verdict.meta?.matchedRules || [];
-  const signal = verdict.meta.signal || 'NEUTRAL';
+// ===== 3 個 sections (永久 rule 大少 #11056) =====
 
-  // Signal label
-  const signalExplain = {
-    'CONFIRM': '量能確認 — 成交量支持你嘅持倉方向, 信號可靠',
-    'DISCONFIRM': '量能反對 — 成交量反對你嘅持倉方向, 要小心',
-    'NEUTRAL': '量能中性 — 成交量無明確支持或反對, 唔好單靠量能決定',
-  }[signal] || signal;
+function renderDetailedExplanationVolume(verdict) {
+  const matchedRules = verdict.meta.matchedRules || [];
+  const buyScorePct = ((verdict.meta.buyTimingScore || 0) * 100).toFixed(0);
+  const winProbPct = ((verdict.meta.winProbability || 0) * 100).toFixed(0);
+  const vwapAnalysis = verdict.meta.vwapAnalysis || {};
+  const obvAnalysis = verdict.meta.obvAnalysis || {};
+  const breakoutStatus = verdict.meta.breakoutStatus || {};
+  const pullbackHealth = verdict.meta.pullbackHealth || {};
+  const volumePriceCorrelation = verdict.meta.volumePriceCorrelation || {};
+  const volumePercentile = verdict.meta.volumePercentile || 0;
+  const turnoverRate = verdict.meta.turnoverRate;
+  const falseSignalFlags = verdict.meta.falseSignalFlags || [];
 
   return `
     <div class="detailed-explanation">
       <h4>📖 詳細解讀 (逐個 field 點樣睇)</h4>
       <table class="explain-table">
-        <tr><td class="field-name">📊 state (週期類型)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '量價齊升, 上升趨勢確認' : verdict.state === 'DOWN' ? '量能配合下跌, 趨勢向下確認' : verdict.state === 'TRANSITION' ? '量價背馳, 短期可能反轉' : '量能中性, 無明確方向'}</td></tr>
-        <tr><td class="field-name">📡 signal (量能訊號)</td><td>${signalExplain}</td></tr>
-        <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值, 配合其他指標 confirm' : '🔴 低信心 — 信唔過'}</td></tr>
-        <tr><td class="field-name">📈 Vol MA5 (5 日均量)</td><td>${verdict.meta.latestVolMA5 ?? 'N/A'} — 短期平均成交量, 對應短期股價活動</td></tr>
-        <tr><td class="field-name">📈 Vol MA20 (20 日均量)</td><td>${verdict.meta.latestVolMA20 ?? 'N/A'} — 中期平均成交量, 對應中期股價活動</td></tr>
-        <tr><td class="field-name">🌊 OBV (能量潮)</td><td>${verdict.meta.latestOBV ?? 'N/A'} — On Balance Volume, 累積量能, 升 = 買入動力強 / 跌 = 賣出動力強</td></tr>
-        <tr><td class="field-name">📏 Max Spread (最大波幅)</td><td>${((verdict.meta.maxSpreadPct || 0) * 100).toFixed(2)}% — 最近 5 日最高最低差, &lt; 2% = 收縮 / &gt; 3% = 擴張</td></tr>
-        ${verdict.meta.obvCorrelation !== null && verdict.meta.obvCorrelation !== undefined
-          ? `<tr><td class="field-name">🔗 OBV vs close 相關性</td><td>${verdict.meta.obvCorrelation.toFixed(3)} — ${verdict.meta.obvCorrelation < -0.5 ? '負相關 (量能背馳, 警號)' : verdict.meta.obvCorrelation > 0.5 ? '正相關 (量能配合, 趨勢確認)' : '中性相關 (量能無明確配合)'}</td></tr>`
-          : ''}
-        <tr><td class="field-name">🎯 觸發 rules (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發' : matchedRules.map(r => `<strong>${r}</strong> — ${renderVolumeRuleExplain(r)}`).join(' / ')}</td></tr>
-        <tr><td class="field-name">💪 Rule 強度</td><td>${matchedRules.some(r => ['K', 'L', 'M', 'S'].includes(r)) ? '強 (K/L/M/S)' : matchedRules.some(r => r === 'T') ? '弱 (T)' : '中 (N/O/P/Q/R)'}</td></tr>
+        <tr><td class="field-name">📊 cycle (資金視角)</td><td><strong>${verdict.meta.cycle || 'N/A'}</strong> — ${verdict.meta.cycleLabel || 'N/A'}。資金睇法: 唔係睇價,係睇錢有冇入場</td></tr>
+        <tr><td class="field-name">🎯 buyTimingScore (買入時機 ${buyScorePct}%)</td><td>${buyScorePct >= 70 ? '🟢 高信心 — 規則引擎判定' : buyScorePct >= 50 ? '🟡 中信心 — 有參考價值' : '🔴 低信心 — 觀望'}</td></tr>
+        <tr><td class="field-name">🎲 winProbability (勝率 ${winProbPct}%)</td><td>${winProbPct >= 60 ? '🟢 高勝率 (≥ 60%)' : winProbPct >= 50 ? '🟡 中勝率 (50-60%)' : '🔴 低勝率 (< 50%)'}</td></tr>
+        <tr><td class="field-name">📈 breakoutStatus.pattern (突破模式)</td><td>${breakoutStatus.pattern} — ${breakoutStatus.pattern === 'gradual_buildup' ? '溫和堆量突破,最可信' : breakoutStatus.pattern === 'sustained_surge' ? '持續放量突破,可信' : breakoutStatus.pattern === 'single_spike' ? '單日爆量,有水分' : breakoutStatus.pattern === 'low_volume' ? '縮量突破,假突破高風險' : '無突破'}</td></tr>
+        <tr><td class="field-name">⚠️ falseBreakoutRisk (假突破風險 ${(breakoutStatus.falseBreakoutRisk * 100).toFixed(0)}%)</td><td>${(breakoutStatus.falseBreakoutRisk * 100).toFixed(0)}% — ${breakoutStatus.falseBreakoutRisk > 0.6 ? '🔴 高風險,小心' : breakoutStatus.falseBreakoutRisk > 0.3 ? '🟡 中風險,留意' : '🟢 低風險'}</td></tr>
+        <tr><td class="field-name">📊 pullbackHealth.isHealthy (回調健康)</td><td>${pullbackHealth.isHealthy === true ? '🟢 健康 (越跌越縮量,主力沒走)' : pullbackHealth.isHealthy === false ? '🔴 不健康 (越跌越放量,恐慌拋售)' : '🟡 unclear (無明顯相關)'}</td></tr>
+        <tr><td class="field-name">📈 vwapAnalysis.priceVsVwapPct (VWAP 偏離)</td><td>${(vwapAnalysis.priceVsVwapPct * 100).toFixed(2)}% — 喺 VWAP ${vwapAnalysis.priceVsVwapPct > 0 ? '之上' : '之下'} (${vwapAnalysis.priceVsVwapPct > 0.01 ? '強勢' : vwapAnalysis.priceVsVwapPct < -0.01 ? '弱勢' : '接近 VWAP'})</td></tr>
+        <tr><td class="field-name">📊 volumePercentile (成交量百分位 ${(volumePercentile * 100).toFixed(0)}%)</td><td>${volumePercentile > 0.7 ? '異常放量' : volumePercentile < 0.3 ? '異常縮量' : '正常範圍'}</td></tr>
+        <tr><td class="field-name">💱 turnoverRate (換手率)</td><td>${turnoverRate !== null ? (turnoverRate * 100).toFixed(2) + '%' : '無股本資料'}</td></tr>
+        <tr><td class="field-name">📈 volumeRegime (成交量體制)</td><td>${verdict.meta.volumeRegime || 'neutral'} — ${verdict.meta.volumeRegime === 'accumulation' ? '🟢 大戶低調吸籌' : verdict.meta.volumeRegime === 'distribution' ? '🔴 大戶高調派發' : '🟡 中性'}</td></tr>
+        <tr><td class="field-name">📈 obvAnalysis.obvTrend (加權 OBV 趨勢)</td><td>${obvAnalysis.obvTrend || 'N/A'} — ${obvAnalysis.obvTrend === 'rising' ? '🟢 資金流入中' : obvAnalysis.obvTrend === 'falling' ? '🔴 資金流出中' : '🟡 橫行'}</td></tr>
+        <tr><td class="field-name">📊 obvAnalysis.obvPriceCorrelation (OBV-價格相關)</td><td>${obvAnalysis.obvPriceCorrelation !== undefined ? obvAnalysis.obvPriceCorrelation.toFixed(3) : 'N/A'} — ${obvAnalysis.obvPriceCorrelation > 0.5 ? '🟢 同步(健康)' : obvAnalysis.obvPriceCorrelation < -0.3 ? '🔴 背馳(危險)' : '🟡 無明顯相關'}</td></tr>
+        <tr><td class="field-name">🎯 signal (MA alignment 互動)</td><td>${verdict.meta.signal || 'NEUTRAL'} — ${verdict.meta.signal === 'CONFIRM' ? '🟢 量价支持上升' : verdict.meta.signal === 'DISCONFIRM' ? '🔴 量价反對上升' : '🟡 中性'}</td></tr>
+        <tr><td class="field-name">⚠️ falseSignalFlags (假信號警告)</td><td>${falseSignalFlags.length === 0 ? '🟢 無' : falseSignalFlags.map(f => '🔴 ' + f).join(' / ')}</td></tr>
+        <tr><td class="field-name">🎯 觸發 rules (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發' : matchedRules.map(r => `<strong>${r}</strong>`).join(' / ')}</td></tr>
       </table>
     </div>
   `;
 }
 
-// 10 條 rule K-T 嘅用人話解釋
-function renderVolumeRuleExplain(rid) {
-  const explains = {
-    'K': '量價齊升 — 連續 5 日 close 同 volume 都升, 升勢有量能支持',
-    'L': '量價背馳見頂 — 價升但量縮, 升到冇人跟, 小心見頂',
-    'M': '放量下跌 — 連續 5 日 close 跌 + volume 升, 跌勢有量能確認',
-    'N': '縮量下跌拋售衰竭 — 連續 5 日 close 跌 + volume 跌, 拋售力量弱, 可能見底',
-    'O': 'OBV 創新高 — 能量潮破頂, 買入動力強',
-    'P': 'OBV 創新低 — 能量潮破底, 賣出動力強',
-    'Q': '縮量橫行整理 — 收縮 + 縮量, 市場等方向',
-    'R': '放量震盪 — 擴張 + 放量, 醞釀突破 (上或下)',
-    'S': 'OBV vs close 量能背馳 — OBV 同 close 走勢相反, 警號',
-    'T': '量能不濟 — 5 日均量 < 20 日均量 × 0.5, 市場淡靜',
-  };
-  return explains[rid] || rid;
-}
-
-// ===== 策略建議 section (VolumePrice) =====
 function renderStrategyAdviceVolume(verdict) {
-  const confidencePct = (verdict.confidence * 100).toFixed(0);
-  const isHighConf = verdict.confidence >= 0.7;
-  const isLowConf = verdict.confidence < 0.5;
-  const signal = verdict.meta.signal || 'NEUTRAL';
-  const matchedRules = verdict.meta?.matchedRules || [];
+  const cycle = verdict.meta.cycle || 'sideways';
+  const buyScore = verdict.meta.buyTimingScore || 0;
+  const winProb = verdict.meta.winProbability || 0;
+  const falseSignalFlags = verdict.meta.falseSignalFlags || [];
+  const matchedRules = verdict.meta.matchedRules || [];
+  const volumeRegime = verdict.meta.volumeRegime || 'neutral';
 
-  // 4 個 state + signal 嘅策略組合
-  let stateAdvice = '';
-  if (verdict.state === 'UP' && signal === 'CONFIRM') {
-    stateAdvice = `
-      <div class="strategy-up">
-        <h4>🟢 上升 + 量能確認 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 順勢持倉, 量能確認支持上升, 可以慢慢加倉</p>
-        <p><strong>訊號確認:</strong> K rule (量價齊升) 或 O rule (OBV 新高) 觸發, 量能配合價升</p>
-        <p><strong>風險管理:</strong> 留意 L rule (量價背馳見頂), 如果出現就要收緊止損, 升到冇人跟就危險</p>
-        <p><strong>進場策略:</strong> 等回調到 support 附近, 量能縮 (T rule 失效) 就係低吸機會</p>
-      </div>
-    `;
-  } else if (verdict.state === 'UP' && signal === 'DISCONFIRM') {
-    stateAdvice = `
-      <div class="strategy-warning">
-        <h4>🟢 上升 + 量能反對 ⚠️ · 策略建議</h4>
-        <p><strong>基本動作:</strong> 持倉但要小心, 量能反對代表升勢無真支持</p>
-        <p><strong>警號:</strong> S rule (量能背馳) 或 L rule (見頂背馳) 觸發, 升勢可能逆轉</p>
-        <p><strong>風險管理:</strong> 收緊止損, 留意 close 跌穿最近 support 就要走人</p>
-        <p><strong>特別注意:</strong> 價升量縮 = 假突破警號, 唔好加倉</p>
-      </div>
-    `;
-  } else if (verdict.state === 'DOWN' && signal === 'CONFIRM') {
-    stateAdvice = `
+  let cycleAdvice = '';
+  if (cycle === 'uptrend') {
+    if (buyScore >= 0.85) {
+      cycleAdvice = `
+        <div class="strategy-up">
+          <h4>🟢 黃金買入 · 策略建議</h4>
+          <p><strong>基本動作:</strong> 黃金買點 (buyScore ≥ 0.85) — 信心指數高,可考慮落單</p>
+          <p><strong>進場策略:</strong> 等回調到 VWAP 附近 (短期/中期回歸) 再反彈入場,唔好追高</p>
+          <p><strong>風險管理:</strong> 留意 falseBreakoutRisk, 假突破風險高要收緊止損</p>
+          <p><strong>倉位:</strong> 勝率 ${(winProb * 100).toFixed(0)}% 可用 50-70% 倉位</p>
+        </div>
+      `;
+    } else if (buyScore >= 0.7) {
+      cycleAdvice = `
+        <div class="strategy-up">
+          <h4>🟢 健康回調 · 策略建議</h4>
+          <p><strong>基本動作:</strong> 健康回調買入 (buyScore 0.7-0.85) — 勝率中等</p>
+          <p><strong>進場策略:</strong> 等回調到 VWAP / dense_zone 支撐反彈入場</p>
+          <p><strong>風險管理:</strong> 設止損喺支撐位下方 2-3%</p>
+          <p><strong>倉位:</strong> 勝率 ${(winProb * 100).toFixed(0)}% 可用 30-50% 倉位</p>
+        </div>
+      `;
+    } else {
+      cycleAdvice = `
+        <div class="strategy-up">
+          <h4>🟢 弱上升 · 策略建議</h4>
+          <p><strong>基本動作:</strong> 上升但 buyScore 較低 (0.55-0.7), 信心一般</p>
+          <p><strong>進場策略:</strong> 等 buyScore 升到 0.7+ 先考慮入場</p>
+        </div>
+      `;
+    }
+  } else if (cycle === 'downtrend') {
+    cycleAdvice = `
       <div class="strategy-down">
-        <h4>🔴 下跌 + 量能確認 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 避開 / 減倉, 量能確認下跌, 唔好撈底</p>
-        <p><strong>訊號確認:</strong> M rule (放量下跌) 或 P rule (OBV 新低) 觸發, 量能配合價跌</p>
-        <p><strong>風險管理:</strong> 如果持有多單, 立即走人, 唔好等反彈</p>
-        <p><strong>進場策略:</strong> 等見底訊號 (N rule 縮量拋售衰竭) 先考慮撈底</p>
+        <h4>🔴 下跌 / 派發 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 避開 / 減倉 — 派發訊號</p>
+        <p><strong>進場策略:</strong> 唔好撈底, 等 bullish_vp (拋壓枯竭) 先考慮</p>
+        <p><strong>特別注意:</strong> OBV 下跌 + 量高 = 主力出貨中</p>
       </div>
     `;
-  } else if (verdict.state === 'DOWN' && signal === 'DISCONFIRM') {
-    stateAdvice = `
-      <div class="strategy-warning">
-        <h4>🔴 下跌 + 量能反對 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 跌勢無量, 可能見底</p>
-        <p><strong>警號:</strong> N rule (縮量拋售衰竭) 觸發, 拋售力量弱</p>
-        <p><strong>進場策略:</strong> 等確認見底 (例如連續 2-3 日陽燭) 再考慮撈底</p>
-        <p><strong>風險:</strong> 跌勢無量都可能係下跌中繼, 唔好太早撈底</p>
-      </div>
-    `;
-  } else if (verdict.state === 'TRANSITION') {
-    stateAdvice = `
-      <div class="strategy-transition">
-        <h4>🟣 反轉訊號 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 暫時 hold, 等下個確認信號</p>
-        <p><strong>訊號確認:</strong> L rule (見頂背馳) 或 S rule (量能背馳) 觸發, 量能警號</p>
-        <p><strong>進場策略:</strong> 唔好喺 TRANSITION 狀態下新單落場, 等 5-7 日新方向確認</p>
-        <p><strong>風險:</strong> 量能背馳可以係假警號, 確認返之前嘅趨勢可能再返嚟</p>
-      </div>
-    `;
-  } else { // SIDEWAYS
-    stateAdvice = `
+  } else {
+    cycleAdvice = `
       <div class="strategy-sideways">
-        <h4>🟡 橫行 / 量能中性 · 策略建議</h4>
-        <p><strong>基本動作:</strong> 等方向, 量能中性代表無明確支持</p>
-        <p><strong>訊號確認:</strong> Q rule (縮量橫行) / R rule (放量震盪) / T rule (量能不濟) 觸發</p>
-        <p><strong>進場策略:</strong> 唔好喺橫行中間進場, 等放量突破 (R rule) 確認方向先做</p>
-        <p><strong>特別注意:</strong> R rule 觸發代表醞釀突破, 密切留意下個交易日方向</p>
+        <h4>🟡 觀望 · 策略建議</h4>
+        <p><strong>基本動作:</strong> 等方向 — buyScore 0.3 (觀望)</p>
+        <p><strong>進場策略:</strong> 留意 V4 連續堆量 + V9 突破確認觸發再入場</p>
+      </div>
     `;
   }
 
-  // 信心調整建議
-  let confidenceNote = '';
-  if (isHighConf) {
-    confidenceNote = `<p class="confidence-high">💪 信心指數 ${confidencePct}% (高) — 判定可靠, 可以作參考落單</p>`;
-  } else if (isLowConf) {
-    confidenceNote = `<p class="confidence-low">⚠️ 信心指數 ${confidencePct}% (低) — 唔好信, 等下一個更明顯訊號</p>`;
-  } else {
-    confidenceNote = `<p class="confidence-med">🤔 信心指數 ${confidencePct}% (中) — 有參考價值, 但要配合其他指標 confirm</p>`;
+  let failureAdvice = '';
+  if (falseSignalFlags.length > 0) {
+    failureAdvice = `
+      <div class="failure-mode">
+        <h4>⚠️ 假信號警告處理</h4>
+        <ul>${falseSignalFlags.map(f => `<li>${f} — 將 buyTimingScore 折扣,買入降級或觀望</li>`).join('')}</ul>
+      </div>
+    `;
   }
 
   return `
     <div class="strategy-advice">
       <h4>🎯 策略建議 (點做)</h4>
-      ${stateAdvice}
-      ${confidenceNote}
-      <p class="caveat">⚠️ 觸發 ${matchedRules.length} 條 rule, signal = ${signal}, 每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
+      ${cycleAdvice}
+      ${failureAdvice}
+      <p class="caveat">⚠️ 觸發 ${matchedRules.length} 條 rule, 體制 ${volumeRegime}, 買入評分 ${(buyScore * 100).toFixed(0)}%, 勝率 ${(winProb * 100).toFixed(0)}%</p>
     </div>
   `;
 }
 
-// ===== 點用 + 點睇 guide section (VolumePrice) =====
 function renderUsageGuideVolume(verdict) {
   return `
     <div class="usage-guide">
       <h4>💡 點用呢個結果 (點睇)</h4>
       <ol>
-        <li><strong>先睇 state 同 signal</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=TRANSITION) + signal 標籤 (綠 CONFIRM / 紅 DISCONFIRM / 橙 NEUTRAL), 呢個係最概要嘅判斷</li>
-        <li><strong>睇「觸發 rule」嗰行</strong> — 例如「K」= 量價齊升, 「L」= 見頂背馳, 「M」= 放量下跌。每條 rule 都有具體意思, 睇「📖 詳細解讀」section</li>
-        <li><strong>睇 Vol MA5 vs Vol MA20</strong> — MA5 &gt; MA20 = 近期量能擴張 (市場熱) / MA5 &lt; MA20 = 近期量能收縮 (市場淡)</li>
-        <li><strong>睇 OBV 方向</strong> — OBV 升 = 買入動力強 / OBV 跌 = 賣出動力強 / OBV 創新高 = O rule / OBV 創新低 = P rule</li>
-        <li><strong>留意 Max Spread</strong> — &lt; 2% = 市場靜 / &gt; 3% = 市場動, 配合 Q/R rule 一齊睇</li>
-        <li><strong>留意 OBV vs close 相關性</strong> — 負相關 &lt; -0.5 = 量能背馳 (S rule 警號)</li>
-        <li><strong>signal 點解讀</strong> — CONFIRM = 量能支持你嘅持倉方向 / DISCONFIRM = 量能反對 / NEUTRAL = 量能無明確訊號</li>
-        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
-        <li><strong>配合其他 module 一齊睇</strong> — VolumePrice 專門睇量能, 同 MA alignment (睇趨勢) / HL structure (睇形態) / Trendline (睇支撐壓力) 配合用, 4 個 module 一齊睇先至穩陣</li>
-        <li><strong>永遠配合風險管理</strong> — 呢個 module 嘅策略建議只係 reference, 落單前要自己再睇下基本面 / 消息面 / 板塊走勢</li>
+        <li><strong>先睇 cycle 同 cycleLabel</strong> — 個大色塊同標題。呢個係最概要嘅判斷 (資金流入/流出/觀望)</li>
+        <li><strong>睇 buyTimingScore 同 winProbability</strong> — 越高越可信。> 0.7 = 高勝率可考慮入場, < 0.5 = 觀望</li>
+        <li><strong>睇 breakoutStatus.pattern</strong> — gradual_buildup = 黃金突破 / low_volume = 假突破高危</li>
+        <li><strong>睇 breakoutStatus.isConfirmed</strong> — true = 真突破 / false = 假突破 / pending = 等緊確認</li>
+        <li><strong>睇 volumeRegime</strong> — accumulation = 大戶低調吸籌 (準備升) / distribution = 大戶高調派發 (準備跌)</li>
+        <li><strong>睇 pullbackHealth.isHealthy</strong> — 回調期間是否健康鎖籌。true = 健康, 可以等回調買入</li>
+        <li><strong>睇 vwapAnalysis.priceVsVwapPct</strong> — 喺 VWAP 之上 1% = 強勢 / 之下 = 弱勢</li>
+        <li><strong>睇 obvAnalysis.obvTrend 同 obvPriceCorrelation</strong> — OBV 上升 + 與價格同向 = 健康 / OBV 下跌 + 背馳 = 危險</li>
+        <li><strong>睇 falseSignalFlags</strong> — 有任何 flag 都要打折扣。anomaly_volume_spike 一定要等下日確認</li>
+        <li><strong>永遠配合風險管理</strong> — 呢個 module 嘅策略建議只係 reference,落單前要自己再睇下基本面 / 消息面 / 板塊走勢</li>
       </ol>
       <p class="caveat">⚠️ 呢個 module 係輔助工具, 唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用, 唔好單靠一個 algorithm 落單。</p>
     </div>
@@ -1423,30 +1795,54 @@ function renderUsageGuideVolume(verdict) {
 
 export function getVolumeHelp() {
   return `
-    <h4>VolumePrice · 10 條 Rule (K-T)</h4>
+    <h4>VolumePrice v2.0 · 15 條 Rule (V1-V15)</h4>
+    <p>對應 docx <code>05成交量價格行為確認法.docx</code> v2.0 spec。Spec doc: <code>MODULE-05-VOLUME-PRICE-V2.md</code></p>
+    <p><strong>基礎指標</strong></p>
     <ul>
-      <li><strong>K</strong> <small>(strong)</small>: 連續 5 日 close ↑ 且 volume ↑ → 量價齊升確認</li>
-      <li><strong>L</strong> <small>(strong)</small>: close 創 5 日新高但 volume < 5 日均量 → 量價背馳見頂</li>
-      <li><strong>M</strong> <small>(strong)</small>: 連續 5 日 close ↓ 且 volume ↑ → 放量下跌</li>
-      <li><strong>N</strong> <small>(medium)</small>: 連續 5 日 close ↓ 但 volume ↓ → 縮量下跌（拋售衰竭）</li>
-      <li><strong>O</strong> <small>(medium)</small>: OBV 創 N 日新高</li>
-      <li><strong>P</strong> <small>(medium)</small>: OBV 創 N 日新低</li>
-      <li><strong>Q</strong> <small>(medium)</small>: 縮量橫行整理 (spread &lt; 2% + volMA5 &lt; volMA20 × 0.8)</li>
-      <li><strong>R</strong> <small>(medium)</small>: 放量震盪 (spread &gt; 3% + volMA5 &gt; volMA20 × 1.2)</li>
-      <li><strong>S</strong> <small>(strong)</small>: OBV vs close 5 日 correlation &lt; -0.5 → 量能背馳</li>
-      <li><strong>T</strong> <small>(weak)</small>: volMA5 &lt; volMA20 × 0.5 → 量能不濟</li>
+      <li><strong>V1</strong> <small>(weak)</small>: ATR (14) > 0.5% × close — 波動充足</li>
+      <li><strong>V2</strong> <small>(weak)</small>: price > VWAP × 0.99 — 喺 VWAP 支撐之上</li>
+      <li><strong>V3</strong> <small>(weak)</small>: volumePercentile ∈ [0, 1] — 成交量百分位正常範圍</li>
     </ul>
-    <p><strong>State priority:</strong> K/O → UP · M/P → DOWN · L/S → TRANSITION · N/T/Q → SIDEWAYS · R → TRANSITION</p>
-    <p><strong>Signal:</strong> K/M/O/P → CONFIRM · L/S/N → DISCONFIRM · Q/R/T → NEUTRAL</p>
-    <p><strong>D012 Option B:</strong> VolumePrice 唔直接出 cycle verdict，出 confirm/disconfirm signal 畀 synthesizer 整合</p>
+    <p><strong>放量 / OBV 趨勢</strong></p>
+    <ul>
+      <li><strong>V4</strong> <small>(medium)</small>: 連續 ≥ 2 日 volume ≥ 1.3× 均量 AND NOT 異常爆量 — 堆量模式</li>
+      <li><strong>V5</strong> <small>(strong, 反向)</small>: volZScore > 3 AND 前 2 日低 AND 今日 ≥ 5× 均量 — 異常爆量警告</li>
+      <li><strong>V6</strong> <small>(medium)</small>: weighted OBV > SMA20 × 1.03 — 加權 OBV 上升</li>
+      <li><strong>V7</strong> <small>(medium)</small>: weighted OBV < SMA20 × 0.97 — 加權 OBV 下跌</li>
+      <li><strong>V8</strong> <small>(strong)</small>: 20 日 weighted OBV-Close 相關 > 0.5 — OBV 與價格同向</li>
+    </ul>
+    <p><strong>突破 / 假突破</strong></p>
+    <ul>
+      <li><strong>V9</strong> <small>(strong)</small>: 溫和堆量突破 (gradual_buildup pattern) — 最可信突破</li>
+      <li><strong>V10</strong> <small>(strong)</small>: 持續放量突破 + confirmed — 放量突破確認</li>
+      <li><strong>V11</strong> <small>(strong, 反向)</small>: low_volume 突破 OR falseBreakoutRisk > 0.5 — 縮量突破警告</li>
+      <li><strong>V12</strong> <small>(strong, 反向)</small>: falseBreakoutRisk > 0.6 — 假突破識別</li>
+    </ul>
+    <p><strong>回調 / 拋壓 / 背馳</strong></p>
+    <ul>
+      <li><strong>V13</strong> <small>(medium)</small>: 回調深度-量相關 < -0.3 — 健康回調 (越跌越縮量)</li>
+      <li><strong>V14</strong> <small>(strong, 反向)</small>: 回調深度-量相關 > 0.3 — 拋售拋壓 (越跌越放量)</li>
+      <li><strong>V15</strong> <small>(strong)</small>: 滾動相關性衰減 > 0.4 AND |corr_recent| < 0.2 — 量价背馳</li>
+    </ul>
+    <p><strong>5 條 buy rules</strong> (按信心由高到低):</p>
+    <ol>
+      <li>黃金買入 (0.9): gradual_buildup + confirmed + obv_corr > 0.5 + 無背馳</li>
+      <li>健康回調 (0.75): pullback healthy + 有支撐 + accumulation + obv rising</li>
+      <li>拋壓枯竭 (0.6): bullish_vp + 量縮 + obv ≠ falling</li>
+      <li>VWAP 支撐 (0.55): 接近 VWAP + 量縮 + obv rising</li>
+      <li>觀望 (0.3): 其他</li>
+    </ol>
+    <p><strong>4 條減分覆蓋</strong>: high_false_breakout_risk × 0.5, distribution_with_price_rise × 0.4, anomaly_volume_spike × 0.6, obv_price_divergence × 0.7</p>
+    <p><strong>State 派生</strong> (用 cycle, 唔係 state): uptrend if buyScore ≥ 0.55 / downtrend if distribution / sideways</p>
+    <p><strong>Signal 派生</strong> (供 M1 alignment 用): CONFIRM / DISCONFIRM / NEUTRAL</p>
   `;
 }
 
 export const volumePriceAdapter = {
   id: 'AS-03-VP',
-  name: '量價分析 (VolumePrice)',
-  version: '1.0.0',
-  description: '用 10 條 rule (K-T) 識別量價關係，emit confirm/disconfirm signal',
+  name: '成交量價格行為確認法 v2.0 (VolumePrice)',
+  version: '2.0.0',
+  description: '用 15 條 rule-based 算法 (V1-V15) 分析成交量價格行為確認',
   inputs: [
     {
       key: 'code',
@@ -1474,7 +1870,7 @@ export const volumePriceAdapter = {
       label: '取數據日數',
       type: 'number',
       default: 100,
-      min: 30,
+      min: 80,
       max: 500,
     },
   ],
