@@ -460,14 +460,25 @@ async function runAlgorithm() {
       throw new Error(`Backend 未返回 K 线数据 (got ${typeof klines})`);
     }
 
-    runStatus.innerHTML = `✅ 已获取 ${klines.length} 日 K 线 · 跑算法中...`;
+    // 大少 #11070 (2026-08-07) — 顯示 user 設定 vs actual returned (debug 用)
+    const requestedCount = klineData.requested_count ?? count;
+    const actualCount = klineData.actual_count ?? klines.length;
+    const dataLimited = klineData.data_limited === true;
+    const countHint = (requestedCount !== actualCount || dataLimited)
+      ? ` <span style="color: #ff7a00;">(設定 ${requestedCount} 日 / 實際 ${actualCount} 日${dataLimited ? ' — 數據限制' : ''})</span>`
+      : '';
+    runStatus.innerHTML = `✅ 已获取 ${actualCount} 日 K 线${countHint} · 跑算法中...`;
 
     // 2. Run algorithm
     const startTime = performance.now();
     const verdict = await currentAdapter.analyze(klines, currentOptions);
     const endTime = performance.now();
 
-    runStatus.innerHTML = `✅ 完成 · ${klines.length} 日 · ${(endTime - startTime).toFixed(0)}ms`;
+    // 大少 #11070 — 顯示 user 設定 vs actual (debug 用)
+    const finalCountHint = (requestedCount !== actualCount || dataLimited)
+      ? ` <span style="color: #ff7a00;">(設定 ${requestedCount} / 實際 ${actualCount}${dataLimited ? ' — 數據限制' : ''})</span>`
+      : '';
+    runStatus.innerHTML = `✅ 完成 · ${actualCount} 日${finalCountHint} · ${(endTime - startTime).toFixed(0)}ms`;
 
     // 3. Render result
     if (currentAdapter.renderResult) {

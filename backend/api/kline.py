@@ -103,19 +103,24 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
             yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
             start_date = yesterday
             end_date = end_date or datetime.date.today().isoformat()
-        
+
         # 美股日K：需要更大範圍（用戶指定時以用戶為準）
         if code.startswith('US.') and period == '1d' and not start:
             week_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
             start_date = week_ago
             end_date = end_date or datetime.date.today().isoformat()
-        
-        # 日K：默認前6個月（用戶指定時以用戶為準）
+
+        # 大少 #11070 (2026-08-07) — Testing page 改 dataWindowDays 但 chart 仲係用舊 data
+        # Root cause: 1d 默認 start = 6 個月前 (180 日), 拎 ~120 trading days
+        # 改為按 user count 計算 start_date (1.5x 緩衝 cover weekends/holidays)
+        # e.g. count=300 → start=450 calendar days ago → ~300 trading days
         if period == '1d' and not start:
-            six_months_ago = (datetime.date.today() - datetime.timedelta(days=180)).isoformat()
-            start_date = six_months_ago
+            # 1 trading day ≈ 1.5 calendar days (含週末 + 假期)
+            calendar_days_back = max(int(count * 1.5), 180)
+            start_date = (datetime.date.today() - datetime.timedelta(days=calendar_days_back)).isoformat()
             end_date = end_date or datetime.date.today().isoformat()
-        
+            logger.info(f"[KLine] 1d default start={start_date} (count={count} → {calendar_days_back} calendar days back)")
+
         # 月K：默認前72個月 = 6年（用戶指定時以用戶為準）
         if period == '1M' and not start:
             from dateutil.relativedelta import relativedelta
@@ -123,7 +128,7 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
             # 月K的start需要使用月份的第一天，否則會漏掉該月的K線
             start_date = six_years_ago.replace(day=1).isoformat()
             end_date = end_date or datetime.date.today().isoformat()
-        
+
         # 年K：默認所有歷史數據（用戶指定時以用戶為準）
         # 富途預設行為當 start/end 都為 None 時只返回最近一年，
         # 所以我們用一個很早的日期確保拿到所有歷史數據
@@ -132,7 +137,7 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
             end_date = end_date or datetime.date.today().isoformat()
         elif period == '1y' and start and not end:
             end_date = datetime.date.today().isoformat()
-        
+
         # 大少 #8505 + #8513: cache-aside — caller (kline.py) 負責 PERIOD_MAP 轉 ktype
         cache_result = await _cache.get_or_fetch(
             code=code, ctx=ctx, ktype=ktype, period=period,
@@ -144,6 +149,22 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
         klines = cache_result['klines']
         cached_flag = cache_result['cached']
         fetch_count = cache_result['fetch_count']
+
+        # 大少 #11070 (2026-08-07) — Trim response 落 user-requested count
+        # Cache 返晒所有 fetched (wide-fetch 30*365 為將來 gap-fill),但 response 應該對齊 user 設定
+        # 取最後 N 條 (最 recent) 因為 testing page user 冇 specify start
+        requested_count = count
+        data_limited = False
+        if requested_count and len(klines) > requested_count:
+            klines = klines[-requested_count:]
+        elif requested_count and len(klines) < requested_count:
+            # 拎唔夠 user 想要嘅條數 (OpenD 限制)
+            data_limited = True
+            logger.warning(
+                f"[KLine] {code} {period} 數據不足: user request={requested_count}, "
+                f"actual={len(klines)} (可能 OpenD history 限制或 cold cache 撞牆)"
+            )
+        actual_count = len(klines)
 
         # 大少 #7780: 加 turnover_rate per candle (volume / outstanding_shares)
         outstanding_shares = 0
@@ -161,13 +182,17 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
         else:
             for kline in klines:
                 kline['turnover_rate'] = None
-        
+
         # 股票名稱
         name = code
-        
-        logger.info(f"[KLine] 成功獲取 {len(klines)} 根 K線 (cached={cached_flag}, fetch_count={fetch_count})")
-        
+
+        logger.info(
+            f"[KLine] 成功獲取 {actual_count} 根 K線 "
+            f"(requested={requested_count}, cached={cached_flag}, fetch_count={fetch_count}, data_limited={data_limited})"
+        )
+
         # 大少 #8505: 加 cached + fetch_count flags 俾 frontend debug
+        # 大少 #11070: 加 requested_count / actual_count / data_limited flags 俾 frontend UI 顯示
         return {
             'code': code,
             'name': name,
@@ -176,6 +201,9 @@ async def get_kline(code: str, period: str = "1d", count: int = 100, start: Opti
             'mock': False,
             'cached': cached_flag,
             'fetch_count': fetch_count,
+            'requested_count': requested_count,
+            'actual_count': actual_count,
+            'data_limited': data_limited,
         }
         
     except HTTPException:
