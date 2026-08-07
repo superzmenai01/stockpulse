@@ -864,16 +864,12 @@ function _maNormalizeTime(t) {
 
 // Helper: 計 MA 歷史 series (同 ma-alignment.ts 嘅 avgClose 一樣)
 // period = 5 / 10 / 60
-// 頭 period-1 個 point value = null (未夠 data 計 MA)
+// 頭 period-1 個 point 直接 skip (未夠 data 計 MA, 唔出 null 避免 lightweight-charts 當 0 畫)
 function _computeMASeries(klines, period) {
   const out = [];
-  for (let i = 0; i < klines.length; i++) {
+  for (let i = period - 1; i < klines.length; i++) {
     const time = _maNormalizeTime(klines[i].time ?? klines[i].timestamp ?? klines[i].date);
     if (time == null) continue;
-    if (i < period - 1) {
-      out.push({ time, value: null });
-      continue;
-    }
     let sum = 0;
     for (let j = i - period + 1; j <= i; j++) {
       sum += klines[j].close;
