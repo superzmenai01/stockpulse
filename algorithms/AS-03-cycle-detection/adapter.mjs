@@ -696,6 +696,10 @@ function renderMAResult(verdict) {
         <ul>${matchedRulesHtml}</ul>
       </div>
 
+      ${renderDetailedExplanationMA(verdict)}
+      ${renderStrategyAdviceMA(verdict)}
+      ${renderUsageGuideMA(verdict)}
+
       <details class="meta-details">
         <summary>🔧 配置（debug 用）</summary>
         <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
@@ -705,6 +709,183 @@ function renderMAResult(verdict) {
 }
 
 // ===== Help text =====
+// ===== 詳細解讀 section (MA alignment) =====
+function renderDetailedExplanationMA(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const matchedRules = verdict.meta?.matchedRules || [];
+  const evidence = verdict.evidence || [];
+
+  // Rule 解釋表 (大少 設計 10 條 rule)
+  const ruleExplain = {
+    'A': '連續 5 日 MA5 > MA60 — 強烈上升訊號',
+    'B': '連續 5 日 MA5 < MA60 — 強烈下跌訊號',
+    'C': '5 日裡 MA5 > MA60 但當日 low < MA60 — 橫行向下',
+    'D': '5 日裡 MA5 < MA60 但當日 high > MA60 — 橫行向上',
+    'F': 'MA5+MA10 都 > MA60 但 MA5 < MA10 — 升勢調整 (小心見頂)',
+    'G': 'MA5+MA10 都 < MA60 但 MA5 > MA10 — 跌勢調整 (可能見底)',
+    'H-reverse-up': '7 日內由下跌轉上升 — 強烈轉勢信號',
+    'H-reverse-down': '7 日內由上升轉下跌 — 強烈轉勢信號',
+    'I': '連續 5 日 low ≥ MA5 × 0.98 — 有機會長升',
+    'J': '連續 5 日 high ≤ MA5 × 1.02 — 有機會長跌',
+  };
+
+  return `
+    <div class="detailed-explanation">
+      <h4>📖 詳細解讀 (10 條 rule 點解讀)</h4>
+      <table class="explain-table">
+        <tr><td class="field-name">📊 state (週期類型)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '上升勢 (A/F rule 主導)' : verdict.state === 'DOWN' ? '下跌勢 (B/G rule 主導)' : verdict.state === 'SIDEWAYS' ? '橫行 (C/D rule 主導)' : '轉折 (H rule 觸發 — 7 日內反轉)'}</td></tr>
+        <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值' : '🔴 低信心 — 信唔過'}</td></tr>
+        <tr><td class="field-name">📐 觸發 rule (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發,預設 SIDEWAYS' : matchedRules.map(r => `<strong>${r}</strong> — ${ruleExplain[r] || r}`).join(' / ')}</td></tr>
+        <tr><td class="field-name">📈 MA5</td><td>${verdict.meta.latestMA5 || 'N/A'} (5 日平均線,短期趨勢)</td></tr>
+        <tr><td class="field-name">📈 MA10</td><td>${verdict.meta.latestMA10 || 'N/A'} (10 日平均線,中短期)</td></tr>
+        <tr><td class="field-name">📈 MA60</td><td>${verdict.meta.latestMA60 || 'N/A'} (60 日平均線,中長期趨勢)</td></tr>
+        <tr><td class="field-name">📅 數據日數</td><td>${verdict.meta.dataDays} 日</td></tr>
+        <tr><td class="field-name">⏰ 時間週期</td><td>${verdict.timeframe}</td></tr>
+        <tr><td class="field-name">🔧 連續日數</td><td>${verdict.meta.configUsed?.consecutiveDays || 5} 日 (A/B/F/G 用)</td></tr>
+        <tr><td class="field-name">🔧 反轉窗口</td><td>${verdict.meta.configUsed?.reversalWindowDays || 7} 日 (H rule 用)</td></tr>
+        <tr><td class="field-name">🔧 觸發門檻</td><td>${((verdict.meta.configUsed?.chanceThresholdPct || 0.02) * 100).toFixed(1)}% (I/J rule 用)</td></tr>
+        <tr><td class="field-name">💪 Rule 強度</td><td>${matchedRules.length > 0 ? (matchedRules.some(r => r.startsWith('H') || ['A','B'].includes(r)) ? '強 (A/B/H)' : matchedRules.some(r => ['I','J'].includes(r)) ? '弱 (I/J)' : '中 (C/D/F/G)') : '無'}</td></tr>
+      </table>
+    </div>
+  `;
+}
+
+// ===== 策略建議 section (MA alignment) =====
+function renderStrategyAdviceMA(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const isHighConf = verdict.confidence >= 0.7;
+  const isLowConf = verdict.confidence < 0.5;
+  const matchedRules = verdict.meta?.matchedRules || [];
+
+  let stateAdvice = '';
+  if (verdict.state === 'UP') {
+    stateAdvice = `
+      <div class="strategy-up">
+        <h4>🟢 上升勢 (A/F rule 主導) · 策略建議</h4>
+        <p><strong>基本動作:</strong>順勢持倉,慢慢加倉</p>
+        <p><strong>訊號確認:</strong>A rule (連續 5 日 MA5 > MA60) 觸發,代表中期趨勢向上</p>
+        <p><strong>風險管理:</strong>留意 F rule (升勢調整 — MA5 < MA10 但仍 > MA60),呢個係見頂警號,出現就要收緊止損</p>
+        <p><strong>止損位:</strong>最近 5 日 low 跌穿 MA5 × 0.98 (I rule 失效),即係要留意</p>
+        <p><strong>進場策略:</strong>等回調到 MA5/MA10 附近再反彈,低吸</p>
+        <p><strong>特別注意:</strong>如果 H-reverse-down rule 都觸發,代表 7 日內由升轉跌,要小心</p>
+      </div>
+    `;
+  } else if (verdict.state === 'DOWN') {
+    stateAdvice = `
+      <div class="strategy-down">
+        <h4>🔴 下跌勢 (B/G rule 主導) · 策略建議</h4>
+        <p><strong>基本動作:</strong>避開 / 考慮減倉</p>
+        <p><strong>訊號確認:</strong>B rule (連續 5 日 MA5 < MA60) 觸發,代表中期趨勢向下</p>
+      <p><strong>風險管理:</strong>留意 G rule (跌勢調整 — MA5 > MA10 但仍 < MA60),可能見底</p>
+      <p><strong>止損位:</strong>最近 5 日 high 升穿 MA5 × 1.02 (J rule 失效)</p>
+      <p><strong>進場策略:</strong>反彈到 MA5/MA10 附近再回落,做空</p>
+      <p><strong>特別注意:</strong>如果 H-reverse-up rule 都觸發,代表 7 日內由跌轉升</p>
+      </div>
+    `;
+  } else if (verdict.state === 'SIDEWAYS') {
+    stateAdvice = `
+      <div class="strategy-sideways">
+        <h4>🟡 橫行 (C/D rule 主導) · 策略建議</h4>
+        <p><strong>基本動作:</strong>等方向,等 MA5 升穿/跌穿 MA60 確認</p>
+        <p><strong>訊號確認:</strong>C rule (橫行向下) 或 D rule (橫行向上) 觸發,代表 5 日內出現過矛盾</p>
+        <p><strong>進場策略:</strong>唔好喺橫行中間進場,等 MA5 突破 MA60 先做</p>
+        <p><strong>觀察重點:</strong>留意 H-reverse rule,如果出現就係轉勢先兆</p>
+      </div>
+    `;
+  } else { // TRANSITION
+    stateAdvice = `
+      <div class="strategy-transition">
+        <h4>🟣 轉折 (H rule 觸發) · 策略建議</h4>
+        <p><strong>基本動作:</strong>暫時 hold,等 7 日內反轉確認</p>
+        <p><strong>訊號確認:</strong>H-reverse-up 或 H-reverse-down 觸發,代表 7 日內有 1-3 日新方向</p>
+        <p><strong>進場策略:</strong>暫時唔好落新單,等下個確認 signal</p>
+        <p><strong>觀察重點:</strong>睇新方向會唔會延續,如果連續 5 日都同方向就變 UP/DOWN state</p>
+        <p><strong>風險:</strong>轉折失敗可能係假突破,要小心</p>
+      </div>
+    `;
+  }
+
+  let confidenceNote = '';
+  if (isHighConf) {
+    confidenceNote = `<p class="confidence-high">💪 信心指數 ${confidencePct}% (高) — 判定可靠,可以作參考落單</p>`;
+  } else if (isLowConf) {
+    confidenceNote = `<p class="confidence-low">⚠️ 信心指數 ${confidencePct}% (低) — 唔好信,等下一個更明顯訊號</p>`;
+  } else {
+    confidenceNote = `<p class="confidence-med">🤔 信心指數 ${confidencePct}% (中) — 有參考價值,但要配合其他指標 confirm</p>`;
+  }
+
+  return `
+    <div class="strategy-advice">
+      <h4>🎯 策略建議 (點做)</h4>
+      ${stateAdvice}
+      ${confidenceNote}
+      <p class="caveat">⚠️ 觸發 ${matchedRules.length} 條 rule,每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
+    </div>
+  `;
+}
+
+// ===== 點用 + 點睇 guide section (MA alignment) =====
+function renderUsageGuideMA(verdict) {
+  return `
+    <div class="usage-guide">
+      <h4>💡 點用呢個結果 (點睇)</h4>
+      <ol>
+        <li><strong>先睇 state 同信心</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=TRANSITION) 同信心百分比,呢個係最概要嘅判斷</li>
+        <li><strong>睇「觸發 rule」嗰行</strong> — 例如「A」= 強烈上升,「H-reverse-down」= 7 日內由升轉跌。每條 rule 都有具體意思,睇「📖 詳細解讀」section</li>
+        <li><strong>睇 chart 上面嘅 MA 線</strong> — chart 會 render MA5/MA10/MA20 三條線,呢個 module 嘅判定建基於呢啲線。睇線嘅相對位置 (MA5 喺 MA10 上面 = 短期強)</li>
+        <li><strong>睇 MA 值嗰 3 個 box</strong> — MA5/MA10/MA60 嘅實際數值,比較當前價同呢 3 條線嘅距離</li>
+        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
+        <li><strong>配合其他 module 一齊睇</strong> — 揀 AS-03 (umbrella) 同時跑 7 個 module,compare 唔同 module 嘅判斷</li>
+        <li><strong>短期 vs 中期</strong> — MA5/MA10 係短期,MA60 係中期,呢個 module 主要睇中期趨勢</li>
+        <li><strong>回測用 100+ 日 K 線</strong> — 預設 100 日夠用,加長可攞更穩 verdict</li>
+      </ol>
+      <p class="caveat">⚠️ 呢個 module 係輔助工具,唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用,唔好單靠一個 algorithm 落單。</p>
+    </div>
+  `;
+}
+
+// ===== MA Chart Overlay (renderChartOverlay for default AS-03 export) =====
+// 喺 chart 上面加 MA5/MA10 兩條 price line (跟主 web app ChartContainer.tsx default 顏色)
+// 註: 完整 MA 序列 (historical line) 需要 re-compute, 暫時 render 當前 level
+export function renderMAChartOverlay(verdict, klines, chartRefs) {
+  if (!chartRefs || !chartRefs.chart || !chartRefs.candleSeries) return;
+  if (!verdict || !verdict.meta) return;
+  if (typeof LightweightCharts === 'undefined') return;
+
+  const ma5 = verdict.meta.latestMA5;
+  const ma10 = verdict.meta.latestMA10;
+  const ma20 = null;  // 暫時未有,將來可以加
+
+  // 用 verdict 嘅 latest MA values + 簡單 line series
+  // Note: 完整 MA 序列 (historical line) 需要 re-compute,呢度只 render 當前 level 用 price line
+  if (ma5 != null) {
+    try {
+      chartRefs.chart.priceLines = chartRefs.chart.priceLines || {};
+      chartRefs.chart.priceLines.ma5 = chartRefs.candleSeries.createPriceLine({
+        price: ma5,
+        color: '#FF6B6B',  // 紅
+        lineWidth: 1,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: 'MA5',
+      });
+    } catch (e) { /* 忽略 */ }
+  }
+  if (ma10 != null) {
+    try {
+      chartRefs.chart.priceLines = chartRefs.chart.priceLines || {};
+      chartRefs.chart.priceLines.ma10 = chartRefs.candleSeries.createPriceLine({
+        price: ma10,
+        color: '#4ECDC4',  // 青
+        lineWidth: 1,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: 'MA10',
+      });
+    } catch (e) { /* 忽略 */ }
+  }
+}
+
 
 export function getHelp() {
   return `
