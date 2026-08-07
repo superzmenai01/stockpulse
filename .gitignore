@@ -44,3 +44,7 @@ backend/data/stocks.db
 
 # sed backup files
 *.bak
+
+# docx files (source binary, 唔 commit)
+*.docx
+docs/演算法概念SPECS/
