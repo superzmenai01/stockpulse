@@ -57,6 +57,24 @@ const REGISTRY = [
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'indicatorsAdapter',
   },
+  // 2026-08-08 大少 + MiniMax Code — Module 5 v2.0.0 (成交量價格行為確認)
+  // 獨立 entry, named export `volumePriceAdapter` 喺 adapter.mjs
+  // 完整重寫 v1.0 → v2.0, 15 條 rule (V1-V15), 5 種 buy + 4 種減分覆蓋
+  {
+    id: 'AS-03-VP',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'volumePriceAdapter',
+  },
+  // 2026-08-08 大少 + MiniMax Code — Module 6 v1.0.0 (波動率收縮擴張)
+  // 獨立 entry, named export `volatilityAdapter` 喺 adapter.mjs
+  // 全新 module, 12 條 rule (S1-S12), 5 種 setup, 3 種 failure mode
+  {
+    id: 'AS-03-VOL',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'volatilityAdapter',
+  },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
 ];
