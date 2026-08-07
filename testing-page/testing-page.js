@@ -48,6 +48,14 @@ const REGISTRY = [
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'trendlineAdapter',
   },
+  // 2026-08-07 大少 + MiniMax Code — Module 4 v1.0.0 (動能背馳與衰竭)
+  // 獨立 entry, named export `indicatorsAdapter` 喺 adapter.mjs
+  {
+    id: 'AS-03-IND',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'indicatorsAdapter',
+  },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
 ];

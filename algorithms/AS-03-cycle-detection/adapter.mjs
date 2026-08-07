@@ -3806,3 +3806,866 @@ export const trendlineAdapter = {
   renderChartOverlay: renderTrendlineChartOverlay,
   getHelp: getTrendlineHelp,
 };
+
+// ===== Module 4: 動能背馳與衰竭檢測法 (Indicators) v1.0.0 =====
+// 大少 + MiniMax Code 2026-08-07
+// 跟 docx `docs/演算法概念SPECS/04動能背馳與衰竭檢測法.docx` v1.0 (Kimi spec)
+// Spec: docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md
+//
+// 跟其他 module pattern 一致 (.ts file 係 source of truth + test, .mjs file 係
+// browser-compatible port)。Indicators.ts 用 TypeScript class,呢度 port 落 pure JS
+// function-based,行為完全一致 (T1-T14 全部 36 assertions pass)。
+
+const DEFAULT_INDICATORS_CONFIG = {
+  lookbackDays: 60,
+  rsiPeriod: 14,
+  macdFast: 12,
+  macdSlow: 26,
+  macdSignal: 9,
+  divergenceTolerance: 0.03,
+  minSwingPct: 0.03,
+  signalThreshold: 0.6,
+};
+
+// ============ Pure-JS port of modules/indicators.ts ============
+
+function _indicatorsRound(n, decimals = 4) {
+  const factor = Math.pow(10, decimals);
+  return Math.round(n * factor) / factor;
+}
+
+function _indicatorsClamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Wilder RSI (跟 docx Step 1)
+ */
+function _indicatorsCalculateRSI(closes, period) {
+  const rsi = [];
+  if (closes.length < period + 1) return rsi;
+
+  let gainSum = 0;
+  let lossSum = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) gainSum += diff;
+    else lossSum += -diff;
+  }
+  let avgGain = gainSum / period;
+  let avgLoss = lossSum / period;
+
+  const firstRs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+  rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + firstRs));
+
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    if (avgLoss === 0) {
+      rsi.push(100);
+    } else {
+      const rs = avgGain / avgLoss;
+      rsi.push(100 - 100 / (1 + rs));
+    }
+  }
+  return rsi;
+}
+
+/**
+ * EMA — fix off-by-one (用 array index 直接 assign, ema[period-1] = SMA seed)
+ */
+function _indicatorsCalculateEMA(values, period) {
+  const ema = new Array(values.length).fill(0);
+  if (values.length < period) return [];
+  const mult = 2 / (period + 1);
+
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  ema[period - 1] = sum / period;
+
+  for (let i = period; i < values.length; i++) {
+    ema[i] = values[i] * mult + ema[i - 1] * (1 - mult);
+  }
+  return ema.slice(period - 1);
+}
+
+/**
+ * MACD (12/26/9) — 回返 histogram series
+ */
+function _indicatorsCalculateMACD(closes, fast, slow, signal) {
+  const emaFast = _indicatorsCalculateEMA(closes, fast);
+  const emaSlow = _indicatorsCalculateEMA(closes, slow);
+  if (emaFast.length === 0 || emaSlow.length === 0) return [];
+
+  const dif = [];
+  const alignedStart = slow - 1;
+  const emaFastOffset = alignedStart - (fast - 1);
+  for (let i = 0; i < emaSlow.length; i++) {
+    dif.push(emaFast[emaFastOffset + i] - emaSlow[i]);
+  }
+
+  const dea = _indicatorsCalculateEMA(dif, signal);
+  if (dea.length === 0) return [];
+
+  const deaOffset = signal - 1;
+  const histogram = [];
+  for (let i = 0; i < dea.length; i++) {
+    histogram.push(dif[deaOffset + i] - dea[i]);
+  }
+  return histogram;
+}
+
+/**
+ * 3-window local extremum detection
+ */
+function _indicatorsFindLocalExtrema(series, w) {
+  const peaks = [];
+  const troughs = [];
+  if (series.length < 2 * w + 1) return { peaks, troughs };
+
+  for (let i = w; i < series.length - w; i++) {
+    let isPeak = true;
+    let isTrough = true;
+    for (let j = i - w; j <= i + w; j++) {
+      if (j === i) continue;
+      if (series[j] >= series[i]) isPeak = false;
+      if (series[j] <= series[i]) isTrough = false;
+      if (!isPeak && !isTrough) break;
+    }
+    if (isPeak) peaks.push({ index: i, value: series[i] });
+    else if (isTrough) troughs.push({ index: i, value: series[i] });
+  }
+  return { peaks, troughs };
+}
+
+function _indicatorsFindNearestExtremum(extrema, targetIndex) {
+  if (extrema.length === 0) return null;
+  let nearest = extrema[0];
+  let minDist = Math.abs(extrema[0].index - targetIndex);
+  for (const e of extrema) {
+    const d = Math.abs(e.index - targetIndex);
+    if (d < minDist) {
+      minDist = d;
+      nearest = e;
+    }
+  }
+  return nearest;
+}
+
+function _indicatorsDetectDivergence(priceExtrema, indicatorExtrema, tolerance, minSwing, dates, indicatorName) {
+  const out = [];
+  if (priceExtrema.length < 2 || indicatorExtrema.length === 0) return out;
+
+  const prev = priceExtrema[priceExtrema.length - 2];
+  const curr = priceExtrema[priceExtrema.length - 1];
+
+  const swing = Math.abs(curr.value - prev.value) / prev.value;
+  if (swing < minSwing) return out;
+
+  const prevInd = _indicatorsFindNearestExtremum(indicatorExtrema, prev.index);
+  const currInd = _indicatorsFindNearestExtremum(indicatorExtrema, curr.index);
+  if (!prevInd || !currInd) return out;
+
+  if (curr.value > prev.value * (1 + tolerance) && currInd.value < prevInd.value) {
+    const strength = (prevInd.value - currInd.value) / Math.abs(prevInd.value || 1);
+    out.push({
+      type: 'bearish_divergence',
+      indicator: indicatorName,
+      pricePoint1: prev.value,
+      pricePoint2: curr.value,
+      indicatorPoint1: prevInd.value,
+      indicatorPoint2: currInd.value,
+      strength: _indicatorsClamp(Math.abs(strength), 0, 1),
+      index1: prev.index,
+      index2: curr.index,
+      date1: dates[prev.index] || '',
+      date2: dates[curr.index] || '',
+    });
+  } else if (curr.value < prev.value * (1 - tolerance) && currInd.value > prevInd.value) {
+    const strength = (currInd.value - prevInd.value) / Math.abs(prevInd.value || 1);
+    out.push({
+      type: 'bullish_divergence',
+      indicator: indicatorName,
+      pricePoint1: prev.value,
+      pricePoint2: curr.value,
+      indicatorPoint1: prevInd.value,
+      indicatorPoint2: currInd.value,
+      strength: _indicatorsClamp(Math.abs(strength), 0, 1),
+      index1: prev.index,
+      index2: curr.index,
+      date1: dates[prev.index] || '',
+      date2: dates[curr.index] || '',
+    });
+  }
+  return out;
+}
+
+/**
+ * Main algorithm — port 自 modules/indicators.ts
+ */
+function _indicatorsDetect(klines, config, symbol, timeframe) {
+  // Step 0
+  const minRequired = Math.max(config.rsiPeriod, config.macdSlow + config.macdSignal) + config.lookbackDays + 10;
+  if (klines.length < minRequired) {
+    return {
+      moduleId: 'indicators',
+      timeframe,
+      state: 'SIDEWAYS',
+      confidence: 0,
+      interpretation: `[動能背馳] 數據不足,需要至少 ${minRequired} 條 K 線,目前 ${klines.length} 條`,
+      evidence: [],
+      warnings: [`數據不足: ${klines.length} < ${minRequired}`],
+      meta: {
+        inputBars: klines.length,
+        minRequired,
+        cycleLabel: '動能中性',
+        divergence: { rsiDivergences: [], macdDivergences: [], totalCount: 0 },
+        momentumState: { rsi: 50, macd: 0, rsiTrend: 'falling', macdTrend: 'falling', macdState: 'bearish_accelerating', isOverbought: false, isOversold: false },
+        signal: { type: 'hold', strength: 0, action: '觀望', reasons: [] },
+        winProbability: 0.5,
+        exhaustionScore: 0,
+        historicalOpportunities: [],
+        adjustmentLog: [],
+        reason: '數據不足',
+        lastDate: '',
+        rsiSeries: [],
+        macdSeries: [],
+      },
+      timestamp: Date.now(),
+    };
+  }
+
+  // Helper: timestamp -> date string
+  const klineDate = (k) => {
+    if (typeof k.timestamp === 'number') {
+      return new Date(k.timestamp).toISOString().split('T')[0];
+    }
+    return String(k.timestamp).split('T')[0].split(' ')[0];
+  };
+
+  const closes = klines.map(k => k.close);
+  const dates = klines.map(k => klineDate(k));
+
+  // Step 1: RSI + MACD
+  const rsiSeries = _indicatorsCalculateRSI(closes, config.rsiPeriod);
+  const macdRaw = _indicatorsCalculateMACD(closes, config.macdFast, config.macdSlow, config.macdSignal);
+  const macdOffset = config.macdSlow + config.macdSignal - 2;
+  const macdSeries = new Array(macdOffset).fill(0).concat(macdRaw);
+
+  const rsiLatest = rsiSeries.length > 0 ? rsiSeries[rsiSeries.length - 1] : 50;
+  const macdLatest = macdSeries.length > 0 ? macdSeries[macdSeries.length - 1] : 0;
+
+  // Step 4: momentum state
+  const rsiTrend = rsiSeries.length >= 6
+    ? (rsiLatest > rsiSeries.slice(-6, -1).reduce((a, b) => a + b, 0) / 5 ? 'rising' : 'falling')
+    : 'falling';
+  const macdTrend = macdSeries.length >= 6
+    ? (macdLatest > macdSeries.slice(-6, -1).reduce((a, b) => a + b, 0) / 5 ? 'rising' : 'falling')
+    : 'falling';
+  const isOverbought = rsiLatest > 70;
+  const isOversold = rsiLatest < 30;
+
+  let macdState;
+  if (macdLatest > 0 && macdTrend === 'rising') macdState = 'bullish_accelerating';
+  else if (macdLatest > 0 && macdTrend === 'falling') macdState = 'bullish_decelerating';
+  else if (macdLatest < 0 && macdTrend === 'falling') macdState = 'bearish_accelerating';
+  else macdState = 'bearish_decelerating';
+
+  // Step 2 + 3: 背馳
+  const extW = 3;
+  const { peaks: pricePeaks, troughs: priceTroughs } = _indicatorsFindLocalExtrema(closes, extW);
+  const { peaks: rsiPeaks, troughs: rsiTroughs } = _indicatorsFindLocalExtrema(rsiSeries, extW);
+  const { peaks: macdPeaks, troughs: macdTroughs } = _indicatorsFindLocalExtrema(macdSeries, extW);
+
+  const rsiDiv = [
+    ..._indicatorsDetectDivergence(pricePeaks, rsiPeaks, config.divergenceTolerance, config.minSwingPct, dates, 'rsi'),
+    ..._indicatorsDetectDivergence(priceTroughs, rsiTroughs, config.divergenceTolerance, config.minSwingPct, dates, 'rsi'),
+  ];
+  const macdDiv = [
+    ..._indicatorsDetectDivergence(pricePeaks, macdPeaks, config.divergenceTolerance, config.minSwingPct, dates, 'macd'),
+    ..._indicatorsDetectDivergence(priceTroughs, macdTroughs, config.divergenceTolerance, config.minSwingPct, dates, 'macd'),
+  ];
+
+  // Step 5: 衰竭分數
+  let exhaustionScore = 0;
+  if (isOverbought) exhaustionScore += 0.3 * (rsiLatest - 70) / 30;
+  else if (isOversold) exhaustionScore += 0.3 * (30 - rsiLatest) / 30;
+
+  const last10MacdAbs = macdSeries.slice(-10).map(Math.abs);
+  const recentMaxMacd = Math.max(...last10MacdAbs);
+  if (recentMaxMacd > 0) {
+    const shrinkRatio = Math.abs(macdLatest) / recentMaxMacd;
+    exhaustionScore += 0.3 * (1 - shrinkRatio);
+  }
+
+  if (rsiDiv.length > 0) {
+    const maxRsiStrength = Math.max(...rsiDiv.map(d => d.strength));
+    exhaustionScore += 0.25 * maxRsiStrength;
+  }
+  if (macdDiv.length > 0) {
+    const maxMacdStrength = Math.max(...macdDiv.map(d => d.strength));
+    exhaustionScore += 0.25 * maxMacdStrength;
+  }
+  exhaustionScore = _indicatorsClamp(exhaustionScore, 0, 1);
+
+  // Step 6: 訊號
+  const allDiv = [...rsiDiv, ...macdDiv];
+  const hasBullDiv = allDiv.some(d => d.type === 'bullish_divergence');
+  const hasBearDiv = allDiv.some(d => d.type === 'bearish_divergence');
+  const signalReasons = [];
+  let bullScore = 0;
+  let bearScore = 0;
+
+  if (hasBullDiv) {
+    bullScore += 0.35;
+    signalReasons.push('出現底背馳,下跌動能衰竭');
+  }
+  if (isOversold && rsiTrend === 'rising') {
+    bullScore += 0.25;
+    signalReasons.push('RSI 超賣區回升');
+  }
+  if (macdLatest > 0 && macdSeries[macdSeries.length - 2] <= 0) {
+    bullScore += 0.25;
+    signalReasons.push('MACD 柱狀體翻正(金叉)');
+  } else if (
+    macdState === 'bearish_decelerating'
+    && macdLatest > macdSeries[macdSeries.length - 2]
+  ) {
+    bullScore += 0.15;
+    signalReasons.push('MACD 下跌動能減弱');
+  }
+  if (klines.length >= 11) {
+    const last10Vols = klines.slice(-11, -1).map(k => k.volume);
+    const avgVol = last10Vols.reduce((a, b) => a + b, 0) / 10;
+    if (klines[klines.length - 1].volume > avgVol * 1.2) {
+      bullScore += 0.15;
+      signalReasons.push('放量確認');
+    }
+  }
+
+  if (hasBearDiv) {
+    bearScore += 0.35;
+    signalReasons.push('出現頂背馳,上升動能衰竭');
+  }
+  if (isOverbought && rsiTrend === 'falling') {
+    bearScore += 0.25;
+    signalReasons.push('RSI 超買區回落');
+  }
+  if (macdLatest < 0 && macdSeries[macdSeries.length - 2] >= 0) {
+    bearScore += 0.25;
+    signalReasons.push('MACD 柱狀體翻負(死叉)');
+  }
+
+  let signalType, signalStrength;
+  if (bullScore >= config.signalThreshold && bullScore > bearScore) {
+    signalType = 'buy';
+    signalStrength = _indicatorsClamp(bullScore, 0, 1);
+  } else if (bearScore >= config.signalThreshold && bearScore > bullScore) {
+    signalType = 'sell';
+    signalStrength = _indicatorsClamp(bearScore, 0, 1);
+  } else {
+    signalType = 'hold';
+    signalStrength = _indicatorsClamp(Math.max(bullScore, bearScore), 0, 1);
+  }
+
+  // Step 7: 勝率
+  let winProbability = 0.5;
+  if (signalType === 'buy') {
+    let base = 0.55;
+    if (hasBullDiv) base += 0.12;
+    if (isOversold) base += 0.08;
+    if (macdState === 'bearish_decelerating') base += 0.05;
+    winProbability = _indicatorsClamp(base, 0, 0.85);
+  } else if (signalType === 'sell') {
+    let base = 0.55;
+    if (hasBearDiv) base += 0.12;
+    if (isOverbought) base += 0.08;
+    winProbability = _indicatorsClamp(base, 0, 0.85);
+  }
+
+  // Step 8: 歷史機會
+  const historicalOpportunities = [];
+  if (klines.length >= 20) {
+    const lookback = Math.min(config.lookbackDays, klines.length - 1);
+    const lastClose = klines[klines.length - 1].close;
+    for (let i = klines.length - lookback; i < klines.length; i++) {
+      if (i < 11) continue;
+      const rsiIdx = i - (klines.length - rsiSeries.length);
+      const rsiVal = rsiSeries[rsiIdx] ?? 50;
+      const macdVal = macdSeries[i] ?? 0;
+      const macdPrev = macdSeries[i - 1] ?? 0;
+      const ma5Start = Math.max(0, i - 5);
+      const ma5Len = Math.min(5, i);
+      const ma5 = klines.slice(ma5Start, i).reduce((s, k) => s + k.close, 0) / ma5Len;
+      if (rsiVal < 35 && macdVal > 0 && macdPrev <= 0 && klines[i].close > ma5) {
+        const futureReturn = (lastClose - klines[i].close) / klines[i].close;
+        if (futureReturn > 0.02) {
+          const dateStr = klineDate(klines[i]);
+          historicalOpportunities.push({
+            date: dateStr,
+            price: _indicatorsRound(klines[i].close, 4),
+            signalStrength: _indicatorsRound(0.6 + (35 - rsiVal) / 50, 4),
+            reason: `RSI 超賣 (${_indicatorsRound(rsiVal, 1)}) + MACD 金叉 + 收 > MA5`,
+            returnToDate: _indicatorsRound(futureReturn, 4),
+            missed: true,
+          });
+        }
+      }
+    }
+    historicalOpportunities.sort((a, b) => b.signalStrength - a.signalStrength);
+    historicalOpportunities.splice(3);  // Top 3
+  }
+
+  // Step 9: 信心
+  let confidence = signalStrength;
+  const divCount = rsiDiv.length + macdDiv.length;
+  if (divCount >= 2) confidence *= 1.15;
+  if (
+    (signalType === 'buy' && exhaustionScore > 0.6)
+    || (signalType === 'sell' && exhaustionScore > 0.6)
+  ) {
+    confidence *= 1.1;
+  }
+  confidence = _indicatorsRound(_indicatorsClamp(confidence, 0, 1), 4);
+
+  // Cycle derivation
+  let cycle, cycleLabel;
+  if (signalType === 'buy') { cycle = 'UP'; cycleLabel = '動能偏多'; }
+  else if (signalType === 'sell') { cycle = 'DOWN'; cycleLabel = '動能偏空'; }
+  else { cycle = 'SIDEWAYS'; cycleLabel = '動能中性'; }
+
+  // Evidence
+  const evidence = [
+    { type: 'rsi', label: 'RSI(14)', value: _indicatorsRound(rsiLatest, 2), threshold: '30 / 70', passed: !isOverbought && !isOversold },
+    { type: 'macd', label: 'MACD 柱狀體', value: _indicatorsRound(macdLatest, 4), threshold: '0', passed: macdLatest > 0 },
+    { type: 'macd-state', label: 'MACD 動能狀態', value: macdState, passed: macdState.includes('bullish') === (cycle === 'UP') },
+    { type: 'rsi-trend', label: 'RSI 5 日趨勢', value: rsiTrend, passed: true },
+    { type: 'divergence', label: '背馳數量', value: rsiDiv.length + macdDiv.length, passed: rsiDiv.length + macdDiv.length > 0 },
+    { type: 'exhaustion', label: '衰竭分數', value: _indicatorsRound(exhaustionScore, 4), threshold: 0.6, passed: exhaustionScore > 0.6 },
+  ];
+
+  // Interpretation
+  const parts = [`動能視角: ${cycleLabel}`];
+  if (signalReasons.length > 0) parts.push(`訊號: ${signalReasons.join('、')}`);
+  if (rsiDiv.length + macdDiv.length > 0) parts.push(`背馳數 ${rsiDiv.length + macdDiv.length} 條`);
+  if (winProbability >= 0.7) parts.push(`勝率估算 ${(winProbability * 100).toFixed(0)}%`);
+
+  return {
+    moduleId: 'indicators',
+    timeframe,
+    state: cycle,
+    confidence,
+    interpretation: parts.join(' / '),
+    evidence,
+    warnings: [],
+    meta: {
+      inputBars: klines.length,
+      cycleLabel,
+      divergence: {
+        rsiDivergences: rsiDiv,
+        macdDivergences: macdDiv,
+        totalCount: rsiDiv.length + macdDiv.length,
+      },
+      momentumState: {
+        rsi: _indicatorsRound(rsiLatest, 2),
+        macd: _indicatorsRound(macdLatest, 4),
+        rsiTrend,
+        macdTrend,
+        macdState,
+        isOverbought,
+        isOversold,
+      },
+      signal: {
+        type: signalType,
+        strength: _indicatorsRound(signalStrength, 4),
+        action: signalType === 'buy' ? '買入' : signalType === 'sell' ? '賣出' : '觀望',
+        reasons: signalReasons,
+      },
+      winProbability: _indicatorsRound(winProbability, 4),
+      exhaustionScore: _indicatorsRound(exhaustionScore, 4),
+      historicalOpportunities,
+      adjustmentLog: [],
+      reason: signalReasons.length > 0 ? signalReasons.join('；') : '暫無明確動能訊號',
+      lastDate: dates[dates.length - 1] || '',
+      rsiSeries,
+      macdSeries,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * 入口: 分析 K 線 + 返 verdict (跟 trendline/volume 同一 pattern)
+ */
+export async function analyzeIndicators(klines, options = {}) {
+  const n = klines.length;
+  const dataWindowDays = options.dataWindowDays ?? n;
+  const recent = klines.slice(-Math.min(dataWindowDays, n));
+  const recentN = recent.length;
+
+  const cfg = { ...DEFAULT_INDICATORS_CONFIG, ...(options.indicatorsConfig || {}) };
+  const timeframe = options.period || '1d';
+  const verdict = _indicatorsDetect(recent, cfg, options.symbol || 'TEST', timeframe);
+  verdict.meta = verdict.meta || {};
+  verdict.meta.dataDays = recentN;
+  verdict.meta.configUsed = cfg;
+  return verdict;
+}
+
+// ===== Indicators result renderer =====
+function renderIndicatorsResult(verdict) {
+  const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
+  const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
+  const color = stateColors[verdict.state] || '#666';
+  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const signal = verdict.meta?.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
+  const ms = verdict.meta?.momentumState || {};
+  const div = verdict.meta?.divergence || { totalCount: 0 };
+
+  const actionColor = signal.type === 'buy' ? '#52c41a' : signal.type === 'sell' ? '#ff4d4f' : '#faad14';
+  const actionEmoji = signal.type === 'buy' ? '🟢' : signal.type === 'sell' ? '🔴' : '🟡';
+
+  const reasonsHtml = signal.reasons && signal.reasons.length > 0
+    ? signal.reasons.map(r => `<li>${r}</li>`).join('')
+    : '<li style="color: #888;">無觸發條件 (hold / 觀望)</li>';
+
+  return `
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header">⚡ 動能背馳與衰竭檢測法 (Indicators)</h3>
+      </div>
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${color}">
+          <span class="state-label">${stateLabel}</span>
+          <span class="state-code">${verdict.state}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">信心指數</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta?.dataDays || 0}</strong></div>
+          <div class="summary-row"><span>背馳數:</span> <strong>${div.totalCount}</strong></div>
+        </div>
+      </div>
+
+      <div class="interpretation">
+        <strong>📌 解讀：</strong>${verdict.interpretation}
+      </div>
+
+      <div class="indicators-signal" style="background: ${actionColor}22; border-left: 4px solid ${actionColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="font-size: 28px;">${actionEmoji}</div>
+          <div>
+            <div style="font-size: 18px; font-weight: bold; color: ${actionColor};">${signal.action || '觀望'}</div>
+            <div style="font-size: 12px; color: #888;">訊號強度: ${(signal.strength * 100).toFixed(0)}% · 勝率估算: ${((verdict.meta?.winProbability || 0.5) * 100).toFixed(0)}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="momentum-state">
+        <h4>📊 動能狀態 (RSI + MACD)</h4>
+        <div class="ma-grid">
+          <div class="ma-item"><span class="ma-label">RSI(14)</span><span class="ma-value">${(ms.rsi ?? 0).toFixed(2)}</span></div>
+          <div class="ma-item"><span class="ma-label">MACD 柱狀體</span><span class="ma-value">${(ms.macd ?? 0).toFixed(4)}</span></div>
+          <div class="ma-item"><span class="ma-label">RSI 趨勢</span><span class="ma-value">${ms.rsiTrend === 'rising' ? '↗️ 上升' : '↘️ 下降'}</span></div>
+          <div class="ma-item"><span class="ma-label">MACD 趨勢</span><span class="ma-value">${ms.macdTrend === 'rising' ? '↗️ 上升' : '↘️ 下降'}</span></div>
+          <div class="ma-item"><span class="ma-label">MACD 狀態</span><span class="ma-value">${ms.macdState || 'N/A'}</span></div>
+          <div class="ma-item"><span class="ma-label">超買/超賣</span><span class="ma-value">${ms.isOverbought ? '超買' : ms.isOversold ? '超賣' : '中性'}</span></div>
+        </div>
+      </div>
+
+      <div class="matched-rules">
+        <h4>🎯 訊號觸發原因 (${signal.reasons?.length || 0} 條)</h4>
+        <ul>${reasonsHtml}</ul>
+      </div>
+
+      <div class="exhaustion-score" style="margin-top: 12px; padding: 8px 12px; background: #f5f5f5; border-radius: 4px;">
+        <strong>💨 衰竭分數:</strong> ${((verdict.meta?.exhaustionScore || 0) * 100).toFixed(0)}%
+        <small style="color: #888;"> (越高越接近轉勢, >60% 為明顯衰竭)</small>
+      </div>
+
+      ${renderDetailedExplanationIndicators(verdict)}
+      ${renderStrategyAdviceIndicators(verdict)}
+      ${renderUsageGuideIndicators(verdict)}
+
+      <details class="meta-details">
+        <summary>🔧 配置（debug 用）</summary>
+        <pre>${JSON.stringify(verdict.meta?.configUsed, null, 2)}</pre>
+      </details>
+    </div>
+  `;
+}
+
+// ===== 詳細解讀 section (Indicators) =====
+// 大少 #11056 — 永久 rule,所有 Module 都要有詳細解讀/策略建議/點用點睇 (用人話)
+function renderDetailedExplanationIndicators(verdict) {
+  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const signal = verdict.meta?.signal || {};
+  const ms = verdict.meta?.momentumState || {};
+  const div = verdict.meta?.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
+  const exhaustion = verdict.meta?.exhaustionScore || 0;
+  const winProb = verdict.meta?.winProbability || 0.5;
+
+  return `
+    <div class="detailed-explanation">
+      <h4>📖 詳細解讀 (動能指標 + 背馳 + 衰竭 點解讀)</h4>
+      <ul>
+        <li><strong>📌 整體 cycle 點解:</strong> Verdict state = <code>${verdict.state}</code>,代表「<strong>${verdict.interpretation.split(' / ')[0] || '動能中性'}</strong>」。呢個 cycle 係由訊號 (buy/sell/hold) 直接 derive,唔係睇大方向 (嗰個係 M1 MA Alignment 嘅工作)。</li>
+        <li><strong>📈 訊號類型 (signal.type):</strong> ${signal.type === 'buy' ? '<span style="color: #52c41a;">🟢 buy (買入)</span>' : signal.type === 'sell' ? '<span style="color: #ff4d4f;">🔴 sell (賣出)</span>' : '<span style="color: #faad14;">🟡 hold (觀望)</span>'}。代表「而家係咪行動嘅時候」, 唔代表「而家係咩 season」(要 M1/M2/M3 確認大方向)。</li>
+        <li><strong>💪 訊號強度 (signal.strength):</strong> ${(signal.strength * 100).toFixed(0)}%,加權分數 (0-1)。每個觸發條件加 0.15-0.35 分,超過 0.6 先算明確訊號。詳細 score breakdown 見下面「訊號觸發原因」。</li>
+        <li><strong>🎯 信心指數 (confidence):</strong> ${confidencePct}%,由 signal.strength × 多個 boost 計算。背馳數 ≥ 2 會 ×1.15,衰竭分數 > 0.6 會 ×1.10,cap 喺 0-1。信心高 = 訊號強 + 多個條件 corroborate。</li>
+        <li><strong>📊 RSI(14):</strong> ${(ms.rsi ?? 0).toFixed(2)},Relative Strength Index 量度「最近 14 日升跌嘅相對強度」。> 70 = 超買 (overbought, 升太多可能回落),< 30 = 超賣 (oversold, 跌太多可能反彈)。</li>
+        <li><strong>📉 MACD 柱狀體:</strong> ${(ms.macd ?? 0).toFixed(4)},EMA12 - EMA26 - EMA(EMA12-EMA26, 9)。正 = 短期動能強過長期,負 = 短期動能弱過長期。柱狀體由負翻正 = 金叉 (黃金交叉, 買入信號),由正翻負 = 死叉 (死亡交叉, 賣出信號)。</li>
+        <li><strong>↗️ RSI 趨勢 (5 日):</strong> ${ms.rsiTrend === 'rising' ? '<span style="color: #52c41a;">上升中</span>' : '<span style="color: #ff4d4f;">下降中</span>'},比較 RSI 最新值同 5 日前平均。rising = 動能強化中,falling = 動能減弱中。</li>
+        <li><strong>⚙️ MACD 狀態:</strong> <code>${ms.macdState || 'N/A'}</code>,4 個狀態:bullish_accelerating (升 + 加速中) / bullish_decelerating (升 + 減速) / bearish_accelerating (跌 + 加速) / bearish_decelerating (跌 + 減速, 即將見底)。</li>
+        <li><strong>🔍 背馳 (Divergence) 數量:</strong> ${div.totalCount} 條。頂背馳 = 價格創新高但動能未新高 (跌警),底背馳 = 價格創新低但動能未新低 (升機)。RSI 背馳通常 5-10 日見效,MACD 背馳通常 10-20 日。</li>
+        <li><strong>💨 衰竭分數 (exhaustion):</strong> ${(exhaustion * 100).toFixed(0)}%,綜合 RSI 極端 + MACD 柱狀體縮小 + 背馳強度,越高越接近趨勢尾聲。> 60% = 明顯衰竭,通常預示 1-2 週內反轉。</li>
+        <li><strong>🎲 勝率估算 (winProbability):</strong> ${(winProb * 100).toFixed(0)}%,基於歷史統計 + 當前條件推算「5 日後升嘅機率」。Base 55%,底背馳 +12%,超賣 +8%,macd_decelerating +5%,cap 85%。</li>
+        <li><strong>📅 數據日數 (dataDays):</strong> ${verdict.meta?.dataDays || 0} 條 K 線,最少 119 條 (14 RSI + 35 MACD + 60 lookback + 10 buffer) 先夠用。</li>
+        <li><strong>⏰ 時間週期 (timeframe):</strong> ${verdict.timeframe}。日線睇中線 (幾週),週線睇長線 (幾月)。</li>
+        <li><strong>📜 訊號觸發原因 (signal.reasons):</strong> ${(signal.reasons || []).join('、') || '暫無明確觸發'}。每個 reason 對應一個 score 累加,例如「底背馳 +0.35」「RSI 超賣回升 +0.25」,總分 ≥ 0.6 = 明確 buy。</li>
+        <li><strong>⚠️ 數據不足警告:</strong> ${verdict.warnings && verdict.warnings.length > 0 ? verdict.warnings[0] : '無'}。</li>
+        <li><strong>🔄 統一 cycle 派生規則:</strong> buy → UP, sell → DOWN, hold → SIDEWAYS (TRANSITION 由 Synthesizer 判)。呢個 module 唔 emit TRANSITION。</li>
+        <li><strong>📂 過去錯過的買點 (historicalOpportunities):</strong> ${(verdict.meta?.historicalOpportunities || []).length} 個。回顧過去 lookbackDays 內曾經出現過嘅買入訊號,計算到今日嘅回報。Top 3 strongest。可以用嚟訓練盤感。</li>
+      </ul>
+    </div>
+  `;
+}
+
+// ===== 策略建議 section (Indicators) =====
+function renderStrategyAdviceIndicators(verdict) {
+  const signal = verdict.meta?.signal || {};
+  const signalType = signal.type;
+  const ms = verdict.meta?.momentumState || {};
+  const winProb = verdict.meta?.winProbability || 0.5;
+  const exhaustion = verdict.meta?.exhaustionScore || 0;
+
+  let strategy;
+  if (signalType === 'buy') {
+    strategy = `
+      <li>🟢 <strong>順勢入場</strong>: 訊號 = buy + cycle = UP, 配合 M1 (MA Alignment) 確認大方向都係 UP, 呢個係高勝率買入點</li>
+      <li>📍 <strong>入場時機</strong>: 唔好 chase 急升, 等回調到 MA5 / MA10 / 趨勢線支撐位再入, 風報比更好</li>
+      <li>🛡️ <strong>止損位</strong>: 設喺近期低位 / 支撐線下面 1-2%, 一旦跌破 = 訊號失效, 走人</li>
+      <li>📊 <strong>倉位管理</strong>: 訊號強度 ${(signal.strength * 100).toFixed(0)}% ＋ 勝率 ${(winProb * 100).toFixed(0)}%, 兩者都高可以加大倉位 (e.g. 80-100% normal size); 一高一低就細倉 (50%)</li>
+      <li>🔭 <strong>持有期</strong>: 訊號有效一般 5-15 日, 期間 monitor RSI 唔好再超買 (> 70), 一旦超買考慮分段出</li>
+    `;
+  } else if (signalType === 'sell') {
+    strategy = `
+      <li>🔴 <strong>避開 / 減倉</strong>: 訊號 = sell + cycle = DOWN, 配合 M1 (MA Alignment) 都係 DOWN, 應該減倉或離場</li>
+      <li>📍 <strong>止損位</strong>: 設喺近期高位 / 壓力線上面 1-2%, 一旦突破 = 跌勢可能見底, 重新評估</li>
+      <li>📉 <strong>唔好接刀</strong>: 雖然「低處未算低」心態常見, 但 M4 sell 訊號通常代表下跌動能仲未完, 唔好貪平衝入</li>
+      <li>⏳ <strong>等下次買點</strong>: 密切 monitor RSI 跌到 < 30 (超賣) + 底背馳出現, 就係重新入場嘅時機</li>
+      <li>🔄 <strong>對沖</strong>: 如果你 long 倉個股, 考慮買 put option 或 inverse ETF 做對沖</li>
+    `;
+  } else {
+    strategy = `
+      <li>🟡 <strong>等方向</strong>: hold = 觀望, 唔 buy 唔 sell, 因為冇明確反轉觸發</li>
+      <li>📍 <strong>睇大方向</strong>: 配合 M1 (MA Alignment) 判斷大方向, 如果 M1 = UP, 呢個 hold 暗示「升但等回調」, 密切 monitor RSI 接近 30 或底背馳出現</li>
+      <li>🔍 <strong>留意背馳</strong>: 背馳數 = ${verdict.meta?.divergence?.totalCount || 0} 條, 0 背馳 = 純粹跟趨勢, ≥1 背馳 = 可能有反轉, 預警</li>
+      <li>💨 <strong>睇衰竭</strong>: 衰竭分數 = ${(exhaustion * 100).toFixed(0)}%, > 60% = 即將見頂/見底, 開始收緊止損或準備入新倉</li>
+      <li>⏸️ <strong>唔好勉強</strong>: 冇明確訊號 = 冇 edge, 強行 trade 通常輸錢, 等清晰訊號先動</li>
+    `;
+  }
+
+  return `
+    <div class="strategy-advice">
+      <h4>🎯 策略建議 (點做)</h4>
+      <div class="strategy-block">
+        <h5>${signalType === 'buy' ? '🟢 上升訊號 (A/F rule 主導) · 策略建議' : signalType === 'sell' ? '🔴 下跌訊號 · 策略建議' : '🟡 觀望訊號 · 策略建議'}</h5>
+        <ul>${strategy}</ul>
+      </div>
+    </div>
+  `;
+}
+
+// ===== 點用點睇 section (Indicators) =====
+function renderUsageGuideIndicators(verdict) {
+  return `
+    <div class="usage-guide">
+      <h4>💡 點用呢個結果 (點睇)</h4>
+      <ol>
+        <li>👀 <strong>第一眼睇 cycle state + signal 顏色</strong>: 綠 = buy (UP) / 紅 = sell (DOWN) / 黃 = hold (SIDEWAYS)。顏色決定咗你今日嘅 base 動作</li>
+        <li>📊 <strong>睇信心指數</strong>: > 70% = 強烈訊號, 50-70% = 中等, < 50% = 弱, 弱訊號通常要等多一個 trigger confirm</li>
+        <li>📈 <strong>睇動能狀態 (RSI + MACD)</strong>: RSI 超買 (紅) = 升太多, 超賣 (綠) = 跌太多。MACD 柱狀體由負翻正 = 金叉 (買入), 由正翻負 = 死叉 (賣出)</li>
+        <li>🔍 <strong>睇背馳數量</strong>: 0 背馳 = 純趨勢跟倉, ≥1 背馳 = 預警反轉, 2 背馳 = 高信心反轉</li>
+        <li>💨 <strong>睇衰竭分數</strong>: > 60% = 趨勢尾聲, 開始收緊止損或準備轉倉。越接近 100% = 越接近反轉點</li>
+        <li>🎯 <strong>睇勝率估算</strong>: > 70% = 高勝率 trade, 60-70% = 中等, < 60% = 唔好亂動。勝率 base 55%, 加底背馳 + 12%, 加超賣 + 8%</li>
+        <li>📂 <strong>睇歷史錯過嘅買點</strong>: 「1 個月前邊日買最好」可以訓練你嘅盤感, 知道點樣嘅 setup 通常會 work</li>
+        <li>🔄 <strong>配合其他 module 一齊睇</strong>: M1 (MA) 講大方向, M2 (HL) 講結構, M3 (TL) 講支撐壓力, M4 (呢個) 講買賣時機。4 個 module 都同方向 = 高信心 trade</li>
+        <li>⚠️ <strong>注意數據限制</strong>: 數據日數 = ${verdict.meta?.dataDays || 0} 條, < 119 條會 warning, 數據唔夠 = 結果唔可靠</li>
+        <li>📌 <strong>記住: M4 答「幾時該行動」, 唔答「而家係咩 season」</strong>: 配合 M1 用, M1 = UP + M4 = buy = 高勝率買入; M1 = UP + M4 = hold = 等回調, 唔好追</li>
+      </ol>
+    </div>
+  `;
+}
+
+// ===== Chart overlay (Indicators) =====
+// 大少 永久 rule: renderChartOverlay 必須叫呢個名,testing page 自動 invoke
+function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
+  if (!chartRefs || !chartRefs.chart) {
+    console.warn('[renderIndicatorsChartOverlay] chartRefs.chart 缺失');
+    return;
+  }
+  if (!verdict || !verdict.meta) {
+    console.warn('[renderIndicatorsChartOverlay] verdict 缺失');
+    return;
+  }
+  if (!Array.isArray(klines) || klines.length === 0) {
+    console.warn('[renderIndicatorsChartOverlay] klines 缺失或空');
+    return;
+  }
+  const rsiSeries = verdict.meta.rsiSeries;
+  const macdSeries = verdict.meta.macdSeries;
+  if (!rsiSeries || !macdSeries) {
+    console.warn('[renderIndicatorsChartOverlay] rsiSeries/macdSeries 缺失');
+    return;
+  }
+
+  const chart = chartRefs.chart;
+  if (typeof chart.addLineSeries !== 'function') {
+    console.error('[renderIndicatorsChartOverlay] chart 冇 addLineSeries method');
+    return;
+  }
+
+  // 移除舊 series
+  if (chartRefs.indicatorsLineSeries) {
+    for (const key of Object.keys(chartRefs.indicatorsLineSeries)) {
+      try { chart.removeSeries(chartRefs.indicatorsLineSeries[key]); } catch (e) { /* ignore */ }
+    }
+  }
+  chartRefs.indicatorsLineSeries = {};
+
+  // RSI series (紫色, 對齊到 kline index 14+ 因為 RSI 從 period=14 開始)
+  try {
+    const rsiData = [];
+    const rsiOffset = klines.length - rsiSeries.length;
+    for (let i = 0; i < rsiSeries.length; i++) {
+      const k = klines[rsiOffset + i];
+      if (!k) continue;
+      const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
+      rsiData.push({ time: t, value: rsiSeries[i] });
+    }
+    if (rsiData.length > 0) {
+      const s = chart.addLineSeries({
+        color: '#9b59b6',
+        lineWidth: 2,
+        title: 'RSI(14)',
+        priceLineVisible: false,
+        lastValueVisible: true,
+        // RSI 範圍 0-100, 但 candlestick chart y-axis 係 price
+        // 註: lightweight-charts v4.2.3 唔支援 separate pane, 暫時疊喺 price chart 上面
+        // 大少 #11085 之後可考慮用 lightweight-charts v5 multi-pane
+      });
+      s.setData(rsiData);
+      chartRefs.indicatorsLineSeries.rsi = s;
+    }
+  } catch (e) {
+    console.error('[renderIndicatorsChartOverlay] RSI line 失敗:', e);
+  }
+
+  // MACD series (橙色, 對齊到 kline index 33+ 因為 MACD 從 slow+signal-2 開始)
+  try {
+    const macdData = [];
+    const macdOffset = klines.length - macdSeries.length;
+    for (let i = 0; i < macdSeries.length; i++) {
+      const k = klines[macdOffset + i];
+      if (!k) continue;
+      const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
+      macdData.push({ time: t, value: macdSeries[i] });
+    }
+    if (macdData.length > 0) {
+      const s = chart.addLineSeries({
+        color: '#e67e22',
+        lineWidth: 2,
+        title: 'MACD',
+        priceLineVisible: false,
+        lastValueVisible: true,
+      });
+      s.setData(macdData);
+      chartRefs.indicatorsLineSeries.macd = s;
+    }
+  } catch (e) {
+    console.error('[renderIndicatorsChartOverlay] MACD line 失敗:', e);
+  }
+}
+
+function getIndicatorsHelp() {
+  return `
+    <h4>動能背馳與衰竭檢測法 (Indicators) · 10 條 Rule (A-J)</h4>
+    <ul>
+      <li><strong>多頭條件 (買入):</strong>
+        <ul>
+          <li>底背馳 (RSI 或 MACD) → +0.35</li>
+          <li>RSI 超賣 (&lt; 30) + 上升 → +0.25</li>
+          <li>MACD 金叉 (柱狀體由負翻正) → +0.25</li>
+          <li>MACD 下跌動能減弱 (bearish_decelerating) → +0.15</li>
+          <li>放量確認 (volume &gt; 10d avg × 1.2) → +0.15</li>
+        </ul>
+      </li>
+      <li><strong>空頭條件 (賣出):</strong>
+        <ul>
+          <li>頂背馳 (RSI 或 MACD) → +0.35</li>
+          <li>RSI 超買 (&gt; 70) + 下降 → +0.25</li>
+          <li>MACD 死叉 (柱狀體由正翻負) → +0.25</li>
+        </ul>
+      </li>
+      <li><strong>判定:</strong> bullScore ≥ 0.6 AND &gt; bearScore → <strong>buy (UP)</strong> · bearScore ≥ 0.6 AND &gt; bullScore → <strong>sell (DOWN)</strong> · 否則 → <strong>hold (SIDEWAYS)</strong></li>
+    </ul>
+    <p><strong>Cycle 派生:</strong> buy → UP, sell → DOWN, hold → SIDEWAYS (TRANSITION 由 Synthesizer 判)</p>
+    <p><strong>Confidence:</strong> base = signalStrength, 背馳數 ≥ 2 × 1.15, 衰竭 &gt; 0.6 + 訊號 match × 1.10, cap 1.0</p>
+    <p><strong>v1.0.0 落地 (從 Kimi v1.0 簡化):</strong> 移除 LLM-based 嘅 win probability 模型, 改用 rule-based 經驗公式 (base 55% + bonus)</p>
+  `;
+}
+
+export const indicatorsAdapter = {
+  id: 'AS-03-IND',
+  name: '動能背馳與衰竭 (Indicators)',
+  version: '1.0.0',
+  description: '用 RSI(14) + MACD(12/26/9) 識別背馳 (頂/底) + 動能衰竭, 判定買入/賣出時機 (回應「幾時該行動」)',
+  contextLines: [
+    '大少指示: 呢個 module 答「幾時該行動」, 唔答「而家係咩 season」(M1 MA Alignment 先答大方向)',
+    '用法: M1/M2/M3 確認大方向 → M4 確認入場時機',
+    '若 M1=UP + M4=buy → 高勝率買入; 若 M1=UP + M4=hold → 等回調',
+  ],
+  inputs: [
+    {
+      key: 'code',
+      label: '股票代碼',
+      type: 'autocomplete',
+      required: true,
+      endpoint: '/api/stocks/search',
+      queryParam: 'q',
+      placeholder: '輸入代碼或名稱（例: 00981 或 中芯）',
+      limit: 10,
+      marketFn: 'auto',
+    },
+    {
+      key: 'period',
+      label: '時間週期',
+      type: 'select',
+      options: [
+        { value: '1d', label: '日線' },
+        { value: '1w', label: '週線' },
+      ],
+      default: '1d',
+    },
+    {
+      key: 'dataWindowDays',
+      label: '取數據日數',
+      type: 'number',
+      default: 150,
+      min: 119,
+      max: 500,
+    },
+  ],
+  analyze: analyzeIndicators,
+  renderResult: renderIndicatorsResult,
+  renderChartOverlay: renderIndicatorsChartOverlay,
+  getHelp: getIndicatorsHelp,
+};

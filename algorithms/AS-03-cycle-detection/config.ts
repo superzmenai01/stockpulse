@@ -243,8 +243,37 @@ export interface CycleConfig {
   slopeMomentum: SlopeMomentumConfig;
   hlStructure: HLStructureConfig;
   trendline: TrendlineConfig;
+  indicators: IndicatorsConfig;
   enableFlags: EnableFlags;
 }
+
+/**
+ * Indicators module config (大少 + MiniMax Code 2026-08-07 — Module 4 v1.0.0)
+ *
+ * 跟 docx `docs/演算法概念SPECS/04動能背馳與衰竭檢測法.docx` v1.0 (Kimi spec)
+ * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md`
+ */
+export interface IndicatorsConfig {
+  lookbackDays: number;              // 60 — 背馳 + 歷史機會回顧天數
+  rsiPeriod: number;                 // 14 — RSI Wilder smoothing period
+  macdFast: number;                  // 12 — MACD 快線 EMA period
+  macdSlow: number;                  // 26 — MACD 慢線 EMA period
+  macdSignal: number;                // 9 — MACD 信號線 EMA period
+  divergenceTolerance: number;       // 0.03 — 背馳判定容忍度 (3%)
+  minSwingPct: number;               // 0.03 — 最小波動幅度 (過濾雜訊)
+  signalThreshold: number;           // 0.6 — 「明確訊號」最低分 (買入/賣出)
+}
+
+export const DEFAULT_INDICATORS_CONFIG: IndicatorsConfig = {
+  lookbackDays: 60,
+  rsiPeriod: 14,
+  macdFast: 12,
+  macdSlow: 26,
+  macdSignal: 9,
+  divergenceTolerance: 0.03,
+  minSwingPct: 0.03,
+  signalThreshold: 0.6,
+};
 
 export const DEFAULT_CYCLE_CONFIG: CycleConfig = {
   maAlignment: DEFAULT_MA_ALIGNMENT_CONFIG,
@@ -252,5 +281,6 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = {
   slopeMomentum: DEFAULT_SLOPE_MOMENTUM_CONFIG,
   hlStructure: DEFAULT_HL_STRUCTURE_CONFIG,
   trendline: DEFAULT_TRENDLINE_CONFIG,
+  indicators: DEFAULT_INDICATORS_CONFIG,
   enableFlags: DEFAULT_ENABLE_FLAGS,
 };
