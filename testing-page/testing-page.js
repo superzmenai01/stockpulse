@@ -25,6 +25,7 @@ const BACKEND_URL = 'http://localhost:18792';
 const REGISTRY = [
   {
     id: 'AS-03',
+    displayName: 'AS-03-MA',  // 大少 #11085 (2026-08-07): dropdown 顯示用 MA suffix, 跟 AS-03-HL / AS-03-TL naming pattern
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     // 預設 = 頂層 exports (向後兼容 ma-alignment adapter)
@@ -71,6 +72,21 @@ registryCount.textContent = REGISTRY.length;
 
 // ===== Init =====
 
+// 大少 #11085 (2026-08-07): 切算法時 reset 結果 panel (result + run status + chart)
+// 3 個 sections (詳細解讀/策略建議/點用點睇) 都喺 #result-panel 入面 render,所以清 resultPanel 即清晒
+function resetResultPanel() {
+  if (runStatus) runStatus.innerHTML = '';
+  if (resultPanel) {
+    resultPanel.innerHTML = '<p style="color: #888;">填好输入参数，点击「跑算法」查看结果</p>';
+  }
+  if (chartInstance) {
+    try { chartInstance.remove(); } catch (_) {}
+    chartInstance = null;
+  }
+  const chartContainer = document.getElementById('chart-container');
+  if (chartContainer) chartContainer.innerHTML = '';
+}
+
 async function init() {
   // 清空 default option
   algorithmSelect.innerHTML = '';
@@ -82,7 +98,9 @@ async function init() {
       algo.adapter = algo.adapterExport ? mod[algo.adapterExport] : mod;
       const option = document.createElement('option');
       option.value = algo.id;
-      option.textContent = `${algo.id} — ${algo.adapter.name} (v${algo.adapter.version})`;
+      // 大少 #11085: dropdown 用 displayName (e.g. AS-03-MA), id 維持 'AS-03' 唔變
+      const displayId = algo.displayName || algo.id;
+      option.textContent = `${displayId} — ${algo.adapter.name} (v${algo.adapter.version})`;
       algorithmSelect.appendChild(option);
     } catch (err) {
       console.error(`Failed to load ${algo.id}:`, err);
@@ -116,6 +134,10 @@ async function onAlgorithmChange() {
     inputsForm.innerHTML = '';
     return;
   }
+
+  // 大少 #11085 (2026-08-07): 切算法時清空舊結果,免得 user 誤會新 algo 結果
+  // (舊 algo 嘅 detailed explanation / strategy advice / usage guide / chart 全部清走)
+  resetResultPanel();
 
   currentAdapter = algo.adapter;
 
