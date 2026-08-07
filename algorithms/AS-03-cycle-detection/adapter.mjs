@@ -845,44 +845,85 @@ function renderUsageGuideMA(verdict) {
 }
 
 // ===== MA Chart Overlay (renderChartOverlay for default AS-03 export) =====
-// 喺 chart 上面加 MA5/MA10 兩條 price line (跟主 web app ChartContainer.tsx default 顏色)
+// 喺 chart 上面加 MA5/MA10/MA60 三條 price line (跟主 web app ChartContainer.tsx default 顏色)
 // 註: 完整 MA 序列 (historical line) 需要 re-compute, 暫時 render 當前 level
+// 2026-08-07 — 大少要求 3 條 MA 線, 加 MA60; 移除 silent catch, 改 console.error visible
 export function renderMAChartOverlay(verdict, klines, chartRefs) {
-  if (!chartRefs || !chartRefs.chart || !chartRefs.candleSeries) return;
-  if (!verdict || !verdict.meta) return;
-  if (typeof LightweightCharts === 'undefined') return;
+  if (!chartRefs || !chartRefs.chart || !chartRefs.candleSeries) {
+    console.warn('[renderMAChartOverlay] chartRefs 缺失:', { chartRefs });
+    return;
+  }
+  if (!verdict || !verdict.meta) {
+    console.warn('[renderMAChartOverlay] verdict 缺失');
+    return;
+  }
 
   const ma5 = verdict.meta.latestMA5;
   const ma10 = verdict.meta.latestMA10;
-  const ma20 = null;  // 暫時未有,將來可以加
+  const ma60 = verdict.meta.latestMA60;
 
-  // 用 verdict 嘅 latest MA values + 簡單 line series
-  // Note: 完整 MA 序列 (historical line) 需要 re-compute,呢度只 render 當前 level 用 price line
-  if (ma5 != null) {
+  console.log('[renderMAChartOverlay] Adding MA lines:', { ma5, ma10, ma60 });
+
+  const series = chartRefs.candleSeries;
+  if (!series || typeof series.createPriceLine !== 'function') {
+    console.error('[renderMAChartOverlay] candleSeries 冇 createPriceLine method, version 可能唔啱');
+    return;
+  }
+
+  // 移除舊 MA lines (如果之前 render 過)
+  if (chartRefs.priceLines) {
+    for (const key of Object.keys(chartRefs.priceLines)) {
+      try { series.removePriceLine(chartRefs.priceLines[key]); } catch (e) { /* ignore */ }
+    }
+  }
+  chartRefs.priceLines = {};
+
+  // 加 MA5 (紅)
+  if (ma5 != null && Number.isFinite(ma5)) {
     try {
-      chartRefs.chart.priceLines = chartRefs.chart.priceLines || {};
-      chartRefs.chart.priceLines.ma5 = chartRefs.candleSeries.createPriceLine({
+      chartRefs.priceLines.ma5 = series.createPriceLine({
         price: ma5,
         color: '#FF6B6B',  // 紅
         lineWidth: 1,
         lineStyle: 0,
         axisLabelVisible: true,
-        title: 'MA5',
+        title: 'MA5 ' + ma5.toFixed(2),
       });
-    } catch (e) { /* 忽略 */ }
+    } catch (e) {
+      console.error('[renderMAChartOverlay] MA5 createPriceLine 失敗:', e);
+    }
   }
-  if (ma10 != null) {
+
+  // 加 MA10 (青)
+  if (ma10 != null && Number.isFinite(ma10)) {
     try {
-      chartRefs.chart.priceLines = chartRefs.chart.priceLines || {};
-      chartRefs.chart.priceLines.ma10 = chartRefs.candleSeries.createPriceLine({
+      chartRefs.priceLines.ma10 = series.createPriceLine({
         price: ma10,
         color: '#4ECDC4',  // 青
         lineWidth: 1,
         lineStyle: 0,
         axisLabelVisible: true,
-        title: 'MA10',
+        title: 'MA10 ' + ma10.toFixed(2),
       });
-    } catch (e) { /* 忽略 */ }
+    } catch (e) {
+      console.error('[renderMAChartOverlay] MA10 createPriceLine 失敗:', e);
+    }
+  }
+
+  // 加 MA60 (藍) — 2026-08-07 大少要求 3 條 MA 線
+  if (ma60 != null && Number.isFinite(ma60)) {
+    try {
+      chartRefs.priceLines.ma60 = series.createPriceLine({
+        price: ma60,
+        color: '#45B7D1',  // 藍
+        lineWidth: 1,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: 'MA60 ' + ma60.toFixed(2),
+      });
+    } catch (e) {
+      console.error('[renderMAChartOverlay] MA60 createPriceLine 失敗:', e);
+    }
   }
 }
 
