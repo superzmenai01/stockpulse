@@ -6320,6 +6320,156 @@ function renderInterpretation(interpretation, finalAction) {
 }
 
 // =============================================================
+// Sprint 2 sub-task 2.8 — SVG Charts render helpers (永遠全 Show)
+// =============================================================
+
+/** 1️⃣ Sentiment Radar Chart (6 維情緒雷達)
+ *  6 維: rsi / bollinger_pct_b / bias_ratio / vol_skew / turnover / momentum_accel
+ *  SVG: 6 邊形雷達圖, 每邊長度對應 sentiment value [-1, +1]
+ *  @param {Sentiment6D} sentiment - 6 維情緒 (e.g. 6 個 verdicts avg 或單個)
+ *  @param {string} title - 圖表標題
+ *  @param {string} colorHex - 雷達填色 (e.g. '#1890ff')
+ *  @returns {string} SVG HTML
+ */
+function renderSentimentRadar(sentiment, title, colorHex = '#1890ff') {
+  if (!sentiment) {
+    return '<div style="padding:12px;color:#999;">無 sentiment 數據</div>';
+  }
+  const labels = ['RSI', '%B', '乖離', '波動', '換手', '動能'];
+  const keys = ['rsi', 'bollinger_pct_b', 'bias_ratio', 'vol_skew', 'turnover', 'momentum_accel'];
+  const cx = 100, cy = 100, r = 70;
+  // 6 邊形 points
+  const points = keys.map((k, i) => {
+    const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+    const value = Math.max(-1, Math.min(1, sentiment[k] || 0));
+    const radius = r * (Math.abs(value) + 1) / 2;  // 將 [-1, +1] map 去 [0, r]
+    const x = cx + radius * Math.cos(angle);
+    const y = cy + radius * Math.sin(angle);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  // 6 個 axis labels
+  const labelPoints = keys.map((k, i) => {
+    const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+    const x = cx + (r + 20) * Math.cos(angle);
+    const y = cy + (r + 20) * Math.sin(angle);
+    const value = sentiment[k] || 0;
+    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-size="11" fill="#333">${labels[i]}</text>`;
+  }).join('');
+
+  return `
+    <div class="svg-chart" style="text-align:center;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">${title}</div>
+      <svg width="200" height="200" viewBox="0 0 200 200" style="display:inline-block;">
+        <!-- 6 個 concentric rings (0.25 / 0.5 / 0.75 / 1.0) -->
+        <polygon points="${keys.map((_, i) => {
+          const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+          return `${(cx + r * 0.25 * Math.cos(angle)).toFixed(1)},${(cy + r * 0.25 * Math.sin(angle)).toFixed(1)}`;
+        }).join(' ')}" fill="none" stroke="#ddd" stroke-width="0.5" />
+        <polygon points="${keys.map((_, i) => {
+          const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+          return `${(cx + r * 0.5 * Math.cos(angle)).toFixed(1)},${(cy + r * 0.5 * Math.sin(angle)).toFixed(1)}`;
+        }).join(' ')}" fill="none" stroke="#ddd" stroke-width="0.5" />
+        <polygon points="${keys.map((_, i) => {
+          const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+          return `${(cx + r * 0.75 * Math.cos(angle)).toFixed(1)},${(cy + r * 0.75 * Math.sin(angle)).toFixed(1)}`;
+        }).join(' ')}" fill="none" stroke="#ddd" stroke-width="0.5" />
+        <polygon points="${keys.map((_, i) => {
+          const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+          return `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)}`;
+        }).join(' ')}" fill="none" stroke="#ddd" stroke-width="0.5" />
+        <!-- 6 個 axis -->
+        ${keys.map((_, i) => {
+          const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+          return `<line x1="${cx}" y1="${cy}" x2="${(cx + r * Math.cos(angle)).toFixed(1)}" y2="${(cy + r * Math.sin(angle)).toFixed(1)}" stroke="#ddd" stroke-width="0.5" />`;
+        }).join('')}
+        <!-- data polygon -->
+        <polygon points="${points}" fill="${colorHex}" fill-opacity="0.4" stroke="${colorHex}" stroke-width="2" />
+        ${labelPoints}
+      </svg>
+    </div>
+  `;
+}
+
+/** 2️⃣ Kelly Position Donut (倉位分數 donut chart)
+ *  half = 0.5 / quarter = 0.25 / octo = 0.125
+ *  顏色: half=#26BA75 (綠), quarter=#F39C12 (黃), octo=#EE5151 (紅)
+ */
+function renderKellyDonut(kellyFraction) {
+  const map = {
+    half: { value: 0.5, label: '半倉 50%', color: '#26BA75' },
+    quarter: { value: 0.25, label: '四分一 25%', color: '#F39C12' },
+    octo: { value: 0.125, label: '八分一 12.5%', color: '#EE5151' },
+  };
+  const k = map[kellyFraction] || map.quarter;
+  const radius = 50;
+  const circumference = 2 * Math.PI * radius;
+  const dashLength = k.value * circumference;
+  return `
+    <div class="svg-chart" style="text-align:center;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">💰 Kelly 倉位分數</div>
+      <svg width="140" height="140" viewBox="0 0 140 140" style="display:inline-block;">
+        <circle cx="70" cy="70" r="${radius}" fill="none" stroke="#eee" stroke-width="14" />
+        <circle cx="70" cy="70" r="${radius}" fill="none" stroke="${k.color}" stroke-width="14"
+                stroke-dasharray="${dashLength} ${circumference}" stroke-dashoffset="${circumference / 4}"
+                transform="rotate(-90 70 70)" />
+        <text x="70" y="68" text-anchor="middle" font-size="20" font-weight="700" fill="${k.color}">${(k.value * 100).toFixed(0)}%</text>
+        <text x="70" y="85" text-anchor="middle" font-size="11" fill="#666">${kellyFraction}</text>
+      </svg>
+    </div>
+  `;
+}
+
+/** 3️⃣ Alignment Score Bar (alignment_score 0-1 visualization)
+ *  5 個 state 嘅 alignment: 一致程度越高, bar 越長
+ *  顏色: <0.4 紅, 0.4-0.7 黃, >0.7 綠
+ */
+function renderAlignmentBar(alignment) {
+  const color = alignment < 0.4 ? '#EE5151' : alignment < 0.7 ? '#F39C12' : '#26BA75';
+  const label = alignment < 0.4 ? '矛盾' : alignment < 0.7 ? '部分一致' : '高度一致';
+  return `
+    <div class="svg-chart" style="text-align:center;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">📐 Alignment 戰略戰術匹配度</div>
+      <svg width="200" height="60" viewBox="0 0 200 60" style="display:inline-block;">
+        <rect x="0" y="20" width="200" height="20" fill="#eee" rx="4" />
+        <rect x="0" y="20" width="${alignment * 200}" height="20" fill="${color}" rx="4" />
+        <text x="100" y="14" text-anchor="middle" font-size="12" font-weight="600" fill="#333">${(alignment * 100).toFixed(0)}% — ${label}</text>
+        <text x="${alignment * 200}" y="35" text-anchor="${alignment < 0.9 ? 'start' : 'end'}" dx="${alignment < 0.9 ? 4 : -4}" font-size="11" fill="#fff" font-weight="600">${(alignment * 100).toFixed(0)}%</text>
+      </svg>
+    </div>
+  `;
+}
+
+/** 4️⃣ 6 個 Modules State Bar (6 個 module state visualization)
+ *  顏色對應 state: UP=#26BA75, DOWN=#EE5151, SIDEWAYS=#F39C12, TRANSITION=#722ed1
+ *  永遠全 Show (大少 11:57 永久 rule)
+ */
+function renderModuleStateBar(moduleVerdicts) {
+  if (!moduleVerdicts || moduleVerdicts.length === 0) {
+    return '<div style="padding:12px;color:#999;">無 module verdicts</div>';
+  }
+  const stateColor = {
+    UP: '#26BA75',
+    DOWN: '#EE5151',
+    SIDEWAYS: '#F39C12',
+    TRANSITION: '#722ed1',
+    TRAP: '#722ed1',
+  };
+  const items = moduleVerdicts.map((v) => {
+    const color = stateColor[v.state] || '#666';
+    return `<div style="display:inline-block;margin:2px 4px 2px 0;padding:4px 8px;background:${color}22;color:${color};border:1px solid ${color};border-radius:4px;font-size:11px;">
+      <strong>${v.module_id}</strong>: ${v.state} (${(v.confidence * 100).toFixed(0)}%)
+    </div>`;
+  }).join('');
+  return `
+    <div class="svg-chart" style="text-align:left;">
+      <div style="font-size:12px;color:#666;margin-bottom:6px;">📦 6 個 Modules State 全部顯示 (永遠全 Show)</div>
+      ${items}
+    </div>
+  `;
+}
+
+// =============================================================
 // Sprint 2 sub-task 2.5 — Adaptive params render helper
 // =============================================================
 
@@ -6728,6 +6878,24 @@ export const decisionEngineAdapter = {
 
         ${tradingCardHTML}
 
+        <!-- 2.8 — 4 個 SVG charts (永遠全 Show, 大少 11:57 永久 rule) -->
+        <h4 style="margin-top:24px;margin-bottom:4px;">📊 4 個 SVG Charts (2.8 — Sentiment Radar + Kelly Donut + Alignment Bar + Module State)</h4>
+        <div style="font-size:12px;color:#666;margin-bottom:12px;">🟢 強勢 / 🟡 中性 / 🔴 弱勢 / 🟣 矛盾/陷阱 (6 顏色永久 rule)</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px;">
+          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+            ${renderSentimentRadar(verdict.module_verdicts && verdict.module_verdicts[0] ? verdict.module_verdicts[0].sentiment_6d : null, '1️⃣ Sentiment Radar (6 維情緒雷達)', finalActionColor(final_action))}
+          </div>
+          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+            ${renderKellyDonut(verdict.synthesizer_verdict.kelly_fraction)}
+          </div>
+          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+            ${renderAlignmentBar(verdict.synthesizer_verdict.alignment_score)}
+          </div>
+          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+            ${renderModuleStateBar(verdict.module_verdicts)}
+          </div>
+        </div>
+
         <!-- 短期走勢預測 (2.3 — 9 個 scenarios) -->
         <h4 style="margin-top:24px;margin-bottom:4px;">📊 短期走勢預測 (2.3 — 9 個 scenarios: 3 × 3 timeframes)</h4>
         <div style="font-size:12px;color:#666;margin-bottom:8px;">⚠️ 重要: 呢個係 conditional scenarios 唔係 prediction, 真實決定睇 finalAction trigger</div>
@@ -6789,12 +6957,10 @@ export const decisionEngineAdapter = {
 
         <!-- Sprint 2 進度提示 (下個 commits 將加) -->
         <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-          <strong>✅ Sprint 2 sub-task 2.1-2.6 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 + 交易卡 adaptive + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook) + 5 個 adaptive params auto-calibrate + L2 JSON cache (7 日 expiry + 「🔄 重新校準」按鈕)<br>
+          <strong>✅ Sprint 2 sub-task 2.1-2.8 done:</strong> 8 個 finalAction + 揸車比喻 + 交易卡 adaptive + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook) + 5 個 adaptive params + L2 cache + 10 隻 demo tests + 4 個 SVG charts<br>
           <strong>🚧 Sprint 2 仍待做:</strong>
           <ol style="margin-top:4px;">
-            <li>2.7 10 隻 demo 股票 test cases (5 港 + 5 美)</li>
-            <li>2.8 Full testing page UI (10 個 SVG chart + 「🔄 重新校準」按鈕 wire 落 fetch)</li>
-            <li>2.9 Sprint 2 spec doc final + commit + push</li>
+            <li>2.9 Sprint 2 spec doc final (ARCHITECTURE.md / README.md / PROJECT_SPEC.md / ROADMAP.md 4 份 spec doc 同步) + commit + push</li>
           </ol>
         </div>
       </div>

@@ -728,6 +728,42 @@ function renderChart(klines, code, period) {
 algorithmSelect.addEventListener('change', onAlgorithmChange);
 runBtn.addEventListener('click', runAlgorithm);
 
+// =============================================================
+// Sprint 2 sub-task 2.8 — 「🔄 重新校準」按鈕 event handler (M8 5 個 adaptive params)
+// =============================================================
+// 當 M8 verdict card render 時, 內聯 button 「🔄 重新校準」會調用 window.__recalibrateAdaptiveParams
+// 流程: DELETE cache → 重新跑 runAlgorithm() → POST save 新 cache
+window.__recalibrateAdaptiveParams = async function() {
+  if (!currentOptions || !currentOptions.code) {
+    alert('請先輸入股票代碼');
+    return;
+  }
+  const symbol = currentOptions.code;
+  const btn = document.getElementById('recalibrate-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ 重新校準中...';
+  }
+  try {
+    // 1. DELETE cache
+    const delResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`, {
+      method: 'DELETE',
+    });
+    // 2. 重新跑 algorithm (會 calibrate + POST save)
+    await runAlgorithm();
+    if (btn) {
+      btn.textContent = '✅ 已重新校準';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 重新校準'; }, 2000);
+    }
+  } catch (e) {
+    console.error('[Recalibrate] Error:', e);
+    if (btn) {
+      btn.textContent = '❌ 失敗';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 重新校準'; }, 2000);
+    }
+  }
+};
+
 inputsForm.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();

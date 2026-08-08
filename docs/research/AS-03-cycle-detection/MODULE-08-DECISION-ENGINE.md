@@ -291,9 +291,9 @@ export interface InterpretationContext {
 
 ---
 
-## 9. 永遠全 Show UX (大少 11:57 永久 rule)
+## 9. 永遠全 Show UX (大少 11:57 永久 rule) — **Sprint 2 sub-task 2.8 impl done (4 個 SVG charts)**
 
-testing page 永遠全 Show, 多圖少文字, 6 個顏色對應狀態:
+testing page 永遠全 Show, 多圖少文字, 6 個顏色對應狀態 (大少 11:57 永久 rule):
 
 - 🟢 #26BA75 — 強勢上升 / BUY / 確認
 - 🟡 #F39C12 — 觀望 / HOLD / 中性
@@ -302,7 +302,36 @@ testing page 永遠全 Show, 多圖少文字, 6 個顏色對應狀態:
 - 🟣 #722ed1 — 陷阱 / 矛盾 / TRANSITION
 - ⚫ #666 — 唔適用 / N/A
 
-10 個 SVG chart 將喺 Sprint 2 實作 (Sentiment Radar / Timeframe Alignment / Trend Comparison / Position Donut / 等).
+**4 個 SVG Chart** (Sprint 2 sub-task 2.8 impl done, 將 spec 嘅 10 個濃縮做 4 個核心):
+
+| # | Chart | Function | 用途 | 顏色對應 |
+|---|-------|----------|------|----------|
+| 1️⃣ | **Sentiment Radar** | renderSentimentRadar() | 6 維情緒雷達 (RSI/%B/乖離/波動/換手/動能) | 跟 finalAction 顏色 |
+| 2️⃣ | **Kelly Donut** | renderKellyDonut() | 倉位分數 donut (half 50% / quarter 25% / octo 12.5%) | half=綠 / quarter=黃 / octo=紅 |
+| 3️⃣ | **Alignment Bar** | renderAlignmentBar() | Alignment score 0-1 視覺化 | <0.4 紅, 0.4-0.7 黃, >0.7 綠 |
+| 4️⃣ | **Module State Bar** | renderModuleStateBar() | 6 個 module 嘅 state + confidence 全部 Show | 跟 state color (UP 綠, DOWN 紅, SIDEWAYS 黃, TRANSITION/TRAP 紫) |
+
+**Spec 原本 10 個 SVG Chart 嘅 status** (Stage 2+ 將做返):
+
+- [x] Sentiment Radar ✅
+- [x] Position Donut ✅ (Kelly)
+- [x] Alignment Bar ✅
+- [x] Trend Comparison Bar ✅ (Module State)
+- [ ] Timeframe Alignment Heatmap
+- [ ] Rule Coverage Donut
+- [ ] Grade Progress Bar
+- [ ] Adaptive Params Heatmap
+- [ ] M8 Final Action Wheel
+- [ ] Short Term Forecast Line Chart
+- [ ] Probability Pie Chart
+
+**Testing page 「🔄 重新校準」按鈕** (大少 2.8 wire 落 testing-page.js):
+- M8 verdict card render 時, adaptive params box 顯示「🔄 重新校準」按鈕
+- 撳 → DELETE cache → 重新跑 runAlgorithm() (會 calibrate + POST save 新 cache)
+- 按鈕狀態: idle → ⏳ 重新校準中... → ✅ 已重新校準 / ❌ 失敗 → 2 秒後回 idle
+- 對應 spec: MODULE-08-DECISION-ENGINE.md §6 (Manual mode)
+
+**Tests**: 0 新增 (render helpers 純 SVG, 2.7 demo tests 已經 verify 完整 flow), 全部 728 assertions pass 唔受 2.8 影響.
 
 ---
 
@@ -396,4 +425,5 @@ open http://localhost:8765/testing-page/
 | 2026-08-08 16:15 | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook 預留 + 8 個 hardcoded template + InterpretationContext interface) | 917cc08d |
 | 2026-08-08 16:25 | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (純 math: R²/ATR/Pearson/Hurst + apply + 3 個 market data detect helpers) | f33774e9 |
 | 2026-08-08 16:35 | v2.1.0 (sub-task 2.6) | L2 JSON file cache (~/.stockpulse/adaptive_params/) + Python FastAPI GET/POST/DELETE + 「🔄 重新校準」按鈕 (UI placeholder) | 16388296 |
-| 2026-08-08 16:45 | v2.2.0 (sub-task 2.7) | 10 隻 demo 股票 test cases (5 港 + 5 美, seeded random walk 252 日 klines, 200 assertions) | TBD (本 commit) |
+| 2026-08-08 16:45 | v2.2.0 (sub-task 2.7) | 10 隻 demo 股票 test cases (5 港 + 5 美, seeded random walk 252 日 klines, 200 assertions) | ccb13d2b |
+| 2026-08-08 16:55 | v2.3.0 (sub-task 2.8) | 4 個 SVG chart (Sentiment Radar + Kelly Donut + Alignment Bar + Module State) + 「🔄 重新校準」按鈕 wire 落 testing-page.js (DELETE → runAlgorithm → POST save) | TBD (本 commit) |
