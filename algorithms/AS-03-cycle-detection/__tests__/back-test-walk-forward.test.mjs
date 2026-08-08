@@ -77,7 +77,7 @@ test('Section 1: runWalkForwardCV splits klines into 3 folds', async () => {
     klines, decisionFn, baseSymbol: 'HK.00700',
   });
 
-  // 3 folds expected
+  // 3 folds expected (100 per fold, tune 67, validate 33 ≥ 20)
   assert.equal(result.folds.length, 3, `expected 3 folds, got ${result.folds.length}`);
 });
 

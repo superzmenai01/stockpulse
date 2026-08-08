@@ -171,7 +171,7 @@ registryCount.textContent = REGISTRY.length;
 function resetResultPanel() {
   if (runStatus) runStatus.innerHTML = '';
   if (resultPanel) {
-    resultPanel.innerHTML = '<p style="color: #888;">填好输入参数，点击「跑算法」查看结果</p>';
+    resultPanel.innerHTML = '<p style="color: #888;">填好輸入參數, 撳「跑算法」就會見到結果</p>';
   }
   if (chartInstance) {
     try { chartInstance.remove(); } catch (_) {}
@@ -200,7 +200,7 @@ async function init() {
       console.error(`Failed to load ${algo.id}:`, err);
       const option = document.createElement('option');
       option.value = algo.id;
-        option.textContent = `${algo.id} — ❌ 加载失败`;
+        option.textContent = `${algo.id} — ❌ 載入失敗`;
       option.disabled = true;
       algorithmSelect.appendChild(option);
     }
@@ -216,14 +216,14 @@ async function init() {
     }
     await onAlgorithmChange();
   } else {
-    algoInfo.innerHTML = '<p style="color: red;">⚠️ 没有 algorithm 加载成功</p>';
+    algoInfo.innerHTML = '<p style="color: red;">⚠️ 全部演算法都載入唔到, 請檢查 setup</p>';
   }
 }
 
 async function onAlgorithmChange() {
   const algo = REGISTRY.find((a) => a.id === algorithmSelect.value);
   if (!algo || !algo.adapter) {
-    algoInfo.innerHTML = '<p style="color: red;">这个 algorithm 未加载</p>';
+    algoInfo.innerHTML = '<p style="color: red;">呢個演算法未載入</p>';
     algoHelp.innerHTML = '';
     inputsForm.innerHTML = '';
     return;
@@ -544,16 +544,16 @@ function escapeHtml(str) {
 
 async function runAlgorithm() {
   if (!currentAdapter) {
-    runStatus.innerHTML = '❌ 没有选择 algorithm';
+    runStatus.innerHTML = '❌ 未揀演算法, 請先去上面揀一個';
     return;
   }
 
   if (!currentOptions.code) {
-    runStatus.innerHTML = '❌ 请选择 / 输入股票代码';
+    runStatus.innerHTML = '❌ 請揀或者輸入股票代碼';
     return;
   }
 
-  runStatus.innerHTML = '⏳ 正在获取 K 线...';
+  runStatus.innerHTML = '⏳ 撈緊 K 線數據...';
   resultPanel.innerHTML = '';
 
   try {
@@ -566,14 +566,14 @@ async function runAlgorithm() {
     const klineResp = await fetch(klineUrl);
 
     if (!klineResp.ok) {
-      throw new Error(`Backend error: ${klineResp.status} ${klineResp.statusText}`);
+      throw new Error(`後端伺服器出錯: ${klineResp.status} ${klineResp.statusText}`);
     }
 
     const klineData = await klineResp.json();
     const klines = klineData.klines || klineData.data || klineData;
 
     if (!Array.isArray(klines) || klines.length === 0) {
-      throw new Error(`Backend 未返回 K 线数据 (got ${typeof klines})`);
+      throw new Error(`後端冇返 K 線數據 (類型: ${typeof klines})`);
     }
 
     // 大少 #11070 (2026-08-07) — 顯示 user 設定 vs actual returned (debug 用)
@@ -583,7 +583,7 @@ async function runAlgorithm() {
     const countHint = (requestedCount !== actualCount || dataLimited)
       ? ` <span style="color: #ff7a00;">(設定 ${requestedCount} 日 / 實際 ${actualCount} 日${dataLimited ? ' — 數據限制' : ''})</span>`
       : '';
-    runStatus.innerHTML = `✅ 已获取 ${actualCount} 日 K 线${countHint} · 跑算法中...`;
+    runStatus.innerHTML = `✅ 已攞到 ${actualCount} 日 K 線${countHint} · 跑緊演算法...`;
 
     // 2. Run algorithm
     const startTime = performance.now();
@@ -594,7 +594,7 @@ async function runAlgorithm() {
     const finalCountHint = (requestedCount !== actualCount || dataLimited)
       ? ` <span style="color: #ff7a00;">(設定 ${requestedCount} / 實際 ${actualCount}${dataLimited ? ' — 數據限制' : ''})</span>`
       : '';
-    runStatus.innerHTML = `✅ 完成 · ${actualCount} 日${finalCountHint} · ${(endTime - startTime).toFixed(0)}ms`;
+    runStatus.innerHTML = `✅ 跑完 · ${actualCount} 日${finalCountHint} · 用咗 ${(endTime - startTime).toFixed(0)} 毫秒`;
 
     // 3. Render result
     if (currentAdapter.renderResult) {
@@ -616,7 +616,7 @@ async function runAlgorithm() {
       }
     }
   } catch (err) {
-    runStatus.innerHTML = `❌ ${err.message}`;
+    runStatus.innerHTML = `❌ ${err.message}`;  // err.message 已經係中文 user-friendly
     resultPanel.innerHTML = `<pre style="color: red; background: #fff2f0; padding: 12px; border-radius: 4px;">${err.stack || err.message}</pre>`;
     console.error(err);
   }
@@ -641,12 +641,12 @@ function renderChart(klines, code, period) {
   }
 
   if (!Array.isArray(klines) || klines.length === 0) {
-    container.innerHTML = '<div class="chart-placeholder">没有 K 线数据</div>';
+    container.innerHTML = '<div class="chart-placeholder">冇 K 線數據</div>';
     return;
   }
 
   if (typeof LightweightCharts === 'undefined') {
-    container.innerHTML = '<div class="chart-placeholder">❌ lightweight-charts 未加载 (CDN fail)</div>';
+    container.innerHTML = '<div class="chart-placeholder">❌ K 線圖組件載入唔到 (CDN 連唔上)</div>';
     return;
   }
 
@@ -673,7 +673,7 @@ function renderChart(klines, code, period) {
     .sort((a, b) => a.time - b.time);
 
   if (candleData.length === 0) {
-    container.innerHTML = '<div class="chart-placeholder">❌ K 线数据格式不正确</div>';
+    container.innerHTML = '<div class="chart-placeholder">❌ K 線數據格式唔啱</div>';
     return;
   }
 

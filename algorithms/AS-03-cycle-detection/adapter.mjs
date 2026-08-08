@@ -979,21 +979,21 @@ export function renderChartOverlay(verdict, klines, chartRefs) {
 
 export function getHelp() {
   return `
-    <h4>10 條 Rule (A-J)</h4>
+    <h4>10 條規則 (A 到 J)</h4>
     <ul>
-      <li><strong>A</strong> <small>(strong)</small>: 連續 5 日 MA5 > MA60 → 上升勢</li>
-      <li><strong>B</strong> <small>(strong)</small>: 連續 5 日 MA5 < MA60 → 下跌勢</li>
-      <li><strong>C</strong> <small>(medium)</small>: 5 日裡 MA5 > MA60 但當日 low < MA60 → 橫行向下</li>
-      <li><strong>D</strong> <small>(medium)</small>: 5 日裡 MA5 < MA60 但當日 high > MA60 → 橫行向上</li>
-      <li><strong>F</strong> <small>(medium)</small>: MA5+MA10 都 > MA60 但 MA5 < MA10 → 升勢調整向下</li>
-      <li><strong>G</strong> <small>(medium)</small>: MA5+MA10 都 < MA60 但 MA5 > MA10 → 跌勢調整向上</li>
-      <li><strong>H-reverse-up</strong> <small>(strong)</small>: 7 日內 1/2/3 日新 (上) + 餘下舊 (下) → 跌勢轉升勢</li>
-      <li><strong>H-reverse-down</strong> <small>(strong)</small>: 7 日內 1/2/3 日新 (下) + 餘下舊 (上) → 升勢轉跌勢</li>
-      <li><strong>I</strong> <small>(weak)</small>: 連續 5 日 low ≥ MA5 × (1 - 2%) → 有機會長升</li>
-      <li><strong>J</strong> <small>(weak)</small>: 連續 5 日 high ≤ MA5 × (1 + 2%) → 有機會長跌</li>
+      <li><strong>A</strong> (強): 連續 5 日 MA5 喺 MA60 上面 → 上升勢</li>
+      <li><strong>B</strong> (強): 連續 5 日 MA5 喺 MA60 下面 → 下跌勢</li>
+      <li><strong>C</strong> (中): 5 日裡 MA5 喺 MA60 上面, 但當日低位穿 MA60 → 橫行向下</li>
+      <li><strong>D</strong> (中): 5 日裡 MA5 喺 MA60 下面, 但當日高位升穿 MA60 → 橫行向上</li>
+      <li><strong>F</strong> (中): MA5 同 MA10 都喺 MA60 上面, 但 MA5 跌穿 MA10 → 升勢調整向下</li>
+      <li><strong>G</strong> (中): MA5 同 MA10 都喺 MA60 下面, 但 MA5 升穿 MA10 → 跌勢調整向上</li>
+      <li><strong>H 轉上</strong> (強): 7 日內 1/2/3 日新高 (上) 加餘下舊高 (下) → 跌勢轉升勢</li>
+      <li><strong>H 轉下</strong> (強): 7 日內 1/2/3 日新低 (下) 加餘下舊低 (上) → 升勢轉跌勢</li>
+      <li><strong>I</strong> (弱): 連續 5 日低位 ≥ MA5 × (1 - 2%) → 有機會長升</li>
+      <li><strong>J</strong> (弱): 連續 5 日高位 ≤ MA5 × (1 + 2%) → 有機會長跌</li>
     </ul>
-    <p><strong>State priority:</strong> H > A > B > F > G > C/D > default SIDEWAYS</p>
-    <p><strong>Confidence:</strong> strong 0.7 / medium 0.5 / weak +0.10 bonus, cap 1.0</p>
+    <p><strong>規則優先順序:</strong> H → A → B → F → G → C/D → 默認 橫行</p>
+    <p><strong>信心分數:</strong> 強 0.7, 中 0.5, 弱 加 0.10 分, 最高 1.0</p>
   `;
 }
 
@@ -1837,34 +1837,34 @@ function renderUsageGuideVolume(verdict) {
 
 export function getVolumeHelp() {
   return `
-    <h4>VolumePrice v2.0 · 15 條 Rule (V1-V15)</h4>
-    <p>對應 docx <code>05成交量價格行為確認法.docx</code> v2.0 spec。Spec doc: <code>MODULE-05-VOLUME-PRICE-V2.md</code></p>
+    <h4>成交量價格確認法 v2.0 · 15 條規則 (1 到 15 條)</h4>
+    <p>用成交量同價格嘅數據, 確認個走勢係咪真嘅, 定係假嘅突破</p>
     <p><strong>基礎指標</strong></p>
     <ul>
-      <li><strong>V1</strong> <small>(weak)</small>: ATR (14) > 0.5% × close — 波動充足</li>
-      <li><strong>V2</strong> <small>(weak)</small>: price > VWAP × 0.99 — 喺 VWAP 支撐之上</li>
-      <li><strong>V3</strong> <small>(weak)</small>: volumePercentile ∈ [0, 1] — 成交量百分位正常範圍</li>
+      <li><strong>1</strong> (弱): 14 日波動範圍大過收市價 0.5% — 波動夠大</li>
+      <li><strong>2</strong> (弱): 現價高過 VWAP × 0.99 — 喺平均價之上</li>
+      <li><strong>3</strong> (弱): 成交量百分位正常 (0 到 1 之間) — 成交量冇異常</li>
     </ul>
-    <p><strong>放量 / OBV 趨勢</strong></p>
+    <p><strong>放量同 OBV 趨勢</strong></p>
     <ul>
-      <li><strong>V4</strong> <small>(medium)</small>: 連續 ≥ 2 日 volume ≥ 1.3× 均量 AND NOT 異常爆量 — 堆量模式</li>
-      <li><strong>V5</strong> <small>(strong, 反向)</small>: volZScore > 3 AND 前 2 日低 AND 今日 ≥ 5× 均量 — 異常爆量警告</li>
-      <li><strong>V6</strong> <small>(medium)</small>: weighted OBV > SMA20 × 1.03 — 加權 OBV 上升</li>
-      <li><strong>V7</strong> <small>(medium)</small>: weighted OBV < SMA20 × 0.97 — 加權 OBV 下跌</li>
-      <li><strong>V8</strong> <small>(strong)</small>: 20 日 weighted OBV-Close 相關 > 0.5 — OBV 與價格同向</li>
+      <li><strong>4</strong> (中): 連續 2 日或以上成交量 ≥ 1.3 倍均量 — 慢慢堆量</li>
+      <li><strong>5</strong> (強, 反向): 成交量統計分數大過 3, 而且今日係 5 倍均量 — 異常爆量, 提你小心</li>
+      <li><strong>6</strong> (中): 加權 OBV 高過 20 日均線 × 1.03 — 買盤上升</li>
+      <li><strong>7</strong> (中): 加權 OBV 跌穿 20 日均線 × 0.97 — 買盤下跌</li>
+      <li><strong>8</strong> (強): 20 日內加權 OBV 同收市價嘅相關性大過 0.5 — 量同價方向一致</li>
     </ul>
-    <p><strong>突破 / 假突破</strong></p>
+    <p><strong>突破定假突破</strong></p>
     <ul>
-      <li><strong>V9</strong> <small>(strong)</small>: 溫和堆量突破 (gradual_buildup pattern) — 最可信突破</li>
-      <li><strong>V10</strong> <small>(strong)</small>: 持續放量突破 + confirmed — 放量突破確認</li>
-      <li><strong>V11</strong> <small>(strong, 反向)</small>: low_volume 突破 OR falseBreakoutRisk > 0.5 — 縮量突破警告</li>
-      <li><strong>V12</strong> <small>(strong, 反向)</small>: falseBreakoutRisk > 0.6 — 假突破識別</li>
+      <li><strong>9</strong> (強): 慢慢堆量然後突破 — 最可信嘅真突破</li>
+      <li><strong>10</strong> (強): 持續放量突破, 而且確認咗 — 確定突破</li>
+      <li><strong>11</strong> (強, 反向): 縮量就突破, 或者假突破風險大過 0.5 — 可能係假突破</li>
+      <li><strong>12</strong> (強, 反向): 假突破風險大過 0.6 — 高機會係假突破</li>
     </ul>
-    <p><strong>回調 / 拋壓 / 背馳</strong></p>
+    <p><strong>回調、拋壓、背馳</strong></p>
     <ul>
-      <li><strong>V13</strong> <small>(medium)</small>: 回調深度-量相關 < -0.3 — 健康回調 (越跌越縮量)</li>
-      <li><strong>V14</strong> <small>(strong, 反向)</small>: 回調深度-量相關 > 0.3 — 拋售拋壓 (越跌越放量)</li>
-      <li><strong>V15</strong> <small>(strong)</small>: 滾動相關性衰減 > 0.4 AND |corr_recent| < 0.2 — 量价背馳</li>
+      <li><strong>13</strong> (中): 跌嘅時候量縮 — 健康回調 (越跌越冇人賣)</li>
+      <li><strong>14</strong> (強, 反向): 跌嘅時候量增 — 拋售拋壓 (越跌越多人賣)</li>
+      <li><strong>15</strong> (強): 量同價嘅關係突然變弱 — 量價背馳 (小心見頂)
     </ul>
     <p><strong>5 條 buy rules</strong> (按信心由高到低):</p>
     <ol>
@@ -1882,9 +1882,9 @@ export function getVolumeHelp() {
 
 export const volumePriceAdapter = {
   id: 'AS-03-VP',
-  name: '成交量價格行為確認法 v2.0 (VolumePrice)',
+  name: '成交量價格行為確認法',
   version: '2.0.0',
-  description: '用 15 條 rule-based 算法 (V1-V15) 分析成交量價格行為確認',
+  description: '用 15 條規則分析成交量同價格嘅行為, 確認個走勢係咪真嘅',
   inputs: [
     {
       key: 'code',
@@ -2340,20 +2340,20 @@ export function renderVolatilityResult(verdict) {
 }
 
 export function getVolatilityHelp() {
-  return `<h4>Volatility v1.0 · 12 條 Rule (S1-S12)</h4>
-  <p>對應 MODULE-06-VOLATILITY.md</p>
-  <p><strong>S1-S3 Squeeze</strong>: S1 日線 squeeze / S2 質量 ≥ 0.6 / S3 持續 ≥ 3 日</p>
-  <p><strong>S4-S7 ATR 分解</strong>: S4 趨勢 ATR 強 (snr>2) / S5 噪音 ATR 高 (snr<0.5) / S6 結構性收縮 / S7 結構性擴張</p>
-  <p><strong>S8-S11 VCP + Follow</strong>: S8 籌碼集中 / S9 VCP 結構 / S10 VCP 量縮 / S11 突破跟進 ≥ 0.5</p>
-  <p><strong>S12 失敗模式</strong>: noisy_squeeze / weak_follow_through — 入場 cap 0.4</p>
-  <p><strong>5 種 Setup</strong>: mtf_squeeze_fire 0.95 / confirmed_vcp_breakout 0.9 / clean_trend_expansion 0.7 / genuine_squeeze_forming 0.55 / no_clear_setup 0.25</p>`;
+  return `<h4>波動率 v1.0 · 12 條規則 (1 到 12 條)</h4>
+  <p>分析股價波動嘅大細同變化, 等你知道幾時會爆升爆跌</p>
+  <p><strong>1 到 3 條 波動收縮 (Squeeze)</strong>: 1 日線波動收縮 / 2 質素好 / 3 持續夠耐</p>
+  <p><strong>4 到 7 條 波動分解</strong>: 4 趨勢波動強 / 5 噪音波動高 / 6 結構性收縮 / 7 結構性擴張</p>
+  <p><strong>8 到 11 條 收縮震盪同跟進</strong>: 8 籌碼集中 / 9 收縮震盪結構 / 10 收縮震盪量縮 / 11 突破跟進</p>
+  <p><strong>12 條 失敗模式</strong>: 噪音式收縮 / 跟進唔夠 — 入場上限 0.4</p>
+  <p><strong>5 種情況</strong>: 多時段收縮爆發 0.95 / 確認收縮震盪突破 0.9 / 乾淨趨勢擴張 0.7 / 真正收縮形成中 0.55 / 冇明確情況 0.25</p>`;
 }
 
 export const volatilityAdapter = {
   id: 'AS-03-VOL',
-  name: '波動率與市場結構收縮擴張 (Volatility)',
+  name: '波動率同市場結構收縮擴張',
   version: '1.0.0',
-  description: '用 12 條 rule-based 算法 (S1-S12) 檢測 Squeeze + ATR 分解 + 失敗模式',
+  description: '用 12 條規則分析股價波動嘅大細同埋變化, 等你知道幾時會爆升爆跌',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
     { key: 'period', label: '時間週期', type: 'select', options: [{ value: '1d', label: '日線' }, { value: '1w', label: '週線' }], default: '1d' },
@@ -3218,38 +3218,38 @@ function normalizeTimeForMarker(dateStr) {
 
 function getHLStructureHelp() {
   return `
-    <h4>高低點結構法 · Module 2 v0.1.0</h4>
-    <p>基於道氏理論 (Dow Theory),識別股價嘅山頂 (peak) 同山谷 (trough),透過峰谷排列結構判斷週期。</p>
-    <h5>📊 輸入參數</h5>
+    <h4>高低點結構法 · 第二模組 v0.1.0</h4>
+    <p>用道氏理論嘅方法, 搵出股價嘅山頂同山谷, 透過佢哋嘅排列判斷走勢</p>
+    <h5>輸入參數</h5>
     <ul>
-      <li><strong>baseWindow</strong> (5): 極值識別基礎窗口 (日數)</li>
-      <li><strong>minPairs</strong> (3): 最少峰谷對數</li>
-      <li><strong>tolerancePct</strong> (1.5%): 趨勢判定基礎容忍度</li>
-      <li><strong>enableAtrWindow</strong> (true): ATR 自適應窗口</li>
-      <li><strong>breakoutConfirmDays</strong> (2): 突破確認延遲日數</li>
-      <li><strong>timeDecayLambda</strong> (0.03): 時間衰減係數</li>
+      <li><strong>基本窗口日數</strong> (5): 搵極值用嘅基本窗口</li>
+      <li><strong>最少峰谷對數</strong> (3): 至少要有幾多對先計算</li>
+      <li><strong>容忍度</strong> (1.5%): 判斷走勢嘅寬鬆程度</li>
+      <li><strong>用波動率自動調窗口</strong> (開): 自動跟據波動調整窗口大細</li>
+      <li><strong>突破確認日數</strong> (2): 突破之後等幾日先確認</li>
+      <li><strong>時間衰減</strong> (0.03): 舊嘅山頂山谷權重會衰減</li>
     </ul>
-    <h5>🎯 輸出 (3 states)</h5>
+    <h5>輸出 (3 種狀態)</h5>
     <ul>
-      <li><strong>uptrend</strong>: higher highs + higher lows</li>
-      <li><strong>downtrend</strong>: lower highs + lower lows</li>
-      <li><strong>sideways</strong>: 範圍內震盪, 自動畀 top/bottom/mid 箱體</li>
+      <li><strong>上升趨勢</strong>: 山頂越來越高, 山谷越來越高</li>
+      <li><strong>下跌趨勢</strong>: 山頂越來越低, 山谷越來越低</li>
+      <li><strong>橫行</strong>: 喺範圍內上落, 會畀出上沿、中軸、下沿嘅箱體</li>
     </ul>
-    <h5>🔍 形態預警</h5>
+    <h5>形態預警</h5>
     <ul>
-      <li><strong>head_and_shoulder</strong>: 3 個峰, 中間最高</li>
-      <li><strong>double_bottom</strong>: 2 個谷, 價格相近, 中間反彈</li>
-      <li><strong>double_top</strong>: 2 個峰, 價格相近, 中間回調</li>
+      <li><strong>頭肩頂</strong>: 3 個山頂, 中間嗰個最高</li>
+      <li><strong>雙底</strong>: 2 個山谷, 價格差唔多, 中間反彈過</li>
+      <li><strong>雙頂</strong>: 2 個山頂, 價格差唔多, 中間回調過</li>
     </ul>
-    <p><strong>v2.0 改進:</strong> 自適應 Window · 加權價 · 突破確認 · 量能過濾 · 時間衰減 · 動態 Tolerance · 箱體邊界 · 形態預警</p>
+    <p><strong>改進咗咩:</strong> 自動調窗口 · 加權價格 · 突破要確認 · 過濾量能 · 時間越舊影響越細 · 動態容忍度 · 箱體邊界 · 自動搵形態</p>
   `;
 }
 
 export const hlStructureAdapter = {
   id: 'AS-03-HL',
-  name: '高低點結構法 (Peak-Trough Structure)',
+  name: '高低點結構法 (山頂山谷排列)',
   version: '0.1.0',
-  description: '基於 Dow Theory, 識別 peak (山頂) 同 trough (山谷) 嘅排列結構判斷週期 (上升/下跌/橫行),自動偵測頭肩頂/雙底/雙頂形態預警',
+  description: '睇股價一浪一浪嘅山頂同山谷嘅排列, 判斷走勢係升緊、跌緊定橫行, 仲會自動搵頭肩頂、雙底、雙頂呢啲形態出嚟提你',
   // 2026-08-07 — Generic framework support: 移除 hard-code context, 用 contextLines (預設空)
   contextLines: [],
   inputs: [
@@ -4195,30 +4195,30 @@ function renderTrendlineChartOverlay(verdict, klines, chartRefs) {
 
 function getTrendlineHelp() {
   return `
-    <h4>趨勢線法 (Trendline) · 10 條 Rule (A-J)</h4>
+    <h4>趨勢線法 · 10 條規則 (A 到 J)</h4>
     <ul>
-      <li><strong>A</strong> <small>(strong)</small>: 支撐線上升 + R² ≥ 0.55 → 上升趨勢</li>
-      <li><strong>B</strong> <small>(strong)</small>: 壓力線下降 + R² ≥ 0.55 → 下跌趨勢</li>
-      <li><strong>C</strong> <small>(medium)</small>: 通道窄 (&lt; 3%) + 中位 (%B 0.4-0.6) → 橫行</li>
-      <li><strong>D</strong> <small>(medium)</small>: 收斂三角形 (支撐升 + 壓力跌) → 橫行</li>
-      <li><strong>E</strong> <small>(medium)</small>: 上升楔形 (支撐升 + 壓力平) → 上升</li>
-      <li><strong>F</strong> <small>(medium)</small>: 下降楔形 (支撐平 + 壓力跌) → 下跌</li>
-      <li><strong>G</strong> <small>(strong)</small>: 真跌破支撐 (5 日內穿越 + stay ≥ 2 日) → 下跌</li>
-      <li><strong>H</strong> <small>(strong)</small>: 真突破壓力 (5 日內穿越 + stay ≥ 2 日) → 上升</li>
-      <li><strong>I</strong> <small>(weak)</small>: 支撐有效 (觸線 ≥ 2 次 + 反彈 ≥ 1%) → +0.10 conf</li>
-      <li><strong>J</strong> <small>(weak)</small>: 壓力有效 (觸線 ≥ 2 次 + 反彈 ≥ 1%) → +0.10 conf</li>
+      <li><strong>A</strong> (強): 支撐線上升 + 吻合度 ≥ 0.55 → 上升趨勢</li>
+      <li><strong>B</strong> (強): 壓力線下降 + 吻合度 ≥ 0.55 → 下跌趨勢</li>
+      <li><strong>C</strong> (中): 通道窄 (3% 之內) + 中位 (位置 0.4-0.6) → 橫行</li>
+      <li><strong>D</strong> (中): 收斂三角形 (支撐升 + 壓力跌) → 橫行</li>
+      <li><strong>E</strong> (中): 上升楔形 (支撐升 + 壓力平) → 上升</li>
+      <li><strong>F</strong> (中): 下降楔形 (支撐平 + 壓力跌) → 下跌</li>
+      <li><strong>G</strong> (強): 真跌破支撐 (5 日內穿越 + 連續 2 日喺下面) → 下跌</li>
+      <li><strong>H</strong> (強): 真突破壓力 (5 日內穿越 + 連續 2 日喺上面) → 上升</li>
+      <li><strong>I</strong> (弱): 支撐有效 (觸線 2 次以上 + 反彈 1% 以上) → 信心 +0.10</li>
+      <li><strong>J</strong> (弱): 壓力有效 (觸線 2 次以上 + 回調 1% 以上) → 信心 +0.10</li>
     </ul>
-    <p><strong>State priority:</strong> H+G → TRANSITION · H > A > B > F > G > C/D > default SIDEWAYS</p>
-    <p><strong>Confidence:</strong> strong 0.7 / medium 0.5 / weak +0.10 bonus, cap 1.0</p>
-    <p><strong>v0.1.0 簡化 (從 Kimi v2.0 移除):</strong> RANSAC / 成交量加權 / ATR 歸一化 / 假突破 multiplier / %B 指標,改用簡單 OLS 線性回歸</p>
+    <p><strong>規則優先順序:</strong> H+G → 轉勢 · H → A → B → F → G → C/D → 默認 橫行</p>
+    <p><strong>信心分數:</strong> 強 0.7, 中 0.5, 弱 加 0.10 分, 最高 1.0</p>
+    <p><strong>簡化咗:</strong> 唔再用進階嘅亂數算法, 改用簡單嘅線性回歸計趨勢線</p>
   `;
 }
 
 export const trendlineAdapter = {
   id: 'AS-03-TL',
-  name: '趨勢線法 (Trendline)',
+  name: '趨勢線法 (畫線睇走勢)',
   version: '0.1.0',
-  description: '用 10 條 rule (A-J) 識別股票趨勢線 (支撐/壓力), 判定週期 (上升/下跌/橫行/反轉)',
+  description: '用 10 條規則畫出股票嘅趨勢線 (支撐線、壓力線), 判斷走勢係上升、下降、橫行定反轉',
   contextLines: [],
   inputs: [
     {
@@ -5074,37 +5074,37 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
 
 function getIndicatorsHelp() {
   return `
-    <h4>動能背馳與衰竭檢測法 (Indicators) · 10 條 Rule (A-J)</h4>
+    <h4>動能背馳與衰竭檢測法 · 10 條規則</h4>
     <ul>
-      <li><strong>多頭條件 (買入):</strong>
+      <li><strong>睇好 (買入訊號):</strong>
         <ul>
-          <li>底背馳 (RSI 或 MACD) → +0.35</li>
-          <li>RSI 超賣 (&lt; 30) + 上升 → +0.25</li>
-          <li>MACD 金叉 (柱狀體由負翻正) → +0.25</li>
-          <li>MACD 下跌動能減弱 (bearish_decelerating) → +0.15</li>
-          <li>放量確認 (volume &gt; 10d avg × 1.2) → +0.15</li>
+          <li>底背馳 (RSI 或 MACD) → 加 0.35 分</li>
+          <li>RSI 跌到 30 以下 (超賣) + 開始回升 → 加 0.25 分</li>
+          <li>MACD 金叉 (柱狀圖由負變正) → 加 0.25 分</li>
+          <li>MACD 跌嘅速度減慢 → 加 0.15 分</li>
+          <li>放量配合 (成交量 > 10 日均量 × 1.2) → 加 0.15 分</li>
         </ul>
       </li>
-      <li><strong>空頭條件 (賣出):</strong>
+      <li><strong>睇淡 (賣出訊號):</strong>
         <ul>
-          <li>頂背馳 (RSI 或 MACD) → +0.35</li>
-          <li>RSI 超買 (&gt; 70) + 下降 → +0.25</li>
-          <li>MACD 死叉 (柱狀體由正翻負) → +0.25</li>
+          <li>頂背馳 (RSI 或 MACD) → 加 0.35 分</li>
+          <li>RSI 升到 70 以上 (超買) + 開始回調 → 加 0.25 分</li>
+          <li>MACD 死叉 (柱狀圖由正變負) → 加 0.25 分</li>
         </ul>
       </li>
-      <li><strong>判定:</strong> bullScore ≥ 0.6 AND &gt; bearScore → <strong>buy (UP)</strong> · bearScore ≥ 0.6 AND &gt; bullScore → <strong>sell (DOWN)</strong> · 否則 → <strong>hold (SIDEWAYS)</strong></li>
+      <li><strong>點樣判:</strong> 買分 ≥ 0.6 又大過賣分 → 買入 (上升) · 賣分 ≥ 0.6 又大過買分 → 賣出 (下跌) · 其他 → 持有 (橫行)</li>
     </ul>
-    <p><strong>Cycle 派生:</strong> buy → UP, sell → DOWN, hold → SIDEWAYS (TRANSITION 由 Synthesizer 判)</p>
-    <p><strong>Confidence:</strong> base = signalStrength, 背馳數 ≥ 2 × 1.15, 衰竭 &gt; 0.6 + 訊號 match × 1.10, cap 1.0</p>
-    <p><strong>v1.0.0 落地 (從 Kimi v1.0 簡化):</strong> 移除 LLM-based 嘅 win probability 模型, 改用 rule-based 經驗公式 (base 55% + bonus)</p>
+    <p><strong>週期結論:</strong> 買入 = 上升, 賣出 = 下跌, 持有 = 橫行 (轉勢由綜合模組判)</p>
+    <p><strong>信心分數:</strong> 基礎分 = 訊號強度, 多過 2 個背馳 × 1.15, 衰竭大過 0.6 又同訊號脗合 × 1.10, 最高 1.0</p>
+    <p><strong>簡化咗:</strong> 唔再用大語言模型預測, 改用規則公式計 (基礎 55% 加分)</p>
   `;
 }
 
 export const indicatorsAdapter = {
   id: 'AS-03-IND',
-  name: '動能背馳與衰竭 (Indicators)',
+  name: '動能背馳與衰竭 (睇 RSI 同 MACD)',
   version: '1.0.0',
-  description: '用 RSI(14) + MACD(12/26/9) 識別背馳 (頂/底) + 動能衰竭, 判定買入/賣出時機 (回應「幾時該行動」)',
+  description: '用 RSI 同 MACD 睇股價升跌嘅動力, 搵出頂背馳、底背馳、動能唔夠嘅情況, 等你知幾時應該行動',
   contextLines: [
     '大少指示: 呢個 module 答「幾時該行動」, 唔答「而家係咩 season」(M1 MA Alignment 先答大方向)',
     '用法: M1/M2/M3 確認大方向 → M4 確認入場時機',
@@ -5624,25 +5624,19 @@ function renderMAAlignmentV2UsageGuide(verdict) {
 
 function getMAAlignmentV2Help() {
   return `
-    <h3>Module 1 v2.0 — 均線系統週期判斷法 (with Volume & Slope)</h3>
-    <p>大少 2026-08-08 指示新 M1 v2.0 (跟 docx Kimi v2.0 spec) 取代舊 M1 v0.3.0, 舊 M1 抽離做 zmen均算法。</p>
-    <h4>Spec 連結</h4>
+    <h3>第一模組 v2.0 — 均線系統週期判斷法 (加咗成交量同斜率)</h3>
+    <p>用 4 條均線 (5/10/20/60 日) 嘅排列同斜率, 加埋成交量確認, 判斷股票而家係咩週期</p>
+    <h4>3 種週期狀態</h4>
     <ul>
-      <li>Spec doc: <code>docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md</code></li>
-      <li>Docx: <code>docs/演算法概念SPECS/01均線系統週期判斷法.docx</code> (Kimi v2.0)</li>
-      <li>Module: <code>algorithms/AS-03-cycle-detection/modules/ma-alignment.ts</code></li>
+      <li><strong>上升週期</strong> — 均線由細到大排好 + 距離 ≥ 2%</li>
+      <li><strong>下跌週期</strong> — 均線由大到細排好 + 距離 ≥ 2%</li>
+      <li><strong>橫行週期</strong> — 其他情況, 或者距離少過 2% 強制當橫行</li>
     </ul>
-    <h4>3 個 Cycle States</h4>
+    <h4>信心分數 = 基礎 × 成交量 × 斜率</h4>
     <ul>
-      <li><strong>uptrend</strong> (上升週期) — MA 升序排列 + spread ≥ 2%</li>
-      <li><strong>downtrend</strong> (下跌週期) — MA 降序排列 + spread ≥ 2%</li>
-      <li><strong>sideways</strong> (橫行週期) — 其他情況, 或 spread < 2% 強制覆寫</li>
-    </ul>
-    <h4>信心指數 = base × volume × slope</h4>
-    <ul>
-      <li><strong>base</strong> (0.3-1.0): 由 spread / 0.10 計, spread &lt; 5% 額外 × 0.7</li>
-      <li><strong>volume</strong> (0.65-1.25): 升 + 放量 1.25, 升 + 縮量 0.65, 跌 + 放量 1.15, ...</li>
-      <li><strong>slope</strong> (0.7-1.0): 升 + 短期斜率負 0.7, 跌 + 長期斜率正 0.8, ...</li>
+      <li><strong>基礎分</strong> (0.3-1.0): 由距離除 0.10 計, 距離少過 5% 額外乘 0.7</li>
+      <li><strong>成交量</strong> (0.65-1.25): 升 + 放量 1.25, 升 + 縮量 0.65, 跌 + 放量 1.15 等</li>
+      <li><strong>斜率</strong> (0.7-1.0): 升 + 短期斜率跌緊 0.7, 跌 + 長期斜率升緊 0.8 等</li>
     </ul>
   `;
 }
@@ -5727,9 +5721,9 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
 
 export const maAlignmentV2Adapter = {
   id: 'AS-03-MA',
-  name: '均線系統週期判斷法 v2.0 (with Volume & Slope)',
+  name: '均線系統週期判斷法 (加咗成交量同斜率)',
   version: '2.0.0',
-  description: '跟 docx Kimi v2.0 spec: MA 排列 + 成交量加權 + 斜率動能, 3 個 cycle state',
+  description: '睇均線嘅排列加埋成交量同斜率, 判斷股票而家係上升、橫行定下跌週期',
   inputs: [
     // 股票代碼 (大少 #10400 — testing page 統一 auto-complete, 跟首頁 StockSearch UX)
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
@@ -6659,9 +6653,9 @@ export function renderDecisionEngineResult(verdict) {
 //   M8 部分 (finalAction + trading card + 短期走勢 + adaptive params) 將喺 Sprint 2 寫
 export const synthesizerAdapter = {
   id: 'AS-03-SYN',
-  name: '終極綜合判定 (Synthesizer v1.0.0 — M7)',
+  name: '終極綜合判定 (第七模組)',
   version: '1.0.0',
-  description: '大少 2026-08-08 13:30 Plan A — 6 個 modules 嘅綜合判定 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位). 之前叫 decisionEngineAdapter (sprint 1 合併), 而家拆返 M7.',
+  description: '將之前 6 個模組嘅結果加埋一齊, 計一個綜合分數 (0-100)、睇方向係咪一致、再計建議嘅倉位大細, 等你有一個統一嘅睇法',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
   ],
@@ -6669,23 +6663,23 @@ export const synthesizerAdapter = {
   renderResult: renderDecisionEngineResult,
   getHelp: () => `
     <h3>📊 終極綜合判定 (Synthesizer v1.0.0 — M7)</h3>
-    <p>大少 2026-08-08 13:30 Plan A — 6 個 modules 嘅綜合判定 (M7)</p>
-    <h4>5 個 Sub-step:</h4>
+    <p>將之前 6 個模組嘅結果加埋一齊, 計一個綜合分數同方向</p>
+    <h4>5 個步驟:</h4>
     <ol>
-      <li><strong>SSI 戰略強度指數</strong> (0-100): consistency × 50 + confidence_avg × 30 + rules_coverage × 20</li>
-      <li><strong>TCM 戰術交叉驗證矩陣</strong> (3 對 pair): MA-TL / HL-VP / IND-VOL</li>
-      <li><strong>Alignment Score</strong> (0-1): 最大 state group 嘅比例</li>
-      <li><strong>Grade</strong> (8 個): A+ / A / B+ / B / C+ / C / D / F</li>
-      <li><strong>Kelly 倉位</strong>: half/quarter/octo, 跟 avg 波動率自動切</li>
+      <li><strong>策略強度指數</strong> (0-100): 一致性 × 50 + 平均信心 × 30 + 規則覆蓋 × 20</li>
+      <li><strong>交叉驗證矩陣</strong> (3 對配對): 均線對趨勢線 / 高低點對量價 / 動能對波動</li>
+      <li><strong>方向一致分數</strong> (0-1): 最多嘅方向佔幾多比例</li>
+      <li><strong>評級</strong> (8 個): A+ / A / B+ / B / C+ / C / D / F</li>
+      <li><strong>建議倉位</strong>: 大倉 / 中倉 / 小倉, 跟平均波動率自動切</li>
     </ol>
-    <h4>M8 (Sprint 2 將加):</h4>
+    <h4>第八模組嘅附加功能 (已經加咗):</h4>
     <ul>
-      <li>finalAction 8 個 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION)</li>
-      <li>Trading card (entry_zone / stop_loss / take_profit / trailing_stop)</li>
-      <li>短期走勢預測 (3 scenarios × 5/10/20 日)</li>
-      <li>人話詳細解讀 (LLM hook 預留, 大少 13:30 永久 rule)</li>
-      <li>5 個 adaptive params runtime auto-calibrate</li>
-      <li>L2 JSON file cache (~/.stockpulse/adaptive_params/&lt;symbol&gt;.json)</li>
+      <li>8 個行動指令 (買入 / 加注 / 持有 / 減注 / 賣出 / 再睇 / 陷阱 / 轉勢)</li>
+      <li>交易範圍 (入場區間 / 止損 / 目標價 / 移動止損)</li>
+      <li>短期走勢預測 (3 個情境 × 5/10/20 日)</li>
+      <li>白話詳細解讀 (預咗將來用大語言模型)</li>
+      <li>5 個自適應參數 (每隻股票自動校準)</li>
+      <li>本機快取 (喺 ~/.stockpulse 資料夾, 7 日自動過期)</li>
     </ul>
   `,
 };
@@ -6696,9 +6690,9 @@ export const synthesizerAdapter = {
 //   Trading card / 短期走勢 / 人話解讀 / adaptive params 將喺 2.2-2.5 commits impl
 export const decisionEngineAdapter = {
   id: 'AS-03-DEC',
-  name: '終極綜合判斷引擎 (Decision Engine v1.0.0 — M8)',
+  name: '終極綜合判斷引擎 (第八模組)',
   version: '1.0.0',
-  description: '大少 2026-08-08 15:42 Sprint 2 sub-task 2.1 — 從 M7 SynthesizerVerdict + 6 個 ModuleStandardVerdict 推導 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 揸車比喻嘅 final_action_reason. Trading card / 短期走勢 / 人話解讀 將喺 2.2-2.4 commits 加.',
+  description: '用第七模組嘅綜合分數再推導出 8 個行動指令 (買入、加注、持有、減注、賣出、再睇、陷阱、轉勢), 每個都用揸車嘅比喻解釋點解, 仲會畀埋交易範圍同目標價',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
   ],
@@ -6973,26 +6967,27 @@ export const decisionEngineAdapter = {
   },
   getHelp: () => `
     <h3>🚦 終極綜合判斷引擎 (Decision Engine v1.0.0 — M8)</h3>
-    <p>大少 2026-08-08 15:42 Sprint 2 sub-task 2.1 — 從 M7 SynthesizerVerdict + 6 個 ModuleStandardVerdict 推導 8 個 finalAction.</p>
-    <h4>8 個 FinalAction + 揸車比喻:</h4>
+    <p>用第七模組嘅綜合分數再推導出 8 個行動指令, 每個都用揸車嘅比喻解釋</p>
+    <h4>8 個行動指令 + 揸車比喻:</h4>
     <ul>
-      <li>🟢 <strong>BUY</strong> — 油門俾到底 (UP + alignment≥0.6 + grade≥B + 預期回報>3% + 最大回撤<10% + RSI>50)</li>
-      <li>🟢 <strong>ADD</strong> — 油門再踩深啲 (UP + grade≥A + alignment≥0.7 + RSI>70 + 連漲≥3日)</li>
-      <li>🟡 <strong>HOLD</strong> — 保持現速 (UP + grade=B/C+ + maxdd<8%)</li>
-      <li>🟡 <strong>WAIT</strong> — 等綠燈 (SIDEWAYS + grade=C + alignment<0.6)</li>
-      <li>🟠 <strong>REDUCE</strong> — 收返少少油 (TRANSITION + alignment<0.5)</li>
-      <li>🔴 <strong>SELL</strong> — 急煞車 (DOWN + grade≤C + maxdd>10%)</li>
-      <li>🟣 <strong>TRAP</strong> — 唔好信導航 (squeeze + fake breakout)</li>
-      <li>🟣 <strong>TRANSITION</strong> — 收油準備轉彎 (M1 + M3 同步轉勢)</li>
+      <li>🟢 <strong>買入</strong> — 油門俾到底 (上升 + 方向一致 ≥ 0.6 + 評級 ≥ B + 預期回報 > 3% + 最大回撤 < 10% + RSI > 50)</li>
+      <li>🟢 <strong>加注</strong> — 油門再踩深啲 (上升 + 評級 ≥ A + 方向一致 ≥ 0.7 + RSI > 70 + 連漲 ≥ 3 日)</li>
+      <li>🟡 <strong>持有</strong> — 保持現速 (上升 + 評級 B/C+ + 最大回撤 < 8%)</li>
+      <li>🟡 <strong>再睇</strong> — 等綠燈 (橫行 + 評級 C + 方向一致 < 0.6)</li>
+      <li>🟠 <strong>減注</strong> — 收返少少油 (轉勢 + 方向一致 < 0.5)</li>
+      <li>🔴 <strong>賣出</strong> — 急煞車 (下跌 + 評級 ≤ C + 最大回撤 > 10%)</li>
+      <li>🟣 <strong>陷阱</strong> — 唔好信導航 (波動收縮 + 假突破)</li>
+      <li>🟣 <strong>轉勢</strong> — 收油準備轉彎 (均線 + 趨勢線同步轉勢)</li>
     </ul>
-    <h4>Priority order:</h4>
-    <p>TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY</p>
-    <h4>下個 commits 將加:</h4>
+    <h4>規則優先順序:</h4>
+    <p>陷阱 → 轉勢 → 賣出 → 減注 → 再睇 → 持有 → 加注 → 買入</p>
+    <h4>已經全部加咗:</h4>
     <ul>
-      <li>2.2 Trading card adaptive formula</li>
-      <li>2.3 短期走勢預測 (3 scenarios × 5/10/20 日)</li>
-      <li>2.4 人話詳細解讀 (LLM hook)</li>
-      <li>2.5 5 個 adaptive params runtime auto-calibrate</li>
+      <li>交易範圍 (跟波動率自動調整)</li>
+      <li>短期走勢預測 (3 個情境 × 5/10/20 日)</li>
+      <li>白話詳細解讀 (預咗將來用大語言模型)</li>
+      <li>5 個自適應參數 (每隻股票自動校準)</li>
+      <li>本機快取 (7 日過期, 永久保留回測記錄)</li>
     </ul>
   `,
 };
@@ -7004,13 +6999,13 @@ export const decisionEngineAdapter = {
 //   Render 顯示: 整體 metrics / Coarse Grid Top 5 / Fine Tune Best / Walk-Forward Folds + Apply to M8 按鈕
 export const backTestAdapter = {
   id: 'AS-03-BT',
-  name: 'Back Test (v0.5.0 — M9 9.1-9.5 done)',
+  name: '回測驗證 (第九模組)',
   version: '0.5.0',
-  description: '大少 2026-08-08 22:28 Sprint 3 — 用 6 個月歷史 K 線 replay M8 verdict, 對比 5/10/20 日後真實升跌, 累積 forward return record. Coarse grid (3×3) + fine tune top 5 ±20% + adaptive window 6→18 個月 + walk-forward CV 3 段 rolling (大少 22:28 揀 B 方案). 自動 POST optimal + forward return records 落 per-symbol cache (30 日 expiry, 永久保留 history).',
+  description: '用歷史 K 線重播之前嘅判決, 對比之後 5 / 10 / 20 日真實升咗幾多, 等你知道個演算法之前嘅判斷啱唔啱, 仲會自動搵出呢隻股票嘅最佳設定',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
-    { key: 'dataWindowDays', label: '回顧天數 (lookbackDays)', type: 'number', default: 252, min: 90, max: 1260 },
-    { key: 'stepDays', label: '跑 verdict 步長 (stepDays)', type: 'number', default: 5, min: 1, max: 30 },
+    { key: 'dataWindowDays', label: '回顧天數 (睇過去幾多日數)', type: 'number', default: 252, min: 90, max: 1260 },
+    { key: 'stepDays', label: '跑判決步長 (每隔幾日跑一次)', type: 'number', default: 5, min: 1, max: 30 },
   ],
   analyze: async (klines, options = {}) => {
     const symbol = options.symbol || options.code || 'unknown';
