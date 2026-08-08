@@ -901,6 +901,94 @@ section('15. Interpretation (2.4 — LLM hook + hardcoded template, 大少 13:30
 }
 
 // =============================================================
+// Test 16: 5 個 Adaptive Params auto-calibrate (2.5)
+// =============================================================
+section('16. 5 個 Adaptive Params auto-calibrate (2.5 — 純 math, 唔用 AI)');
+
+// 16.1: import helpers from index
+const decMod = await import('/Users/zmenai/stockpulse/algorithms/AS-03-cycle-detection/modules/decision-engine.ts');
+assert('16.1 calibrateAdaptiveParams export', typeof decMod.calibrateAdaptiveParams === 'function');
+assert('16.2 DEFAULT_ADAPTIVE_PARAMS export', typeof decMod.DEFAULT_ADAPTIVE_PARAMS === 'object');
+assert('16.3 applyAdaptiveParamsToSynthesizer export', typeof decMod.applyAdaptiveParamsToSynthesizer === 'function');
+
+// 16.4-16.6: ssiWeights 加起來 = 1.0
+{
+  const klines = Array.from({ length: 100 }, (_, i) => ({ high: 100 + i, low: 99 + i, close: 99.5 + i }));
+  const params = decMod.calibrateAdaptiveParams(klines, []);
+  const total = params.ssiWeights.ma + params.ssiWeights.hl + params.ssiWeights.trendline;
+  assert('16.4 ssiWeights 加起來 = 1.0', Math.abs(total - 1.0) < 0.01);
+  assert('16.5 ssiWeights 全部 0-1', params.ssiWeights.ma >= 0 && params.ssiWeights.ma <= 1);
+}
+
+// 16.7-16.8: rsiWeight 0.10-0.50
+{
+  const klines = Array.from({ length: 100 }, (_, i) => ({ high: 100 + i, low: 99 + i, close: 99.5 + i }));
+  const sentiment6DList = [
+    { rsi: 0.8, bollinger_pct_b: 0.9, bias_ratio: 0.7, vol_skew: 0.5, turnover: 0.4, momentum_accel: 0.7 },
+    { rsi: 0.9, bollinger_pct_b: 0.8, bias_ratio: 0.6, vol_skew: 0.4, turnover: 0.5, momentum_accel: 0.8 },
+  ];
+  const params = decMod.calibrateAdaptiveParams(klines, sentiment6DList);
+  assert('16.6 rsiWeight 0.1-0.5', params.rsiWeight >= 0.1 && params.rsiWeight <= 0.5);
+  assert('16.7 rsiWeight 高 emotion → 較高 (≥0.20)', params.rsiWeight >= 0.20);
+}
+
+// 16.9-16.10: kellyFraction 跟 ATR% 切
+{
+  // 低波動 (close 平穩, ATR 細)
+  const lowVolKlines = Array.from({ length: 100 }, (_, i) => ({ high: 100 + (i % 5) * 0.1, low: 100 - (i % 5) * 0.1, close: 100 + (i % 5) * 0.05 }));
+  const lowParams = decMod.calibrateAdaptiveParams(lowVolKlines, []);
+  assert('16.8 低波動 → kelly=half (ATR% < 2%)', lowParams.kellyFraction === 'half');
+
+  // 高波動 (close 大幅波動)
+  const highVolKlines = Array.from({ length: 100 }, (_, i) => ({ high: 100 + (i % 5) * 5, low: 100 - (i % 5) * 5, close: 100 + (i % 5) * 3 }));
+  const highParams = decMod.calibrateAdaptiveParams(highVolKlines, []);
+  assert('16.9 高波動 → kelly=octo (ATR% ≥ 5%)', highParams.kellyFraction === 'octo');
+}
+
+// 16.10-16.11: markowitzCorr 範圍 [-1, +1]
+{
+  const klines = Array.from({ length: 252 }, (_, i) => ({ high: 100 + Math.sin(i / 5) * 5, low: 100 - Math.sin(i / 5) * 5, close: 100 + Math.sin(i / 10) * 3 }));
+  const params = decMod.calibrateAdaptiveParams(klines, []);
+  assert('16.10 dailyWeekly 範圍 [-1, +1]', params.markowitzCorr.dailyWeekly >= -1 && params.markowitzCorr.dailyWeekly <= 1);
+  assert('16.11 dailyMonthly 範圍 [-1, +1]', params.markowitzCorr.dailyMonthly >= -1 && params.markowitzCorr.dailyMonthly <= 1);
+}
+
+// 16.12-16.13: hurstThresholds 範圍
+{
+  // 持續趨勢 (上漲)
+  const upTrendKlines = Array.from({ length: 100 }, (_, i) => ({ high: 100 + i, low: 99 + i, close: 99.5 + i }));
+  const upParams = decMod.calibrateAdaptiveParams(upTrendKlines, []);
+  assert('16.12 hurstThresholds.persistent 0.50-0.60', upParams.hurstThresholds.persistent >= 0.50 && upParams.hurstThresholds.persistent <= 0.60);
+  assert('16.13 hurstThresholds.reverting 0.40-0.50', upParams.hurstThresholds.reverting >= 0.40 && upParams.hurstThresholds.reverting <= 0.50);
+}
+
+// 16.14: empty klines → default params
+{
+  const params = decMod.calibrateAdaptiveParams([], []);
+  assert('16.14 empty klines → DEFAULT_ADAPTIVE_PARAMS', JSON.stringify(params) === JSON.stringify(decMod.DEFAULT_ADAPTIVE_PARAMS));
+}
+
+// 16.15: 數據不足 (60 candles) → 至少 4 個 params 仍然 work
+{
+  const klines = Array.from({ length: 60 }, (_, i) => ({ high: 100 + i, low: 99 + i, close: 99.5 + i }));
+  const params = decMod.calibrateAdaptiveParams(klines, []);
+  assert('16.15 60 candles → 至少 4 個 params calibrate (kelly + hurst 等)', params.ssiWeights && params.rsiWeight && params.kellyFraction && params.hurstThresholds);
+}
+
+// 16.16: applyAdaptiveParamsToSynthesizer 唔 mutate 原 sv
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const originalSSI = sv.ssi_score;
+  const updated = decMod.applyAdaptiveParamsToSynthesizer(sv, decMod.DEFAULT_ADAPTIVE_PARAMS);
+  assert('16.16 applyAdaptiveParamsToSynthesizer 唔 mutate 原 sv', sv.ssi_score === originalSSI);
+  assert('16.17 applyAdaptiveParamsToSynthesizer 6 個 verdicts 仍然', updated.module_verdicts.length === 6);
+  assert('16.18 ma-alignment module_specific 加咗 adaptive_ssi_weight', updated.module_verdicts.find(v => v.module_id === 'ma-alignment').module_specific.adaptive_ssi_weight !== undefined);
+}
+
+// =============================================================
 // Final report
 // =============================================================
 console.log(`\n${'='.repeat(60)}`);

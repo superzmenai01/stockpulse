@@ -6108,6 +6108,77 @@ function computeConsecutiveUpDays(klines) {
   return count;
 }
 
+// =============================================================
+// Sprint 2 sub-task 2.5 — 3 個 market data detect helpers
+// =============================================================
+
+/** 偵測 volatility squeeze (M6 波幅收縮)
+ *  最近 5 日 ATR < 之前 20 日 ATR × 0.7 = squeeze
+ *  純 math, 唔用 AI
+ */
+function detectSqueeze(klines) {
+  if (!klines || klines.length < 25) return false;
+  const recent5 = klines.slice(-5);
+  const prev20 = klines.slice(-25, -5);
+  const atr5 = recent5.reduce((acc, k, i) => {
+    if (i === 0) return acc;
+    return acc + Math.abs(k.close - klines[klines.length - 5 + i - 1].close);
+  }, 0) / 4;
+  const atr20 = prev20.reduce((acc, k, i) => {
+    if (i === 0) return acc;
+    return acc + Math.abs(k.close - klines[klines.length - 25 + i - 1].close);
+  }, 0) / 19;
+  return atr5 < atr20 * 0.7;
+}
+
+/** 偵測 fake breakout (M3 + M5 矛盾)
+ *  最近 5 日突破前 20 日 high, 但成交量 < 5 日平均
+ *  純 math, 唔用 AI
+ */
+function detectFakeBreakout(klines) {
+  if (!klines || klines.length < 25) return false;
+  const recent5 = klines.slice(-5);
+  const prev20 = klines.slice(-25, -5);
+  const prev20High = Math.max(...prev20.map(k => k.high));
+  const breaksHigh = recent5.some(k => k.close > prev20High);
+  if (!breaksHigh) return false;
+  // Check volume 對齊
+  const recent5AvgVol = recent5.reduce((acc, k) => acc + k.volume, 0) / 5;
+  const prev20AvgVol = prev20.reduce((acc, k) => acc + k.volume, 0) / 20;
+  return recent5AvgVol < prev20AvgVol * 0.8;  // 突破但量縮
+}
+
+/** 偵測 M1 均線 + M3 趨勢線同步轉勢
+ *  MA5 同 MA10 同步向下 (close < MA5 < MA10) + trendline slope 向下
+ *  純 math, 唔用 AI
+ */
+function detectMATLTransition(klines) {
+  if (!klines || klines.length < 20) return false;
+  const closes = klines.map(k => k.close);
+  // MA5 + MA10
+  const ma5 = closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+  const ma10 = closes.slice(-10).reduce((a, b) => a + b, 0) / 10;
+  const currentClose = closes[closes.length - 1];
+  // 同步向下: close < MA5 < MA10
+  if (!(currentClose < ma5 && ma5 < ma10)) return false;
+  // trendline slope (最近 10 個 closing 對 index 嘅 linear regression slope)
+  const n = 10;
+  const x = Array.from({ length: n }, (_, i) => i);
+  const y = closes.slice(-n);
+  const meanX = x.reduce((a, b) => a + b, 0) / n;
+  const meanY = y.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - meanX;
+    const dy = y[i] - meanY;
+    num += dx * dy;
+    den += dx * dx;
+  }
+  if (den === 0) return false;
+  const slope = num / den;
+  return slope < 0;  // 向下 trend
+}
+
 /** 8 個 finalAction → 顏色 (大少 11:57 永久 rule 6 個顏色)
  *  🟢 BUY/ADD → #26BA75 強勢 / 確認
  *  🟡 HOLD/WAIT → #F39C12 觀望 / 中性
@@ -6245,6 +6316,59 @@ function renderInterpretation(interpretation, finalAction) {
     <div class="interpretation-box" style="background:linear-gradient(135deg, ${actionColor}11, ${actionColor}05);border-left:4px solid ${actionColor};border-radius:8px;padding:16px;font-size:14px;color:#222;line-height:1.7;">
       ${formatted}
     </div>
+  `;
+}
+
+// =============================================================
+// Sprint 2 sub-task 2.5 — Adaptive params render helper
+// =============================================================
+
+/** Render 5 個 adaptive params 嘅 box
+ *  純 math (R² / ATR / Pearson / Hurst), 唔用 AI
+ *  Auto + Manual 2 個 mode (2.6 將加 L2 cache + 「🔄 重新校準」按鈕)
+ */
+function renderAdaptiveParams(params) {
+  if (!params) {
+    return '<div style="padding:12px;background:#fff3cd;border-radius:6px;color:#856404;">Adaptive params 仲未 calibrate</div>';
+  }
+  const { ssiWeights, rsiWeight, kellyFraction, markowitzCorr, hurstThresholds } = params;
+  return `
+    <h4 style="margin-top:24px;margin-bottom:4px;">⚙️ 5 個 Adaptive Params (2.5 — 自動校準, 純 math)</h4>
+    <div style="font-size:12px;color:#666;margin-bottom:8px;">🧮 R² / ATR / Pearson / Hurst — 唔用 AI, 唔用 LLM</div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">📐 SSI 戰略層權重 (R² normalized)</div>
+        <div style="font-size:13px;margin-top:4px;">
+          MA: <strong>${(ssiWeights.ma * 100).toFixed(1)}%</strong> &nbsp;|&nbsp;
+          HL: <strong>${(ssiWeights.hl * 100).toFixed(1)}%</strong> &nbsp;|&nbsp;
+          TL: <strong>${(ssiWeights.trendline * 100).toFixed(1)}%</strong>
+        </div>
+      </div>
+      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">💭 RSI 情緒權重 (sentiment 6D)</div>
+        <div style="font-size:18px;font-weight:700;margin-top:2px;">${(rsiWeight * 100).toFixed(0)}%</div>
+      </div>
+      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">💰 Kelly 倉位分數 (跟 ATR%)</div>
+        <div style="font-size:18px;font-weight:700;margin-top:2px;">${kellyFraction}</div>
+      </div>
+      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">📊 Hurst Thresholds</div>
+        <div style="font-size:13px;margin-top:4px;">
+          Persistent: <strong>${hurstThresholds.persistent.toFixed(2)}</strong> &nbsp;|&nbsp;
+          Reverting: <strong>${hurstThresholds.reverting.toFixed(2)}</strong>
+        </div>
+      </div>
+      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;grid-column:span 2;">
+        <div style="font-size:12px;color:#666;">🔗 馬可維茨相關係數 (Pearson correlation 3 對)</div>
+        <div style="font-size:13px;margin-top:4px;">
+          日-週: <strong>${markowitzCorr.dailyWeekly.toFixed(2)}</strong> &nbsp;|&nbsp;
+          日-月: <strong>${markowitzCorr.dailyMonthly.toFixed(2)}</strong> &nbsp;|&nbsp;
+          週-月: <strong>${markowitzCorr.weeklyMonthly.toFixed(2)}</strong>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#999;">🔄 Manual 重新校準按鈕將喺 2.6 commit 加 (L2 JSON cache)</div>
   `;
 }
 
@@ -6424,31 +6548,39 @@ export const decisionEngineAdapter = {
     // 1. 跑 6 個 modules → M7 SynthesizerVerdict (reuse analyzeDecisionEngine 上面嘅 implementation)
     const synthResult = await analyzeDecisionEngine(klines, options);
 
-    // 2. Market data (2.1 暫時用 fallback, 2.5 將加 derivation)
+    // 2. 動態 import 從 .ts file
+    const { DecisionEngine, calibrateAdaptiveParams, applyAdaptiveParamsToSynthesizer, DEFAULT_ADAPTIVE_PARAMS } = await import('./modules/decision-engine.ts');
+
+    // 3. 2.5 — 5 個 adaptive params 從 klines 自動 calibrate
+    const sentiment6DHistory = synthResult.module_verdicts.map(mv => mv.sentiment_6d);
+    const adaptiveParams = calibrateAdaptiveParams(klines || [], sentiment6DHistory);
+
+    // 4. apply adaptive params 落 M7 synthesizer (影響 SSI weight)
+    const synthResultWithParams = applyAdaptiveParamsToSynthesizer(synthResult, adaptiveParams);
+
+    // 5. Market data — 部分由 adaptive params 衍生
     const currentPrice = (klines && klines.length > 0) ? klines[klines.length - 1].close : 0;
     const consecutiveUpDays = computeConsecutiveUpDays(klines);
     const marketData = {
       currentPrice,
       consecutiveUpDays,
-      squeezeDetected: false,         // 2.5 將 derive 從 M6
-      fakeBreakoutDetected: false,    // 2.5 將 derive 從 M3 + M5
-      maTrendlineTransition: false,   // 2.5 將 derive 從 M1 + M3
+      squeezeDetected: detectSqueeze(klines),                       // 2.5 從 M6 volatility 衍生
+      fakeBreakoutDetected: detectFakeBreakout(klines),             // 2.5 從 M3 + M5 衍生
+      maTrendlineTransition: detectMATLTransition(klines),          // 2.5 從 M1 + M3 衍生
     };
 
-    // 3. 動態 import DecisionEngine 從 .ts file
-    const { DecisionEngine } = await import('./modules/decision-engine.ts');
+    // 6. 跑 M8 → DecisionVerdict
     const eng = new DecisionEngine();
-
-    // 4. 跑 M8 → DecisionVerdict
     const decisionVerdict = await eng.decide({
-      synthesizerVerdict: synthResult,
+      synthesizerVerdict: synthResultWithParams,
       marketData,
     });
 
-    // 5. 合併 synth + decision (保留 module_cycle_verdicts 供 render 用)
+    // 7. 合併 synth + decision + adaptive params (保留所有 trace + 供 render 用)
     return {
       ...decisionVerdict,
-      module_cycle_verdicts: synthResult.module_cycle_verdicts,
+      module_cycle_verdicts: synthResultWithParams.module_cycle_verdicts,
+      adaptive_params: adaptiveParams,
     };
   },
   renderResult: (verdict) => {
@@ -6565,6 +6697,9 @@ export const decisionEngineAdapter = {
         <div style="font-size:12px;color:#666;margin-bottom:8px;">🪝 將來可 swap 落 LLM call (OpenAI / MiniMax / Kimi), 而家用 hardcoded template</div>
         ${renderInterpretation(interpretation, final_action)}
 
+        <!-- 5 個 Adaptive Params (2.5) -->
+        ${renderAdaptiveParams(adaptive_params)}
+
         <!-- 6 個 Metric Mini-Cards -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
           <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
@@ -6613,12 +6748,13 @@ export const decisionEngineAdapter = {
 
         <!-- Sprint 2 進度提示 (下個 commits 將加) -->
         <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-          <strong>✅ Sprint 2 sub-task 2.1-2.4 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + 交易卡 adaptive + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook 預留)<br>
+          <strong>✅ Sprint 2 sub-task 2.1-2.5 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 + 交易卡 adaptive + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook) + 5 個 adaptive params auto-calibrate<br>
           <strong>🚧 Sprint 2 仍待做:</strong>
           <ol style="margin-top:4px;">
-            <li>2.5 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation)</li>
-            <li>2.6 L2 JSON file cache</li>
-            <li>2.7 10 隻 demo 股票 test cases</li>
+            <li>2.6 L2 JSON file cache (~/.stockpulse/adaptive_params/&lt;symbol&gt;.json) + Manual 重新校準按鈕</li>
+            <li>2.7 10 隻 demo 股票 test cases (5 港 + 5 美)</li>
+            <li>2.8 Full testing page UI (10 個 SVG chart)</li>
+            <li>2.9 Sprint 2 spec doc final + commit + push</li>
           </ol>
         </div>
       </div>

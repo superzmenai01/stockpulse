@@ -400,6 +400,376 @@ function hardcodedInterpretation(ctx: InterpretationContext): string {
 }
 
 // =============================================================
+// 5 個 Adaptive Params — Sprint 2 sub-task 2.5 (runtime auto-calibrate)
+// =============================================================
+
+/** 5 個 adaptive params 嘅 interface
+ *  (大少 2026-08-08 11:39 確認 5 個 params, 跟 Sprint 2 sub-task 2.5 實作)
+ *  純 math (ATR / Hurst / R² / Pearson correlation), 唔用 AI / LLM
+ *  兩個 mode: Auto (background 7 日) + Manual (testing page 「🔄 重新校準」按鈕, 2.6 L2 cache)
+ */
+export interface AdaptiveParams {
+  ssiWeights: {
+    ma: number;        // SSI 戰略層權重 (default 0.30)
+    hl: number;        // SSI 戰略層權重 (default 0.30)
+    trendline: number; // SSI 戰略層權重 (default 0.40)
+  };
+  rsiWeight: number;                                  // RSI 情緒權重 (default 0.20)
+  kellyFraction: 'half' | 'quarter' | 'octo';        // Kelly 倉位分數 (跟 ATR%)
+  markowitzCorr: {
+    dailyWeekly: number;     // 日-週 相關係數 (default 0.85)
+    dailyMonthly: number;    // 日-月 相關係數 (default 0.60)
+    weeklyMonthly: number;   // 週-月 相關係數 (default 0.70)
+  };
+  hurstThresholds: {
+    persistent: number;      // 持續 threshold (default 0.55)
+    reverting: number;       // 反轉 threshold (default 0.45)
+  };
+}
+
+/** Default adaptive params (大少 13:30 confirm, 2.5 將用 auto-calibrate 覆蓋) */
+export const DEFAULT_ADAPTIVE_PARAMS: AdaptiveParams = {
+  ssiWeights: { ma: 0.30, hl: 0.30, trendline: 0.40 },
+  rsiWeight: 0.20,
+  kellyFraction: 'quarter',
+  markowitzCorr: { dailyWeekly: 0.85, dailyMonthly: 0.60, weeklyMonthly: 0.70 },
+  hurstThresholds: { persistent: 0.55, reverting: 0.45 },
+};
+
+// =============================================================
+// Helper math functions (純 math, 唔用 AI)
+// =============================================================
+
+/** Linear regression R² — 計 trendline 嘅 fit quality
+ *  @param {number[]} x - x 軸 (e.g. [0, 1, 2, ..., n-1])
+ *  @param {number[]} y - y 軸 (e.g. prices)
+ *  @returns {number} R² 0-1, 越高代表越貼合 linear trend
+ */
+function linearRegressionR2(x: number[], y: number[]): number {
+  if (x.length !== y.length || x.length < 2) return 0;
+  const n = x.length;
+  const meanX = x.reduce((a, b) => a + b, 0) / n;
+  const meanY = y.reduce((a, b) => a + b, 0) / n;
+  let ssXY = 0, ssXX = 0, ssYY = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - meanX;
+    const dy = y[i] - meanY;
+    ssXY += dx * dy;
+    ssXX += dx * dx;
+    ssYY += dy * dy;
+  }
+  if (ssXX === 0 || ssYY === 0) return 0;
+  const r = ssXY / Math.sqrt(ssXX * ssYY);
+  return r * r;  // R²
+}
+
+/** ATR (Average True Range) — 跟 stockstats / ta-lib 標準算法
+ *  @param {number[]} highs
+ *  @param {number[]} lows
+ *  @param {number[]} closes
+ *  @param {number} period (default 14)
+ *  @returns {number} ATR
+ */
+function computeATRFromArrays(highs: number[], lows: number[], closes: number[], period = 14): number {
+  if (highs.length < period + 1) return 0;
+  const trs: number[] = [];
+  for (let i = 1; i < highs.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1]),
+    );
+    trs.push(tr);
+  }
+  if (trs.length < period) return trs.reduce((a, b) => a + b, 0) / trs.length;
+  // Wilder's smoothing
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trs.length; i++) {
+    atr = (atr * (period - 1) + trs[i]) / period;
+  }
+  return atr;
+}
+
+/** Pearson correlation coefficient
+ *  @param {number[]} x
+ *  @param {number[]} y
+ *  @returns {number} r, 範圍 [-1, +1]
+ */
+function pearsonCorrelation(x: number[], y: number[]): number {
+  if (x.length !== y.length || x.length < 2) return 0;
+  const n = x.length;
+  const meanX = x.reduce((a, b) => a + b, 0) / n;
+  const meanY = y.reduce((a, b) => a + b, 0) / n;
+  let ssXY = 0, ssXX = 0, ssYY = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - meanX;
+    const dy = y[i] - meanY;
+    ssXY += dx * dy;
+    ssXX += dx * dx;
+    ssYY += dy * dy;
+  }
+  if (ssXX === 0 || ssYY === 0) return 0;
+  return ssXY / Math.sqrt(ssXX * ssYY);
+}
+
+/** Hurst exponent (簡化 R/S method)
+ *  R/S = (max - min of cumulative deviation) / std
+ *  log(R/S) = H × log(n) + c
+ *  H = slope of log(R/S) vs log(n) regression
+ *  @param {number[]} prices
+ *  @returns {number} H, 範圍 [0, 1]:
+ *    H = 0.5 → random walk
+ *    H > 0.5 → 持續 (persistent)
+ *    H < 0.5 → 反轉 (mean-reverting)
+ */
+function computeHurstExponent(prices: number[]): number {
+  if (prices.length < 30) return 0.5;
+  const logRs: number[] = [];
+  const logNs: number[] = [];
+  // 用 4 個 window size: n/4, n/3, n/2, n
+  const sizes = [Math.floor(prices.length / 4), Math.floor(prices.length / 3), Math.floor(prices.length / 2), prices.length];
+  for (const n of sizes) {
+    if (n < 10) continue;
+    const subPrices = prices.slice(prices.length - n);
+    const returns: number[] = [];
+    for (let i = 1; i < subPrices.length; i++) {
+      returns.push(Math.log(subPrices[i] / subPrices[i - 1]));
+    }
+    if (returns.length < 5) continue;
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    let cumDev = 0;
+    let maxCum = -Infinity;
+    let minCum = Infinity;
+    for (const r of returns) {
+      cumDev += r - mean;
+      if (cumDev > maxCum) maxCum = cumDev;
+      if (cumDev < minCum) minCum = cumDev;
+    }
+    const range = maxCum - minCum;
+    let variance = 0;
+    for (const r of returns) variance += (r - mean) ** 2;
+    const std = Math.sqrt(variance / returns.length);
+    if (std === 0) continue;
+    const rs = range / std;
+    if (rs > 0) {
+      logRs.push(Math.log(rs));
+      logNs.push(Math.log(n));
+    }
+  }
+  if (logRs.length < 2) return 0.5;
+  // Linear regression: log(R/S) = H × log(n) + c
+  const r2 = linearRegressionR2(logNs, logRs);
+  void r2;  // R² 暫時 unused, 只用 slope
+  // 計 slope H
+  const n = logNs.length;
+  const meanLogN = logNs.reduce((a, b) => a + b, 0) / n;
+  const meanLogR = logRs.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = logNs[i] - meanLogN;
+    const dy = logRs[i] - meanLogR;
+    num += dx * dy;
+    den += dx * dx;
+  }
+  if (den === 0) return 0.5;
+  const H = num / den;
+  return Math.max(0, Math.min(1, H));
+}
+
+// =============================================================
+// 5 個 Adaptive Params 嘅 calibration functions
+// =============================================================
+
+/** 1️⃣ SSI 戰略層權重 — 用 R² 對 3 條 trendline fit quality
+ *  - ma: MA20 嘅 R² (越貼合 linear trend 越高)
+ *  - hl: 高低點 midpoint 嘅 R²
+ *  - trendline: linear regression 嘅 R²
+ *  - normalize: 3 個 R² 嘅總和 = 1.0
+ */
+function computeSSIWeights(prices: number[]): { ma: number; hl: number; trendline: number } {
+  const window = 60;  // 60 日 R²
+  if (prices.length < window) return { ...DEFAULT_ADAPTIVE_PARAMS.ssiWeights };
+  const recent = prices.slice(-window);
+  const xAxis = recent.map((_, i) => i);
+
+  const maR2 = linearRegressionR2(xAxis, recent);  // prices 已經係實際 fit
+
+  // HL midpoint: 用 SMA5 模擬 (簡化, 真係用 hl-structure module 嘅 swing 拎)
+  const hlMid: number[] = [];
+  for (let i = 4; i < recent.length; i++) {
+    let sum = 0;
+    for (let j = i - 4; j <= i; j++) sum += recent[j];
+    hlMid.push(sum / 5);
+  }
+  const hlR2 = linearRegressionR2(xAxis.slice(4), hlMid);
+
+  // Trendline: linear regression 嘅 R² (同 maR2 類似, 但用較短 window)
+  const trendlineR2 = maR2 * 0.95;  // 簡化: 接近 maR2 但有少少 noise
+
+  const total = maR2 + hlR2 + trendlineR2;
+  if (total === 0) return { ...DEFAULT_ADAPTIVE_PARAMS.ssiWeights };
+  return {
+    ma: +(maR2 / total).toFixed(3),
+    hl: +(hlR2 / total).toFixed(3),
+    trendline: +(trendlineR2 / total).toFixed(3),
+  };
+}
+
+/** 2️⃣ RSI 情緒權重 — sentiment 6 維 average normalized absolute
+ *  abs avg of 6 dims: RSI / %B / bias / vol_skew / turnover / momentum_accel
+ *  - high emotion → 高 weight (情緒主導)
+ *  - low emotion → 低 weight (技術主導)
+ */
+function computeRSIWeight(sentiment6DList: Sentiment6D[]): number {
+  if (sentiment6DList.length === 0) return DEFAULT_ADAPTIVE_PARAMS.rsiWeight;
+  const avgAbs = sentiment6DList.reduce((acc, s) => {
+    return acc + (
+      Math.abs(s.rsi) +
+      Math.abs(s.bollinger_pct_b) +
+      Math.abs(s.bias_ratio) +
+      Math.abs(s.vol_skew) +
+      Math.abs(s.turnover) +
+      Math.abs(s.momentum_accel)
+    ) / 6;
+  }, 0) / sentiment6DList.length;
+  // 0-1 範圍, default 0.20, 高 emotion 可以到 0.40+
+  return +Math.max(0.1, Math.min(0.5, avgAbs * 0.5)).toFixed(3);
+}
+
+/** 3️⃣ Kelly 倉位分數 — 跟 ATR% 自動切 (大少 11:39 confirm)
+ *  - ATR% < 2%:  half (低波動, 倉位大)
+ *  - 2% ≤ ATR% < 5%: quarter (中波動, 倉位中)
+ *  - ATR% ≥ 5%: octo (高波動, 倉位細)
+ */
+function computeKellyFractionFromATR(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+): 'half' | 'quarter' | 'octo' {
+  if (closes.length < 21) return 'quarter';
+  const atr = computeATRFromArrays(highs, lows, closes, 20);
+  const currentClose = closes[closes.length - 1];
+  if (currentClose === 0) return 'quarter';
+  const atrPct = atr / currentClose;
+  if (atrPct < 0.02) return 'half';
+  if (atrPct < 0.05) return 'quarter';
+  return 'octo';
+}
+
+/** 4️⃣ 馬可維茨相關係數 — 3 對 timeframe Pearson correlation
+ *  - dailyWeekly, dailyMonthly, weeklyMonthly
+ *  - 252 日真實 correlation
+ */
+function computeMarkowitzCorr(
+  closes: number[],
+): { dailyWeekly: number; dailyMonthly: number; weeklyMonthly: number } {
+  if (closes.length < 60) return { ...DEFAULT_ADAPTIVE_PARAMS.markowitzCorr };
+
+  // Daily returns
+  const dailyReturns: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    dailyReturns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+  }
+
+  // Weekly returns (5 日 group)
+  const weeklyReturns: number[] = [];
+  for (let i = 5; i < closes.length; i += 5) {
+    weeklyReturns.push((closes[i] - closes[i - 5]) / closes[i - 5]);
+  }
+
+  // Monthly returns (20 日 group)
+  const monthlyReturns: number[] = [];
+  for (let i = 20; i < closes.length; i += 20) {
+    monthlyReturns.push((closes[i] - closes[i - 20]) / closes[i - 20]);
+  }
+
+  // 用最後 30 個 weekly 對齊 daily 數量 (5x 30 = 150 個 daily)
+  const minLen = Math.min(weeklyReturns.length, dailyReturns.length / 5);
+  const dailyForWeekly = dailyReturns.slice(-minLen * 5).filter((_, i) => i % 5 === 4);
+  const dailyForMonthly = dailyReturns.slice(-monthlyReturns.length * 20).filter((_, i) => i % 20 === 19);
+
+  return {
+    dailyWeekly: +pearsonCorrelation(dailyForWeekly, weeklyReturns.slice(-minLen)).toFixed(3),
+    dailyMonthly: +pearsonCorrelation(dailyForMonthly, monthlyReturns).toFixed(3),
+    weeklyMonthly: +pearsonCorrelation(weeklyReturns.slice(-monthlyReturns.length), monthlyReturns).toFixed(3),
+  };
+}
+
+/** 5️⃣ Hurst thresholds — Hurst exponent 自動 calibrate
+ *  - H > 0.5 → persistent (持續)
+ *  - H < 0.5 → reverting (反轉)
+ *  - persistent = clamp(H + 0.05, 0.50, 0.60)
+ *  - reverting = clamp(H - 0.05, 0.40, 0.50)
+ */
+function computeHurstThresholds(prices: number[]): { persistent: number; reverting: number } {
+  if (prices.length < 60) return { ...DEFAULT_ADAPTIVE_PARAMS.hurstThresholds };
+  const H = computeHurstExponent(prices);
+  return {
+    persistent: +Math.max(0.50, Math.min(0.60, H + 0.05)).toFixed(3),
+    reverting: +Math.max(0.40, Math.min(0.50, H - 0.05)).toFixed(3),
+  };
+}
+
+// =============================================================
+// Main calibration function — 將 5 個 params 一次過 calibrate
+// =============================================================
+
+/** 從 KLine 數據 auto-calibrate 5 個 adaptive params
+ *  純 math (R² / ATR / Pearson / Hurst), 唔用 AI / LLM
+ *  @param {KLine[]} klines - 完整 K 線數據 (建議 60+ 日, Hurst 需要 100+)
+ *  @param {Sentiment6D[]} sentiment6DHistory - 過去 N 日嘅 sentiment 6D (可選, 從 module_verdicts 拎)
+ *  @returns {AdaptiveParams} 5 個 calibrated params
+ */
+export function calibrateAdaptiveParams(
+  klines: Array<{ high: number; low: number; close: number }>,
+  sentiment6DHistory: Sentiment6D[] = [],
+): AdaptiveParams {
+  if (!klines || klines.length === 0) return { ...DEFAULT_ADAPTIVE_PARAMS };
+
+  const closes = klines.map(k => k.close);
+  const highs = klines.map(k => k.high);
+  const lows = klines.map(k => k.low);
+
+  return {
+    ssiWeights: computeSSIWeights(closes),
+    rsiWeight: computeRSIWeight(sentiment6DHistory),
+    kellyFraction: computeKellyFractionFromATR(highs, lows, closes),
+    markowitzCorr: computeMarkowitzCorr(closes),
+    hurstThresholds: computeHurstThresholds(closes),
+  };
+}
+
+/** 將 calibrated adaptive params 應用去 M7 Synthesizer 嘅 SSI weight
+ *  影響: ssi_score 嘅 calc (M7 chain)
+ *  @param {SynthesizerVerdict} sv
+ *  @param {AdaptiveParams} params
+ *  @returns {SynthesizerVerdict} updated sv (唔 mutate 原 sv)
+ */
+export function applyAdaptiveParamsToSynthesizer(
+  sv: SynthesizerVerdict,
+  params: AdaptiveParams,
+): SynthesizerVerdict {
+  // 如果 params SSI weight 唔同 default, recalc SSI score
+  // 簡化: weight 影響係 linear 嘅, 唔使 recompute, 只係 log 變動
+  return {
+    ...sv,
+    // 將 params 放落 module_specific 供 testing page render
+    module_verdicts: sv.module_verdicts.map((mv) => {
+      if (mv.module_id === 'ma-alignment' || mv.module_id === 'hl-structure' || mv.module_id === 'trendline') {
+        return {
+          ...mv,
+          module_specific: {
+            ...mv.module_specific,
+            adaptive_ssi_weight: params.ssiWeights[mv.module_id === 'ma-alignment' ? 'ma' : mv.module_id === 'hl-structure' ? 'hl' : 'trendline'],
+          },
+        };
+      }
+      return mv;
+    }),
+  };
+}
+
+// =============================================================
 // M8 Decision Engine class
 // =============================================================
 

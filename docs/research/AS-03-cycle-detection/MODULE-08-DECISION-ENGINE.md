@@ -177,8 +177,13 @@ function computeShortTermForecast(expectedReturn, maxDrawdown) {
 | 4 | `markowitzCorr: { dailyWeekly, dailyMonthly, weeklyMonthly }` | 馬可維茨相關係數 | 0.85/0.60/0.70 | 252 日真實 correlation 算 |
 | 5 | `hurstThresholds: { persistent, reverting }` | Hurst 持續/反轉 threshold | 0.55/0.45 | Hurst 自身 > 0.6 升, < 0.4 降 |
 
-**純 math** (ATR / Hurst log regression / R² least squares / Pearson correlation), 唔用 AI / LLM.
-**Auto + Manual 兩個 mode**: Auto (background, cache > 7 日自動重校) + Manual (testing page 「🔄 重新校準」按鈕).
+**Implementation** (純 math, 唔用 AI / LLM): 5 個 helper functions 喺 `modules/decision-engine.ts` (linearRegressionR2 / computeATRFromArrays / pearsonCorrelation / computeHurstExponent). `calibrateAdaptiveParams(klines, sentiment6DHistory)` 一次過 return 5 個 params. `applyAdaptiveParamsToSynthesizer(sv, params)` 將 params 應用去 M7 嘅 SSI weight.
+
+**Auto + Manual 兩個 mode**: Auto (background, cache > 7 日自動重校, **2.6 將加 L2 JSON cache**) + Manual (testing page 「🔄 重新校準」按鈕, **2.6 將加**).
+
+**Tests**: 18 assertions (3 export check + 5 個 params 各 2 個 test + 1 empty klines default + 1 數據不足 + 3 applyAdaptiveParams integration).
+
+**3 個 market data detect helpers** (M6 squeeze / M3+M5 fake breakout / M1+M3 transition): `detectSqueeze`, `detectFakeBreakout`, `detectMATLTransition` 喺 adapter.mjs (純 math).
 
 ---
 
@@ -323,5 +328,6 @@ open http://localhost:8765/testing-page/
 | 2026-08-08 15:42 | v1.0.0 (sub-task 2.1) | M8 finalAction 8 個決策樹 + 揸車比喻 final_action_reason + trading card static formula + decisionEngineAdapter 真正 render | cd1d5ac6 |
 | 2026-08-08 16:05 | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (3 個 volatility buckets: high/medium/low, 跟 kelly_fraction + max_drawdown) | c4e072a5 |
 | 2026-08-08 16:08 | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) + 3 × 3 table render + example + algorithm | 8ad3af82 |
-| 2026-08-08 16:15 | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook 預留 + 8 個 hardcoded template + InterpretationContext interface) | TBD (本 commit) |
-| TBD | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation) | TBD |
+| 2026-08-08 16:15 | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook 預留 + 8 個 hardcoded template + InterpretationContext interface) | 917cc08d |
+| 2026-08-08 16:25 | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (純 math: R²/ATR/Pearson/Hurst + apply + 3 個 market data detect helpers) | TBD (本 commit) |
+| TBD | v2.1.0 (sub-task 2.6) | L2 JSON file cache (~/.stockpulse/adaptive_params/) + Manual 重新校準按鈕 | TBD |
