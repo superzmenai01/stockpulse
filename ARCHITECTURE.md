@@ -1401,16 +1401,18 @@ if (currentAdapter.renderChartOverlay) {
 
 ### Module 進度 (6 個 done + 1 個 Pending + 1 個獨立 + 2 個 hidden)
 
-| # | Module | 檔案 | Version | 3 Sections | Status |
-|---|--------|------|---------|-----------|--------|
-| 1 | **均線系統週期判斷法 v2.0** (with Volume & Slope) | `modules/ma-alignment.ts` | **v2.0.0** | ✅ | ✅ Production — 大少 2026-08-08 09:13 跟 docx Kimi v2.0 spec 全新做, 3 cycles + 13 fields + 三階段信心調整 |
-| 2 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
-| 3 | Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
-| 4 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ | ✅ Production (RSI + MACD + Bollinger + 背馳 + 衰竭) |
-| 5 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | v2.0.0 | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) |
-| 6 | **Volatility 波動率收縮擴張** | `modules/volatility.ts` | **v1.0.0** | ✅ | ✅ Production (全新, 12 rules S1-S12, 5 setups, 3 failure modes) |
-| 7 | Synthesizer 綜合判定 | TBD | — | — | 🚧 Pending (Stage 1 最後一個) |
-| **獨立** | **zmen均算法** (舊 M1 抽出) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ✅ | ⭐ **獨立算法** — 大少 2026-08-08 08:47 將舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 唔屬於 AS-03 7 個 modules 計算 |
+> 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName 同 spec table, zmen均算法 唔加 (獨立算法, 唔屬 7 個 modules 之一)。
+
+| 編號 | Module | 檔案 | Version | 3 Sections | Status |
+|------|--------|------|---------|-----------|--------|
+| 01 | **均線系統週期判斷法 v2.0** (with Volume & Slope) | `modules/ma-alignment.ts` | **v2.0.0** | ✅ | ✅ Production — 大少 2026-08-08 09:13 跟 docx Kimi v2.0 spec 全新做, 3 cycles + 13 fields + 三階段信心調整 |
+| 02 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
+| 03 | Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
+| 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ | ✅ Production (RSI + MACD + Bollinger + 背馳 + 衰竭) |
+| 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | v2.0.0 | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) |
+| 06 | **Volatility 波動率收縮擴張** | `modules/volatility.ts` | **v1.0.0** | ✅ | ✅ Production (全新, 12 rules S1-S12, 5 setups, 3 failure modes) |
+| 07 | Synthesizer 綜合判定 | TBD | — | — | 🚧 Pending (Stage 1 最後一個) |
+| **獨立** | **zmen均算法** (舊 M1 抽出, 唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ✅ | ⭐ **獨立算法** — 大少 2026-08-08 08:47 將舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ 隱藏 (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — | ⏸️ Hidden — 大少 2026-08-07 23:15 指示等 Stage 1 全部 done 先做返 |
 | ⏸️ 隱藏 (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — | ⏸️ Hidden — 大少 2026-08-07 23:15 指示等 Stage 1 全部 done 先做返 |
 
@@ -1537,7 +1539,9 @@ if (currentAdapter.renderChartOverlay) {
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
-| 2026-08-08 | **大少 2026-08-08 09:13: 新 M1 v2.0 跟 docx spec done (今 turn)** | TBD (Phase B + C + D + E) | ARCHITECTURE §11 (M1 v2.0 done), README §AS03 模組, PROJECT_SPEC §Module 結構, ROADMAP §2+§3, testing-page.js REGISTRY 加 `AS-03-MA` [0] entry, algorithm/spec/tests 全套 |
+| 2026-08-08 | **大少 2026-08-08 10:06: 6 個 modules 加編號 01-06 (今 turn)** | TBD | testing-page.js REGISTRY 6 個 entries 加 `displayName: '0N — AS-03-XX'`, ARCHITECTURE §11 + §14 表格加編號 column |
+| 2026-08-08 | **大少 2026-08-08 09:50: M1 v2.0 MA overlay + zmen均算去 → zmen均算法 rename (上 turn)** | `142ae0b4` | testing-page.js REGISTRY displayName, adapter.mjs M1 v2.0 renderChartOverlay (4 條 MA5/10/20/60), 15 個 files spec + impl rename (40 replacements) |
+| 2026-08-08 | **大少 2026-08-08 09:13: 新 M1 v2.0 跟 docx spec done (上 turn)** | `d7c55529` + `156170b6` + `478ed1b5` | ARCHITECTURE §11 (M1 v2.0 done), README §AS03 模組, PROJECT_SPEC §Module 結構, ROADMAP §2+§3, testing-page.js REGISTRY 加 `AS-03-MA` [0] entry, algorithm/spec/tests 全套 |
 | 2026-08-08 | **大少 2026-08-08 08:47: M1 改名 + 抽出獨立 (上 turn)** | `e7247602` | ARCHITECTURE §11 (6 done + 1 pending + 1 獨立 + 2 hidden, Spec 連結), README §AS03 模組, PROJECT_SPEC §Module 結構 + Testing page, ROADMAP §2+§3, testing-page.js REGISTRY (M1 搬去尾, displayName `AS-03-MA` → `zmen均算法`) |
 | 2026-08-08 | 大少「Update Stockpulse」(上 turn) | `fdc5321d` + `6441feef` + `2280f7d0` + `79eaa3ae` + `9de7f0eb` + `47a9e88a` + `a58ce65c` | ARCHITECTURE §11 (Module 5/6 done, 2 hidden, Spec 連結 table), §13.2 (qfq 永久 fix done) |
 | 2026-08-07 | 大少「Update Stockpulse」(上 turn) | `bf46c232` + `c2b8b278` + `1dab3422` + `c0152bae` + `ec8b2cfe` + `9aa429fe` | ARCHITECTURE §11-14, API §K-line endpoint, README §Algorithm System, PROJECT_SPEC §Algorithm |

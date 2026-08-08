@@ -36,6 +36,7 @@ const REGISTRY = [
   //   3 個 cycle states + 13 個 output fields + 三階段信心調整
   {
     id: 'AS-03-MA',
+    displayName: '01 — AS-03-MA',  // 大少 2026-08-08 10:06: 編號 01 = M1 (新均線系統週期判斷法 v2.0)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'maAlignmentV2Adapter',
@@ -43,6 +44,7 @@ const REGISTRY = [
   // M2: 高低點結構法 (原本 M2, 排位不變)
   {
     id: 'AS-03-HL',
+    displayName: '02 — AS-03-HL',  // 大少 2026-08-08 10:06: 編號 02 = M2 (高低點結構法)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'hlStructureAdapter',
@@ -50,6 +52,7 @@ const REGISTRY = [
   // M3: 趨勢線法
   {
     id: 'AS-03-TL',
+    displayName: '03 — AS-03-TL',  // 大少 2026-08-08 10:06: 編號 03 = M3 (趨勢線法)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'trendlineAdapter',
@@ -57,6 +60,7 @@ const REGISTRY = [
   // M4: 動能背馳與衰竭
   {
     id: 'AS-03-IND',
+    displayName: '04 — AS-03-IND',  // 大少 2026-08-08 10:06: 編號 04 = M4 (動能背馳與衰竭)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'indicatorsAdapter',
@@ -64,6 +68,7 @@ const REGISTRY = [
   // M5: 成交量價格行為確認 v2.0
   {
     id: 'AS-03-VP',
+    displayName: '05 — AS-03-VP',  // 大少 2026-08-08 10:06: 編號 05 = M5 (成交量價格行為確認 v2.0)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'volumePriceAdapter',
@@ -71,6 +76,7 @@ const REGISTRY = [
   // M6: 波動率收縮擴張
   {
     id: 'AS-03-VOL',
+    displayName: '06 — AS-03-VOL',  // 大少 2026-08-08 10:06: 編號 06 = M6 (波動率收縮擴張)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'volatilityAdapter',

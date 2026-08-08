@@ -413,16 +413,18 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 
 ### Module 結構 (6 個 done + 1 個 Pending + 1 個獨立 + 2 個 hidden)
 
-| # | Module | 主檔 | Version | 3 Sections |
-|---|--------|------|---------|-----------|
-| 1 | **均線系統週期判斷法 v2.0** (with Volume & Slope) | `modules/ma-alignment.ts` | **v2.0.0** | ✅ — 3 cycles + 13 fields + 三階段信心調整 |
-| 2 | HL Structure | `modules/hl-structure.ts` | v0.1.0 | ✅ |
-| 3 | Trendline | `modules/trendline.ts` | v0.1.0 | ✅ |
-| 4 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ |
-| 5 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | **v2.0.0** | ✅ |
-| 6 | Volatility 波動率收縮擴張 | `modules/volatility.ts` | **v1.0.0** | ✅ |
-| 7 | Synthesizer 綜合判定 | TBD | — | 🚧 Pending (Stage 1 最後一個) |
-| **獨立** | **zmen均算法** (舊 M1 抽出) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
+> 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, zmen均算法 唔加 (獨立算法)。
+
+| 編號 | Module | 主檔 | Version | 3 Sections |
+|------|--------|------|---------|-----------|
+| 01 | **均線系統週期判斷法 v2.0** (with Volume & Slope) | `modules/ma-alignment.ts` | **v2.0.0** | ✅ — 3 cycles + 13 fields + 三階段信心調整 |
+| 02 | HL Structure | `modules/hl-structure.ts` | v0.1.0 | ✅ |
+| 03 | Trendline | `modules/trendline.ts` | v0.1.0 | ✅ |
+| 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ |
+| 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | **v2.0.0** | ✅ |
+| 06 | Volatility 波動率收縮擴張 | `modules/volatility.ts` | **v1.0.0** | ✅ |
+| 07 | Synthesizer 綜合判定 | TBD | — | 🚧 Pending (Stage 1 最後一個) |
+| **獨立** | **zmen均算法** (唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ Hidden (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — |
 | ⏸️ Hidden (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — |
 
@@ -445,18 +447,18 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 `http://localhost:8765/testing-page/`
 - Vanilla JS standalone HTML (CDN lightweight-charts v4.2.3)
 - 唔 embed StockPulse main app
-- 7 algorithms registered dropdown 排位 (大少 2026-08-08):
+- 7 algorithms registered dropdown 排位 (大少 2026-08-08 10:06 加編號):
   ```
-  AS-03-MA   (M1 v2.0) ← 第 1 位 (新 M1 跟 docx v2.0 spec)
-  AS-03-HL   (M2) ← 第 2 位 (排位不變)
-  AS-03-TL   (M3) ← 第 3 位
-  AS-03-IND  (M4) ← 第 4 位
-  AS-03-VP   (M5) ← 第 5 位
-  AS-03-VOL  (M6) ← 第 6 位
+  01 — AS-03-MA   (M1 v2.0) ← 第 1 位 (新 M1 跟 docx v2.0 spec, 編號 01)
+  02 — AS-03-HL   (M2) ← 第 2 位 (編號 02)
+  03 — AS-03-TL   (M3) ← 第 3 位 (編號 03)
+  04 — AS-03-IND  (M4) ← 第 4 位 (編號 04)
+  05 — AS-03-VP   (M5) ← 第 5 位 (編號 05)
+  06 — AS-03-VOL  (M6) ← 第 6 位 (編號 06)
   ────────────────
-  zmen均算法 (舊 M1 v0.3.0) ← 最後 (獨立算法, 抽離 7 個 modules)
+  zmen均算法 (舊 M1 v0.3.0) ← 最後 (獨立算法, 唔加編號)
   ```
-- Dropdown 顯示用 `displayName` (e.g. `AS-03-MA`); 舊 M1 顯示用 `zmen均算法`, 內部 id 維持 `AS-03` 唔變
+- Dropdown 顯示用 `displayName` (e.g. `01 — AS-03-MA`); 舊 M1 顯示用 `zmen均算法`, 內部 id 維持 `AS-03` 唔變
 - **切算法即清結果** (runStatus / resultPanel / chart, 3 個 sections 都喺 resultPanel)
 - runStatus 顯示「設定 X 日 / 實際 Y 日 (數據限制)」
 

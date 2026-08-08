@@ -293,16 +293,18 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — 7 個 module 已 production (Stage 1 進行中, M7 Synthesizer 仍 Pending)
 - **AS03 模組 (2026-08-08 狀態):**
 
-  | Module | 算法 | 用途 | Version |
-  |--------|------|------|---------|
-  | AS-03-MA | 均線系統週期判斷法 v2.0 | MA 排列 + 成交量加權 + 斜率動能, 信心 = base × volume × slope | **v2.0.0** |
-  | AS-03-HL | 高低點結構法 | Peaks/Troughs + 形態預警 | v0.1.0 |
-  | AS-03-TL | 趨勢線法 | 支撐/壓力線 + 突破檢測 | v0.1.0 |
-  | AS-03-IND | 動能背馳與衰竭 | RSI/MACD/背馳/衰竭檢測 | v1.0.0 |
-  | AS-03-VP | 成交量價格行為確認 | 突破/縮量/OBV/量价背馳 (15 rules) | v2.0.0 |
-  | AS-03-VOL | 波動率收縮擴張 | Squeeze + VCP + ATR 分解 (12 rules) | v1.0.0 |
-  | AS-03-SYN | Synthesizer 綜合判定 | TBD | — |
-  | **zmen均算法 (獨立)** | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
+  > 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, zmen均算法 唔加 (獨立算法)。
+
+  | 編號 | Module | 算法 | 用途 | Version |
+  |------|--------|------|------|---------|
+  | 01 | AS-03-MA | 均線系統週期判斷法 v2.0 | MA 排列 + 成交量加權 + 斜率動能, 信心 = base × volume × slope | **v2.0.0** |
+  | 02 | AS-03-HL | 高低點結構法 | Peaks/Troughs + 形態預警 | v0.1.0 |
+  | 03 | AS-03-TL | 趨勢線法 | 支撐/壓力線 + 突破檢測 | v0.1.0 |
+  | 04 | AS-03-IND | 動能背馳與衰竭 | RSI/MACD/背馳/衰竭檢測 | v1.0.0 |
+  | 05 | AS-03-VP | 成交量價格行為確認 | 突破/縮量/OBV/量价背馳 (15 rules) | v2.0.0 |
+  | 06 | AS-03-VOL | 波動率收縮擴張 | Squeeze + VCP + ATR 分解 (12 rules) | v1.0.0 |
+  | 07 | AS-03-SYN | Synthesizer 綜合判定 | TBD (Stage 1 最後一個) | — |
+  | **獨立** | **zmen均算法** (唔加編號) | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
   | ⏸️ Hidden Multi-TF | 多時間框架 | (Stage 1 done 先做) | v1.0.0 |
   | ⏸️ Hidden SlopeMomentum | 斜率動能 | (Stage 1 done 先做) | v1.0.0 |
 
