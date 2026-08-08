@@ -6089,6 +6089,79 @@ function decisionEngineKellyLabel(fraction) {
   return '八分一倉 (12.5%)';
 }
 
+// =============================================================
+// Sprint 2 sub-task 2.1 — M8 helpers (finalAction color/label/emoji + 連漲日數)
+// =============================================================
+
+/** 計算連續上漲日數 (大少 13:30 spec: 連漲 ≥ 3 日 trigger ADD)
+ *  從最後一日倒數計, 一直數到第一日唔升為止
+ *  @param {Array<{close: number}>} klines
+ *  @returns {number} 連續上漲日數
+ */
+function computeConsecutiveUpDays(klines) {
+  if (!klines || klines.length < 2) return 0;
+  let count = 0;
+  for (let i = klines.length - 1; i > 0; i--) {
+    if (klines[i].close > klines[i - 1].close) count++;
+    else break;
+  }
+  return count;
+}
+
+/** 8 個 finalAction → 顏色 (大少 11:57 永久 rule 6 個顏色)
+ *  🟢 BUY/ADD → #26BA75 強勢 / 確認
+ *  🟡 HOLD/WAIT → #F39C12 觀望 / 中性
+ *  🟠 REDUCE → #F39C12 收油 (用黃色, 唔用紅色因為唔係 SELL)
+ *  🔴 SELL → #EE5151 強勢下跌
+ *  🟣 TRAP/TRANSITION → #722ed1 陷阱 / 矛盾
+ *  ⚫ N/A → #666 唔適用
+ */
+function finalActionColor(action) {
+  switch (action) {
+    case 'BUY':
+    case 'ADD': return '#26BA75';
+    case 'HOLD':
+    case 'WAIT':
+    case 'REDUCE': return '#F39C12';
+    case 'SELL': return '#EE5151';
+    case 'TRAP':
+    case 'TRANSITION': return '#722ed1';
+    default: return '#666';
+  }
+}
+
+/** 8 個 finalAction → 中文 label (揸車比喻貫穿)
+ */
+function finalActionLabel(action) {
+  switch (action) {
+    case 'BUY': return '🟢 油門俾到底';
+    case 'ADD': return '🟢 油門再踩深啲';
+    case 'HOLD': return '🟡 保持現速';
+    case 'WAIT': return '🟡 等綠燈';
+    case 'REDUCE': return '🟠 收返少少油';
+    case 'SELL': return '🔴 急煞車';
+    case 'TRAP': return '🟣 唔好信導航';
+    case 'TRANSITION': return '🟣 收油準備轉彎';
+    default: return '⚫ 未知';
+  }
+}
+
+/** 8 個 finalAction → 純 label (冇 emoji, 用喺表格)
+ */
+function finalActionShortLabel(action) {
+  switch (action) {
+    case 'BUY': return 'BUY';
+    case 'ADD': return 'ADD';
+    case 'HOLD': return 'HOLD';
+    case 'WAIT': return 'WAIT';
+    case 'REDUCE': return 'REDUCE';
+    case 'SELL': return 'SELL';
+    case 'TRAP': return 'TRAP';
+    case 'TRANSITION': return 'TRANSITION';
+    default: return '未知';
+  }
+}
+
 function decisionEngineStateLabel(state) {
   // Plan B fix (大少 2026-08-08 13:30) — defensive label fallback
   // 如果 state 係 undefined / null / 唔 match 5 個 value, 顯示 "未知" 而唔係 "undefined"
@@ -6249,46 +6322,228 @@ export const synthesizerAdapter = {
   `,
 };
 
-// ---------- decisionEngineAdapter export (M8 — STUB, Sprint 2 將 impl) ----------
-//   大少 2026-08-08 13:30 — M8 仲未 impl, testing page 揀呢個 entry 會 throw "impl pending"
+// ---------- decisionEngineAdapter export (M8 v1.0.0 — Sprint 2 sub-task 2.1 impl) ----------
+//   大少 2026-08-08 15:42 — Sprint 2 sub-task 2.1 done
+//   8 個 finalAction 決策樹 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) 已上線
+//   Trading card / 短期走勢 / 人話解讀 / adaptive params 將喺 2.2-2.5 commits impl
 export const decisionEngineAdapter = {
   id: 'AS-03-DEC',
-  name: '終極綜合判斷引擎 (Decision Engine v0.0.0 — M8, Sprint 2 將加)',
-  version: '0.0.0',
-  description: '大少 2026-08-08 13:30 Plan A — M8 Decision Engine 嘅 STUB. Sprint 2 將加 finalAction 8 個 + trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook 預留) + 5 個 adaptive params + L2 cache.',
+  name: '終極綜合判斷引擎 (Decision Engine v1.0.0 — M8)',
+  version: '1.0.0',
+  description: '大少 2026-08-08 15:42 Sprint 2 sub-task 2.1 — 從 M7 SynthesizerVerdict + 6 個 ModuleStandardVerdict 推導 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 揸車比喻嘅 final_action_reason. Trading card / 短期走勢 / 人話解讀 將喺 2.2-2.4 commits 加.',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
   ],
-  analyze: async () => {
-    throw new Error('[M8 DecisionEngine] 仲未 impl. 大少 2026-08-08 13:30 Plan A 拆返 M7 + M8, M8 範圍: finalAction 8 個 + trading card + 短期走勢預測 + 人話詳細解讀 + 5 個 adaptive params + L2 cache. 將喺 Sprint 2 寫. 而家 testing page 揀呢個 entry 會見到 ❌ 加载失败.');
+  analyze: async (klines, options = {}) => {
+    // 1. 跑 6 個 modules → M7 SynthesizerVerdict (reuse analyzeDecisionEngine 上面嘅 implementation)
+    const synthResult = await analyzeDecisionEngine(klines, options);
+
+    // 2. Market data (2.1 暫時用 fallback, 2.5 將加 derivation)
+    const currentPrice = (klines && klines.length > 0) ? klines[klines.length - 1].close : 0;
+    const consecutiveUpDays = computeConsecutiveUpDays(klines);
+    const marketData = {
+      currentPrice,
+      consecutiveUpDays,
+      squeezeDetected: false,         // 2.5 將 derive 從 M6
+      fakeBreakoutDetected: false,    // 2.5 將 derive 從 M3 + M5
+      maTrendlineTransition: false,   // 2.5 將 derive 從 M1 + M3
+    };
+
+    // 3. 動態 import DecisionEngine 從 .ts file
+    const { DecisionEngine } = await import('./modules/decision-engine.ts');
+    const eng = new DecisionEngine();
+
+    // 4. 跑 M8 → DecisionVerdict
+    const decisionVerdict = await eng.decide({
+      synthesizerVerdict: synthResult,
+      marketData,
+    });
+
+    // 5. 合併 synth + decision (保留 module_cycle_verdicts 供 render 用)
+    return {
+      ...decisionVerdict,
+      module_cycle_verdicts: synthResult.module_cycle_verdicts,
+    };
   },
-  renderResult: () => `
-    <div class="result-error" style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:20px;margin:20px 0;">
-      <h3 style="color:#856404;margin-top:0;">🚧 M8 Decision Engine 仲未 impl</h3>
-      <p>大少 2026-08-08 13:30 Plan A 拆返 M7 + M8 兩個獨立 module.</p>
-      <p>而家呢個 entry 係 STUB. Sprint 2 將加:</p>
-      <ol>
-        <li>8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) 決策樹</li>
-        <li>Trading card (entry_zone / stop_loss / take_profit / trailing_stop)</li>
-        <li>短期走勢預測 (3 scenarios × 5/10/20 日)</li>
-        <li>人話詳細解讀 (LLM hook 預留 — 大少 13:30 永久 rule)</li>
-        <li>5 個 adaptive params runtime auto-calibrate</li>
-        <li>L2 JSON file cache (~/.stockpulse/adaptive_params/&lt;symbol&gt;.json)</li>
-      </ol>
-      <p>請用 <code>07 — AS-03-SYN (Synthesizer)</code> 跑 M7 部分.</p>
-    </div>
-  `,
+  renderResult: (verdict) => {
+    if (!verdict) return '<div class="result-error">無 verdict</div>';
+
+    const {
+      final_action, final_action_reason,
+      trading_card,
+      short_term_forecast,
+      interpretation,
+      ssi_score, ssi_breakdown, tcm_matrix, alignment_score,
+      grade, grade_score, grade_reason,
+      kelly_fraction, kelly_position,
+      module_verdicts,
+      module_cycle_verdicts,
+    } = verdict;
+
+    const actionColor = finalActionColor(final_action);
+    const actionLabel = finalActionLabel(final_action);
+    const gradeColor = decisionEngineGradeColor(grade);
+    const kellyLabel = decisionEngineKellyLabel(kelly_fraction);
+
+    // 6 個 module 嘅 breakdown
+    const moduleRows = (module_verdicts || []).map(mv => {
+      const color = decisionEngineModuleStateColor(mv.state);
+      return `
+        <tr>
+          <td>${mv.module_id}</td>
+          <td><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
+          <td>${(mv.confidence * 100).toFixed(0)}%</td>
+          <td>${(mv.base_weight * 100).toFixed(0)}%</td>
+          <td>${(mv.expected_return * 100).toFixed(2)}%</td>
+          <td>${(mv.max_drawdown_estimate * 100).toFixed(1)}%</td>
+          <td>${(mv.sentiment_6d.rsi * 100).toFixed(0)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // TCM 3 對 pair
+    const tcmRows = (tcm_matrix || []).map(p => {
+      const alignColor = p.alignment > 0 ? '#26BA75' : p.alignment < 0 ? '#EE5151' : '#F39C12';
+      return `
+        <tr>
+          <td>${p.pair[0]} ↔ ${p.pair[1]}</td>
+          <td><span style="color:${alignColor}">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
+          <td>${(p.trap_penalty * 100).toFixed(0)}%</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Trading card 2.1 公式 (2.2 將 adaptive)
+    const tc = trading_card || { entry_zone: [0, 0], stop_loss: 0, take_profit: 0, trailing_stop: 0 };
+    const tradingCardHTML = `
+      <h4 style="margin-top:24px;margin-bottom:8px;">💰 交易卡 (Trading Card — 2.1 static, 2.2 adaptive)</h4>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
+          <div style="font-size:14px;font-weight:700;">$${tc.entry_zone[0].toFixed(2)} - $${tc.entry_zone[1].toFixed(2)}</div>
+        </div>
+        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">🛑 止蝕 (-3%)</div>
+          <div style="font-size:14px;font-weight:700;color:#EE5151;">$${tc.stop_loss.toFixed(2)}</div>
+        </div>
+        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">🎯 目標 (+5%)</div>
+          <div style="font-size:14px;font-weight:700;color:#26BA75;">$${tc.take_profit.toFixed(2)}</div>
+        </div>
+        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">📉 移動止蝕 (5%)</div>
+          <div style="font-size:14px;font-weight:700;">$${tc.trailing_stop.toFixed(2)}</div>
+        </div>
+      </div>
+    `;
+
+    return `
+      <div class="decision-engine-result" style="font-family: system-ui, sans-serif;">
+        <!-- 頂部 M8 finalAction 標籤 (新加, 揸車比喻) -->
+        <div class="m8-final-action-card" style="background:linear-gradient(135deg, ${actionColor}33, ${actionColor}0a);border:3px solid ${actionColor};border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;">
+          <div style="font-size:14px;color:#666;margin-bottom:4px;">🚦 M8 最終行動指令 (8 個 FinalAction)</div>
+          <div style="font-size:36px;font-weight:700;color:${actionColor};line-height:1.2;">${actionLabel}</div>
+          <div style="font-size:16px;font-weight:600;color:${actionColor};margin-top:4px;">${finalActionShortLabel(final_action)}</div>
+          <div style="font-size:14px;color:#444;margin-top:12px;line-height:1.6;">${final_action_reason}</div>
+        </div>
+
+        <!-- 原有 M7 verdict card (Grade + SSI + Alignment + Kelly) -->
+        <div class="verdict-card" style="background:linear-gradient(135deg, ${gradeColor}22, ${gradeColor}08);border:2px solid ${gradeColor};border-radius:12px;padding:20px;margin-bottom:20px;text-align:center;">
+          <div style="font-size:14px;color:#666;margin-bottom:8px;">📊 M7 Synthesizer 評級 (Grade)</div>
+          <div style="font-size:48px;font-weight:700;color:${gradeColor};line-height:1;">${grade}</div>
+          <div style="font-size:18px;color:#666;margin-top:8px;">分數 ${grade_score.toFixed(1)} / 100</div>
+          <div style="font-size:14px;color:#999;margin-top:4px;">${grade_reason}</div>
+          <div style="display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:14px;">
+            <div>🟢 <strong>SSI</strong>: ${ssi_score.toFixed(1)} / 100</div>
+            <div>📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%</div>
+            <div>💰 <strong>Kelly</strong>: ${kellyLabel}</div>
+          </div>
+        </div>
+
+        ${tradingCardHTML}
+
+        <!-- 6 個 Metric Mini-Cards -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+          <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+            <div style="font-size:12px;color:#666;">SSI 一致性</div>
+            <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.consistency * 100).toFixed(0)}%</div>
+          </div>
+          <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+            <div style="font-size:12px;color:#666;">SSI 平均信心</div>
+            <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.confidence_avg * 100).toFixed(0)}%</div>
+          </div>
+          <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+            <div style="font-size:12px;color:#666;">SSI 規則覆蓋</div>
+            <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.rules_coverage * 100).toFixed(0)}%</div>
+          </div>
+        </div>
+
+        <!-- 6 個 modules 嘅 breakdown -->
+        <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個 Modules 嘅 Standard Verdict</h4>
+        <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f0f0f0;">
+              <th style="text-align:left;padding:8px;">Module</th>
+              <th style="text-align:left;padding:8px;">State</th>
+              <th style="text-align:right;padding:8px;">Conf</th>
+              <th style="text-align:right;padding:8px;">Weight</th>
+              <th style="text-align:right;padding:8px;">Exp.Ret</th>
+              <th style="text-align:right;padding:8px;">MaxDD</th>
+              <th style="text-align:right;padding:8px;">RSI</th>
+            </tr>
+          </thead>
+          <tbody>${moduleRows}</tbody>
+        </table>
+
+        <!-- TCM 3 對 pair -->
+        <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對 Pair)</h4>
+        <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f0f0f0;">
+              <th style="text-align:left;padding:8px;">Pair</th>
+              <th style="text-align:right;padding:8px;">Alignment</th>
+              <th style="text-align:right;padding:8px;">Trap Penalty</th>
+            </tr>
+          </thead>
+          <tbody>${tcmRows}</tbody>
+        </table>
+
+        <!-- Sprint 2 進度提示 (下個 commits 將加) -->
+        <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
+          <strong>✅ Sprint 2 sub-task 2.1 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + 交易卡 (static)<br>
+          <strong>🚧 Sprint 2 仍待做:</strong>
+          <ol style="margin-top:4px;">
+            <li>2.2 Trading card adaptive (跟 5 個 adaptive params)</li>
+            <li>2.3 短期走勢預測 (3 scenarios × 5/10/20 日)</li>
+            <li>2.4 人話詳細解讀 (LLM hook 預留 — 大少 13:30 永久 rule)</li>
+            <li>2.5 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation)</li>
+          </ol>
+        </div>
+      </div>
+    `;
+  },
   getHelp: () => `
-    <h3>🚧 Decision Engine (M8) — Sprint 2 將加</h3>
-    <p>大少 2026-08-08 13:30 Plan A — M8 仲未 impl.</p>
-    <p>Sprint 2 範圍:</p>
+    <h3>🚦 終極綜合判斷引擎 (Decision Engine v1.0.0 — M8)</h3>
+    <p>大少 2026-08-08 15:42 Sprint 2 sub-task 2.1 — 從 M7 SynthesizerVerdict + 6 個 ModuleStandardVerdict 推導 8 個 finalAction.</p>
+    <h4>8 個 FinalAction + 揸車比喻:</h4>
     <ul>
-      <li>8 個 finalAction 決策樹</li>
-      <li>Trading card (entry/stop/target/trailing)</li>
-      <li>短期走勢預測 (3 scenarios × 5/10/20 日)</li>
-      <li>人話詳細解讀 (LLM hook 預留)</li>
-      <li>5 個 adaptive params runtime auto-calibrate</li>
-      <li>L2 JSON file cache</li>
+      <li>🟢 <strong>BUY</strong> — 油門俾到底 (UP + alignment≥0.6 + grade≥B + 預期回報>3% + 最大回撤<10% + RSI>50)</li>
+      <li>🟢 <strong>ADD</strong> — 油門再踩深啲 (UP + grade≥A + alignment≥0.7 + RSI>70 + 連漲≥3日)</li>
+      <li>🟡 <strong>HOLD</strong> — 保持現速 (UP + grade=B/C+ + maxdd<8%)</li>
+      <li>🟡 <strong>WAIT</strong> — 等綠燈 (SIDEWAYS + grade=C + alignment<0.6)</li>
+      <li>🟠 <strong>REDUCE</strong> — 收返少少油 (TRANSITION + alignment<0.5)</li>
+      <li>🔴 <strong>SELL</strong> — 急煞車 (DOWN + grade≤C + maxdd>10%)</li>
+      <li>🟣 <strong>TRAP</strong> — 唔好信導航 (squeeze + fake breakout)</li>
+      <li>🟣 <strong>TRANSITION</strong> — 收油準備轉彎 (M1 + M3 同步轉勢)</li>
+    </ul>
+    <h4>Priority order:</h4>
+    <p>TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY</p>
+    <h4>下個 commits 將加:</h4>
+    <ul>
+      <li>2.2 Trading card adaptive formula</li>
+      <li>2.3 短期走勢預測 (3 scenarios × 5/10/20 日)</li>
+      <li>2.4 人話詳細解讀 (LLM hook)</li>
+      <li>2.5 5 個 adaptive params runtime auto-calibrate</li>
     </ul>
   `,
 };

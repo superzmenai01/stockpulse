@@ -103,14 +103,15 @@ const REGISTRY = [
     // Sprint 1 done — M7 Synthesizer 邏輯 (6 個 modules → SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位)
     // Sprint 2 將加 M8 chain (M7 嘅 SynthesizerVerdict 喂入去 M8)
   },
-  // ---- M8 Decision Engine (08) — Sprint 2 將 impl ----
+  // ---- M8 Decision Engine (08) — Sprint 2 sub-task 2.1 done (8 個 finalAction 決策樹) ----
   {
     id: 'AS-03-DEC',
     displayName: '08 — AS-03-DEC',  // 大少 2026-08-08 10:06: 編號 08 = M8 Decision Engine (大少 13:30 拆返獨立)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    adapterExport: 'decisionEngineAdapter',  // 大少 2026-08-08 13:30 Plan A: M8 stub, 會 throw "impl pending", testing page 顯示 ❌ 加载失败
-    // ⏸️ Sprint 2 將加: finalAction 8 個 + trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook 預留) + 5 個 adaptive params + L2 cache
+    adapterExport: 'decisionEngineAdapter',  // 大少 2026-08-08 15:42: M8 v1.0.0 — 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + trading card (static) done
+    // ✅ 2.1: 8 個 finalAction 決策樹 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + trading card (static formula)
+    // 🚧 2.2-2.5: trading card adaptive + 短期走勢預測 + 人話解讀 (LLM hook) + 5 個 adaptive params runtime auto-calibrate
   },
   // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
   // 舊 M1 改名「zmen均算法」, 搬去 REGISTRY 尾

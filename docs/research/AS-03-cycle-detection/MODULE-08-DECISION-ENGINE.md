@@ -1,9 +1,9 @@
-# AS-03 · Module 8: 終極綜合判斷引擎 (Decision Engine v0.0.0, Sprint 2 將加)
+# AS-03 · Module 8: 終極綜合判斷引擎 (Decision Engine v1.0.0, Sprint 2 sub-task 2.1 done)
 
 > **對應 docx**: `docs/演算法概念SPECS/08終極綜合判斷引擎.docx` (Kimi v2.0 spec)
-> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/decision-engine.ts` (M8 stub, Sprint 2 將 impl)
-> **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/decision-engine.test.mjs` (TBD, Sprint 2)
-> **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`decisionEngineAdapter`)
+> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/decision-engine.ts` (M8 v1.0.0 impl, Sprint 2 sub-task 2.1 done)
+> **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/decision-engine.test.mjs` (52 assertions, 13 sections)
+> **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`decisionEngineAdapter` v1.0.0)
 
 > **大少 2026-08-08 13:30 指示 (Plan A 拆返 M7+M8)**: M8 Decision Engine 將喺 Sprint 2 實作. M7 嘅 5 個 sub-step 邏輯 (SSI / TCM / Alignment / Grade / Kelly) 喺 `MODULE-07-SYNTHESIZER.md`, M8 chain M7 嘅 output 推導 finalAction + trading card + 短期走勢 + 人話解讀.
 
@@ -46,18 +46,38 @@ DecisionVerdict (final 嘅 output)
 
 ---
 
-## 3. 8 個 FinalAction + Trigger Conditions (大少用揸車比喻)
+## 3. 8 個 FinalAction + Trigger Conditions (大少用揸車比喻) — **Sprint 2 sub-task 2.1 impl done**
 
-| Final Action | 人話 | Trigger Conditions (全部 AND) |
-|--------------|------|-------------------------------|
-| 🟢 **BUY** | 「導航話直路, 油門俾到底」 | state=UP AND alignment≥0.6 AND grade≥B AND expected_return>3% AND max_drawdown<10% AND RSI>50 |
-| 🟢 **ADD** | 「直路仲長, 油門再踩深啲」 | state=UP AND grade≥A AND alignment≥0.7 AND RSI>70 AND 連漲≥3日 |
-| 🟡 **HOLD** | 「條路平穩, 保持現速」 | state=UP AND grade=B/C+ AND max_drawdown<8% (趨勢仲 OK 但唔強) |
-| 🟡 **WAIT** | 「路口塞車, 等綠燈」 | state=SIDEWAYS AND grade=C AND alignment<0.6 (冇明確方向) |
-| 🟠 **REDUCE** | 「路面開始爛, 收返少少油」 | state=TRANSITION AND alignment<0.5 (矛盾訊號) |
-| 🔴 **SELL** | 「前面有意外, 急煞車」 | state=DOWN AND grade≤C- AND max_drawdown>10% (下跌確認) |
-| 🟣 **TRAP** | 「導航話直路但其實係懸崖, 唔好信」 | volatility 偵測到 squeeze + price fake breakout (虛漲假突破) |
-| 🔄 **TRANSITION** | 「前面路口要轉彎, 收油準備」 | H rule 觸發 (M1 + M3 同步轉勢) |
+| Final Action | 人話 | Trigger Conditions (全部 AND) | Priority |
+|--------------|------|-------------------------------|----------|
+| 🟣 **TRAP** | 「導航話直路但其實係懸崖, 唔好信」 | squeezeDetected=true AND fakeBreakoutDetected=true (虛漲假突破) | 1 (最危險) |
+| 🟣 **TRANSITION** | 「前面路口要轉彎, 收油準備」 | maTrendlineTransition=true (M1 + M3 同步轉勢) | 2 |
+| 🔴 **SELL** | 「前面有意外, 急煞車」 | majorityState=DOWN AND grade≤C AND max_drawdown_estimate>10% (下跌確認) | 3 |
+| 🟠 **REDUCE** | 「路面開始爛, 收返少少油」 | majorityState=TRANSITION AND alignment<0.5 (矛盾訊號) | 4 |
+| 🟡 **WAIT** | 「路口塞車, 等綠燈」 | majorityState=SIDEWAYS AND grade=C AND alignment<0.6 (冇明確方向) | 5 |
+| 🟡 **HOLD** | 「條路平穩, 保持現速」 | majorityState=UP AND grade=B/C+ AND max_drawdown<8% (趨勢仲 OK 但唔強) | 6 |
+| 🟢 **ADD** | 「直路仲長, 油門再踩深啲」 | majorityState=UP AND grade≥A AND alignment≥0.7 AND RSI>70 AND 連漲≥3日 | 7 |
+| 🟢 **BUY** | 「導航話直路, 油門俾到底」 | majorityState=UP AND alignment≥0.6 AND grade≥B AND expected_return>3% AND max_drawdown<10% AND RSI>50 | 8 (最尾) |
+
+**Implementation notes**:
+- 8 個 trigger 用 if/else if priority order check, 第一個 match 嘅就 return
+- 全部 trigger 唔 match → fallback WAIT (保守, final_action_reason 包含「未能匹配明確 trigger」)
+- Grade 比較用 `GRADE_ORDER = ['F', 'D', 'C', 'C+', 'B', 'B+', 'A', 'A+']` index (0=F 最低, 7=A+ 最高)
+  - `isGradeAtLeast(g, threshold)` = indexOf(g) >= indexOf(threshold)
+  - `isGradeAtMost(g, threshold)` = indexOf(g) <= indexOf(threshold)
+- majorityState 從 6 個 verdicts 用 majority vote (max count, tie → SIDEWAYS)
+- RSI 從 indicators module 嘅 sentiment_6d.rsi 反標準化: raw = (sentiment_6d.rsi + 1) × 50
+- 連漲日數從 klines 倒數計, 第一日唔升為止
+- 2.1 嘅 squeeze/fake breakout/maTrendlineTransition 暫時用 false fallback, 2.5 將 derive 從 M1/M3/M5/M6 raw data
+
+**Tests**: 13 sections, 52 assertions, 100% pass (decision-engine.test.mjs)
+- 8 個 finalAction 各自 1-4 個 trigger test case
+- Boundary conditions (alignment=0.6, grade=B, RSI=70, maxdd=0.10, exp.ret=3% etc.)
+- Priority order (TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY)
+- Fallback (no match → WAIT)
+- Empty input
+- Trading card static formula (entry_zone ±1.5%, stop_loss -3%, take_profit +5%, trailing_stop 5%)
+- Output structure (DecisionVerdict 全部 9 個 fields)
 
 ---
 
@@ -206,18 +226,23 @@ testing page 永遠全 Show, 多圖少文字, 6 個顏色對應狀態:
 
 ---
 
-## 11. 大少可以即刻試 (M7 部分, M8 仲 pending)
+## 11. 大少可以即刻試 (M7 + M8 部分, 2.1 done, 2.2-2.5 pending)
 
 ```bash
 # 1. 開 testing page
 open http://localhost:8765/testing-page/
 
-# 2. 揀 dropdown "07 — AS-03-SYN (Synthesizer)"
+# 2a. 揀 dropdown "07 — AS-03-SYN (Synthesizer)" → 跑 M7
+#     → 睇 grade card + 6 個 modules 表格 + TCM 表格
+
+# 2b. 揀 dropdown "08 — AS-03-DEC (Decision Engine)" → 跑 M7 + M8 (2.1 done)
+#     → 睇 M8 8 個 finalAction 標籤 (揸車比喻) + final_action_reason
+#     → 睇 M7 grade card (reuse)
+#     → 睇 trading card 4 個 fields (2.1 static formula, 2.2 將 adaptive)
+#     → 2.3-2.4 仍係 placeholder (short_term_forecast [] / interpretation "")
+
 # 3. 輸入股票代碼 e.g. "HK.00700"
 # 4. 撳 "跑算法"
-# 5. 睇 M7 Synthesizer 嘅 verdict card + 6 個 modules 表格 + TCM 表格
-
-# M8 entry "08 — AS-03-DEC" 而家係 stub, 撳會見到 ❌ 加载失败 (impl pending)
 ```
 
 ---
@@ -226,5 +251,9 @@ open http://localhost:8765/testing-page/
 
 | Date | Version | 改動 | Commit |
 |------|---------|------|--------|
-| 2026-08-08 | v0.0.0 (stub) | M8 spec doc 拆返自 MODULE-07-08-DECISION-ENGINE.md (Plan A 拆返 M7+M8) | TBD (本 commit) |
-| TBD | v1.0.0 (Sprint 2) | M8 finalAction 8 個 + trading card + 短期走勢 + 人話解讀 + 5 個 adaptive params + L2 cache | TBD |
+| 2026-08-08 13:30 | v0.0.0 (stub) | M8 spec doc 拆返自 MODULE-07-08-DECISION-ENGINE.md (Plan A 拆返 M7+M8) | 36496159 |
+| 2026-08-08 15:42 | v1.0.0 (sub-task 2.1) | M8 finalAction 8 個決策樹 + 揸車比喻 final_action_reason + trading card static formula + decisionEngineAdapter 真正 render | TBD (本 commit) |
+| TBD | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (跟 5 個 adaptive params) | TBD |
+| TBD | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) | TBD |
+| TBD | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook, hardcoded template) | TBD |
+| TBD | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation) | TBD |
