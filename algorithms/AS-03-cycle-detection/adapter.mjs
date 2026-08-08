@@ -5016,3 +5016,395 @@ export const indicatorsAdapter = {
   renderChartOverlay: renderIndicatorsChartOverlay,
   getHelp: getIndicatorsHelp,
 };
+// =====================================================================
+// 2026-08-08 — Module 1 v2.0 均線系統週期判斷法 (with Volume & Slope 擴展)
+//   大少指示: 舊 M1 v0.3.0 抽離做 zmen均算去 (檔案 zmen-ma-alignment.ts),
+//   新 M1 v2.0 跟 docx Kimi v2.0 spec 做全新 implementation.
+//   - 3 個 cycle states (uptrend / downtrend / sideways)
+//   - 13 個 output fields
+//   - 信心指數 = base × volume × slope 三階段調整
+// Spec: docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md
+// Docx: docs/演算法概念SPECS/01均線系統週期判斷法.docx
+// =====================================================================
+
+const MA_ALIGNMENT_V2_DEFAULTS = {
+  maPeriods: [5, 10, 20, 60],
+  thresholdPct: 0.02,
+  enableVolumeWeight: true,
+  enableSlopeCheck: true,
+  volumeLookback: 5,
+  slopeLookback: 5,
+  volumeBoostThreshold: 1.2,
+  volumeShrinkThreshold: 0.8,
+  slopeDiscountFactor: 0.7,
+  sidewaysBaseConfidence: 0.3,
+  spreadConfidenceScale: 0.10,
+};
+
+const MA_V2_CYCLE_LABELS = {
+  uptrend: '上升週期',
+  downtrend: '下跌週期',
+  sideways: '橫行週期',
+};
+
+function maV2Round(value, decimals) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+async function analyzeMAAlignmentV2(klines, options = {}) {
+  const cfg = { ...MA_ALIGNMENT_V2_DEFAULTS, ...(options.config || {}) };
+  const adjustmentLog = [];
+
+  // ============ Step 1: 輸入驗證 ============
+  const maxPeriod = Math.max(...cfg.maPeriods);
+  const minLengthForMA = maxPeriod + 5;
+  const minLengthForSlope = cfg.enableSlopeCheck ? maxPeriod + cfg.slopeLookback + 5 : 0;
+  const minLengthForVol = cfg.enableVolumeWeight ? cfg.volumeLookback * 2 + 5 : 0;
+  const requiredLength = Math.max(minLengthForMA, minLengthForSlope, minLengthForVol);
+
+  if (klines.length < requiredLength) {
+    return {
+      moduleId: 'ma-alignment-v2',
+      timeframe: '1d',
+      state: 'SIDEWAYS',
+      confidence: 0,
+      interpretation: `[MAAlignmentV2] 數據不足: need >= ${requiredLength} bars, got ${klines.length}`,
+      evidence: [],
+      warnings: [`數據不足 (${klines.length}/${requiredLength})`],
+      meta: {
+        dataDays: klines.length,
+        requiredLength,
+        configUsed: cfg,
+      },
+      timestamp: Date.now(),
+    };
+  }
+
+  // 檢查日期升序
+  for (let i = 1; i < klines.length; i++) {
+    if (new Date(klines[i].date) < new Date(klines[i - 1].date)) {
+      throw new Error(`[MAAlignmentV2] price_data 必須按日期升序排列 (第 ${i - 1} → ${i} 條違反)`);
+    }
+  }
+
+  // 檢查 volume
+  if (cfg.enableVolumeWeight) {
+    for (let i = 0; i < klines.length; i++) {
+      if (klines[i].volume === undefined || klines[i].volume === null) {
+        throw new Error(`[MAAlignmentV2] volume field required when enable_volume_weight is true (第 ${i} 條缺失)`);
+      }
+    }
+  }
+
+  // ============ Step 2: 計算各週期 MA ============
+  const maValues = {};
+  for (const period of cfg.maPeriods) {
+    const tail = klines.slice(-period);
+    const sum = tail.reduce((acc, k) => acc + k.close, 0);
+    maValues[`MA${period}`] = sum / period;
+  }
+
+  // ============ Step 3: 均線排序與形態判定 ============
+  const maKeys = cfg.maPeriods.map(p => `MA${p}`);
+  const maRanks = [...maKeys].sort((a, b) => maValues[b] - maValues[a]);
+  const rankPeriods = maRanks.map(k => parseInt(k.replace('MA', ''), 10));
+  const sortedPeriodsAsc = [...cfg.maPeriods].sort((a, b) => a - b);
+  const sortedPeriodsDesc = [...sortedPeriodsAsc].reverse();
+
+  let candidate;
+  if (JSON.stringify(rankPeriods) === JSON.stringify(sortedPeriodsAsc)) {
+    candidate = 'uptrend';
+  } else if (JSON.stringify(rankPeriods) === JSON.stringify(sortedPeriodsDesc)) {
+    candidate = 'downtrend';
+  } else {
+    candidate = 'sideways';
+  }
+
+  // ============ Step 4: 橫行週期精細判定 ============
+  const maValueList = Object.values(maValues);
+  const maxMA = Math.max(...maValueList);
+  const minMA = Math.min(...maValueList);
+  const maxSpreadPct = minMA > 0 ? (maxMA - minMA) / minMA : 0;
+
+  if ((candidate === 'uptrend' || candidate === 'downtrend') && maxSpreadPct < cfg.thresholdPct) {
+    candidate = 'sideways';
+    adjustmentLog.push('均線雖有排列但過於靠近，視為橫行整理');
+  }
+
+  // ============ Step 5: 成交量趨勢 ============
+  let volumeTrendRatio = 1.0;
+  let volumeSignal = 'neutral';
+
+  if (cfg.enableVolumeWeight) {
+    const recent = klines.slice(-cfg.volumeLookback);
+    const previous = klines.slice(-(cfg.volumeLookback * 2), -cfg.volumeLookback);
+    const recentAvgVol = recent.reduce((acc, k) => acc + (k.volume || 0), 0) / recent.length;
+    const previousAvgVol = previous.reduce((acc, k) => acc + (k.volume || 0), 0) / previous.length;
+
+    if (previousAvgVol === 0) {
+      volumeTrendRatio = 1.0;
+      volumeSignal = 'neutral';
+    } else {
+      volumeTrendRatio = recentAvgVol / previousAvgVol;
+      if (volumeTrendRatio >= cfg.volumeBoostThreshold) {
+        volumeSignal = 'expanding';
+      } else if (volumeTrendRatio <= cfg.volumeShrinkThreshold) {
+        volumeSignal = 'shrinking';
+      } else {
+        volumeSignal = 'neutral';
+      }
+    }
+  }
+
+  // ============ Step 6: 均線斜率與動能 ============
+  const maSlopes = {};
+  let momentumScore = 0;
+
+  if (cfg.enableSlopeCheck) {
+    const totalWeight = cfg.maPeriods.reduce((acc, p) => acc + 1 / p, 0);
+    for (const period of cfg.maPeriods) {
+      const currentMA = maValues[`MA${period}`];
+      const pastSegment = klines.slice(-(period + cfg.slopeLookback), -cfg.slopeLookback);
+      if (pastSegment.length === 0) {
+        maSlopes[`MA${period}`] = 0;
+        continue;
+      }
+      const pastSum = pastSegment.reduce((acc, k) => acc + k.close, 0);
+      const pastMA = pastSum / pastSegment.length;
+      const slope = pastMA > 0 ? (currentMA - pastMA) / pastMA : 0;
+      maSlopes[`MA${period}`] = slope;
+      momentumScore += (slope * (1 / period)) / totalWeight;
+    }
+  }
+
+  // ============ Step 7: 信心指數 (三階段調整) ============
+  let baseConfidence;
+  if (candidate === 'uptrend' || candidate === 'downtrend') {
+    baseConfidence = Math.min(1.0, maxSpreadPct / cfg.spreadConfidenceScale);
+    if (maxSpreadPct < 0.05) baseConfidence *= 0.7;
+  } else {
+    baseConfidence = Math.max(
+      cfg.sidewaysBaseConfidence,
+      1.0 - Math.abs(maxSpreadPct - cfg.thresholdPct) / cfg.thresholdPct,
+    );
+  }
+
+  let volMultiplier = 1.0;
+  if (cfg.enableVolumeWeight) {
+    if (candidate === 'uptrend') {
+      if (volumeSignal === 'expanding') {
+        volMultiplier = Math.min(1.25, 1.0 + (volumeTrendRatio - 1.0) * 0.5);
+        adjustmentLog.push('放量上漲，信心提升');
+      } else if (volumeSignal === 'shrinking') {
+        volMultiplier = Math.max(0.65, 1.0 - (1.0 - volumeTrendRatio) * 0.8);
+        adjustmentLog.push('上漲縮量，信心打折');
+      }
+    } else if (candidate === 'downtrend') {
+      if (volumeSignal === 'expanding') {
+        volMultiplier = 1.15;
+        adjustmentLog.push('放量下跌，趨勢確認');
+      } else if (volumeSignal === 'shrinking') {
+        volMultiplier = 0.85;
+        adjustmentLog.push('下跌縮量，動能可能不足');
+      }
+    } else {
+      if (volumeSignal === 'shrinking') {
+        volMultiplier = 1.15;
+        adjustmentLog.push('縮量整理，橫行信號增強');
+      } else if (volumeSignal === 'expanding') {
+        volMultiplier = 0.85;
+        adjustmentLog.push('放量震盪，可能醞釀突破');
+      }
+    }
+  }
+
+  let slopeMultiplier = 1.0;
+  if (cfg.enableSlopeCheck) {
+    const sortedPeriods = [...cfg.maPeriods].sort((a, b) => a - b);
+    const shortPeriods = sortedPeriods.slice(0, 2);
+    const negativeCount = cfg.maPeriods.filter(p => (maSlopes[`MA${p}`] || 0) < 0).length;
+
+    if (candidate === 'uptrend') {
+      if (shortPeriods.some(p => (maSlopes[`MA${p}`] || 0) < 0)) {
+        slopeMultiplier = cfg.slopeDiscountFactor;
+        adjustmentLog.push('短期均線斜率為負，上升動能減弱');
+      } else if (negativeCount > 0) {
+        slopeMultiplier = 0.85;
+        adjustmentLog.push('部分長期均線斜率為負');
+      }
+    } else if (candidate === 'downtrend') {
+      const longPeriod = Math.max(...cfg.maPeriods);
+      if ((maSlopes[`MA${longPeriod}`] || 0) > 0) {
+        slopeMultiplier = 0.8;
+        adjustmentLog.push('長期均線斜率轉正，下跌動能減弱');
+      } else if (shortPeriods.some(p => (maSlopes[`MA${p}`] || 0) > 0)) {
+        slopeMultiplier = 0.9;
+        adjustmentLog.push('短期均線斜率轉正，可能醞釀反彈');
+      }
+    } else {
+      const avgAbsSlope = cfg.maPeriods.reduce((acc, p) => acc + Math.abs(maSlopes[`MA${p}`] || 0), 0) / cfg.maPeriods.length;
+      if (avgAbsSlope > 0.005) {
+        slopeMultiplier = 0.8;
+        adjustmentLog.push('均線斜率過大，橫行周期可能即將結束');
+      }
+    }
+  }
+
+  let confidence = baseConfidence * volMultiplier * slopeMultiplier;
+  confidence = Math.max(0.0, Math.min(1.0, confidence));
+  confidence = maV2Round(confidence, 4);
+
+  // ============ Step 8: 組裝輸出 ============
+  const lastDate = klines[klines.length - 1].date;
+  const reasonText = `【週期】${MA_V2_CYCLE_LABELS[candidate]}${adjustmentLog.length > 0 ? '；' + adjustmentLog.join('；') : ''}`;
+
+  const meta = {
+    cycle: candidate,
+    cycleLabel: MA_V2_CYCLE_LABELS[candidate],
+    confidence,
+    baseConfidence: maV2Round(baseConfidence, 4),
+    maValues: Object.fromEntries(Object.entries(maValues).map(([k, v]) => [k, maV2Round(v, 4)])),
+    maRanks,
+    maSlopes: Object.fromEntries(Object.entries(maSlopes).map(([k, v]) => [k, maV2Round(v, 6)])),
+    momentumScore: maV2Round(momentumScore, 6),
+    volumeTrendRatio: maV2Round(volumeTrendRatio, 4),
+    volumeSignal,
+    maxSpreadPct: maV2Round(maxSpreadPct, 6),
+    adjustmentLog,
+    reason: reasonText,
+    lastDate,
+    configUsed: cfg,
+  };
+
+  const stateMap = { uptrend: 'UP', downtrend: 'DOWN', sideways: 'SIDEWAYS' };
+  return {
+    moduleId: 'ma-alignment-v2',
+    timeframe: '1d',
+    state: stateMap[candidate],
+    confidence,
+    interpretation: reasonText,
+    evidence: adjustmentLog.map(log => ({ type: 'adjustment', label: log, value: log, passed: true })),
+    warnings: [],
+    meta,
+    timestamp: Date.now(),
+  };
+}
+
+function renderMAAlignmentV2Result(verdict) {
+  const meta = verdict.meta || {};
+  if (!meta.cycle) {
+    return `<div class="result-error">數據不足: ${meta.dataDays || 0} / ${meta.requiredLength || 70} 條</div>`;
+  }
+  const cycleEmoji = { uptrend: '🟢', downtrend: '🔴', sideways: '🟡' };
+  const volSignalText = { expanding: '放量', shrinking: '縮量', neutral: '持平' };
+
+  // ===== 📖 詳細解讀 (13 個 output fields) =====
+  const explanation = `
+    <div class="result-section">
+      <h3>📖 詳細解讀</h3>
+      <p><strong>${cycleEmoji[meta.cycle]} ${meta.cycleLabel}</strong> — 信心指數 <strong>${(meta.confidence * 100).toFixed(1)}%</strong></p>
+      <ul>
+        <li><strong>cycle</strong>: ${meta.cycle} (${meta.cycleLabel}) — 而家股票所處嘅周期</li>
+        <li><strong>confidence</strong>: ${meta.confidence} — 綜合信心指數 (base × volume × slope 三階段調整後)</li>
+        <li><strong>baseConfidence</strong>: ${meta.baseConfidence} — 純粹睇 MA 排列 + spread 嘅基礎信心</li>
+        <li><strong>maValues</strong>: ${Object.entries(meta.maValues).map(([k, v]) => `${k}=${v}`).join(', ')} — 4 條均線嘅最新值</li>
+        <li><strong>maRanks</strong>: [${meta.maRanks.join(' > ')}] — 均線由大到小嘅排序 (順序排列 = 典型多頭/空頭)</li>
+        <li><strong>maSlopes</strong>: ${Object.entries(meta.maSlopes).map(([k, v]) => `${k}=${(v * 100).toFixed(2)}%`).join(', ')} — 各均線斜率 (正 = 升, 負 = 跌)</li>
+        <li><strong>momentumScore</strong>: ${meta.momentumScore} — 加權動能分數 (短期 MA 權重高)</li>
+        <li><strong>volumeTrendRatio</strong>: ${meta.volumeTrendRatio} — 近期均量 / 前期均量</li>
+        <li><strong>volumeSignal</strong>: ${volSignalText[meta.volumeSignal]} — 量能訊號</li>
+        <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比</li>
+        <li><strong>adjustmentLog</strong>: ${meta.adjustmentLog.length > 0 ? meta.adjustmentLog.join('；') : '(無調整)'}</li>
+        <li><strong>reason</strong>: ${meta.reason}</li>
+        <li><strong>lastDate</strong>: ${meta.lastDate} — 數據截止日期</li>
+      </ul>
+    </div>
+  `;
+
+  // ===== 🎯 策略建議 =====
+  let strategy = '';
+  if (meta.cycle === 'uptrend' && meta.confidence >= 0.7) {
+    strategy = '<p>🟢 <strong>上升趨勢確認</strong> — 可考慮持有 / 逢回調加倉, 留意 maSlopes[MA5] 唔好轉負</p>';
+  } else if (meta.cycle === 'uptrend' && meta.confidence < 0.5) {
+    strategy = '<p>🟡 <strong>上升動能減弱</strong> — 留意見頂警號 (縮量 / 短期斜率轉負), 收緊止蝕</p>';
+  } else if (meta.cycle === 'downtrend' && meta.confidence >= 0.7) {
+    strategy = '<p>🔴 <strong>下跌趨勢確認</strong> — 觀望 / 減倉, 等 maSlopes[MA60] 轉正先考慮撈底</p>';
+  } else if (meta.cycle === 'downtrend' && meta.confidence < 0.5) {
+    strategy = '<p>🟡 <strong>下跌動能減弱</strong> — 留意反彈機會 (縮量 / 長期斜率轉正), 但要 confirm 結構先信</p>';
+  } else if (meta.cycle === 'sideways' && meta.confidence >= 0.7) {
+    strategy = '<p>🟡 <strong>橫行確認</strong> — 等待突破方向, 配合 M6 Volatility Squeeze 訊號捕捉突破</p>';
+  } else {
+    strategy = '<p>🟡 <strong>結構模糊</strong> — 信心不足, 唔好落大注, 等待 M2/M3 結構確認</p>';
+  }
+
+  // ===== 💡 點用點睇 (10 步) =====
+  const usage = `
+    <div class="result-section">
+      <h3>💡 點用點睇 (10 步 step-by-step)</h3>
+      <ol>
+        <li>睇 <code>cycle</code> 同 <code>cycleLabel</code> 知而家係咩 season (上升/下跌/橫行)</li>
+        <li>對比 <code>confidence</code> 同 <code>baseConfidence</code> — 差越大, 信心調整越多</li>
+        <li>睇 <code>adjustmentLog</code> 知做咗咩 discount / boost (放量/縮量/斜率)</li>
+        <li>確認 <code>maRanks</code> 係典型 (5/10/20/60 由小到大 = 標準多頭排列)</li>
+        <li>睇 <code>maSlopes[MA5]</code> 嘅正負 — 短期 MA 斜率係上升動能領先指標</li>
+        <li>睇 <code>maSlopes[MA60]</code> 嘅正負 — 長期 MA 斜率係大方向指標</li>
+        <li>睇 <code>volumeSignal</code> + <code>volumeTrendRatio</code> — 錢跟唔跟 (放量跟 = 真升)</li>
+        <li>對比 M2 HL Structure — 確認峰谷結構 (HH/HL = 上升, LH/LL = 下跌)</li>
+        <li>對比 M4 Indicators — 確認動能 / RSI / MACD 狀態 (背馳 = 見頂警號)</li>
+        <li>結合多個 module 結果 + M5 量价 + M6 波動率 做最終決策</li>
+      </ol>
+    </div>
+  `;
+
+  return explanation + `<div class="result-section"><h3>🎯 策略建議</h3>${strategy}</div>` + usage;
+}
+
+function getMAAlignmentV2Help() {
+  return `
+    <h3>Module 1 v2.0 — 均線系統週期判斷法 (with Volume & Slope)</h3>
+    <p>大少 2026-08-08 指示新 M1 v2.0 (跟 docx Kimi v2.0 spec) 取代舊 M1 v0.3.0, 舊 M1 抽離做 zmen均算去。</p>
+    <h4>Spec 連結</h4>
+    <ul>
+      <li>Spec doc: <code>docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md</code></li>
+      <li>Docx: <code>docs/演算法概念SPECS/01均線系統週期判斷法.docx</code> (Kimi v2.0)</li>
+      <li>Module: <code>algorithms/AS-03-cycle-detection/modules/ma-alignment.ts</code></li>
+    </ul>
+    <h4>3 個 Cycle States</h4>
+    <ul>
+      <li><strong>uptrend</strong> (上升週期) — MA 升序排列 + spread ≥ 2%</li>
+      <li><strong>downtrend</strong> (下跌週期) — MA 降序排列 + spread ≥ 2%</li>
+      <li><strong>sideways</strong> (橫行週期) — 其他情況, 或 spread < 2% 強制覆寫</li>
+    </ul>
+    <h4>信心指數 = base × volume × slope</h4>
+    <ul>
+      <li><strong>base</strong> (0.3-1.0): 由 spread / 0.10 計, spread &lt; 5% 額外 × 0.7</li>
+      <li><strong>volume</strong> (0.65-1.25): 升 + 放量 1.25, 升 + 縮量 0.65, 跌 + 放量 1.15, ...</li>
+      <li><strong>slope</strong> (0.7-1.0): 升 + 短期斜率負 0.7, 跌 + 長期斜率正 0.8, ...</li>
+    </ul>
+  `;
+}
+
+export const maAlignmentV2Adapter = {
+  id: 'AS-03-MA',
+  name: '均線系統週期判斷法 v2.0 (with Volume & Slope)',
+  version: '2.0.0',
+  description: '跟 docx Kimi v2.0 spec: MA 排列 + 成交量加權 + 斜率動能, 3 個 cycle state',
+  inputs: [
+    { key: 'maPeriods', label: '均線週期列表', type: 'string', default: '5,10,20,60' },
+    { key: 'thresholdPct', label: '橫行判定閾值 (spread %)', type: 'number', default: 0.02 },
+    { key: 'enableVolumeWeight', label: '啟用成交量加權', type: 'checkbox', default: true },
+    { key: 'enableSlopeCheck', label: '啟用斜率動能', type: 'checkbox', default: true },
+    { key: 'volumeLookback', label: '成交量回顧天數', type: 'number', default: 5, min: 3, max: 20 },
+    { key: 'slopeLookback', label: '斜率回顧天數', type: 'number', default: 5, min: 3, max: 20 },
+  ],
+  analyze: analyzeMAAlignmentV2,
+  renderResult: renderMAAlignmentV2Result,
+  getHelp: getMAAlignmentV2Help,
+};
+
+// =====================================================================
+// 2026-08-08 09:13 — zmen均算去 (舊 M1 v0.3.0 抽離獨立)
+//   舊 M1 嘅 v0.3.0 邏輯保留, 用 zmenMAAdapter named export 暴露
+//   testing page 嘅 zmen均算去 entry 繼續用頂層 default
+// =====================================================================

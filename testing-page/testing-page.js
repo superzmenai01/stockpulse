@@ -30,7 +30,16 @@ const BACKEND_URL = 'http://localhost:18792';
 // 新 M1 位置 (AS-03 7 個 modules 嘅第 1 個) 暫時空, 等大少提供新 spec。
 // ===========================================================================
 const REGISTRY = [
-  // ---- AS-03 7 個 modules (M1 暫時空, M2-M6 done, M7 仍 Pending) ----
+  // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
+  // M1: 均線系統週期判斷法 v2.0 (with Volume & Slope 擴展)
+  //   大少 2026-08-08 09:13 指示: 跟 docx Kimi v2.0 spec 做全新 implementation
+  //   3 個 cycle states + 13 個 output fields + 三階段信心調整
+  {
+    id: 'AS-03-MA',
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'maAlignmentV2Adapter',
+  },
   // M2: 高低點結構法 (原本 M2, 排位不變)
   {
     id: 'AS-03-HL',
@@ -66,18 +75,18 @@ const REGISTRY = [
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'volatilityAdapter',
   },
-  // (M1: 新均線系統週期斷法 — 🚧 Pending, 等大少提供新 spec)
   // (M7: Synthesizer — 🚧 Pending, Stage 1 最後一個)
   // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
   // 舊 M1 改名「zmen均算去」, 搬去 REGISTRY 尾
   // 大少 2026-08-08 08:47:「zmen均算去」係大少自己想出嚟嘅算法, 從
   // 7 個 modules 抽離, 排去 dropdown 最後, 獨立一類
+  // 大少 2026-08-08 09:13: implementation file 改叫 zmen-ma-alignment.ts
   {
     id: 'AS-03',
     displayName: 'zmen均算去',  // 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    // 預設 = 頂層 exports (向後兼容 ma-alignment adapter 嘅 analyze 函數)
+    // 預設 = 頂層 exports (向後兼容 ma-alignment v0.3.0 adapter 嘅 analyze 函數, 留俾 zmen均算去)
     // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
     //   唔再獨立 expose AS-03-VP dropdown
     // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返

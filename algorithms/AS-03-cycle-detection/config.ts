@@ -314,3 +314,49 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = {
   volatility: DEFAULT_VOLATILITY_CONFIG,
   enableFlags: DEFAULT_ENABLE_FLAGS,
 };
+
+/**
+ * MA Alignment v2.0 module config (大少 2026-08-08 — 新 M1 v2.0.0)
+ *
+ * 對應 docx `docs/演算法概念SPECS/01均線系統週期判斷法.docx` v2.0 spec
+ * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`
+ *
+ * 大少 2026-08-08 09:13 指示: 舊 M1 v0.3.0 (10 rules A-J, 4 states) 抽離
+ * 做獨立算法叫 zmen均算去 (file 改名 zmen-ma-alignment.ts), 新 M1 v2.0
+ * 跟 docx Kimi v2.0 spec 重新做, 3 cycles + 成交量加權 + 斜率動能
+ * 兩維度擴展, 信心指數 = base × volume × slope 三階段調整。
+ *
+ * v2.0 vs v0.3.0 差異:
+ * - 3 個 cycle states (uptrend / downtrend / sideways), 唔再有 TRANSITION
+ * - 11 個 config params (vs v0.3.0 嘅 7 個)
+ * - 成交量加權 + 斜率動能 兩維度調整 (v0.3.0 冚)
+ * - 13 個 output fields (vs v0.3.0 嘅 6 個)
+ */
+export interface MAAlignmentV2Config {
+  // Step 1 (input validation)
+  maPeriods: number[];                  // [5, 10, 20, 60] — 均線週期列表
+  thresholdPct: number;                 // 0.02 — 橫行判定閾值 (spread 百分比)
+  enableVolumeWeight: boolean;          // true — 啟用成交量加權
+  enableSlopeCheck: boolean;            // true — 啟用斜率動能調整
+  volumeLookback: number;               // 5 — 成交量比較區間長度 (日)
+  slopeLookback: number;                // 5 — 斜率計算回顧天數 (日)
+  volumeBoostThreshold: number;         // 1.2 — 放量比率門檻
+  volumeShrinkThreshold: number;        // 0.8 — 縮量比率門檻
+  slopeDiscountFactor: number;          // 0.7 — 短期 MA 斜率負的信心折扣
+  sidewaysBaseConfidence: number;       // 0.3 — 橫行時嘅最低基礎信心
+  spreadConfidenceScale: number;        // 0.10 — spread / 0.10 = base_confidence 上限
+}
+
+export const DEFAULT_MA_ALIGNMENT_V2_CONFIG: MAAlignmentV2Config = {
+  maPeriods: [5, 10, 20, 60],
+  thresholdPct: 0.02,
+  enableVolumeWeight: true,
+  enableSlopeCheck: true,
+  volumeLookback: 5,
+  slopeLookback: 5,
+  volumeBoostThreshold: 1.2,
+  volumeShrinkThreshold: 0.8,
+  slopeDiscountFactor: 0.7,
+  sidewaysBaseConfidence: 0.3,
+  spreadConfidenceScale: 0.10,
+};

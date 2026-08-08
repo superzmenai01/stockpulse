@@ -290,12 +290,12 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 - **入口：** `/algorithms` 頁
 - **核心算法：**
   - **AS02** (公司質素分析) — `backend/services/as02_analyzer.py`
-  - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — 6 個 module 已 production (Stage 1 進行中, M1 新 spec 待大少提供)
+  - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — 7 個 module 已 production (Stage 1 進行中, M7 Synthesizer 仍 Pending)
 - **AS03 模組 (2026-08-08 狀態):**
 
   | Module | 算法 | 用途 | Version |
   |--------|------|------|---------|
-  | AS-03-MA | 均線系統週期斷法 (新) | TBD — 大少 2026-08-08 將提供新 spec | — |
+  | AS-03-MA | 均線系統週期判斷法 v2.0 | MA 排列 + 成交量加權 + 斜率動能, 信心 = base × volume × slope | **v2.0.0** |
   | AS-03-HL | 高低點結構法 | Peaks/Troughs + 形態預警 | v0.1.0 |
   | AS-03-TL | 趨勢線法 | 支撐/壓力線 + 突破檢測 | v0.1.0 |
   | AS-03-IND | 動能背馳與衰竭 | RSI/MACD/背馳/衰竭檢測 | v1.0.0 |
