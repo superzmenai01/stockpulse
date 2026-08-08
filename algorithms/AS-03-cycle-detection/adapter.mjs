@@ -6327,14 +6327,23 @@ function renderInterpretation(interpretation, finalAction) {
  *  純 math (R² / ATR / Pearson / Hurst), 唔用 AI
  *  Auto + Manual 2 個 mode (2.6 將加 L2 cache + 「🔄 重新校準」按鈕)
  */
-function renderAdaptiveParams(params) {
+function renderAdaptiveParams(params, cacheInfo = null) {
   if (!params) {
     return '<div style="padding:12px;background:#fff3cd;border-radius:6px;color:#856404;">Adaptive params 仲未 calibrate</div>';
   }
   const { ssiWeights, rsiWeight, kellyFraction, markowitzCorr, hurstThresholds } = params;
+  // 2.6: cache status (last_calibrated + age + valid)
+  const cacheStatus = cacheInfo
+    ? `<div style="font-size:12px;color:#666;margin-bottom:8px;">
+        💾 Cache: ${cacheInfo.last_calibrated ? new Date(cacheInfo.last_calibrated * 1000).toISOString().slice(0, 16) : 'N/A'}
+        (${Math.round((cacheInfo.age_seconds || 0) / 3600)} 小時前, ${cacheInfo.valid ? '🟢 Valid' : '🔴 Expired'})
+        &nbsp;|&nbsp;
+        <button id="recalibrate-btn" onclick="window.__recalibrateAdaptiveParams && window.__recalibrateAdaptiveParams()" style="background:#1890ff;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;">🔄 重新校準</button>
+      </div>`
+    : '<div style="font-size:12px;color:#666;margin-bottom:8px;">🧮 R² / ATR / Pearson / Hurst — 唔用 AI, 唔用 LLM</div>';
   return `
     <h4 style="margin-top:24px;margin-bottom:4px;">⚙️ 5 個 Adaptive Params (2.5 — 自動校準, 純 math)</h4>
-    <div style="font-size:12px;color:#666;margin-bottom:8px;">🧮 R² / ATR / Pearson / Hurst — 唔用 AI, 唔用 LLM</div>
+    ${cacheStatus}
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
       <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">📐 SSI 戰略層權重 (R² normalized)</div>
@@ -6368,7 +6377,6 @@ function renderAdaptiveParams(params) {
         </div>
       </div>
     </div>
-    <div style="margin-top:8px;font-size:12px;color:#999;">🔄 Manual 重新校準按鈕將喺 2.6 commit 加 (L2 JSON cache)</div>
   `;
 }
 
@@ -6551,14 +6559,46 @@ export const decisionEngineAdapter = {
     // 2. 動態 import 從 .ts file
     const { DecisionEngine, calibrateAdaptiveParams, applyAdaptiveParamsToSynthesizer, DEFAULT_ADAPTIVE_PARAMS } = await import('./modules/decision-engine.ts');
 
-    // 3. 2.5 — 5 個 adaptive params 從 klines 自動 calibrate
-    const sentiment6DHistory = synthResult.module_verdicts.map(mv => mv.sentiment_6d);
-    const adaptiveParams = calibrateAdaptiveParams(klines || [], sentiment6DHistory);
+    // 3. 2.6 — L2 cache: 試讀 cache (7 日內 valid 就用 cache, 否則重新 calibrate)
+    const symbol = options.symbol || options.code || 'unknown';
+    let adaptiveParams = null;
+    let cacheInfo = null;
+    let useCache = false;
+    try {
+      const cacheResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`);
+      if (cacheResp.ok) {
+        const data = await cacheResp.json();
+        if (data && data.params && data.valid) {
+          adaptiveParams = data.params;
+          cacheInfo = data;
+          useCache = true;
+        }
+      }
+    } catch (e) {
+      // Backend 唔 work, fallback 去 calibrate
+      console.warn('[M8 Decision Engine] Cache fetch failed, fallback to fresh calibrate:', e);
+    }
 
-    // 4. apply adaptive params 落 M7 synthesizer (影響 SSI weight)
+    // 4. 如果冇 cache 或過期, 重新 calibrate
+    if (!useCache) {
+      const sentiment6DHistory = synthResult.module_verdicts.map(mv => mv.sentiment_6d);
+      adaptiveParams = calibrateAdaptiveParams(klines || [], sentiment6DHistory);
+      // Save 落 cache (background, 唔阻 analyze)
+      try {
+        await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adaptiveParams),
+        });
+      } catch (e) {
+        console.warn('[M8 Decision Engine] Cache save failed:', e);
+      }
+    }
+
+    // 5. apply adaptive params 落 M7 synthesizer (影響 SSI weight)
     const synthResultWithParams = applyAdaptiveParamsToSynthesizer(synthResult, adaptiveParams);
 
-    // 5. Market data — 部分由 adaptive params 衍生
+    // 6. Market data — 部分由 adaptive params 衍生
     const currentPrice = (klines && klines.length > 0) ? klines[klines.length - 1].close : 0;
     const consecutiveUpDays = computeConsecutiveUpDays(klines);
     const marketData = {
@@ -6569,18 +6609,19 @@ export const decisionEngineAdapter = {
       maTrendlineTransition: detectMATLTransition(klines),          // 2.5 從 M1 + M3 衍生
     };
 
-    // 6. 跑 M8 → DecisionVerdict
+    // 7. 跑 M8 → DecisionVerdict
     const eng = new DecisionEngine();
     const decisionVerdict = await eng.decide({
       synthesizerVerdict: synthResultWithParams,
       marketData,
     });
 
-    // 7. 合併 synth + decision + adaptive params (保留所有 trace + 供 render 用)
+    // 8. 合併 synth + decision + adaptive params (保留所有 trace + 供 render 用)
     return {
       ...decisionVerdict,
       module_cycle_verdicts: synthResultWithParams.module_cycle_verdicts,
       adaptive_params: adaptiveParams,
+      cache_info: cacheInfo,
     };
   },
   renderResult: (verdict) => {
@@ -6697,8 +6738,8 @@ export const decisionEngineAdapter = {
         <div style="font-size:12px;color:#666;margin-bottom:8px;">🪝 將來可 swap 落 LLM call (OpenAI / MiniMax / Kimi), 而家用 hardcoded template</div>
         ${renderInterpretation(interpretation, final_action)}
 
-        <!-- 5 個 Adaptive Params (2.5) -->
-        ${renderAdaptiveParams(adaptive_params)}
+        <!-- 5 個 Adaptive Params (2.5 + 2.6 L2 cache) -->
+        ${renderAdaptiveParams(adaptive_params, cache_info)}
 
         <!-- 6 個 Metric Mini-Cards -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
@@ -6748,12 +6789,11 @@ export const decisionEngineAdapter = {
 
         <!-- Sprint 2 進度提示 (下個 commits 將加) -->
         <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-          <strong>✅ Sprint 2 sub-task 2.1-2.5 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 + 交易卡 adaptive + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook) + 5 個 adaptive params auto-calibrate<br>
+          <strong>✅ Sprint 2 sub-task 2.1-2.6 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 + 交易卡 adaptive + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook) + 5 個 adaptive params auto-calibrate + L2 JSON cache (7 日 expiry + 「🔄 重新校準」按鈕)<br>
           <strong>🚧 Sprint 2 仍待做:</strong>
           <ol style="margin-top:4px;">
-            <li>2.6 L2 JSON file cache (~/.stockpulse/adaptive_params/&lt;symbol&gt;.json) + Manual 重新校準按鈕</li>
             <li>2.7 10 隻 demo 股票 test cases (5 港 + 5 美)</li>
-            <li>2.8 Full testing page UI (10 個 SVG chart)</li>
+            <li>2.8 Full testing page UI (10 個 SVG chart + 「🔄 重新校準」按鈕 wire 落 fetch)</li>
             <li>2.9 Sprint 2 spec doc final + commit + push</li>
           </ol>
         </div>

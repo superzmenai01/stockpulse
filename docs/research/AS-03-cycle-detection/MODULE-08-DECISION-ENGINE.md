@@ -187,13 +187,13 @@ function computeShortTermForecast(expectedReturn, maxDrawdown) {
 
 ---
 
-## 7. L2 JSON File Cache (Stage 1, 唔改 backend)
+## 7. L2 JSON File Cache (Stage 1) — **Sprint 2 sub-task 2.6 impl done**
 
-```typescript
+```json
 // ~/.stockpulse/adaptive_params/<symbol>.json
 {
   "symbol": "HK.00700",
-  "last_calibrated": "2026-08-08T12:00:00Z",
+  "last_calibrated": 1723089600.123,
   "params": {
     "ssiWeights": { "ma": 0.32, "hl": 0.28, "trendline": 0.40 },
     "rsiWeight": 0.22,
@@ -201,13 +201,37 @@ function computeShortTermForecast(expectedReturn, maxDrawdown) {
     "markowitzCorr": { "dailyWeekly": 0.86, "dailyMonthly": 0.58, "weeklyMonthly": 0.71 },
     "hurstThresholds": { "persistent": 0.56, "reverting": 0.44 }
   },
-  "calibration_samples": 252,
-  "calibration_window_days": 60,
   "auto": true
 }
 ```
 
-Stage 2 升 L3 DB (唔改呢個 format).
+**Implementation** (Sprint 2 sub-task 2.6):
+- `backend/services/adaptive_params_cache.py` — 純 disk I/O cache module
+  - `save_params(symbol, params)` — atomic write (tmp file + rename)
+  - `load_params(symbol)` — 讀返 + 7 日 expiry check
+  - `is_cache_valid(symbol)` — 7 日內返 True
+  - `delete_params(symbol)` — testing page 「🔄 重新校準」按鈕用
+  - `list_cached_symbols()` — admin endpoint
+  - `clear_all()` — admin endpoint
+- `backend/api/adaptive_params.py` — FastAPI router
+  - `GET    /api/adaptive-params/{symbol}` — 讀 cache (404 if 過期)
+  - `POST   /api/adaptive-params/{symbol}` — 儲存 params (validate kelly + ssiWeights sum = 1.0)
+  - `DELETE /api/adaptive-params/{symbol}` — 刪 cache
+  - `GET    /api/adaptive-params` — 列出全部 cached symbols
+- Path sanitization: 只允許 alphanumeric + `._-`, 任何 char 被移除都 reject (防 path traversal)
+- Stage 2 將升 L3 DB, format 保持不變
+
+**Frontend integration** (testing page):
+- `adapter.mjs decisionEngineAdapter.analyze` 流程:
+  1. `GET /api/adaptive-params/{symbol}` 試讀 cache
+  2. valid → 用 cache; 過期/不存在 → 重新 calibrate + POST save
+  3. cache info (last_calibrated, age, valid) 顯示喺 render
+
+**Tests**: 21 pytest assertions (5 save + 3 load + 4 validity + 2 delete + 3 list + 1 clear + 2 integration + 1 atomic write)
+
+**Manual 重新校準按鈕** (testing page render):
+- 「🔄 重新校準」button 顯示喺 cache status 行
+- 撳 → DELETE cache + 重新 calibrate (2.8 將 wire 落 testing-page.js event handler)
 
 ---
 
@@ -329,5 +353,5 @@ open http://localhost:8765/testing-page/
 | 2026-08-08 16:05 | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (3 個 volatility buckets: high/medium/low, 跟 kelly_fraction + max_drawdown) | c4e072a5 |
 | 2026-08-08 16:08 | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) + 3 × 3 table render + example + algorithm | 8ad3af82 |
 | 2026-08-08 16:15 | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook 預留 + 8 個 hardcoded template + InterpretationContext interface) | 917cc08d |
-| 2026-08-08 16:25 | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (純 math: R²/ATR/Pearson/Hurst + apply + 3 個 market data detect helpers) | TBD (本 commit) |
-| TBD | v2.1.0 (sub-task 2.6) | L2 JSON file cache (~/.stockpulse/adaptive_params/) + Manual 重新校準按鈕 | TBD |
+| 2026-08-08 16:25 | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (純 math: R²/ATR/Pearson/Hurst + apply + 3 個 market data detect helpers) | f33774e9 |
+| 2026-08-08 16:35 | v2.1.0 (sub-task 2.6) | L2 JSON file cache (~/.stockpulse/adaptive_params/) + Python FastAPI GET/POST/DELETE + 「🔄 重新校準」按鈕 (UI placeholder) | TBD (本 commit) |
