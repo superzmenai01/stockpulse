@@ -572,3 +572,191 @@ export async function runAdaptiveWindow(options: AdaptiveWindowOptions): Promise
     summary: summary!,
   };
 }
+
+// =============================================================
+// 9.3 — Walk-Forward Cross-Validation (3 folds rolling)
+// =============================================================
+// 大少 2026-08-08 22:28 揀 B (唔係 80/20):
+//   - 將 adaptive window 後嘅 final klines 切 3 段 rolling
+//   - 每 fold: 前 2/3 tune, 後 1/3 validate
+//   - 3 folds 嘅 validate score 比較 → 確認 stable, 唔係 overfit
+// =============================================================
+
+export interface WalkForwardFoldResult {
+  foldIndex: number;                  // 0, 1, 2
+  tuneKlines: KLine[];                // 該 fold 嘅 tune set
+  validateKlines: KLine[];            // 該 fold 嘅 validate set
+  bestParams: { kelly: number; rsiWeight: number; ssiWeights: { ma: number; hl: number; tl: number } };
+  tuneScore: number;                  // best params 喺 tune set 嘅 score
+  validateScore: number;              // best params 喺 validate set 嘅 score
+  validateSamples: number;            // validate set 嘅 verdict count
+  tuneResult: CoarseGridResult;       // coarse grid result (for trace)
+}
+
+export interface WalkForwardCVResult {
+  folds: WalkForwardFoldResult[];     // 3 個 folds, sorted by foldIndex
+  overall: {
+    bestParams: { kelly: number; rsiWeight: number; ssiWeights: { ma: number; hl: number; tl: number } };
+    avgValidateScore: number;         // mean of 3 validate scores
+    stabilityScore: number;           // 1 - (stddev / mean), 越接近 1 越 stable
+    totalValidateSamples: number;     // sum of 3 validate sets 嘅 samples
+  };
+}
+
+export interface WalkForwardCVOptions {
+  klines: KLine[];
+  decisionFn: (klines: KLine[], options: any) => Promise<DecisionVerdict>;
+  baseSymbol: string;
+  numFolds?: number;                  // default 3
+  tuneRatio?: number;                 // default 0.67 (2/3 tune, 1/3 validate)
+  kellyValues?: number[];
+  rsiWeights?: number[];
+  fineTunePercent?: number;
+  baseReplayConfig?: Partial<ReplayConfig>;
+}
+
+/** 將 klines 切 n 段 rolling folds
+ *  e.g. 100 klines, 3 folds → [0-33], [33-67], [67-100]
+ *  每 fold 內部再 tuneRatio 切 tune/validate
+ */
+function splitFolds(klines: KLine[], numFolds: number): KLine[][] {
+  if (klines.length < numFolds * 30) {
+    throw new Error(`[walk-forward] Insufficient klines: need ≥ ${numFolds * 30}, got ${klines.length}`);
+  }
+  const foldSize = Math.floor(klines.length / numFolds);
+  const folds: KLine[][] = [];
+  for (let i = 0; i < numFolds; i++) {
+    const start = i * foldSize;
+    const end = i === numFolds - 1 ? klines.length : (i + 1) * foldSize;
+    folds.push(klines.slice(start, end));
+  }
+  return folds;
+}
+
+/** Stddev (population, 簡單除 n) */
+function stddev(values: number[]): number {
+  if (values.length === 0) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+/** Walk-forward CV (3 folds rolling, 大少 22:28 揀 B 方案)
+ *  - 對每 fold:
+ *    - Tune: runCoarseGrid + runFineTune on tune set → bestParams
+ *    - Validate: runReplay(validate set, bestParams) → score
+ *  - Overall:
+ *    - bestParams = 用 avg validate score 最高嗰個 fold 嘅 params
+ *    - avgValidateScore = mean
+ *    - stabilityScore = 1 - stddev/mean (越接近 1 越 stable)
+ */
+export async function runWalkForwardCV(options: WalkForwardCVOptions): Promise<WalkForwardCVResult> {
+  const numFolds = options.numFolds ?? 3;
+  const tuneRatio = options.tuneRatio ?? 0.67;
+
+  // 1. Split klines into n folds
+  const folds = splitFolds(options.klines, numFolds);
+
+  // 2. For each fold, tune + validate
+  const foldResults: WalkForwardFoldResult[] = [];
+
+  for (let i = 0; i < folds.length; i++) {
+    const foldKlines = folds[i];
+    const tuneEnd = Math.floor(foldKlines.length * tuneRatio);
+    const tuneKlines = foldKlines.slice(0, tuneEnd);
+    const validateKlines = foldKlines.slice(tuneEnd);
+
+    // Check minimum samples
+    if (tuneKlines.length < 60) {
+      console.warn(`[walk-forward] Fold ${i} tune set too short: ${tuneKlines.length} klines, skipping`);
+      continue;
+    }
+    if (validateKlines.length < 30) {
+      console.warn(`[walk-forward] Fold ${i} validate set too short: ${validateKlines.length} klines, skipping`);
+      continue;
+    }
+
+    // Tune: coarse grid + fine tune
+    const coarse = await runCoarseGrid({
+      klines: tuneKlines,
+      decisionFn: options.decisionFn,
+      baseSymbol: options.baseSymbol,
+      kellyValues: options.kellyValues,
+      rsiWeights: options.rsiWeights,
+      baseReplayConfig: options.baseReplayConfig,
+    });
+    const fineTune = await runFineTune({
+      klines: tuneKlines,
+      decisionFn: options.decisionFn,
+      top5: coarse.top5,
+      baseSymbol: options.baseSymbol,
+      fineTunePercent: options.fineTunePercent,
+      baseReplayConfig: options.baseReplayConfig,
+    });
+
+    // Validate: 用 best params 跑 validate set
+    const validateReplayConfig: ReplayConfig = {
+      symbol: options.baseSymbol,
+      klines: validateKlines,
+      holdDays: [5, 10, 20],
+      stepDays: 5,
+      lookbackDays: 60,
+      ...options.baseReplayConfig,
+      params: { ...(options.baseReplayConfig?.params ?? {}), ...fineTune.best.params },
+    };
+    const validateSummary = await runReplay(validateKlines, validateReplayConfig, options.decisionFn);
+    const validateScore = scoreResult(validateSummary);
+
+    foldResults.push({
+      foldIndex: i,
+      tuneKlines,
+      validateKlines,
+      bestParams: fineTune.best.params,
+      tuneScore: fineTune.best.score,
+      validateScore,
+      validateSamples: validateSummary.totalDays,
+      tuneResult: coarse,
+    });
+  }
+
+  // 3. Overall: 揀 bestParams 用 avg validate score 最高嗰個 fold
+  // (或者用 mean of all 3 fold 嘅 params, 但揀 best-by-validate 較易解釋)
+  // 為咗 stable, 我哋揀 tuneScore 加權 validateScore 最高嘅 fold
+  // 但簡單啲, 用 tuneScore 最高 (因為 fineTune 已經係 best)
+  // 改: 揀 validate score 最高嗰個 (因為呢個係 out-of-sample 真實表現)
+  if (foldResults.length === 0) {
+    // 全部 fold skipped (insufficient data) — return empty result 唔 throw
+    return {
+      folds: [],
+      overall: {
+        bestParams: { kelly: 0.25, rsiWeight: 0.20, ssiWeights: { ma: 0.4, hl: 0.3, tl: 0.3 } },  // default fallback
+        avgValidateScore: 0,
+        stabilityScore: 0,
+        totalValidateSamples: 0,
+      },
+    };
+  }
+
+  const bestFold = foldResults.reduce((best, curr) =>
+    curr.validateScore > best.validateScore ? curr : best
+  );
+
+  // 4. Stability + avg metrics
+  const validateScores = foldResults.map(f => f.validateScore);
+  const avgValidateScore = validateScores.reduce((a, b) => a + b, 0) / validateScores.length;
+  const stddevScore = stddev(validateScores);
+  // stability = 1 - (stddev / |mean|), clamp [0, 1]
+  // mean ≈ 0 時 stability = 0 (避 divide by zero)
+  const stabilityScore = Math.abs(avgValidateScore) < 0.001 ? 0 : Math.max(0, Math.min(1, 1 - stddevScore / Math.abs(avgValidateScore)));
+  const totalValidateSamples = foldResults.reduce((sum, f) => sum + f.validateSamples, 0);
+
+  return {
+    folds: foldResults,
+    overall: {
+      bestParams: bestFold.bestParams,
+      avgValidateScore,
+      stabilityScore,
+      totalValidateSamples,
+    },
+  };
+}

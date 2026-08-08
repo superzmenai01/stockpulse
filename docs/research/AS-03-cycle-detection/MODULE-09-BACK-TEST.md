@@ -211,6 +211,81 @@ export async function runReplay(
 
 ---
 
+## 9. Coarse Grid + Fine Tune + Adaptive Window (9.2 done ✅)
+
+### 9.2.1 核心概念 (plain language)
+- **Coarse grid (粗篩)**: 試 9 個 params combinations, 揀 top 5
+- **Fine tune (微調)**: 對 top 5 個做 ±20% 微調, 揀 best
+- **Adaptive window (智能窗口)**: 6 個月 start, 樣本唔夠自動加, max 18 個月
+
+### 9.2.2 Score Formula
+- `score = hitRate5d × 0.5 + (avgForwardReturn5d / 5) × 0.5 × 100`
+- 命中率 50% + 平均回報 50% (normalized)
+- 範圍: -50 to +100 (typical)
+
+### 9.2.3 Default Search Values
+- **Kelly**: `[0.125, 0.25, 0.5]` (octo / quarter / half)
+- **RSI weight**: `[0.10, 0.20, 0.30]`
+- **SSI weights**: 1 個 default variation (大少 22:28 確認暫 tune 1 個 dimension, 9.4 將加 full)
+
+### 9.2.4 永遠 Adaptive Window 真實邏輯
+- 6 個月 (126 trading days) 開始
+- lookback 60 + step 5 計算: 6 個月淨係 13 個 verdicts, 唔夠 30
+- 通常要 extend 1-2 次到 9 月 / 12 月先夠
+- Max 18 個月 (378 days) cap, 唔可以無限 extend
+
+---
+
+## 10. Walk-Forward Cross-Validation (9.3 next)
+
+### 10.1 點解需要 (Why)
+
+Coarse grid + fine tune 揾 optimal 容易 overfit 過去。例:
+- 過去 6 個月 HK.00700 嘅 optimal Kelly = 0.5
+- 但呢個 setting 係咪將來估 work? 唔知
+
+Walk-forward CV 解決:
+- 將 12 個月 data 切 3 段 rolling
+- 每段: 前 2/3 tune, 後 1/3 validate
+- 如果 3 段 validate 嘅 optimal 接近, 表示 stable, 唔係 overfit
+- 如果差異大, 表示 overfit, 揀 average score 最高嗰個
+
+### 10.2 Algorithm
+
+```
+Final klines (e.g. 12 月 from adaptive window)
+  ↓
+Split 3 folds (rolling, each 1/3 of data):
+  Fold 1: klines[0:N/3]
+  Fold 2: klines[N/3:2N/3]
+  Fold 3: klines[2N/3:N]
+  ↓
+For each fold:
+  Tune set = first 2/3 of fold
+  Validate set = last 1/3 of fold
+  
+  Tune: runCoarseGrid + runFineTune on tune set → bestParams
+  Validate: runReplay(validate set, bestParams) → score
+  ↓
+Output:
+  folds: [{ tuneParams, validateScore, validateSamples }, ...]
+  overall: 
+    bestParams: average best across folds (or pick best by avg validate score)
+    avgValidateScore: mean of 3 folds' validate scores
+    stabilityScore: 1 - stddev(3 validate scores) / mean  (closer to 1 = more stable)
+```
+
+### 10.3 永遠 Full Show Fold Results (大少 11:57 永久 rule)
+- 3 段 fold 嘅 tune params + validate score 全部 display
+- User 可以睇到「係咪真係 stable, 唔係 overfit」
+
+### 10.4 Edge Cases
+- Final klines < 90 days: throw error (3 folds × 30 days each 唔夠)
+- 任何 fold 嘅 tune set 唔夠 30 samples: skip fold, log warning
+- 全部 fold skipped: throw error (insufficient data)
+
+---
+
 ## 8. 下一步 (9.2-9.6)
 
 | Sub-task | 做乜 | 預計 commit |
