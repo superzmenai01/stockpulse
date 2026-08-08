@@ -129,6 +129,19 @@ const REGISTRY = [
     //   唔再獨立 expose AS-03-VP dropdown
     // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返
   },
+  // ---- M9 Back Test (09) — Sprint 3 sub-task 9.5 done (大少 22:28 Go) ----
+  // 大少 2026-08-08 22:28 — 6 個月歷史 K 線 replay M8 verdict, 對比 5/10/20 日後真實升跌
+  // Coarse grid (3×3=9) + fine tune top 5 ±20% + adaptive window 6→18 個月 + walk-forward CV 3 段
+  // 自動 POST optimal + forward return records 落 per-symbol cache (9.4)
+  {
+    id: 'AS-03-BT',
+    displayName: '09 — AS-03-BT',  // 大少 2026-08-08 10:06: 編號 09 = M9 Back Test
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'backTestAdapter',
+    // 9.5: testing page entry 09 — 揀 stock → 撳跑 → out optimal params + walk-forward CV folds
+    // 9.6 (next): HK.00700 pilot only + spec doc final
+  },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
 ];

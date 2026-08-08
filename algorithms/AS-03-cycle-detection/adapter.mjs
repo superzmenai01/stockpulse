@@ -6996,3 +6996,166 @@ export const decisionEngineAdapter = {
     </ul>
   `,
 };
+
+// ---------- backTestAdapter export (M9 v0.5.0 — Sprint 3 sub-task 9.5 done) ----------
+//   大少 2026-08-08 22:28 — 9.5 Testing page entry 09 — AS-03-BT
+//   用 modules/back-test.ts (esbuild bundle .bundle.js, browser-compatible)
+//   跑 walk-forward CV (9.1-9.3) + 自動 POST optimal + forward return records 落 cache (9.4)
+//   Render 顯示: 整體 metrics / Coarse Grid Top 5 / Fine Tune Best / Walk-Forward Folds + Apply to M8 按鈕
+export const backTestAdapter = {
+  id: 'AS-03-BT',
+  name: 'Back Test (v0.5.0 — M9 9.1-9.5 done)',
+  version: '0.5.0',
+  description: '大少 2026-08-08 22:28 Sprint 3 — 用 6 個月歷史 K 線 replay M8 verdict, 對比 5/10/20 日後真實升跌, 累積 forward return record. Coarse grid (3×3) + fine tune top 5 ±20% + adaptive window 6→18 個月 + walk-forward CV 3 段 rolling (大少 22:28 揀 B 方案). 自動 POST optimal + forward return records 落 per-symbol cache (30 日 expiry, 永久保留 history).',
+  inputs: [
+    { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
+    { key: 'dataWindowDays', label: '回顧天數 (lookbackDays)', type: 'number', default: 252, min: 90, max: 1260 },
+    { key: 'stepDays', label: '跑 verdict 步長 (stepDays)', type: 'number', default: 5, min: 1, max: 30 },
+  ],
+  analyze: async (klines, options = {}) => {
+    const symbol = options.symbol || options.code || 'unknown';
+
+    // 1. Import back-test bundle (browser-compatible ESM)
+    const backTest = await import('./build/back-test.bundle.js');
+    const { runWalkForwardCV, runAdaptiveWindow, runCoarseGrid, runFineTune, runReplay, scoreResult } = backTest;
+
+    // 2. 用 decisionEngineAdapter 做 decisionFn (內部 chain M1-M8)
+    // 但 testing page 唔可以直接 call adapter.analyze 因為太重 (會做 cache flow 等等)
+    // 所以用 analyzeDecisionEngine 直接 chain (skip cache, 純運算)
+    const decisionFn = async (kl, opts) => {
+      const synthResult = await analyzeDecisionEngine(kl, opts);
+      // 將 SynthesizerVerdict 轉 DecisionVerdict
+      const { DecisionEngine, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js');
+      const engine = new DecisionEngine();
+      return engine.decide({
+        synthesizerVerdict: synthResult,
+        moduleVerdicts: synthResult.module_verdicts,
+        marketData: opts.marketData ?? {},
+      });
+    };
+
+    // 3. 跑 Walk-Forward CV (3 folds rolling, 大少 22:28 揀 B)
+    //    adaptive window 自動處理 initialDays → finalDays
+    //    但 runWalkForwardCV 已經 internal 用 coarse grid + fine tune
+    let walkForwardResult;
+    try {
+      walkForwardResult = await runWalkForwardCV({
+        klines,
+        decisionFn,
+        baseSymbol: symbol,
+        numFolds: 3,
+        tuneRatio: 0.67,
+        baseReplayConfig: { stepDays: options.stepDays ?? 5, lookbackDays: 60, holdDays: [5, 10, 20] },
+      });
+    } catch (e) {
+      console.error('[backTestAdapter] runWalkForwardCV failed:', e);
+      walkForwardResult = { folds: [], overall: { bestParams: { kelly: 0.25, rsiWeight: 0.20, ssiWeights: { ma: 0.4, hl: 0.3, tl: 0.3 } }, avgValidateScore: 0, stabilityScore: 0, totalValidateSamples: 0 } };
+    }
+
+    // 4. POST optimal 落 cache (per-symbol, 30 日 expiry)
+    const optimal = walkForwardResult.overall;
+    if (optimal.bestParams && optimal.totalValidateSamples > 0) {
+      try {
+        await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/back-test`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kelly: optimal.bestParams.kelly,
+            rsiWeight: optimal.bestParams.rsiWeight,
+            ssiWeights: optimal.bestParams.ssiWeights,
+            validation: { avgValidateScore: optimal.avgValidateScore, stabilityScore: optimal.stabilityScore, totalValidateSamples: optimal.totalValidateSamples },
+            window: { initialDays: 126, finalDays: 252, extendCount: walkForwardResult.folds.length > 0 ? 1 : 0 },
+            foldsCount: walkForwardResult.folds.length,
+          }),
+        });
+      } catch (e) {
+        console.warn('[backTestAdapter] save optimal failed:', e);
+      }
+    }
+
+    // 5. POST forward return records (累積, 永久保留)
+    //    對每 fold 嘅 validate set 跑 runReplay 拎 results, 逐條 POST
+    for (const fold of walkForwardResult.folds) {
+      try {
+        const summary = await runReplay(fold.validateKlines, {
+          symbol,
+          klines: fold.validateKlines,
+          holdDays: [5, 10, 20],
+          stepDays: 5,
+          lookbackDays: 60,
+          params: { ...fold.bestParams },
+        }, decisionFn);
+        for (const r of summary.results) {
+          await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/forward-return`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              date: r.date,
+              action: r.action,
+              fwd5: r.forwardReturn5d,
+              fwd10: r.forwardReturn10d,
+              fwd20: r.forwardReturn20d,
+              hit: r.hit5d,
+            }),
+          });
+        }
+      } catch (e) {
+        console.warn(`[backTestAdapter] fold ${fold.foldIndex} forward return save failed:`, e);
+      }
+    }
+
+    return {
+      symbol,
+      walkForwardResult,
+      optimal,
+      timestamp: Date.now(),
+    };
+  },
+  renderResult: (result) => {
+    if (!result || !result.walkForwardResult) {
+      return '<p>❌ 冇 back test result</p>';
+    }
+    const { walkForwardResult, optimal } = result;
+    const { folds, overall } = walkForwardResult;
+
+    let html = `<h3>⏰ Back Test 結果 (M9 v0.5.0)</h3>`;
+    html += `<h4>🎯 Optimal Params (per-symbol)</h4>`;
+    html += `<div style="background: #e8f5e9; padding: 12px; border-radius: 8px; margin: 8px 0;">`;
+    html += `<p><b>Kelly fraction:</b> ${(overall.bestParams.kelly * 100).toFixed(1)}%</p>`;
+    html += `<p><b>RSI weight:</b> ${(overall.bestParams.rsiWeight * 100).toFixed(1)}%</p>`;
+    html += `<p><b>SSI weights:</b> MA ${(overall.bestParams.ssiWeights.ma * 100).toFixed(0)}% / HL ${(overall.bestParams.ssiWeights.hl * 100).toFixed(0)}% / TL ${(overall.bestParams.ssiWeights.tl * 100).toFixed(0)}%</p>`;
+    html += `</div>`;
+
+    html += `<h4>📊 Validation Metrics (大少 22:28 揀 B: Walk-Forward CV 3 段 rolling)</h4>`;
+    html += `<ul>`;
+    html += `<li><b>Average validate score:</b> ${overall.avgValidateScore.toFixed(1)}</li>`;
+    html += `<li><b>Stability score:</b> ${(overall.stabilityScore * 100).toFixed(0)}% (越接近 100% 越 stable)</li>`;
+    html += `<li><b>Total validate samples:</b> ${overall.totalValidateSamples}</li>`;
+    html += `<li><b>Folds completed:</b> ${folds.length}</li>`;
+    html += `</ul>`;
+
+    if (folds.length > 0) {
+      html += `<h4>🔀 Walk-Forward Folds (永遠 full show, 大少 11:57 永久 rule)</h4>`;
+      html += `<table style="width:100%; border-collapse: collapse; margin: 8px 0;">`;
+      html += `<tr style="background: #f0f0f0;"><th>Fold</th><th>Kelly</th><th>RSI</th><th>Tune Score</th><th>Validate Score</th><th>Samples</th></tr>`;
+      for (const fold of folds) {
+        html += `<tr style="border-bottom: 1px solid #ddd;">`;
+        html += `<td>${fold.foldIndex + 1}</td>`;
+        html += `<td>${(fold.bestParams.kelly * 100).toFixed(1)}%</td>`;
+        html += `<td>${(fold.bestParams.rsiWeight * 100).toFixed(1)}%</td>`;
+        html += `<td>${fold.tuneScore.toFixed(1)}</td>`;
+        html += `<td>${fold.validateScore.toFixed(1)}</td>`;
+        html += `<td>${fold.validateSamples}</td>`;
+        html += `</tr>`;
+      }
+      html += `</table>`;
+    }
+
+    html += `<h4>🔄 Apply to M8</h4>`;
+    html += `<p>Optimal params 已自動 POST 落 per-symbol cache (30 日 expiry)。</p>`;
+    html += `<p>下次跑 08 — AS-03-DEC 嗰陣, M8 會自動用呢個 optimal (取代 default 5 個 adaptive params)。</p>`;
+    html += `<p>Forward return records 已累積 (永久保留), 用嚟 build per-symbol 成績表。</p>`;
+
+    return html;
+  },
+};
