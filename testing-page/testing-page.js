@@ -23,11 +23,21 @@ const BACKEND_URL = 'http://localhost:18792';
 //   用呢個 field 指定要攞邊一個 named export
 //   例: adapterExport: 'volumePriceAdapter' 會取 adapter.volumePriceAdapter
 //
-// === 大少 2026-08-08 08:47 指示 ===
-// 舊 M1「均線系統週期斷法」改名「zmen均算法」, 從 7 個 modules 抽離
-// (唔屬於 AS-03 7 個 modules 計算)。REGISTRY array 將 zmen均算法
-// 放最尾, 7 個 modules 嘅 M2-M6 排位不變。
-// 新 M1 位置 (AS-03 7 個 modules 嘅第 1 個) 暫時空, 等大少提供新 spec。
+// === 大少 2026-08-08 08:47 + 09:13 + 10:06 + 11:22 指示 ===
+// 08:47 — 舊 M1「均線系統週期斷法」改名「zmen均算法」, 從 7 個 modules 抽離
+//        (唔屬於 AS-03 7 個 modules 計算)。REGISTRY array 將 zmen均算法
+//        放最尾, 7 個 modules 嘅 M2-M6 排位不變。
+// 09:13 — 新 M1「均線系統週期判斷法 v2.0」跟 docx Kimi v2.0 spec 全新做
+//        (3 cycles + 成交量加權 + 斜率動能), file 佔用返 ma-alignment.ts
+//        + spec MODULE-01-MA-ALIGNMENT.md
+// 09:50 — 改名「zmen均算去」→「zmen均算法」(typo 修正)
+// 10:06 — 6 個 modules 加編號 01-06 喺 dropdown displayName
+// 11:22 — M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module
+//        (testing page 1 個 entry "08 — AS-03-ENG" 排 [6], spec 拆 2 份 reference
+//        MODULE-07-08-DECISION-ENGINE.md, codebase 1 個 file modules/decision-engine.ts)
+// 12:02 — Stage 1 收官 spec + doc 同步, M7+M8 merged mega module spec done (impl pending),
+//        等大少 review + confirm Plan A (Sprint 1: 6 個 modules 加 output fields + M7 impl;
+//        Sprint 2: M8 decision tree + trading card + 5 adaptive params + L2 cache)
 // ===========================================================================
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -81,7 +91,25 @@ const REGISTRY = [
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'volatilityAdapter',
   },
-  // (M7: Synthesizer — 🚧 Pending, Stage 1 最後一個)
+  // (M7: Synthesizer + M8: Decision Engine — 合併做 1 個 mega module, 見下一個 entry 排 [6])
+  //   大少 2026-08-08 11:22 指示: M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module
+  //   (testing page 1 個 entry, spec 拆 2 份 reference, codebase 1 個 file)
+  {
+    id: 'AS-03-ENG',
+    displayName: '08 — AS-03-ENG',  // 大少 2026-08-08 11:22: M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    // adapterExport: 'decisionEngineAdapter'  — 仲未 impl, Stage 1 收官 spec done 等大少 review + confirm Plan A
+    // ⏸️ Spec done (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), impl pending
+    //   5 個 adaptive params runtime auto-calibrate (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold)
+    //   L2 JSON file cache (~/.stockpulse/adaptive_params/<symbol>.json)
+    //   8 個 finalAction: BUY / ADD / HOLD / REDUCE / SELL / WAIT / TRAP / TRANSITION
+    //   8 個 grade: A+ / A / B+ / B / C+ / C / D / F
+    //   10 個 SVG chart (Sentiment Radar / Timeframe Alignment / Trend Comparison / Position Donut / 等)
+    //   UX: 永遠全 Show, 多圖少文字, 顏色對應狀態
+    //   Plan A: Sprint 1 (4-5 日) M7 + 6 個 modules 加 output fields + impl + tests
+    //           Sprint 2 (2-3 日) M8 decision tree + trading card + 5 adaptive params + L2 cache
+  },
   // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
   // 舊 M1 改名「zmen均算法」, 搬去 REGISTRY 尾
   // 大少 2026-08-08 08:47:「zmen均算法」係大少自己想出嚟嘅算法, 從
