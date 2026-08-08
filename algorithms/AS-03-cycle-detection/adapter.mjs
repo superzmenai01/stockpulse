@@ -5296,68 +5296,176 @@ function renderMAAlignmentV2Result(verdict) {
   if (!meta.cycle) {
     return `<div class="result-error">數據不足: ${meta.dataDays || 0} / ${meta.requiredLength || 70} 條</div>`;
   }
-  const cycleEmoji = { uptrend: '🟢', downtrend: '🔴', sideways: '🟡' };
-  const volSignalText = { expanding: '放量', shrinking: '縮量', neutral: '持平' };
+  const cycleColor = meta.cycle === 'uptrend' ? '#26BA75' : meta.cycle === 'downtrend' ? '#EE5151' : '#F39C12';
+  const confidencePct = (meta.confidence * 100).toFixed(0);
+  const cycleCode = meta.cycle.toUpperCase();
 
-  // ===== 📖 詳細解讀 (13 個 output fields) =====
-  const explanation = `
+  // 主題排列 (e.g. "MA5 > MA10 > MA20 > MA60" 代表典型多頭)
+  const arrangementText = meta.maRanks.join(' > ');
+  const isTypicalUp = arrangementText === 'MA5 > MA10 > MA20 > MA60';
+  const isTypicalDown = arrangementText === 'MA60 > MA20 > MA10 > MA5';
+  const arrangementLabel = isTypicalUp ? '典型多頭排列' : isTypicalDown ? '典型空頭排列' : '非典型排列';
+
+  return `
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header">📊 均線系統週期判斷法 v2.0 (with Volume & Slope)</h3>
+      </div>
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${cycleColor}">
+          <span class="state-label">${meta.cycleLabel}</span>
+          <span class="state-code">${cycleCode}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">信心指數</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>排列:</span> <strong>${arrangementLabel}</strong></div>
+          <div class="summary-row"><span>Spread:</span> <strong>${(meta.maxSpreadPct * 100).toFixed(2)}%</strong></div>
+          <div class="summary-row"><span>基礎信心:</span> <strong>${meta.baseConfidence}</strong></div>
+        </div>
+      </div>
+
+      <div class="interpretation">
+        <strong>📌 判斷：</strong>${meta.reason}
+      </div>
+
+      <div class="ma-info">
+        <h4>📐 均線詳細</h4>
+        <div class="ma-grid">
+          ${Object.entries(meta.maValues).map(([k, v]) => `
+            <div class="ma-item">
+              <span class="ma-label">${k}</span>
+              <span class="ma-value">${v}</span>
+              <span class="ma-slope" style="color: ${meta.maSlopes[k] >= 0 ? '#26BA75' : '#EE5151'}">
+                ${meta.maSlopes[k] >= 0 ? '↗' : '↘'} ${(meta.maSlopes[k] * 100).toFixed(2)}%
+              </span>
+            </div>
+          `).join('')}
+        </div>
+        <p class="ma-arrangement">均線由大到小: <code>${arrangementText}</code></p>
+      </div>
+
+      <div class="volume-info">
+        <h4>💰 成交量分析</h4>
+        <div class="volume-grid">
+          <div class="vol-item"><span class="vol-label">近期/前期比</span><span class="vol-value">${meta.volumeTrendRatio}</span></div>
+          <div class="vol-item"><span class="vol-label">訊號</span><span class="vol-value">${meta.volumeSignal === 'expanding' ? '📈 放量' : meta.volumeSignal === 'shrinking' ? '📉 縮量' : '➡️ 持平'}</span></div>
+          <div class="vol-item"><span class="vol-label">動能分數</span><span class="vol-value">${meta.momentumScore}</span></div>
+        </div>
+        ${meta.adjustmentLog.length > 0 ? `
+          <div class="adjustment-log">
+            <strong>調整記錄:</strong>
+            <ul>
+              ${meta.adjustmentLog.map(log => `<li>${log}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+      </div>
+
+      ${renderMAAlignmentV2DetailedExplanation(verdict)}
+
+      ${renderMAAlignmentV2StrategyAdvice(verdict)}
+
+      ${renderMAAlignmentV2UsageGuide(verdict)}
+
+      <details class="meta-details">
+        <summary>🔧 技術細節（debug 用）</summary>
+        <pre>maValues: ${Object.entries(meta.maValues).map(([k, v]) => `${k}=${v}`).join(', ')}
+maRanks: [${meta.maRanks.join(' > ')}]
+maSlopes: ${Object.entries(meta.maSlopes).map(([k, v]) => `${k}=${(v * 100).toFixed(4)}%`).join(', ')}
+momentumScore: ${meta.momentumScore}
+volumeTrendRatio: ${meta.volumeTrendRatio}
+volumeSignal: ${meta.volumeSignal}
+maxSpreadPct: ${meta.maxSpreadPct}
+baseConfidence: ${meta.baseConfidence}
+confidence: ${meta.confidence}
+lastDate: ${meta.lastDate}
+${meta.adjustmentLog.length > 0 ? '\nadjustmentLog:\n' + meta.adjustmentLog.map(s => '  • ' + s).join('\n') : ''}</pre>
+      </details>
+    </div>
+  `;
+}
+
+// ===== 詳細解讀 section =====
+// 用人話逐一解釋 verdict 每個 field 嘅意思
+function renderMAAlignmentV2DetailedExplanation(verdict) {
+  const meta = verdict.meta;
+  const confidencePct = (meta.confidence * 100).toFixed(1);
+  const baseConfidencePct = (meta.baseConfidence * 100).toFixed(1);
+
+  return `
     <div class="result-section">
       <h3>📖 詳細解讀</h3>
-      <p><strong>${cycleEmoji[meta.cycle]} ${meta.cycleLabel}</strong> — 信心指數 <strong>${(meta.confidence * 100).toFixed(1)}%</strong></p>
+      <p>呢個 module 用 3 維度判斷股票所處嘅周期 (上升/下跌/橫行), 同時用 2 個維度調整信心 (成交量 + 斜率)。</p>
       <ul>
         <li><strong>cycle</strong>: ${meta.cycle} (${meta.cycleLabel}) — 而家股票所處嘅周期</li>
-        <li><strong>confidence</strong>: ${meta.confidence} — 綜合信心指數 (base × volume × slope 三階段調整後)</li>
-        <li><strong>baseConfidence</strong>: ${meta.baseConfidence} — 純粹睇 MA 排列 + spread 嘅基礎信心</li>
+        <li><strong>confidence</strong>: ${confidencePct}% — 綜合信心指數, base × volume × slope 三階段調整後</li>
+        <li><strong>baseConfidence</strong>: ${baseConfidencePct}% — 純粹睇 MA 排列 + spread 嘅基礎信心</li>
         <li><strong>maValues</strong>: ${Object.entries(meta.maValues).map(([k, v]) => `${k}=${v}`).join(', ')} — 4 條均線嘅最新值</li>
-        <li><strong>maRanks</strong>: [${meta.maRanks.join(' > ')}] — 均線由大到小嘅排序 (順序排列 = 典型多頭/空頭)</li>
+        <li><strong>maRanks</strong>: [${meta.maRanks.join(' > ')}] — 均線由大到小嘅排序, 順序排列 = 典型多頭/空頭</li>
         <li><strong>maSlopes</strong>: ${Object.entries(meta.maSlopes).map(([k, v]) => `${k}=${(v * 100).toFixed(2)}%`).join(', ')} — 各均線斜率 (正 = 升, 負 = 跌)</li>
-        <li><strong>momentumScore</strong>: ${meta.momentumScore} — 加權動能分數 (短期 MA 權重高)</li>
-        <li><strong>volumeTrendRatio</strong>: ${meta.volumeTrendRatio} — 近期均量 / 前期均量</li>
-        <li><strong>volumeSignal</strong>: ${volSignalText[meta.volumeSignal]} — 量能訊號</li>
-        <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比</li>
-        <li><strong>adjustmentLog</strong>: ${meta.adjustmentLog.length > 0 ? meta.adjustmentLog.join('；') : '(無調整)'}</li>
-        <li><strong>reason</strong>: ${meta.reason}</li>
+        <li><strong>momentumScore</strong>: ${meta.momentumScore} — 加權動能分數, 短期 MA 權重高</li>
+        <li><strong>volumeTrendRatio</strong>: ${meta.volumeTrendRatio} — 近期均量 / 前期均量, &gt; 1.2 為放量, &lt; 0.8 為縮量</li>
+        <li><strong>volumeSignal</strong>: ${meta.volumeSignal === 'expanding' ? '放量' : meta.volumeSignal === 'shrinking' ? '縮量' : '持平'} — 量能訊號</li>
+        <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比, &lt; 2% 強制覆寫做橫行</li>
+        <li><strong>adjustmentLog</strong>: ${meta.adjustmentLog.length > 0 ? meta.adjustmentLog.join('；') : '(無調整)'} — 信心指數調整記錄</li>
+        <li><strong>reason</strong>: ${meta.reason} — 綜合判斷理由</li>
         <li><strong>lastDate</strong>: ${meta.lastDate} — 數據截止日期</li>
       </ul>
     </div>
   `;
+}
 
-  // ===== 🎯 策略建議 =====
-  let strategy = '';
+// ===== 策略建議 section =====
+// 按 cycle state 各自建議
+function renderMAAlignmentV2StrategyAdvice(verdict) {
+  const meta = verdict.meta;
+  let advice = '';
   if (meta.cycle === 'uptrend' && meta.confidence >= 0.7) {
-    strategy = '<p>🟢 <strong>上升趨勢確認</strong> — 可考慮持有 / 逢回調加倉, 留意 maSlopes[MA5] 唔好轉負</p>';
+    advice = '<p>🟢 <strong>上升趨勢確認</strong> — 可考慮持有 / 逢回調加倉, 留意 <code>maSlopes[MA5]</code> 唔好轉負。</p>';
   } else if (meta.cycle === 'uptrend' && meta.confidence < 0.5) {
-    strategy = '<p>🟡 <strong>上升動能減弱</strong> — 留意見頂警號 (縮量 / 短期斜率轉負), 收緊止蝕</p>';
+    advice = '<p>🟡 <strong>上升動能減弱</strong> — 留意見頂警號 (縮量 / 短期斜率轉負), 收緊止蝕位, 等待 <code>maSlopes[MA5]</code> 確認方向。</p>';
   } else if (meta.cycle === 'downtrend' && meta.confidence >= 0.7) {
-    strategy = '<p>🔴 <strong>下跌趨勢確認</strong> — 觀望 / 減倉, 等 maSlopes[MA60] 轉正先考慮撈底</p>';
+    advice = '<p>🔴 <strong>下跌趨勢確認</strong> — 觀望 / 減倉, 等 <code>maSlopes[MA60]</code> 轉正先考慮撈底, 唔好接刀。</p>';
   } else if (meta.cycle === 'downtrend' && meta.confidence < 0.5) {
-    strategy = '<p>🟡 <strong>下跌動能減弱</strong> — 留意反彈機會 (縮量 / 長期斜率轉正), 但要 confirm 結構先信</p>';
+    advice = '<p>🟡 <strong>下跌動能減弱</strong> — 留意反彈機會 (縮量 / 長期斜率轉正), 但要 confirm 結構先信, 等 M2 HL Structure HH 確認。</p>';
   } else if (meta.cycle === 'sideways' && meta.confidence >= 0.7) {
-    strategy = '<p>🟡 <strong>橫行確認</strong> — 等待突破方向, 配合 M6 Volatility Squeeze 訊號捕捉突破</p>';
+    advice = '<p>🟡 <strong>橫行確認</strong> — 等待突破方向, 配合 M6 Volatility Squeeze 訊號捕捉突破, 同時留意量能變化 (放量 = 可能突破)。</p>';
   } else {
-    strategy = '<p>🟡 <strong>結構模糊</strong> — 信心不足, 唔好落大注, 等待 M2/M3 結構確認</p>';
+    advice = '<p>🟡 <strong>結構模糊</strong> — 信心不足, 唔好落大注, 等待 M2/M3 結構確認, 或者再多睇幾日。</p>';
   }
 
-  // ===== 💡 點用點睇 (10 步) =====
-  const usage = `
+  return `
+    <div class="result-section">
+      <h3>🎯 策略建議</h3>
+      ${advice}
+    </div>
+  `;
+}
+
+// ===== 點用點睇 section =====
+// 10 步 step-by-step guide 教 user 點睇呢個結果
+function renderMAAlignmentV2UsageGuide(verdict) {
+  const meta = verdict.meta;
+  return `
     <div class="result-section">
       <h3>💡 點用點睇 (10 步 step-by-step)</h3>
       <ol>
-        <li>睇 <code>cycle</code> 同 <code>cycleLabel</code> 知而家係咩 season (上升/下跌/橫行)</li>
-        <li>對比 <code>confidence</code> 同 <code>baseConfidence</code> — 差越大, 信心調整越多</li>
-        <li>睇 <code>adjustmentLog</code> 知做咗咩 discount / boost (放量/縮量/斜率)</li>
-        <li>確認 <code>maRanks</code> 係典型 (5/10/20/60 由小到大 = 標準多頭排列)</li>
+        <li>睇頂部 <code>state-pill</code> 同 <code>信心指數 %</code> 知大方向同信心</li>
+        <li>對比 <code>confidence</code> (綜合) 同 <code>基礎信心</code> — 差越大, 信心調整越多</li>
+        <li>睇 <code>📌 判斷</code> box 嘅 <code>reason</code> 知 algorithm 點解咁判</li>
+        <li>確認 <code>均線詳細</code> 入面 4 條 MA 嘅值同斜率方向 (↗ 升 / ↘ 跌)</li>
         <li>睇 <code>maSlopes[MA5]</code> 嘅正負 — 短期 MA 斜率係上升動能領先指標</li>
         <li>睇 <code>maSlopes[MA60]</code> 嘅正負 — 長期 MA 斜率係大方向指標</li>
-        <li>睇 <code>volumeSignal</code> + <code>volumeTrendRatio</code> — 錢跟唔跟 (放量跟 = 真升)</li>
+        <li>睇 <code>成交量分析</code> — 近期/前期比 + 訊號 (放量跟 = 真升, 縮量升 = 假升)</li>
+        <li>睇 <code>調整記錄</code> 知做咗咩 discount / boost (放量/縮量/斜率)</li>
         <li>對比 M2 HL Structure — 確認峰谷結構 (HH/HL = 上升, LH/LL = 下跌)</li>
-        <li>對比 M4 Indicators — 確認動能 / RSI / MACD 狀態 (背馳 = 見頂警號)</li>
-        <li>結合多個 module 結果 + M5 量价 + M6 波動率 做最終決策</li>
+        <li>結合多個 module 結果 (M3 Trendline + M4 Indicators + M5 量价 + M6 波動率) 做最終決策</li>
       </ol>
     </div>
   `;
-
-  return explanation + `<div class="result-section"><h3>🎯 策略建議</h3>${strategy}</div>` + usage;
 }
 
 function getMAAlignmentV2Help() {
