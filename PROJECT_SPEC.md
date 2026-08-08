@@ -409,12 +409,13 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 
 ## 🧠 AS-03 Stock Cycle Detection (2026-08-08)
 
-`algorithms/AS-03-cycle-detection/` — 股票週期判定系統,Stage 1 (完成 Module 1-7) 進行中。
+`algorithms/AS-03-cycle-detection/` — 股票週期判定系統,Stage 1 (完成 Module 1-9) 進行中。
 
-### Module 結構 (7 個 done + 1 個獨立 + 2 個 hidden, Stage 1 收官)
+### Module 結構 (8 個 done + 1 個獨立 + 2 個 hidden, Stage 1 + Sprint 3 收官)
 
-> 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7 用編號 07, M8 用編號 08, zmen均算法 唔加 (獨立算法)。
+> 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7 用編號 07, M8 用編號 08, M9 用編號 09, zmen均算法 唔加 (獨立算法)。
 > 大少 2026-08-08 13:30 指示: Plan A 拆返 M7 + M8 兩個獨立 module (testing page 2 個 entries, 2 份 spec doc, 2 個 codebase files).
+> 大少 2026-08-08 22:28 指示: M9 Back Test 開工, Sprint 3 全部 6 個 sub-tasks (9.1-9.6) + 9.7 UI 升級 全部 done (23:55 收官).
 
 | 編號 | Module | 主檔 | Version | 3 Sections |
 |------|--------|------|---------|-----------|
@@ -426,6 +427,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 | 06 | Volatility 波動率收縮擴張 | `modules/volatility.ts` | **v1.0.0** | ✅ |
 | 07 | **終極綜合判定** (Synthesizer — M7) | `modules/synthesizer.ts` | **v1.0.0 (Sprint 1 done, 2026-08-08 13:30 Plan A 拆返)** | ✅ **Sprint 1 done**: M7 Synthesizer 邏輯 (SSI + TCM + Alignment + 8 個 Grade + Kelly) + 6 個 modules standard verdict interface + 64 個 tests + synthesizerAdapter + testing page enable |
 | 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` | **v2.3.0 (Sprint 2 done, 2026-08-08 16:55)** | ✅ **Sprint 2 done (大少 16:55, 8 commits)**: 8 個 finalAction 決策樹 (2.1) + Trading card adaptive (2.2) + 短期走勢 9 scenarios (2.3) + 人話詳細解讀 LLM hook (2.4) + 5 個 adaptive params auto-calibrate (2.5) + L2 JSON cache (2.6) + 10 隻 demo 股票 tests (2.7) + 4 個 SVG chart + 「🔄 重新校準」按鈕 (2.8) |
+| **09** | **回測驗證** (Back Test — M9, 時光機驗證官) | `modules/back-test.ts` | **v0.6.0 (Sprint 3 done, 2026-08-08 23:55)** | ✅ **Sprint 3 done (大少 22:28 啟動, 23:55 收官, 7 commits 9.1-9.7)**: Replay engine (9.1, 17 tests) + Coarse grid 9 + Fine tune ±20% top 5 (9.2, 16 tests) + Walk-Forward CV 3 folds rolling (9.3, 13 tests) + Per-symbol optimal cache 30 日 + Forward return 永久 (9.4, 16 tests) + Testing page entry 09 + back-test bundle (9.5) + HK.00700 pilot (9.6) + M9 UI 升級: 3 SVG (Kelly pie + Walk-Forward bar + Forward return scatter) + 6 色標 + 永遠 full show 過往判決 + 大少話你知 box (4 scenario LLM hook) + 2 個 button (重新校準 + 立即套用 M8) (9.7) |
 | **獨立** | **zmen均算法** (唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ Hidden (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — |
 | ⏸️ Hidden (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — |
@@ -449,7 +451,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 `http://localhost:8765/testing-page/`
 - Vanilla JS standalone HTML (CDN lightweight-charts v4.2.3)
 - 唔 embed StockPulse main app
-- 9 algorithms registered dropdown 排位 (大少 2026-08-08 10:06 加編號 + 2026-08-08 13:30 拆返 M7+M8):
+- 10 algorithms registered dropdown 排位 (大少 2026-08-08 10:06 加編號 + 13:30 拆返 M7+M8 + 22:28 加 M9):
   ```
   01 — AS-03-MA   (M1 v2.0) ← 第 1 位 (新 M1 跟 docx v2.0 spec, 編號 01)
   02 — AS-03-HL   (M2) ← 第 2 位 (編號 02)
@@ -459,6 +461,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
   06 — AS-03-VOL  (M6) ← 第 6 位 (編號 06)
   07 — AS-03-SYN  (M7 Synthesizer) ← 第 7 位 (Sprint 1 done, 編號 07)
   08 — AS-03-DEC  (M8 Decision Engine) ← 第 8 位 (Sprint 2 done, 編號 08) — 8 個 finalAction 揸車比喻 + Trading card + 短期走勢 + LLM hook 解讀 + adaptive params + L2 cache + SVG chart
+  09 — AS-03-BT   (M9 Back Test) ← 第 9 位 (Sprint 3 done, 編號 09) — 時光機驗證官 + Replay + Coarse/Fine grid + Walk-Forward CV + Per-symbol optimal + 永久 forward return + 3 SVG + 6 色標 + 大少話你知 + 2 button
   ────────────────
   zmen均算法 (舊 M1 v0.3.0) ← 最後 (獨立算法, 唔加編號)
   ```

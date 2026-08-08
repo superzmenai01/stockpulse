@@ -316,8 +316,231 @@ Health check endpoint.
 | `/api/health` | GET | Service health |
 | `/health` | GET | LAN-aware health |
 | `/ws/quote` | WebSocket | 報價推送 |
+| **`/api/adaptive-params/*`** | **8 endpoints** | **M8 adaptive params + M9 back test optimal + forward return (見下表)** |
 
 📝 **TODO:** 將來逐一補完 endpoint inventory（每個 module 1 節，body/response/error code 完整）。
+
+---
+
+## 🧠 Adaptive Params API (M8 + M9, 大少 2026-08-08 22:28 Sprint 3 收官)
+
+> M8 Decision Engine 同 M9 Back Test 都需要 per-symbol 嘅 adaptive params cache。呢個 module 提供 8 個 endpoints，分兩組:
+>
+> | Group | Endpoints | 用 | Expiry |
+> |-------|-----------|---|---------|
+> | **M8 (params)** | `GET / POST / DELETE /{symbol}` + `GET ""` (list) | M8 嘅 5 個 adaptive params (kelly, rsiWeight, ssiWeights, scoreWeights, hurstThreshold) | **7 日** (auto-calibrate) |
+> | **M9 (back-test)** | `GET / POST /{symbol}/back-test` | M9 嘅 bestParams (kelly, rsiWeight, ssiWeights) + validation metrics | **30 日** (back test 唔需要每週 tune) |
+> | **M9 (forward-return)** | `POST / GET /{symbol}/forward-return` | M9 永久累積 forward return records (大少 22:28 確認 6 月半衰期 180 日 weighted stats) | **永久保留** (per-symbol cache, 唔會 delete) |
+
+**Base path:** `/api/adaptive-params`
+
+---
+
+### M8 端點 (5 個)
+
+#### `GET /api/adaptive-params/{symbol}`
+
+讀取某 symbol 嘅 cached M8 adaptive params (7 日 expiry)。
+
+**Path Param:**
+
+| Param | Type | 說明 |
+|-------|------|------|
+| `symbol` | str | 股票 code, e.g. `HK.00700` (URL-encoded) |
+
+**Response 200:**
+```json
+{
+  "symbol": "HK.00700",
+  "params": {
+    "kelly": 0.25,
+    "rsiWeight": 0.20,
+    "ssiWeights": { "ma": 0.4, "hl": 0.3, "tl": 0.3 },
+    "scoreWeights": { "trend": 0.4, "momentum": 0.3, "volume": 0.3 },
+    "hurstThreshold": 0.5
+  },
+  "metrics": {
+    "avgScore": 65.4,
+    "stability": 0.78,
+    "totalSamples": 247
+  },
+  "created_at": "2026-08-07T14:30:00",
+  "expires_at": "2026-08-14T14:30:00"
+}
+```
+
+**Response 404:** Cache miss (returns `{"cached": false, "params": null}`)
+
+**Use case:** M8 跑 algorithm 時讀 cache, miss 就 auto-calibrate + save.
+
+---
+
+#### `POST /api/adaptive-params/{symbol}`
+
+儲存某 symbol 嘅 M8 adaptive params 落 cache (7 日 expiry)。
+
+**Body:**
+```json
+{
+  "kelly": 0.25,
+  "rsiWeight": 0.20,
+  "ssiWeights": { "ma": 0.4, "hl": 0.3, "tl": 0.3 },
+  "scoreWeights": { "trend": 0.4, "momentum": 0.3, "volume": 0.3 },
+  "hurstThreshold": 0.5,
+  "metrics": { "avgScore": 65.4, "stability": 0.78, "totalSamples": 247 }
+}
+```
+
+**Validation:**
+- `kelly` ∈ [0, 0.5] (Kelly fraction 上限 50%)
+- `ssiWeights` sum = 1.0 (否則 400)
+- `rsiWeight` ∈ [0, 0.5]
+
+**Response 200:** Updated cache object + `expires_at`
+
+---
+
+#### `DELETE /api/adaptive-params/{symbol}`
+
+刪除某 symbol 嘅 M8 cache (testing page 「🔄 重新校準」按鈕 trigger)。
+
+**Use case:** 大少按「重新校準」, 強制下次跑 M8 時重新 calibrate, 唔用舊 cache。
+
+**Response 200:** `{"deleted": true, "symbol": "HK.00700"}`
+
+---
+
+#### `GET /api/adaptive-params`
+
+列出所有有 cache 嘅 symbols (admin endpoint, 暫時 dev only)。
+
+**Response 200:**
+```json
+{
+  "symbols": ["HK.00700", "HK.00981", "US.AAPL"],
+  "count": 3
+}
+```
+
+---
+
+### M9 端點 (3 個, Sprint 3 9.4 落地)
+
+#### `GET /api/adaptive-params/{symbol}/back-test`
+
+讀取某 symbol 嘅 M9 back test optimal (30 日 expiry)。
+
+**Response 200:**
+```json
+{
+  "symbol": "HK.00700",
+  "bestParams": {
+    "kelly": 0.25,
+    "rsiWeight": 0.20,
+    "ssiWeights": { "ma": 0.4, "hl": 0.3, "tl": 0.3 }
+  },
+  "validation": {
+    "avgValidateScore": 65.4,
+    "stabilityScore": 0.78,
+    "totalValidateSamples": 247
+  },
+  "window": { "initialDays": 126, "finalDays": 252, "extendCount": 1 },
+  "foldsCount": 3,
+  "created_at": "2026-08-08T22:30:00",
+  "expires_at": "2026-09-07T22:30:00"
+}
+```
+
+**Response 404:** Cache miss (returns `{"cached": false}`)
+
+---
+
+#### `POST /api/adaptive-params/{symbol}/back-test`
+
+儲存 M9 back test optimal params 落 cache (30 日 expiry)。
+
+**Body:**
+```json
+{
+  "kelly": 0.25,
+  "rsiWeight": 0.20,
+  "ssiWeights": { "ma": 0.4, "hl": 0.3, "tl": 0.3 },
+  "validation": { "avgValidateScore": 65.4, "stabilityScore": 0.78, "totalValidateSamples": 247 },
+  "window": { "initialDays": 126, "finalDays": 252, "extendCount": 1 },
+  "foldsCount": 3
+}
+```
+
+**Validation:** Same as M8 (`kelly` / `rsiWeight` 範圍, `ssiWeights` sum=1.0)
+
+**Response 200:** Updated cache object
+
+**Use case:** 每次 M9 walk-forward CV 跑完, 自動 POST 落 cache, 30 日內重複用, 唔需要重跑 back test。
+
+---
+
+#### `POST /api/adaptive-params/{symbol}/forward-return`
+
+加一條 forward return record 落 cache history (永久保留)。
+
+**Body:**
+```json
+{
+  "date": "2026-08-08",
+  "action": "BUY",
+  "fwd5": 2.3,
+  "fwd10": 4.5,
+  "fwd20": -1.2,
+  "hit": true
+}
+```
+
+**Fields:**
+- `date` (str YYYY-MM-DD)
+- `action` (str, FinalAction enum: BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION)
+- `fwd5/10/20` (float, 5/10/20 日後回報 %, null if incomplete)
+- `hit` (bool, true if 5 日後升)
+
+**Response 200:** `{"added": true, "count": 24}` (累積 records 數)
+
+**Use case:** M9 walk-forward CV 跑完每段後, 逐條 fold 嘅 validate result POST 入 history, 永久累積。
+
+---
+
+#### `GET /api/adaptive-params/{symbol}/forward-return`
+
+拎 forward return history + 半衰期 weighted stats (大少 22:28 確認 6 月半衰期 = 180 日)。
+
+**Query params:**
+
+| Param | Type | Default | 說明 |
+|-------|------|---------|------|
+| `limit` | int | None | 最多返幾多條 (omit = 全部) |
+| `half_life_days` | int | 180 | 半衰期日數, 越舊 record 權重越低 (`weight = 0.5^(days_ago/half_life)`) |
+
+**Response 200:**
+```json
+{
+  "symbol": "HK.00700",
+  "count": 24,
+  "history": [
+    { "date": "2026-08-08", "action": "BUY", "fwd5": 2.3, "fwd10": 4.5, "fwd20": -1.2, "hit": true },
+    { "date": "2026-08-03", "action": "HOLD", "fwd5": -0.5, "fwd10": 1.2, "fwd20": 3.4, "hit": false },
+    ...
+  ],
+  "stats": {
+    "weighted_hit_rate_5d": 0.62,
+    "weighted_avg_return_5d": 1.45,
+    "weighted_avg_return_10d": 2.31,
+    "weighted_avg_return_20d": 3.12,
+    "half_life_days": 180,
+    "oldest_date": "2026-05-15",
+    "newest_date": "2026-08-08"
+  }
+}
+```
+
+**Use case:** M9 UI 永遠 full show 最近 20 條 forward return 詳細表 (大少 11:57 永久 rule), 加散點圖 + 半衰期 weighted summary。
 
 ---
 
@@ -381,6 +604,9 @@ Health check endpoint.
 
 | 日期 | 改動 | 大少 reference |
 |---|---|---|
+| 2026-08-08 23:55 | **Sprint 3 收官 + i18n 繁體人話 + Spec Sync #5** (M9 v0.6.0 9.1-9.7 全 done, testing page 全部繁體人話, 4 份 single source of truth doc 同步更新) | 大少 22:28 / 23:55 / 23:57 / 24:00 |
+| 2026-08-08 22:28 | **M9 Back Test 啟動 + 4 個新 endpoints (per-symbol optimal + forward return)** (M9 v0.5.0 → v0.6.0, 9.1-9.6 done, HK.00700 pilot 3/3 folds ✅, 24ms) | 大少 22:28 |
+| 2026-08-08 | **M8 Decision Engine 完成** (5 個 adaptive params + L2 JSON cache 7 日 expiry + 4 個 SVG chart + 8 個 finalAction + 揸車比喻 + LLM hook) | 大少 Sprint 2 done |
 | 2026-08-07 | K-line cache 加 defensive filter 跳過負值 OHLC (OpenD qfq bug 永久 fix) | 大少 #11099 |
 | 2026-08-07 | `/api/kline` 1d default start 改 `count*1.5` + response trim + 新 metadata (`requested_count`/`actual_count`/`data_limited`) | 大少 #11070 |
 | 2026-08-02 | 新建 API.md + 加入 #9700 none-auto-save rule | 大少 #9700 |
