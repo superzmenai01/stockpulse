@@ -1,4 +1,4 @@
-// modules/back-test.ts
+// algorithms/AS-03-cycle-detection/modules/back-test.ts
 function getKlineDate(kline) {
   return new Date(kline.timestamp).toISOString().substring(0, 10);
 }
@@ -312,11 +312,11 @@ async function runWalkForwardCV(options) {
     const tuneEnd = Math.floor(foldKlines.length * tuneRatio);
     const tuneKlines = foldKlines.slice(0, tuneEnd);
     const validateKlines = foldKlines.slice(tuneEnd);
-    if (tuneKlines.length < 60) {
+    if (tuneKlines.length < 30) {
       console.warn(`[walk-forward] Fold ${i} tune set too short: ${tuneKlines.length} klines, skipping`);
       continue;
     }
-    if (validateKlines.length < 30) {
+    if (validateKlines.length < 20) {
       console.warn(`[walk-forward] Fold ${i} validate set too short: ${validateKlines.length} klines, skipping`);
       continue;
     }

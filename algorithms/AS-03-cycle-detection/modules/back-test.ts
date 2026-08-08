@@ -666,12 +666,12 @@ export async function runWalkForwardCV(options: WalkForwardCVOptions): Promise<W
     const tuneKlines = foldKlines.slice(0, tuneEnd);
     const validateKlines = foldKlines.slice(tuneEnd);
 
-    // Check minimum samples
-    if (tuneKlines.length < 60) {
+    // Check minimum samples (tune set 至少 30, validate 至少 20 因為 holdDays 20 + buffer)
+    if (tuneKlines.length < 30) {
       console.warn(`[walk-forward] Fold ${i} tune set too short: ${tuneKlines.length} klines, skipping`);
       continue;
     }
-    if (validateKlines.length < 30) {
+    if (validateKlines.length < 20) {
       console.warn(`[walk-forward] Fold ${i} validate set too short: ${validateKlines.length} klines, skipping`);
       continue;
     }

@@ -7015,6 +7015,18 @@ export const backTestAdapter = {
   analyze: async (klines, options = {}) => {
     const symbol = options.symbol || options.code || 'unknown';
 
+    // 0. Normalize klines: backend 用 'time' (ISO string), back-test.ts 用 'timestamp' (number)
+    //    將 'time' 轉做 'timestamp' (ms since epoch)
+    const normalizedKlines = klines.map(k => {
+      if (k.timestamp !== undefined && typeof k.timestamp === 'number') return k;
+      if (k.time !== undefined) {
+        // time format: 'YYYY-MM-DD' or ISO string
+        const date = new Date(k.time);
+        return { ...k, timestamp: date.getTime() };
+      }
+      return k;
+    });
+
     // 1. Import back-test bundle (browser-compatible ESM)
     const backTest = await import('./build/back-test.bundle.js');
     const { runWalkForwardCV, runAdaptiveWindow, runCoarseGrid, runFineTune, runReplay, scoreResult } = backTest;
@@ -7040,7 +7052,7 @@ export const backTestAdapter = {
     let walkForwardResult;
     try {
       walkForwardResult = await runWalkForwardCV({
-        klines,
+        klines: normalizedKlines,
         decisionFn,
         baseSymbol: symbol,
         numFolds: 3,
@@ -7077,9 +7089,17 @@ export const backTestAdapter = {
     //    對每 fold 嘅 validate set 跑 runReplay 拎 results, 逐條 POST
     for (const fold of walkForwardResult.folds) {
       try {
-        const summary = await runReplay(fold.validateKlines, {
+        // Normalize fold.validateKlines (already normalized if from runWalkForwardCV, but be safe)
+        const normValidateKlines = fold.validateKlines.map(k => {
+          if (k.timestamp !== undefined && typeof k.timestamp === 'number') return k;
+          if (k.time !== undefined) {
+            return { ...k, timestamp: new Date(k.time).getTime() };
+          }
+          return k;
+        });
+        const summary = await runReplay(normValidateKlines, {
           symbol,
-          klines: fold.validateKlines,
+          klines: normValidateKlines,
           holdDays: [5, 10, 20],
           stepDays: 5,
           lookbackDays: 60,

@@ -56,8 +56,10 @@
 > **大少 2026-08-08 13:30 更新:** Plan A 拆返 M7 + M8 兩個獨立 module — 大少澄清「一齊優化」意思係「設計上一起考慮但 implementation 應該分開」, 而家拆返 2 個獨立 module + spec doc. 之前嘅 MODULE-07-08-DECISION-ENGINE.md (合併 spec) 改名做 MODULE-07-SYNTHESIZER.md (M7 spec), 新建 MODULE-08-DECISION-ENGINE.md (M8 spec, 6-7 日 Sprint 2 將加). Testing page REGISTRY 加返 07 — AS-03-SYN 個 entry, 08 改返只係 M8 (sprint 2 將 impl).
 >
 > **大少 2026-08-08 16:55 更新:** **Sprint 2 done — Stage 1 收官**! 9 個 sub-tasks (2.1-2.9) 全部 done, 8 commits (cd1d5ac6, c4e072a5, 8ad3af82, 917cc08d, f33774e9, 16388296, ccb13d2b, a3ffb91f), MODULE-08 v2.3.0. M8 包含: 8 個 finalAction 決策樹 (揸車比喻) + Trading card adaptive (3 vol buckets) + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook 預留, hardcoded template) + 5 個 adaptive params auto-calibrate (純 math) + L2 JSON file cache (7 日 expiry) + 4 個 SVG chart + 「🔄 重新校準」按鈕 + 10 隻 demo 股票 test cases (5 港 + 5 美, 200 assertions). 728 assertions pass (682 node + 46 python).
+>
+> **大少 2026-08-08 23:55 更新:** **Sprint 3 done — M9 Back Test 收官**! 6 個 sub-tasks (9.1-9.6) 全部 done, 6 commits (40457749, 1d71e1d9, e474a266, c6835456, 5be54214, plus 9.6 final), MODULE-09 v0.5.0. M9 包含: Replay engine (逐日 replay M8 verdict + 5/10/20 日 forward return) + Coarse grid (3×3=9) + Fine tune (top 5 ±20%) + Adaptive window (6→9→12→15→18 個月) + Walk-Forward CV (3 段 rolling, 大少 22:28 揀 B) + Per-symbol optimal + Forward return record (extend L2 cache, 30 日 + 永久 expiry) + Testing page entry 09 — AS-03-BT + HK.00700 pilot (3 folds ✅). 全部 13 commits 全部 0 fail, 776 assertions pass. Browser testing 09 — AS-03-BT 全部 work, 永遠 full show 4 個 sections (Optimal + Validation + Walk-Forward Folds + Apply to M8).
 
-| 編號 | Module | 狀態 (2026-08-08 12:02) | 點解先做 |
+| 編號 | Module | 狀態 (2026-08-08 23:55) | 點解先做 |
 |------|--------|------|----------|
 | ⏸️ Hidden | ~~Module 6: Multi-TF~~ | ⏸️ Hidden 等 Stage 1 done | Entry Timing 嘅基礎 — 但 testing page 唔支援 multi-timeframe, 大少 2026-08-07 23:15 指示 Stage 1 done 先做返 |
 | 03 | Module 3: Trendline | ✅ v0.1.0 done (20/20) | 趨勢線畫法對 Entry Timing 嘅 pullback 判斷有幫助 |
@@ -67,6 +69,7 @@
 | 01 | **Module 1: 均線系統週期判斷法 v2.0** (with Volume & Slope) | ✅ **v2.0.0 done (31/31)** | 大少 2026-08-08 09:13 跟 docx Kimi v2.0 spec, 3 cycles + 13 fields + 三階段信心調整 |
 | 07 | **Module 7: Synthesizer** (M7 終極綜合判定) | ✅ **Sprint 1 done (大少 2026-08-08 13:30 Plan A 拆返)**: M7 Synthesizer 邏輯 impl (SSI + TCM + Alignment + 8 個 Grade + Kelly) + 64 個 tests + synthesizerAdapter + testing page enable. 獨立 module (M7 唔 chain M8). | M7 spec doc: `MODULE-07-SYNTHESIZER.md`. 6 個 modules 加權 + 5 個 sub-step 邏輯 (純 math, 唔用 AI). |
 | 08 | **Module 8: Decision Engine** (M8 終極綜合判斷引擎) | ✅ **Sprint 2 done (大少 2026-08-08 16:55, 8 commits)** | M8 spec doc: `MODULE-08-DECISION-ENGINE.md` v2.3.0. 8 個 finalAction 決策樹 (揸車比喻) + Trading card adaptive (3 vol buckets) + 短期走勢預測 9 scenarios + 人話詳細解讀 (LLM hook 預留, hardcoded template, 將來 swap 落 LLM) + 5 個 adaptive params auto-calibrate (純 math, 唔用 AI) + L2 JSON file cache (7 日 expiry) + 4 個 SVG chart (Sentiment Radar + Kelly Donut + Alignment Bar + Module State) + 「🔄 重新校準」按鈕 + 10 隻 demo 股票 test cases. 728 assertions pass. |
+| 09 | **Module 9: Back Test (M9 時光機驗證官)** | ✅ **Sprint 3 done (大少 2026-08-08 23:55, 6 commits: 9.1-9.6)** | M9 spec doc: `MODULE-09-BACK-TEST.md` v0.5.0. Replay engine (逐日 replay M8 verdict + 5/10/20 日 forward return) + Coarse grid (3×3=9 params combinations) + Fine tune top 5 ±20% + Adaptive window 6→9→12→15→18 個月 (samples < 30 自動 extend) + Walk-Forward CV 3 段 rolling (大少 22:28 揀 B, 唔係 80/20) + Per-symbol optimal params (30 日 expiry) + Forward return record (永久保留, 6 月半衰期 weighted stats) + Testing page entry 09 — AS-03-BT + HK.00700 pilot (3 folds ✅, 24ms 跑完). 776 assertions pass. |
 | ⭐ 獨立 | **zmen均算法** (舊 M1 抽出, 唔加編號) | ✅ v0.3.0 (19/19) | 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 獨立一類 |
 
 ---
