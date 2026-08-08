@@ -51,7 +51,8 @@
 > **大少 2026-08-08 10:06 更新:** 6 個 modules 加編號 01-06 喺 dropdown displayName, zmen均算法 唔加 (獨立算法)。  
 > **大少 2026-08-08 09:13 更新:** 舊 M1「均線系統週期斷法」改名「zmen均算法」+ 抽離 7 個 modules 獨立處理 (file: `zmen-ma-alignment.ts` + spec: `ZMEN-MA-ALIGNMENT.md`)。新 M1「均線系統週期判斷法 v2.0」跟 docx Kimi v2.0 spec 全新做 (3 cycles + 成交量加權 + 斜率動能), file 佔用返 `ma-alignment.ts` + spec `MODULE-01-MA-ALIGNMENT.md`。  
 > **大少 2026-08-08 11:22 更新:** M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module "終極綜合判斷引擎 v2.0" (testing page 1 個 entry 排 [6], spec 拆 2 份 reference, codebase 1 個 file `modules/decision-engine.ts`)。  
-> **大少 2026-08-08 12:02 更新:** Stage 1 收官 spec + doc 同步 — M7+M8 合併 mega module 嘅 spec done (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), impl pending 等大少 review + confirm Plan A (Sprint 1: 6 個 modules 加 output fields + M7 impl; Sprint 2: M8 decision tree + trading card)。
+> **大少 2026-08-08 12:02 更新:** Stage 1 收官 spec + doc 同步 — M7+M8 合併 mega module 嘅 spec done (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), impl pending 等大少 review + confirm Plan A (Sprint 1: 6 個 modules 加 output fields + M7 impl; Sprint 2: M8 decision tree + trading card)。  
+> **大少 2026-08-08 12:30 更新:** Sprint 1 收官 (Plan A 確認) — M7 Synthesizer 邏輯 impl done (SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位), 6 個 modules 加 standard verdict interface done, 64 個 tests pass, decisionEngineAdapter + testing page 整合 done (commits `e96f673f` `4b8b64fe` `f991d9db` `2acab95d`). Sprint 2 範圍: M8 finalAction 8 個 + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON cache + 10 個 SVG chart.
 
 | 編號 | Module | 狀態 (2026-08-08 12:02) | 點解先做 |
 |------|--------|------|----------|
@@ -61,7 +62,7 @@
 | 05 | Module 5: VolumePrice v2.0 (overwrite Volume OBV) | ✅ v2.0.0 done (47/47) | 量能 confirm, 完整 9 個根治 vs v1.0 |
 | 06 | Module 6: Volatility (新定義, 取代 Multi-TF) | ✅ v1.0.0 done (32/32) | 波動率收縮擴張, Squeeze + VCP + ATR 分解 |
 | 01 | **Module 1: 均線系統週期判斷法 v2.0** (with Volume & Slope) | ✅ **v2.0.0 done (31/31)** | 大少 2026-08-08 09:13 跟 docx Kimi v2.0 spec, 3 cycles + 13 fields + 三階段信心調整 |
-| 08 | **Module 7+8: 終極綜合判斷引擎** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module, "AS-03-ENG") | ⏸️ **Spec v2.0 done** (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), **impl pending** (Stage 1 收官) | 大少 2026-08-08 11:22 指示 M7+M8 合併; 5 個 adaptive params (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold) runtime auto-calibrate, L2 JSON file cache, 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION), 8 個 grade (A+~F), 10 個 SVG chart |
+| 08 | **Module 7+8: 終極綜合判斷引擎** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module, "AS-03-ENG") | ✅ **Sprint 1 done (大少 2026-08-08 12:30)**: M7 Synthesizer 邏輯 impl (SSI + TCM + Alignment + 8 個 Grade + Kelly) + 64 個 tests + adapter + testing page enable. Sprint 2 pending: M8 finalAction + trading card + 5 個 adaptive params + L2 cache | 大少 2026-08-08 11:22 指示 M7+M8 合併; 5 個 adaptive params (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold) runtime auto-calibrate, L2 JSON file cache, 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION), 8 個 grade (A+~F), 10 個 SVG chart |
 | ⭐ 獨立 | **zmen均算法** (舊 M1 抽出, 唔加編號) | ✅ v0.3.0 (19/19) | 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 獨立一類 |
 
 ---
@@ -77,7 +78,7 @@
 | 04 | Indicators 動能背馳與衰竭 | ✅ v1.0.0 done (36/36) | RSI + MACD + Bollinger + 背馳 + 衰竭 |
 | 05 | VolumePrice 成交量價格行為確認 | ✅ v2.0.0 done (47/47) | 15 rules V1-V15, 9 個根治 vs v1.0 |
 | 06 | Volatility 波動率收縮擴張 | ✅ v1.0.0 done (32/32) | 12 rules S1-S12, Squeeze + VCP + ATR 分解 |
-| 08 | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | ⏸️ **Spec done** (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), **impl pending** | 6 個 modules 加權 + SSI 戰略強度指數 + TCM 戰術交叉驗證矩陣 + Alignment 戰略戰術匹配度 + 信號生命週期 + 動態風險預算 + 馬可維茨多時間框架組合 + 六維情緒雷達 + Hurst 指數 + 動態貝葉斯共識 + 尾部風險指標 + 三情景綜合校準 + 凱利公式倉位 + 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 8 個 grade (A+~F) + 10 個 SVG chart + 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache |
+| 08 | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | ✅ **Sprint 1 done (大少 2026-08-08 12:30)**: M7 Synthesizer 邏輯 impl (SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位) + 6 個 modules standard verdict interface + 64 個 tests + adapter + testing page enable | 6 個 modules 加權 + SSI 戰略強度指數 + TCM 戰術交叉驗證矩陣 + Alignment 戰略戰術匹配度 + 信號生命週期 + 動態風險預算 + 馬可維茨多時間框架組合 + 六維情緒雷達 + Hurst 指數 + 動態貝葉斯共識 + 尾部風險指標 + 三情景綜合校準 + 凱利公式倉位 + 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 8 個 grade (A+~F) + 10 個 SVG chart + 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache |
 
 ### 獨立算法 (大少 2026-08-08 抽出, 唔屬 7 個 modules 之一, 唔加編號)
 | Module | Status | 功用 |
@@ -102,7 +103,7 @@
 | J | **Trade Journal 學習機制** | 5 | 大少 mark 啱/錯, 30+ 樣本後 tune threshold |
 
 **12 Modules 目標設計 (Stage 1 收官版):**
-- 7 個 AS-03 模組 (M1-M6 + M7+M8 merged) — Stage 1 收官, M7+M8 impl pending
+- 7 個 AS-03 模組 (M1-M6 + M7+M8 merged) — Stage 1 Sprint 1 done (M7 impl), Sprint 2 pending (M8 finalAction + trading card + 5 個 adaptive params)
 - 5 個 new modules (09 Entry / 10 Prob / 11 Backtest / 12 R:R / J Journal) — Stage 2+
 - 1 個獨立 zmen均算法 (唔加編號, 排 dropdown 尾)
 

@@ -304,7 +304,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   | 04 | AS-03-IND | 動能背馳與衰竭 | RSI/MACD/背馳/衰竭檢測 | v1.0.0 |
   | 05 | AS-03-VP | 成交量價格行為確認 | 突破/縮量/OBV/量价背馳 (15 rules) | v2.0.0 |
   | 06 | AS-03-VOL | 波動率收縮擴張 | Squeeze + VCP + ATR 分解 (12 rules) | v1.0.0 |
-  | 07 (預留) | **AS-03-ENG** | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | 6 個 modules 加權 + 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 5 個 adaptive params runtime auto-calibrate (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold) + L2 JSON file cache + 10 個 SVG chart | v2.0.0 (planned, spec done, impl pending) |
+  | 07 (預留) | **AS-03-ENG** | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | Sprint 1 done: M7 Synthesizer 邏輯 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位). Sprint 2 pending: M8 finalAction 8 個 + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache + 10 個 SVG chart | **v2.0.0 (M7 done, Sprint 2 M8 pending)** |
   | **獨立** | **zmen均算法** (唔加編號) | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
   | ⏸️ Hidden Multi-TF | 多時間框架 | (Stage 1 done 先做) | v1.0.0 |
   | ⏸️ Hidden SlopeMomentum | 斜率動能 | (Stage 1 done 先做) | v1.0.0 |

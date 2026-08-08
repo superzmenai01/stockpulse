@@ -722,3 +722,147 @@ interface AdaptiveParams {
 | 2026-08-08 | — | 大少 11:22: 合併 M7 + M8 1 個 mega module, 1 個 testing page entry | spec doc |
 | 2026-08-08 | — | 大少 11:39: 5 個 adaptive params auto-calibrate (L2 JSON cache) | spec doc |
 | 2026-08-08 | — | 大少 11:57: UX 多圖少文字, 永遠全 Show, 顏色對應狀態 | spec doc |
+| 2026-08-08 | v2.0.0 (M7 part) | **Sprint 1 done** — M7 Synthesizer 邏輯 impl (SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位), spec + impl + tests + adapter + testing page 全部上線 (5 commits, +2032 lines, 64 個新 test assertions) | `2acab95d` `f991d9db` `4b8b64fe` `e96f673f` |
+| TBD | v2.0.0 (M8 part) | Sprint 2 範圍 — M8 Decision Engine 邏輯 (finalAction 8 個 + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON cache + 10 個 SVG chart) | TBD |
+
+---
+
+## 17. Sprint 1 Implementation Notes (大少 2026-08-08 12:30)
+
+### 17.1 Sprint 1 Scope
+
+Sprint 1 (4-5 日) 範圍:
+- ✅ **Sub-task 1.1** — 6 個 modules 加 standard verdict interface (base_weight / expected_return / max_drawdown_estimate / sentiment_6d)
+- ✅ **Sub-task 1.2** — M7 Synthesizer 邏輯 impl (SSI + TCM + Alignment + 8 個 Grade + Kelly)
+- ✅ **Sub-task 1.3** — M7 tests (64 個 assertions, 16 sections)
+- ✅ **Sub-task 1.4** — decisionEngineAdapter + testing page 整合 (08 — AS-03-ENG 從 disabled 變 enabled)
+- ✅ **Sub-task 1.5** — Sprint 1 Implementation Notes 落 spec doc + 更新其他 spec files
+
+### 17.2 Sprint 1 改動 (5 commits)
+
+| Commit | 內容 |
+|--------|------|
+| `e96f673f` | `feat(as03-m7-prep): 6 個 modules 加 standard verdict interface 為 M7 Synthesizer 準備` (12 files, +878/-21) |
+| `4b8b64fe` | `feat(as03-m7): M7 Synthesizer 邏輯 impl (SSI + TCM + Alignment + Grade + Kelly)` (3 files, +385/-1) |
+| `f991d9db` | `test(as03-m7): M7 Synthesizer (DecisionEngine) 64 個 tests, 16 sections` (1 file, +344) |
+| `2acab95d` | `feat(as03-m7-adapter): M7 Synthesizer adapter + testing page enable 08 — AS-03-ENG` (2 files, +485/-10) |
+| TBD (sub-task 1.5c) | `docs(sync): Sprint 1 spec + doc 同步 (M7 Synthesizer v2.0 done, Sprint 2 M8 pending)` |
+
+### 17.3 設計 decisions (跟 spec)
+
+| Decision | 選擇 | 理由 |
+|----------|------|------|
+| Grade 8 個 (A+~F) vs 5 個 (A~F) | **8 個** | 跟 spec §6.2 寫明, 8 級更細分 |
+| Kelly fraction (0.5/0.25/0.125) vs percentage | **fraction** | Math 較自然 (avg DD × 3 計算) |
+| Module weight static vs dynamic | **static** | 5 個 adaptive params auto-calibrate 留俾 Sprint 2 M8 |
+| TCM 3 對 pair | (MA, TL), (HL, VP), (IND, VOL) | 跟 spec §3, 形態+趨勢/形態+量能/情緒+波動 |
+| Alignment Score formula | max_group_size / total_count | 比 SSI consistency 更直觀 (0-1 range) |
+| Grade score formula | ssi_score × 0.6 + alignment × 100 × 0.4 | SSI 60% + Alignment 40% (跟 spec §6.4) |
+| Grade boundary inclusive | `grade_score >= 90` 係 A+ | 包含 boundary, 50 → C+, 90 → A+ |
+| CycleState 加 'TRAP' | 6 個 modules 唔 return, M7/M8 推導 | Type system 支持但實際由 M7/M8 設置 |
+
+### 17.4 5 個 sub-step 邏輯 (詳細)
+
+#### Step 1: SSI 戰略強度指數
+- `consistency = max(state_count) / total_count` (0-1)
+- `confidence_avg = Σ(confidence × base_weight) / Σ(base_weight)` (0-1, 加權平均)
+- `rules_coverage = min(1, unique_rules / 20)` (0-1)
+- `ssi_score = consistency × 50 + confidence_avg × 30 + rules_coverage × 20` (0-100)
+
+#### Step 2: TCM 戰術交叉驗證矩陣
+- 3 對 pair: (ma-alignment, trendline), (hl-structure, volume), (indicators, volatility)
+- 每對 `alignment`:
+  - state 相同 → +1
+  - 矛盾 (UP vs DOWN) → -1
+  - 其他 (SIDEWAYS + UP 等) → 0
+- 每對 `trap_penalty`:
+  - alignment = -1 → 0.6 (虛漲)
+  - alignment = 0 → 0.2 (唔肯定)
+  - alignment = +1 → 0
+
+#### Step 3: Alignment Score
+- `alignment_score = max(state_count) / total_count` (0-1)
+- 同 SSI consistency, 但係 single field (冇 breakdown)
+
+#### Step 4: Grade (8 個)
+- `grade_score = ssi_score × 0.6 + alignment_score × 100 × 0.4` (0-100)
+- Map 到 8 個 grade (inclusive boundary):
+  - 90-100: A+
+  - 80-89: A
+  - 70-79: B+
+  - 60-69: B
+  - 50-59: C+
+  - 40-49: C
+  - 30-39: D
+  - 0-29: F
+
+#### Step 5: Kelly 倉位
+- `avg_dd = Σ(max_drawdown_estimate) / 6`
+- Map 到 3 個 fraction:
+  - avg_dd < 0.05 → half (0.5)
+  - 0.05 ≤ avg_dd < 0.10 → quarter (0.25)
+  - avg_dd ≥ 0.10 → octo (0.125)
+- `kelly_position = kelly_numeric` (基礎 Kelly, 將來 M8 加 TCM + alignment 調整)
+
+### 17.5 Sprint 1 嘅 4 個 Notes (大少要知嘅 side effect)
+
+1. **M1 'ma-alignment' 映射 fix** — Sprint 1.1 順手 fix 咗 index.ts 嘅 bug ('ma-alignment' 而家指 MAAlignmentV2Module 新 v2.0, 唔再指 ZmenMAAlignmentModule 舊 v0.3.0 zmen均算法). 冇呢個 fix M7 aggregate 會拎到舊 v0.3.0 嘅 6 個 fields 而唔係新 v2.0 嘅 13 個 fields.
+
+2. **CycleModuleId 加 'volatility'** — Sprint 1.1 將 'volatility' 加入 CycleModuleId union (之前得 5 個), 同 EnableFlags 加 'volatility' field (預設 ON). CycleDetector 而家 instantiate 6 個 modules (M1-M6), `report.moduleVerdicts.length === 6` (之前 5).
+
+3. **CycleState 加 'TRAP'** — Sprint 1.1 將 'TRAP' 加入 CycleState union. 6 個 modules 自己嘅 detect() 唔 return TRAP (佢哋淨係 return UP/DOWN/SIDEWAYS/TRANSITION), 但 type system 支持 M7/M8 set TRAP. Sprint 2 M8 將會用呢個 type.
+
+4. **BaseWeights 加埋 = 1.00** — 之前 5 個 modules 加埋 = 0.90 (預留 0.10 buffer). Sprint 1.1 加埋 'volatility': 0.10, 6 個 modules 加埋 = 1.00. M7 內部直接用, 唔需要 normalize. 5 個 adaptive params auto-calibrate 會重 scale, 保持總和 = 1.0.
+
+### 17.6 Sprint 1 Testing Page UX (永遠全 Show 簡化版)
+
+Sprint 1 範圍嘅 testing page UI (簡化版, 永遠全 Show):
+- ✅ 頂部 verdict card (大型 grade + 分數 + SSI/Alignment/Kelly mini-metric)
+- ✅ 6 個 metric mini-cards (SSI 一致性 / 平均信心 / 規則覆蓋)
+- ✅ 6 個 modules 表格 (module / state / conf / weight / exp.ret / maxdd / RSI)
+- ✅ TCM 3 對 pair 表格 (pair / alignment / trap_penalty)
+- ✅ Sprint 1 notice (提示 Sprint 2 將加 finalAction + trading card + 5 adaptive params)
+
+Sprint 2 範圍 (未做):
+- ⏸️ 永遠全 Show 嘅 full UI (10 個 SVG chart, 顏色對應狀態)
+- ⏸️ M8 finalAction 8 個 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION)
+- ⏸️ Trading card (entry_zone / stop_loss / take_profit / trailing_stop)
+- ⏸️ 5 個 adaptive params runtime auto-calibrate (UI 顯示 + 手動重新校準按鈕)
+- ⏸️ L2 JSON file cache (~/.stockpulse/adaptive_params/<symbol>.json)
+- ⏸️ 10 隻 demo 股票 test cases (HK.00700/09988/03690/01024/01810 + US.AAPL/MSFT/GOOG/NVDA/TSLA)
+
+### 17.7 Sprint 1 測試覆蓋
+
+| 範圍 | 測試 file | Assertions |
+|------|----------|-----------|
+| 6 個 modules 加 standard verdict | `__tests__/standard-verdict.test.mjs` | 73 |
+| M7 Synthesizer 邏輯 | `__tests__/decision-engine.test.mjs` | 64 |
+| M7 Smoke test (adapter level) | 內聯 script 跑 decisionEngineAdapter.analyze() | 1 case |
+| **Total Sprint 1 new** | | **137 + 1 smoke** |
+| Existing 9 個 test files (unchanged) | | 210 |
+| **Grand Total** | | **347 assertions pass** |
+
+### 17.8 Sprint 2 計劃 (M8 Decision Engine + adaptive params)
+
+- **Sprint 2 sub-task 2.1** — M8 finalAction 8 個決策樹 (從 grade + state + alignment 推導 finalAction)
+- **Sprint 2 sub-task 2.2** — Trading card 4 個 fields (entry_zone / stop_loss / take_profit / trailing_stop)
+- **Sprint 2 sub-task 2.3** — 5 個 adaptive params runtime auto-calibrate
+  - 純 math (ATR / Hurst log regression / R² / Pearson correlation)
+  - Auto mode (background, cache > 7 日自動重校)
+  - Manual mode (testing page 「🔄 重新校準」按鈕)
+- **Sprint 2 sub-task 2.4** — L2 JSON file cache (~/.stockpulse/adaptive_params/<symbol>.json)
+- **Sprint 2 sub-task 2.5** — 10 隻 demo 股票 test cases
+- **Sprint 2 sub-task 2.6** — Full testing page UI (10 個 SVG chart, 永遠全 Show, 顏色對應狀態)
+- **Sprint 2 sub-task 2.7** — Sprint 2 spec doc update + commit + push
+
+### 17.9 大少可以即刻試
+
+```bash
+# 1. 開 testing page (如果有 LaunchAgent running)
+open http://localhost:8765/testing-page/
+
+# 2. 揀 dropdown "08 — AS-03-ENG"
+# 3. 輸入股票代碼 e.g. "HK.00700"
+# 4. 撳 "跑算法"
+# 5. 睇 M7 Synthesizer 嘅 verdict card + 6 個 modules 表格 + TCM 表格
+```

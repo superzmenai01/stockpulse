@@ -424,7 +424,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 | 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ |
 | 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | **v2.0.0** | ✅ |
 | 06 | Volatility 波動率收縮擴張 | `modules/volatility.ts` | **v1.0.0** | ✅ |
-| 07 | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | `modules/decision-engine.ts` (planned) | **v2.0.0 (planned, spec done)** | ⏸️ Spec done (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), impl pending — 大少 2026-08-08 11:22 指示 M7+M8 合併做 1 個 mega module; 5 個 adaptive params (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold) runtime auto-calibrate, L2 JSON file cache, 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION), 8 個 grade (A+~F), 10 個 SVG chart, 永遠全 Show + 多圖少文字 + 顏色對應狀態 |
+| 07 | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | `modules/decision-engine.ts` | **v2.0.0 (M7 Sprint 1 done, M8 Sprint 2 pending)** | ✅ **Sprint 1 done (大少 2026-08-08 12:30)**: M7 Synthesizer 邏輯 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位) + 6 個 modules standard verdict interface + 64 個 tests + decisionEngineAdapter + testing page enable. Sprint 2 pending: M8 finalAction 8 個 + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache + 10 個 SVG chart |
 | **獨立** | **zmen均算法** (唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ Hidden (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — |
 | ⏸️ Hidden (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — |
