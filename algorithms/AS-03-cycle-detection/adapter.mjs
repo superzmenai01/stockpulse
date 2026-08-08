@@ -6706,8 +6706,10 @@ export const decisionEngineAdapter = {
     // 1. 跑 6 個 modules → M7 SynthesizerVerdict (reuse analyzeDecisionEngine 上面嘅 implementation)
     const synthResult = await analyzeDecisionEngine(klines, options);
 
-    // 2. 動態 import 從 .ts file
-    const { DecisionEngine, calibrateAdaptiveParams, applyAdaptiveParamsToSynthesizer, DEFAULT_ADAPTIVE_PARAMS } = await import('./modules/decision-engine.ts');
+    // 2. 動態 import 從 .bundle.js (esbuild 已 build, browser-compatible)
+    //   大少 2026-08-08 18:40 fix: testing page 喺瀏覽器跑 fetch 唔到 .ts file,
+    //   改用 esbuild bundle 嘅 ESM .js
+    const { DecisionEngine, calibrateAdaptiveParams, applyAdaptiveParamsToSynthesizer, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js');
 
     // 3. 2.6 — L2 cache: 試讀 cache (7 日內 valid 就用 cache, 否則重新 calibrate)
     const symbol = options.symbol || options.code || 'unknown';
@@ -6782,12 +6784,15 @@ export const decisionEngineAdapter = {
       trading_card,
       short_term_forecast,
       interpretation,
-      ssi_score, ssi_breakdown, tcm_matrix, alignment_score,
-      grade, grade_score, grade_reason,
-      kelly_fraction, kelly_position,
       module_verdicts,
       module_cycle_verdicts,
+      synthesizer_verdict,
+      cache_info,
+      adaptive_params,
     } = verdict;
+
+    // Grade / SSI / Alignment / Kelly 全部喺 synthesizer_verdict 入面
+    const { grade, grade_score, grade_reason, ssi_score, ssi_breakdown, tcm_matrix, alignment_score, kelly_fraction, kelly_position } = synthesizer_verdict || {};
 
     const actionColor = finalActionColor(final_action);
     const actionLabel = finalActionLabel(final_action);
