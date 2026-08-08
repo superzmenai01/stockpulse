@@ -5391,6 +5391,8 @@ export const maAlignmentV2Adapter = {
   version: '2.0.0',
   description: '跟 docx Kimi v2.0 spec: MA 排列 + 成交量加權 + 斜率動能, 3 個 cycle state',
   inputs: [
+    // 股票代碼 (大少 #10400 — testing page 統一 auto-complete, 跟首頁 StockSearch UX)
+    { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
     { key: 'maPeriods', label: '均線週期列表', type: 'string', default: '5,10,20,60' },
     { key: 'thresholdPct', label: '橫行判定閾值 (spread %)', type: 'number', default: 0.02 },
     { key: 'enableVolumeWeight', label: '啟用成交量加權', type: 'checkbox', default: true },
