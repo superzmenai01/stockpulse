@@ -635,7 +635,7 @@ section('13. Output structure');
   assert('13.4 trading_card 存在', typeof d.trading_card === 'object');
   assert('13.5 short_term_forecast 係 array', Array.isArray(d.short_term_forecast));
   assert('13.6 short_term_forecast 9 個 (2.3 done)', d.short_term_forecast.length === 9);
-  assert('13.7 interpretation 暫空 (2.4 將 impl)', d.interpretation === '');
+  assert('13.7 interpretation 唔空 (2.4 done — LLM hook + hardcoded template)', d.interpretation && d.interpretation.length > 0);
   assert('13.8 module_verdicts 6 個', d.module_verdicts.length === 6);
   assert('13.9 synthesizer_verdict 存在', typeof d.synthesizer_verdict === 'object');
   assert('13.10 timestamp > 0', d.timestamp > 0);
@@ -758,6 +758,146 @@ section('14. Short term forecast (2.3 — 9 scenarios: 3 × 3 timeframes)');
   const d = await engine.decide({ synthesizerVerdict: sv });
   const base5 = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'baseline');
   assert('14.17 SIDEWAYS case → baseline 5 日 = 0', base5.expected_return === 0);
+}
+
+// =============================================================
+// Test 15: 人話詳細解讀 (2.4 — LLM hook + hardcoded template)
+// =============================================================
+section('15. Interpretation (2.4 — LLM hook + hardcoded template, 大少 13:30 永久 rule)');
+
+// 15.1: 8 個 finalAction 各自 interpretation 唔空
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('15.1 interpretation 唔空 (BUY case)', d.interpretation && d.interpretation.length > 0);
+  assert('15.2 interpretation 包含 plain language keywords (應該 / 倉位 / 點解)', d.interpretation.includes('應該') || d.interpretation.includes('倉位') || d.interpretation.includes('點解'));
+}
+
+// 15.3-15.4: HOLD case interpretation
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+    'ma-alignment': { max_drawdown_estimate: 0.05 },
+    'hl-structure': { max_drawdown_estimate: 0.05 },
+    trendline: { max_drawdown_estimate: 0.05 },
+    volume: { max_drawdown_estimate: 0.05 },
+    volatility: { max_drawdown_estimate: 0.05 },
+  });
+  const sv = makeSynth('B', 0.5, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('15.3 HOLD interpretation 唔空', d.interpretation && d.interpretation.length > 0);
+  assert('15.4 HOLD interpretation 包含 "保持現速" 或 "hold" 或 "Monitor"', d.interpretation.includes('保持現速') || d.interpretation.includes('hold') || d.interpretation.includes('Monitor'));
+}
+
+// 15.5-15.6: SELL case interpretation
+{
+  const verdicts = make6Verdicts('DOWN', {
+    'ma-alignment': { max_drawdown_estimate: 0.12 },
+    'hl-structure': { max_drawdown_estimate: 0.12 },
+    trendline: { max_drawdown_estimate: 0.12 },
+    indicators: { max_drawdown_estimate: 0.12, sentiment_6d: { rsi: -0.4, bollinger_pct_b: -0.4, bias_ratio: -0.2, vol_skew: 0, turnover: 0, momentum_accel: 0 } },
+    volume: { max_drawdown_estimate: 0.12 },
+    volatility: { max_drawdown_estimate: 0.12 },
+  });
+  const sv = makeSynth('C', 0.5, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('15.5 SELL interpretation 唔空', d.interpretation && d.interpretation.length > 0);
+  assert('15.6 SELL interpretation 包含 "急煞車" 或 "cut loss" 或 "下跌"', d.interpretation.includes('急煞車') || d.interpretation.includes('cut loss') || d.interpretation.includes('下跌'));
+}
+
+// 15.7: TRAP interpretation
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({
+    synthesizerVerdict: sv,
+    marketData: { squeezeDetected: true, fakeBreakoutDetected: true },
+  });
+  assert('15.7 TRAP interpretation 包含 "唔好信導航" 或 "TRAP" 或 "虛漲"', d.interpretation.includes('唔好信導航') || d.interpretation.includes('虛漲') || d.interpretation.includes('squeeze'));
+}
+
+// 15.8: TRANSITION interpretation
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({
+    synthesizerVerdict: sv,
+    marketData: { maTrendlineTransition: true },
+  });
+  assert('15.8 TRANSITION interpretation 包含 "收油準備轉彎" 或 "TRANSITION" 或 "新趨勢"', d.interpretation.includes('收油準備轉彎') || d.interpretation.includes('TRANSITION') || d.interpretation.includes('新趨勢'));
+}
+
+// 15.9: WAIT fallback interpretation
+{
+  const verdicts = make6Verdicts('SIDEWAYS');
+  const sv = makeSynth('C', 0.5, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('15.9 WAIT interpretation 包含 "等綠燈" 或 "WAIT" 或 "SIDEWAYS"', d.interpretation.includes('等綠燈') || d.interpretation.includes('WAIT') || d.interpretation.includes('SIDEWAYS'));
+}
+
+// 15.10: REDUCE interpretation
+{
+  const verdicts = make6Verdicts('TRANSITION');
+  const sv = makeSynth('C', 0.4, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('15.10 REDUCE interpretation 包含 "收返少少油" 或 "REDUCE" 或 "TRANSITION"', d.interpretation.includes('收返少少油') || d.interpretation.includes('REDUCE'));
+}
+
+// 15.11: ADD interpretation
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.6, bollinger_pct_b: 0.5, bias_ratio: 0.3, vol_skew: 0, turnover: 0, momentum_accel: 0.3 } },
+  });
+  const sv = makeSynth('A', 0.8, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv, marketData: { consecutiveUpDays: 5 } });
+  assert('15.11 ADD interpretation 包含 "油門再踩深啲" 或 "ADD" 或 "超買"', d.interpretation.includes('油門再踩深啲') || d.interpretation.includes('ADD') || d.interpretation.includes('超買'));
+}
+
+// 15.12: LLM hook interface — generateInterpretation export
+{
+  // Import 從 .ts file 試
+  const { generateInterpretation } = await import('/Users/zmenai/stockpulse/algorithms/AS-03-cycle-detection/modules/decision-engine.ts');
+  assert('15.12 generateInterpretation 係 function (LLM hook interface)', typeof generateInterpretation === 'function');
+  // 唔可以直接 import .ts 喺 .mjs, 改用 engine.decide() 內部已 await
+  // 但 interface contract 已經 verify: decide() 入面 await generateInterpretation(ctx)
+}
+
+// 15.13: interpretation 包含倉位 info (大少 13:30 spec 入面包括 Kelly 倉位)
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts, kelly_fraction: 'quarter' });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('15.13 interpretation 包含倉位 (quarter 倉)', d.interpretation.includes('quarter') || d.interpretation.includes('倉位') || d.interpretation.includes('倉'));
+}
+
+// 15.14: interpretation 包含短期走勢 info (5 日基準預期)
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('15.14 interpretation 包含短期走勢 (5 日基準預期)', d.interpretation.includes('5 日') || d.interpretation.includes('短期'));
+}
+
+// 15.15: interpretation 包含 emoji (大少 11:57 永久 rule)
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  const hasEmoji = /[\u{1F300}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}]/u.test(d.interpretation);
+  assert('15.15 interpretation 包含 emoji (大少 11:57 永久 rule)', hasEmoji);
 }
 
 // =============================================================

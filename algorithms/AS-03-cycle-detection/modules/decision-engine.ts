@@ -291,6 +291,115 @@ function computeShortTermForecast(
 }
 
 // =============================================================
+// 人話詳細解讀 — Sprint 2 sub-task 2.4 (LLM hook 預留, 大少 13:30 永久 rule)
+// =============================================================
+
+/** Interpretation context — 將來 swap 落 LLM 唔使改 render call site
+ *  (大少 2026-08-08 13:30 永久 rule)
+ */
+export interface InterpretationContext {
+  final_action: FinalAction;
+  module_verdicts: ModuleStandardVerdict[];
+  synthesizer_verdict: SynthesizerVerdict;
+  short_term_forecast: ForecastScenario[];
+}
+
+/** LLM hook — 將來直接 swap 落 LLM call (OpenAI / MiniMax / Kimi 任何 provider)
+ *  而家 Sprint 2 用 hardcoded template, 將來:
+ *    return await openai.complete(promptFromCtx(ctx))
+ *    return await minimax.complete(promptFromCtx(ctx))
+ *  唔使改 decide() method 嘅 call site
+ *
+ *  大少 2026-08-08 13:30 永久 rule:
+ *    M8 render function 必須有 async generateInterpretation(ctx) interface
+ *    Sprint 2 用 hardcoded template, 將來 swap 落 LLM
+ *    對應 spec: MODULE-08-DECISION-ENGINE.md §8
+ */
+export async function generateInterpretation(ctx: InterpretationContext): Promise<string> {
+  return hardcodedInterpretation(ctx);
+}
+
+/** Hardcoded template — 8 個 finalAction 各自嘅白話詳細解讀
+ *  使用揸車比喻貫穿 (大少 11:57 風格)
+ *  使用 plain language (大少 2026-08-07 01:09 永久 rule — 唔識技術野, 用人話)
+ *
+ *  將來 swap 落 LLM:
+ *    1. 整個 function 換成 return await llmCall(promptFromCtx(ctx))
+ *    2. promptFromCtx 將 ctx 變做 LLM prompt string
+ *    3. 唔使改 decide() 嘅 call site (已經 await generateInterpretation(ctx))
+ */
+function hardcodedInterpretation(ctx: InterpretationContext): string {
+  const { final_action, module_verdicts, synthesizer_verdict, short_term_forecast } = ctx;
+
+  // 撮要 6 個 module 嘅 state + confidence
+  const upCount = module_verdicts.filter(v => v.state === 'UP').length;
+  const downCount = module_verdicts.filter(v => v.state === 'DOWN').length;
+  const sidewaysCount = module_verdicts.filter(v => v.state === 'SIDEWAYS').length;
+  const transitionCount = module_verdicts.filter(v => v.state === 'TRANSITION').length;
+
+  // 撮要 M7 grade + ssi_score
+  const { grade, ssi_score, kelly_fraction, alignment_score } = synthesizer_verdict;
+
+  // 拎 baseline 5 日預期回報
+  const baseline5 = short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'baseline');
+  const baseline5Ret = baseline5 ? (baseline5.expected_return * 100).toFixed(1) : '?';
+
+  // 8 個 finalAction 各自嘅 hardcoded template
+  switch (final_action) {
+    case 'BUY':
+      return `📈 **應該買入**。${upCount} 個 module 認為上升, SSI 戰略強度 ${ssi_score.toFixed(0)}/100, alignment ${(alignment_score * 100).toFixed(0)}%, grade ${grade} 級。\n\n` +
+        `💡 **點解要買**: MA 均線 + 高低點 + 趨勢線同步上升 (${upCount}/6 個 module 一致), grade 過到 B 級, 短期 5 日基準預期回報 +${baseline5Ret}%\n` +
+        `🛑 **風控**: 止蝕位喺入場區下限 -3% (跌破即 cut loss), 目標 +5% 1.67:1 風險回報比\n` +
+        `💰 **倉位**: ${kelly_fraction} 倉 (跟波動自動切, 高波動縮細, 低波動放大)`;
+
+    case 'ADD':
+      return `🟢 **油門再踩深啲**! 強勢上升確認 (grade ${grade} ≥ A, alignment ${(alignment_score * 100).toFixed(0)}% ≥ 70%, RSI > 70, 連漲 ≥ 3 日)。\n\n` +
+        `💡 **點解加倉**: 短期動力強, ${upCount} 個 module 同步上升, 短期 5 日基準預期 +${baseline5Ret}%, 可以食多啲趨勢\n` +
+        `⚠️ **注意**: RSI > 70 代表超買區, 加倉後要密切 monitor RSI 走勢, 一旦 > 75 要 re-evaluate\n` +
+        `📌 **倉位**: ${kelly_fraction} 倉 (但加倉後總倉位可能 > 100%, 注意 risk management)`;
+
+    case 'HOLD':
+      return `🟡 **保持現速**。趨勢仲 OK 但唔強 (grade ${grade} 喺 B/C+ 級, alignment ${(alignment_score * 100).toFixed(0)}% < 60%)。\n\n` +
+        `💡 **點解 hold**: 上升動力唔夠, 唔夠 BUY trigger 條件 (alignment 唔夠), 短期 5 日基準預期 +${baseline5Ret}% 仲有少少水位\n` +
+        `📌 **Monitor**: 留意會唔會升穿 alignment 60% + grade B+ → 變 BUY trigger; 或者轉 SIDEWAYS/DOWN 就要評估\n` +
+        `💰 **倉位**: 保持 ${kelly_fraction} 倉唔變`;
+
+    case 'WAIT':
+      return `🟡 **等綠燈**! 而家冇明確方向 (SIDEWAYS, ${sidewaysCount}/6 個 module 持平), grade C, alignment ${(alignment_score * 100).toFixed(0)}% < 60%。\n\n` +
+        `💡 **點解 wait**: 6 個 module 對後市有唔同意見, 訊號唔清晰, 強行入場風險高\n` +
+        `📌 **Monitor**: 一旦 SIDEWAYS 變 UP (alignment > 60% + grade B) → BUY trigger; 變 DOWN → SELL trigger\n` +
+        `💰 **倉位**: 持有現金或極低倉, 等訊號清晰先加倉`;
+
+    case 'REDUCE':
+      return `🟠 **收返少少油**! 轉勢中 (TRANSITION, ${transitionCount}/6 個 module 認為轉勢), alignment ${(alignment_score * 100).toFixed(0)}% < 50%, 訊號矛盾。\n\n` +
+        `💡 **點解 reduce**: 6 個 module 有啲睇 UP 有啲睇 DOWN 有啲睇 SIDEWAYS, 收緊啲倉位等確認\n` +
+        `📌 **Monitor**: 如果 TRANSITION 變 UP (alignment > 60%) → 加返倉; 變 DOWN → 急煞車; 變 SIDEWAYS → 繼續 WAIT\n` +
+        `💰 **倉位**: 減到 half 倉, 避免被反轉市食晒`;
+
+    case 'SELL':
+      return `🔴 **急煞車**! 下跌確認 (${downCount}/6 個 module 認為 DOWN, grade ${grade} ≤ C, 最大回撤 > 10%)。\n\n` +
+        `💡 **點解賣**: ${downCount} 個 module 確認下跌, 短期 5 日基準預期 -${Math.abs(parseFloat(baseline5Ret))}%\n` +
+        `⚠️ **注意**: 已經有倉就要考慮 cut loss, 跌穿止蝕位即走, 唔好猶豫; 未持倉就 avoid 撈底\n` +
+        `📌 **倉位**: 持有嘅就清倉或減到 octo 倉, 未持倉就 keep watching`;
+
+    case 'TRAP':
+      return `🟣 **唔好信導航**! 偵測到波動率 squeeze + 假突破, 虛漲陷阱。\n\n` +
+        `💡 **點解 TRAP**: 雖然睇落似上升突破 (${upCount} 個 module UP), 但波動率收縮 + 假突破 = 短線隨時反轉, 唔好被誤導\n` +
+        `📌 **Monitor**: 等下次 squeeze release (波幅擴張) + 真突破 (量能配合) 先入場, 假突破嘅後果通常係急跌\n` +
+        `💰 **倉位**: 清倉或極低倉, 完全唔好加倉`;
+
+    case 'TRANSITION':
+      return `🟣 **收油準備轉彎**! M1 均線 + M3 趨勢線同步轉勢, 趨勢即將改變。\n\n` +
+        `💡 **點解 TRANSITION**: 雖然 alignment ${(alignment_score * 100).toFixed(0)}% 但 M1 + M3 同步轉勢, 代表短期趨勢可能反轉\n` +
+        `📌 **Monitor**: 觀察 1-2 日確認新趨勢, 如果轉 UP → 跟新上升趨勢; 轉 DOWN → 跟新下跌趨勢\n` +
+        `💰 **倉位**: 減到 quarter 倉, 等新趨勢確認先調整`;
+
+    default:
+      return `⚫ 未知 action (${final_action}), 請檢查 implementation`;
+  }
+}
+
+// =============================================================
 // M8 Decision Engine class
 // =============================================================
 
@@ -401,12 +510,22 @@ export class DecisionEngine {
     // Step 8: short term forecast (2.3 — 9 個 scenarios)
     const short_term_forecast = computeShortTermForecast(expected_return, max_drawdown_estimate);
 
+    // Step 9: interpretation (2.4 — LLM hook + hardcoded template)
+    //   大少 2026-08-08 13:30 永久 rule: render 必須 await generateInterpretation(ctx)
+    //   而家 Sprint 2 用 hardcoded template, 將來 swap 落 LLM 唔使改呢度
+    const interpretation = await generateInterpretation({
+      final_action,
+      module_verdicts: verdicts,
+      synthesizer_verdict: sv,
+      short_term_forecast,
+    });
+
     return {
       final_action,
       final_action_reason,
       trading_card,
       short_term_forecast,
-      interpretation: '',  // 2.4 將 impl LLM hook
+      interpretation,
       module_verdicts: verdicts,
       synthesizer_verdict: sv,
       timestamp: Date.now(),

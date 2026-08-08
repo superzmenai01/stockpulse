@@ -206,32 +206,59 @@ Stage 2 升 L3 DB (唔改呢個 format).
 
 ---
 
-## 8. 人話詳細解讀 (LLM hook 預留, 大少 13:30 永久 rule)
+## 8. 人話詳細解讀 (LLM hook 預留, 大少 13:30 永久 rule) — **Sprint 2 sub-task 2.4 impl done**
 
 ```typescript
-// render function 入面 (大少 13:30 永久 rule 必須有呢個 interface)
-async function generateInterpretation(ctx: {
-  finalAction: FinalAction;
-  moduleVerdicts: ModuleStandardVerdict[];
-  synthesizerVerdict: SynthesizerVerdict;
-  shortTermForecast: ForecastScenario[];
-}): Promise<string> {
-  // 而家 Sprint 2 用 hardcoded template (template literal + if/else)
-  // 將來可以直接 swap 落 LLM call (OpenAI / MiniMax / Kimi 任何 provider)
+// LLM hook 永久 rule (大少 13:30 確認, 寫入 user memory)
+// M8 render function 必須有 async generateInterpretation(ctx) interface
+// Sprint 2 而家用 hardcoded template, 將來 swap 落 LLM call (OpenAI / MiniMax / Kimi 任何), 唔使改 decide() 嘅 call site
+
+export async function generateInterpretation(ctx: InterpretationContext): Promise<string> {
   return hardcodedInterpretation(ctx);
+  // 將來 swap 落 LLM:
+  //   return await openai.complete(promptFromCtx(ctx))
+  //   return await minimax.complete(promptFromCtx(ctx))
+}
+
+export interface InterpretationContext {
+  final_action: FinalAction;
+  module_verdicts: ModuleStandardVerdict[];
+  synthesizer_verdict: SynthesizerVerdict;
+  short_term_forecast: ForecastScenario[];
 }
 ```
 
-**Example BUY 嘅解讀**:
-> **📈 應該買入**。6 個 module 入面, 4 個都認為上升 (M1 均線 + M2 高低 + M3 趨勢 + M5 量價), 信心度達 75%, grade B+ 級。
+**Hardcoded template — 8 個 finalAction 各自嘅白話詳細解讀** (揸車比喻貫穿 + plain language + emoji):
+
+| Final Action | 解讀主題 | 模板要素 |
+|--------------|---------|---------|
+| 🟢 BUY | 應該買入 | 上升 module 數 + grade + alignment + 短期基準預期 + 風控 (止蝕止賺) + 倉位建議 |
+| 🟢 ADD | 油門再踩深啲 | 強勢確認 4 條件 + 短期基準預期 + RSI 超買注意 + 倉位可能 > 100% |
+| 🟡 HOLD | 保持現速 | grade + alignment 唔夠 BUY 條件 + Monitor 等下次 trigger + 倉位不變 |
+| 🟡 WAIT | 等綠燈 | SIDEWAYS + 6 個 module 持平 + 短期方向唔清晰 + 持有現金 |
+| 🟠 REDUCE | 收返少少油 | TRANSITION 矛盾 + 收緊倉位 + Monitor 確認方向 |
+| 🔴 SELL | 急煞車 | DOWN 確認 + 下跌 module 數 + 短期基準負回報 + 止蝕 cut loss + 未持倉 avoid 撈底 |
+| 🟣 TRAP | 唔好信導航 | squeeze + 假突破 + 虛漲陷阱 + 完全唔好加倉 |
+| 🟣 TRANSITION | 收油準備轉彎 | M1 + M3 同步轉勢 + 趨勢即將改變 + 減倉等確認 |
+
+**Example BUY 嘅 hardcoded 解讀**:
+> 📈 **應該買入**。4 個 module 認為上升, SSI 戰略強度 75/100, alignment 67%, grade B+ 級。
 >
-> **點解要買**: MA5 上穿 MA10 + 量能放大 1.3 倍 + RSI 60 (偏強但未超買), 4 個 trigger 全部 fired。
+> 💡 **點解要買**: MA 均線 + 高低點 + 趨勢線同步上升 (4/6 個 module 一致), grade 過到 B 級, 短期 5 日基準預期回報 +7.0%
 >
-> **入場價**: $492.50 - $498.00 (現價 ± 1.5%)
-> **止蝕**: $478.00 (現價 -3%, 跌破即 cut loss)
-> **目標**: $515.00 (現價 +5%, 1.5:1 risk-reward)
+> 🛑 **風控**: 止蝕位喺入場區下限 -3% (跌破即 cut loss), 目標 +5% 1.67:1 風險回報比
 >
-> **後續 monitor**: 跌穿 $478 (止蝕) 或 RSI > 75 (超買) 就要 re-evaluate
+> 💰 **倉位**: quarter 倉 (跟波動自動切, 高波動縮細, 低波動放大)
+
+**將來 swap 落 LLM 步驟** (永久 rule 實作):
+1. `hardcodedInterpretation()` 喺 modules/decision-engine.ts 換成 `return await llmCall(promptFromCtx(ctx))`
+2. `promptFromCtx(ctx)` 將 ctx 變 LLM prompt string (含 finalAction + 6 module breakdown + grade + forecast)
+3. `decide()` method 嘅 `await generateInterpretation(ctx)` 唔使改 (已經用 interface)
+4. testing page 即時見到 LLM 解讀, render helper `renderInterpretation()` 唔使改
+
+**Tests**: 15 assertions (8 finalAction 各 1 個 keyword + 1 LLM hook interface + 4 內容檢查: 唔空/包含 plain language/包含倉位/包含短期走勢/包含 emoji)
+
+**Testing page render**: 「📖 大少話你知」box, 將 multiline `\n` 轉 `<div>`, `**bold**` 轉 `<strong>`, 加左 border 跟 finalAction 顏色 (大少 11:57 永久 rule).
 
 ---
 
@@ -295,6 +322,6 @@ open http://localhost:8765/testing-page/
 | 2026-08-08 13:30 | v0.0.0 (stub) | M8 spec doc 拆返自 MODULE-07-08-DECISION-ENGINE.md (Plan A 拆返 M7+M8) | 36496159 |
 | 2026-08-08 15:42 | v1.0.0 (sub-task 2.1) | M8 finalAction 8 個決策樹 + 揸車比喻 final_action_reason + trading card static formula + decisionEngineAdapter 真正 render | cd1d5ac6 |
 | 2026-08-08 16:05 | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (3 個 volatility buckets: high/medium/low, 跟 kelly_fraction + max_drawdown) | c4e072a5 |
-| 2026-08-08 16:08 | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) + 3 × 3 table render + example + algorithm | TBD (本 commit) |
-| TBD | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook, hardcoded template) | TBD |
+| 2026-08-08 16:08 | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) + 3 × 3 table render + example + algorithm | 8ad3af82 |
+| 2026-08-08 16:15 | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook 預留 + 8 個 hardcoded template + InterpretationContext interface) | TBD (本 commit) |
 | TBD | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation) | TBD |
