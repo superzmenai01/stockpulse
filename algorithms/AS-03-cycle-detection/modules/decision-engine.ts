@@ -233,6 +233,64 @@ function computeTradingCard(
 }
 
 // =============================================================
+// Short term forecast — Sprint 2 sub-task 2.3 (9 scenarios)
+// =============================================================
+
+/** 短期走勢預測 9 個 scenarios — 3 個 scenarios × 3 個 timeframes
+ *
+ *  Scenarios (大少 13:30 confirm 概率 25/50/25):
+ *    🟢 optimistic  25%  — expected_return × 1.5 × (days/5), MD × 0.5
+ *    🟡 baseline    50%  — expected_return × 1.0 × (days/5), MD × 0.7
+ *    🔴 pessimistic 25%  — -max_drawdown × 0.5 × (days/5), MD × 1.0
+ *
+ *  Timeframes: 5 日, 10 日, 20 日
+ *
+ *  ⚠️ 重要: 呢個係 conditional scenarios 唔係 prediction
+ *     真實 buy/sell 決定睇 finalAction 嘅 trigger, 唔係睇 scenarios
+ *     9 個 scenarios 只係畀大少了解 3 種可能走勢嘅範圍
+ */
+function computeShortTermForecast(
+  expectedReturn: number,
+  maxDrawdown: number,
+): ForecastScenario[] {
+  const timeframes: Array<5 | 10 | 20> = [5, 10, 20];
+  const forecast: ForecastScenario[] = [];
+
+  for (const days of timeframes) {
+    const dayFactor = days / 5;
+
+    // 1. 🟢 Optimistic (25% 概率)
+    forecast.push({
+      scenario: 'optimistic',
+      timeframe_days: days,
+      expected_return: +(expectedReturn * 1.5 * dayFactor).toFixed(4),
+      max_drawdown: +(maxDrawdown * 0.5).toFixed(4),
+      probability: 0.25,
+    });
+
+    // 2. 🟡 Baseline (50% 概率)
+    forecast.push({
+      scenario: 'baseline',
+      timeframe_days: days,
+      expected_return: +(expectedReturn * 1.0 * dayFactor).toFixed(4),
+      max_drawdown: +(maxDrawdown * 0.7).toFixed(4),
+      probability: 0.50,
+    });
+
+    // 3. 🔴 Pessimistic (25% 概率)
+    forecast.push({
+      scenario: 'pessimistic',
+      timeframe_days: days,
+      expected_return: +(-maxDrawdown * 0.5 * dayFactor).toFixed(4),
+      max_drawdown: +(maxDrawdown * 1.0).toFixed(4),
+      probability: 0.25,
+    });
+  }
+
+  return forecast;
+}
+
+// =============================================================
 // M8 Decision Engine class
 // =============================================================
 
@@ -340,8 +398,8 @@ export class DecisionEngine {
     // Step 7: trading card (2.2 adaptive — 跟 kelly_fraction + max_drawdown_estimate)
     const trading_card = computeTradingCard(currentPrice, sv.kelly_fraction, max_drawdown_estimate);
 
-    // Step 8: short term forecast (2.3 將 impl)
-    const short_term_forecast: ForecastScenario[] = [];
+    // Step 8: short term forecast (2.3 — 9 個 scenarios)
+    const short_term_forecast = computeShortTermForecast(expected_return, max_drawdown_estimate);
 
     return {
       final_action,

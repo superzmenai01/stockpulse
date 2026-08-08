@@ -634,7 +634,7 @@ section('13. Output structure');
   assert('13.3 final_action_reason 唔空', d.final_action_reason.length > 0);
   assert('13.4 trading_card 存在', typeof d.trading_card === 'object');
   assert('13.5 short_term_forecast 係 array', Array.isArray(d.short_term_forecast));
-  assert('13.6 short_term_forecast 暫空 (2.3 將 impl)', d.short_term_forecast.length === 0);
+  assert('13.6 short_term_forecast 9 個 (2.3 done)', d.short_term_forecast.length === 9);
   assert('13.7 interpretation 暫空 (2.4 將 impl)', d.interpretation === '');
   assert('13.8 module_verdicts 6 個', d.module_verdicts.length === 6);
   assert('13.9 synthesizer_verdict 存在', typeof d.synthesizer_verdict === 'object');
@@ -650,6 +650,114 @@ section('13. Output structure');
   const d = await engine.decide({ synthesizerVerdict: sv });
   const hasDriver = d.final_action_reason.includes('油門') || d.final_action_reason.includes('綠燈') || d.final_action_reason.includes('煞車') || d.final_action_reason.includes('導航') || d.final_action_reason.includes('油') || d.final_action_reason.includes('保持現速');
   assert('13.11 final_action_reason 揸車比喻或 plain language', hasDriver || d.final_action_reason.length > 10);
+}
+
+// =============================================================
+// Test 14: Short term forecast (2.3 — 9 個 scenarios)
+// =============================================================
+section('14. Short term forecast (2.3 — 9 scenarios: 3 × 3 timeframes)');
+
+// 14.1-14.3: 預期 9 個 forecasts, 3 個 scenarios × 3 個 timeframes
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('14.1 short_term_forecast 9 個', d.short_term_forecast.length === 9);
+  assert('14.2 全部 3 個 timeframes (5/10/20)', d.short_term_forecast.every(f => [5, 10, 20].includes(f.timeframe_days)));
+  assert('14.3 全部 3 個 scenarios (optimistic/baseline/pessimistic)', d.short_term_forecast.every(f => ['optimistic', 'baseline', 'pessimistic'].includes(f.scenario)));
+}
+
+// 14.4-14.6: UP case (expected_return > 0) — optimistic 同 baseline 正, pessimistic 負
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  const optimistic = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'optimistic');
+  const baseline = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'baseline');
+  const pessimistic = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'pessimistic');
+  assert('14.4 5 日 optimistic > 0 (UP case)', optimistic.expected_return > 0);
+  assert('14.5 5 日 baseline > 0 (UP case)', baseline.expected_return > 0);
+  assert('14.6 5 日 pessimistic < 0 (UP case)', pessimistic.expected_return < 0);
+}
+
+// 14.7-14.9: 概率 25/50/25
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  const optimistic = d.short_term_forecast.find(f => f.scenario === 'optimistic');
+  const baseline = d.short_term_forecast.find(f => f.scenario === 'baseline');
+  const pessimistic = d.short_term_forecast.find(f => f.scenario === 'pessimistic');
+  assert('14.7 optimistic probability = 0.25', optimistic.probability === 0.25);
+  assert('14.8 baseline probability = 0.50', baseline.probability === 0.50);
+  assert('14.9 pessimistic probability = 0.25', pessimistic.probability === 0.25);
+}
+
+// 14.10-14.12: Day factor 線性 scaling (5/10/20)
+//   optimistic[10] = optimistic[5] × 2, optimistic[20] = optimistic[5] × 4
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  const opt5 = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'optimistic');
+  const opt10 = d.short_term_forecast.find(f => f.timeframe_days === 10 && f.scenario === 'optimistic');
+  const opt20 = d.short_term_forecast.find(f => f.timeframe_days === 20 && f.scenario === 'optimistic');
+  assert('14.10 optimistic 10 日 = 5 日 × 2', Math.abs(opt10.expected_return - opt5.expected_return * 2) < 0.001);
+  assert('14.11 optimistic 20 日 = 5 日 × 4', Math.abs(opt20.expected_return - opt5.expected_return * 4) < 0.001);
+  assert('14.12 baseline 10 日 = 5 日 × 2', Math.abs(d.short_term_forecast.find(f => f.timeframe_days === 10 && f.scenario === 'baseline').expected_return - d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'baseline').expected_return * 2) < 0.001);
+}
+
+// 14.13-14.15: max_drawdown 跟 scenario bucket
+//   optimistic MD × 0.5, baseline × 0.7, pessimistic × 1.0
+{
+  const verdicts = make6Verdicts('UP', {
+    'ma-alignment': { max_drawdown_estimate: 0.10 },
+    'hl-structure': { max_drawdown_estimate: 0.10 },
+    trendline: { max_drawdown_estimate: 0.10 },
+    indicators: { max_drawdown_estimate: 0.10, sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+    volume: { max_drawdown_estimate: 0.10 },
+    volatility: { max_drawdown_estimate: 0.10 },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  const opt5 = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'optimistic');
+  const base5 = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'baseline');
+  const pess5 = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'pessimistic');
+  assert('14.13 optimistic MD = 0.05 (maxdd 0.10 × 0.5)', Math.abs(opt5.max_drawdown - 0.05) < 0.001);
+  assert('14.14 baseline MD = 0.07 (maxdd 0.10 × 0.7)', Math.abs(base5.max_drawdown - 0.07) < 0.001);
+  assert('14.15 pessimistic MD = 0.10 (maxdd 0.10 × 1.0)', Math.abs(pess5.max_drawdown - 0.10) < 0.001);
+}
+
+// 14.16: DOWN case — pessimistic 同樣負, optimistic 可能正 (跟 expected_return)
+{
+  const verdicts = make6Verdicts('DOWN', {
+    'ma-alignment': { max_drawdown_estimate: 0.12 },
+    'hl-structure': { max_drawdown_estimate: 0.12 },
+    trendline: { max_drawdown_estimate: 0.12 },
+    indicators: { max_drawdown_estimate: 0.12, sentiment_6d: { rsi: -0.4, bollinger_pct_b: -0.4, bias_ratio: -0.2, vol_skew: 0, turnover: 0, momentum_accel: 0 } },
+    volume: { max_drawdown_estimate: 0.12 },
+    volatility: { max_drawdown_estimate: 0.12 },
+  });
+  const sv = makeSynth('C', 0.5, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  assert('14.16 DOWN case → 9 個 forecasts 仍生成', d.short_term_forecast.length === 9);
+}
+
+// 14.17: SIDEWAYS case — expected_return = 0 → baseline = 0
+{
+  const verdicts = make6Verdicts('SIDEWAYS');
+  const sv = makeSynth('C', 0.5, { verdicts });
+  const d = await engine.decide({ synthesizerVerdict: sv });
+  const base5 = d.short_term_forecast.find(f => f.timeframe_days === 5 && f.scenario === 'baseline');
+  assert('14.17 SIDEWAYS case → baseline 5 日 = 0', base5.expected_return === 0);
 }
 
 // =============================================================

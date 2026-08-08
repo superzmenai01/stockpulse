@@ -124,25 +124,44 @@ function computeTradingCard(currentPrice, kellyFraction, maxDrawdown) {
 
 ---
 
-## 5. 短期走勢預測 (3 scenarios × 3 timeframes = 9 個 forecasts)
+## 5. 短期走勢預測 (3 scenarios × 3 timeframes = 9 個 forecasts) — **Sprint 2 sub-task 2.3 impl done**
 
-| Scenario | 概率 | 5 日 | 10 日 | 20 日 |
-|----------|------|------|-------|-------|
-| 🟢 **樂觀** (optimistic) | 25% | +3% | +6% | +12% |
-| 🟡 **基準** (baseline) | 50% | +1% | +2% | +3% |
-| 🔴 **悲觀** (pessimistic) | 25% | -2% | -4% | -7% |
+| Scenario | 概率 | expected_return formula | max_drawdown formula |
+|----------|------|--------------------------|----------------------|
+| 🟢 **optimistic** (樂觀) | 25% | `expected_return × 1.5 × (days/5)` | `max_drawdown × 0.5` |
+| 🟡 **baseline** (基準) | 50% | `expected_return × 1.0 × (days/5)` | `max_drawdown × 0.7` |
+| 🔴 **pessimistic** (悲觀) | 25% | `-max_drawdown × 0.5 × (days/5)` | `max_drawdown × 1.0` |
 
-**算法** (純 math, 從 M7 sentiment_6d + expected_return + max_drawdown 衍生):
+**Timeframes**: 5 日, 10 日, 20 日 (線性 scaling: dayFactor = days/5)
+
+**Example** (UP state, expected_return=0.07, max_drawdown=0.10):
+
+| 日數 | 🟢 Optimistic | 🟡 Baseline | 🔴 Pessimistic |
+|------|----------------|--------------|-----------------|
+| 5 日 | +10.5% (MD 5.0%) | +7.0% (MD 7.0%) | -5.0% (MD 10.0%) |
+| 10 日 | +21.0% (MD 5.0%) | +14.0% (MD 7.0%) | -10.0% (MD 10.0%) |
+| 20 日 | +42.0% (MD 5.0%) | +28.0% (MD 7.0%) | -20.0% (MD 10.0%) |
+
+**Algorithm** (純 math, 從 synthesizerVerdict.expected_return + weighted avg max_drawdown 衍生):
 ```typescript
-function forecast(scenario, days, expected_return, max_drawdown) {
-  const dayFactor = days / 5;  // 線性 scaling (5 日係 baseline)
-  if (scenario === 'optimistic') return expected_return * 1.5 * dayFactor;
-  if (scenario === 'baseline')   return expected_return * 1.0 * dayFactor;
-  if (scenario === 'pessimistic') return -max_drawdown * 0.5 * dayFactor;
+function computeShortTermForecast(expectedReturn, maxDrawdown) {
+  const timeframes = [5, 10, 20];
+  const forecast = [];
+  for (const days of timeframes) {
+    const dayFactor = days / 5;
+    forecast.push({ scenario: 'optimistic', timeframe_days: days, expected_return: +(expectedReturn * 1.5 * dayFactor).toFixed(4), max_drawdown: +(maxDrawdown * 0.5).toFixed(4), probability: 0.25 });
+    forecast.push({ scenario: 'baseline', timeframe_days: days, expected_return: +(expectedReturn * 1.0 * dayFactor).toFixed(4), max_drawdown: +(maxDrawdown * 0.7).toFixed(4), probability: 0.50 });
+    forecast.push({ scenario: 'pessimistic', timeframe_days: days, expected_return: +(-maxDrawdown * 0.5 * dayFactor).toFixed(4), max_drawdown: +(maxDrawdown * 1.0).toFixed(4), probability: 0.25 });
+  }
+  return forecast;
 }
 ```
 
-**重要**: 呢個係 conditional scenarios, **唔係 prediction**. 真實 buy/sell 決定睇 finalAction trigger, 唔係睇 scenarios.
+**重要**: 呢個係 conditional scenarios, **唔係 prediction**. 真實 buy/sell 決定睇 finalAction trigger, 唔係睇 scenarios. 9 個 scenarios 只係畀大少了解 3 種可能走勢嘅範圍.
+
+**Tests**: 17 assertions (1 數量 + 1 timeframe + 1 scenario + 3 sign + 3 概率 + 3 day factor scaling + 3 max_drawdown bucket + 2 fallback cases)
+
+**Testing page render**: 3 × 3 table (rows = 5/10/20 日, columns = 樂觀/基準/悲觀), 每格顯示 expected_return 顏色 (綠正紅負) + MD 細字.
 
 ---
 
@@ -275,7 +294,7 @@ open http://localhost:8765/testing-page/
 |------|---------|------|--------|
 | 2026-08-08 13:30 | v0.0.0 (stub) | M8 spec doc 拆返自 MODULE-07-08-DECISION-ENGINE.md (Plan A 拆返 M7+M8) | 36496159 |
 | 2026-08-08 15:42 | v1.0.0 (sub-task 2.1) | M8 finalAction 8 個決策樹 + 揸車比喻 final_action_reason + trading card static formula + decisionEngineAdapter 真正 render | cd1d5ac6 |
-| 2026-08-08 16:05 | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (3 個 volatility buckets: high/medium/low, 跟 kelly_fraction + max_drawdown) | TBD (本 commit) |
-| TBD | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) | TBD |
+| 2026-08-08 16:05 | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (3 個 volatility buckets: high/medium/low, 跟 kelly_fraction + max_drawdown) | c4e072a5 |
+| 2026-08-08 16:08 | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) + 3 × 3 table render + example + algorithm | TBD (本 commit) |
 | TBD | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook, hardcoded template) | TBD |
 | TBD | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation) | TBD |

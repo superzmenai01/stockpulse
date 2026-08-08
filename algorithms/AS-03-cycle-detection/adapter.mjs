@@ -6162,6 +6162,59 @@ function finalActionShortLabel(action) {
   }
 }
 
+// =============================================================
+// Sprint 2 sub-task 2.3 — Forecast scenarios render helper
+// =============================================================
+
+/** Render 9 個 forecast scenarios 做 3 × 3 table (3 timeframes × 3 scenarios)
+ *  @param {Array<{scenario, timeframe_days, expected_return, max_drawdown, probability}>} forecasts
+ *  @returns {string} HTML
+ */
+function renderForecastTable(forecasts) {
+  if (!forecasts || forecasts.length === 0) {
+    return '<div style="padding:12px;background:#fff3cd;border-radius:6px;color:#856404;">9 個 scenarios 仲未計算</div>';
+  }
+
+  const scenarios = [
+    { key: 'optimistic', label: '🟢 樂觀', color: '#26BA75', prob: '25%' },
+    { key: 'baseline', label: '🟡 基準', color: '#F39C12', prob: '50%' },
+    { key: 'pessimistic', label: '🔴 悲觀', color: '#EE5151', prob: '25%' },
+  ];
+  const timeframes = [5, 10, 20];
+
+  let html = '<table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">';
+  // Header: Timeframe | Optimistic | Baseline | Pessimistic
+  html += '<thead><tr style="background:#f0f0f0;">';
+  html += '<th style="text-align:left;padding:8px;">日數 / 情境</th>';
+  for (const sc of scenarios) {
+    html += `<th style="text-align:right;padding:8px;">${sc.label} <span style="color:#999;font-weight:400;">(${sc.prob})</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const days of timeframes) {
+    html += '<tr>';
+    html += `<td style="padding:8px;font-weight:600;">${days} 日</td>`;
+    for (const sc of scenarios) {
+      const f = forecasts.find(x => x.timeframe_days === days && x.scenario === sc.key);
+      if (f) {
+        const retColor = f.expected_return >= 0 ? '#26BA75' : '#EE5151';
+        const retSign = f.expected_return >= 0 ? '+' : '';
+        const mdPct = (f.max_drawdown * 100).toFixed(1);
+        html += `<td style="text-align:right;padding:8px;">
+          <div style="color:${retColor};font-weight:600;">${retSign}${(f.expected_return * 100).toFixed(2)}%</div>
+          <div style="color:#999;font-size:11px;">MD ${mdPct}%</div>
+        </td>`;
+      } else {
+        html += '<td style="text-align:right;padding:8px;color:#999;">—</td>';
+      }
+    }
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  return html;
+}
+
 function decisionEngineStateLabel(state) {
   // Plan B fix (大少 2026-08-08 13:30) — defensive label fallback
   // 如果 state 係 undefined / null / 唔 match 5 個 value, 顯示 "未知" 而唔係 "undefined"
@@ -6469,6 +6522,11 @@ export const decisionEngineAdapter = {
 
         ${tradingCardHTML}
 
+        <!-- 短期走勢預測 (2.3 — 9 個 scenarios) -->
+        <h4 style="margin-top:24px;margin-bottom:4px;">📊 短期走勢預測 (2.3 — 9 個 scenarios: 3 × 3 timeframes)</h4>
+        <div style="font-size:12px;color:#666;margin-bottom:8px;">⚠️ 重要: 呢個係 conditional scenarios 唔係 prediction, 真實決定睇 finalAction trigger</div>
+        ${renderForecastTable(short_term_forecast)}
+
         <!-- 6 個 Metric Mini-Cards -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
           <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
@@ -6517,12 +6575,12 @@ export const decisionEngineAdapter = {
 
         <!-- Sprint 2 進度提示 (下個 commits 將加) -->
         <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-          <strong>✅ Sprint 2 sub-task 2.1-2.2 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + 交易卡 adaptive (跟 volatility)<br>
+          <strong>✅ Sprint 2 sub-task 2.1-2.3 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + 交易卡 adaptive + 短期走勢 9 scenarios<br>
           <strong>🚧 Sprint 2 仍待做:</strong>
           <ol style="margin-top:4px;">
-            <li>2.3 短期走勢預測 (3 scenarios × 5/10/20 日)</li>
             <li>2.4 人話詳細解讀 (LLM hook 預留 — 大少 13:30 永久 rule)</li>
             <li>2.5 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation)</li>
+            <li>2.6 L2 JSON file cache</li>
           </ol>
         </div>
       </div>
