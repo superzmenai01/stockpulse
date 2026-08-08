@@ -777,6 +777,95 @@ window.__recalibrateAdaptiveParams = async function() {
   }
 };
 
+// Sprint 3 sub-task 9.7.6 — M9 重新校準 + 立即套用 M8 button event handler
+// =========================================================================
+// 當 M9 verdict card render 時, 內聯 button 會調用呢兩個函數
+//   __recalibrateM9Optimal → DELETE 個 symbol 嘅 optimal cache → 重新跑 back test
+//   __applyM9OptimalToM8 → DELETE M8 個 adaptive params cache → 撳 8 trigger M8 重新校準
+window.__recalibrateM9Optimal = async function() {
+  if (!currentOptions || !currentOptions.code) {
+    alert('請先輸入股票代碼');
+    return;
+  }
+  const symbol = currentOptions.code;
+  const btn = document.getElementById('m9-recalibrate-btn');
+  const status = document.getElementById('m9-action-status');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ 重新校準中...';
+  }
+  if (status) status.textContent = '刪除舊最佳設定, 重新跑 back test...';
+  try {
+    // 1. DELETE 個 symbol 嘅 back-test optimal cache
+    await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/back-test`, {
+      method: 'DELETE',
+    });
+    // 2. 重新跑 back test (會 re-run walk-forward CV + POST save new optimal)
+    await runAlgorithm();
+    if (btn) {
+      btn.textContent = '✅ 已重新校準';
+      if (status) status.textContent = '已重新跑完, 結果已更新';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 重新校準'; status.textContent = ''; }, 2000);
+    }
+  } catch (e) {
+    console.error('[M9 Recalibrate] Error:', e);
+    if (btn) btn.textContent = '❌ 失敗';
+    if (status) status.textContent = '錯誤: ' + e.message;
+    setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '🔄 重新校準'; } }, 2000);
+  }
+};
+
+window.__applyM9OptimalToM8 = async function() {
+  if (!currentOptions || !currentOptions.code) {
+    alert('請先輸入股票代碼');
+    return;
+  }
+  const symbol = currentOptions.code;
+  const btn = document.getElementById('m9-apply-btn');
+  const status = document.getElementById('m9-action-status');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ 套用中...';
+  }
+  if (status) status.textContent = '刪除 M8 舊 adaptive params, 重新觸發 M8 校準 (會用 M9 嘅 optimal)...';
+  try {
+    // 1. DELETE M8 嘅 adaptive params cache (會 trigger M8 re-calibrate, 用 M9 嘅 optimal)
+    await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`, {
+      method: 'DELETE',
+    });
+    // 2. 切去 M8 algorithm, 自動 trigger runAlgorithm (M8 會自動用 cache 嘅 M9 optimal)
+    if (currentAdapter && currentAdapter.id !== 'AS-03-DEC') {
+      const selectEl = document.getElementById('algorithm-select');
+      if (selectEl) {
+        selectEl.value = 'AS-03-DEC';
+        selectEl.dispatchEvent(new Event('change'));
+        // 等 onAlgorithmChange 完成, 再 trigger run
+        setTimeout(async () => {
+          await runAlgorithm();
+          if (btn) {
+            btn.textContent = '✅ 已套用 M8';
+            if (status) status.textContent = '第八模組已經用新設定重新校準, 結果已更新';
+            setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '📌 立即套用 (8) M8'; } if (status) status.textContent = ''; }, 2500);
+          }
+        }, 500);
+      }
+    } else {
+      // 已經喺 M8, 直接 re-run
+      await runAlgorithm();
+      if (btn) {
+        btn.textContent = '✅ 已套用 M8';
+        if (status) status.textContent = 'M8 已經用新設定重新校準, 結果已更新';
+        setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '📌 立即套用 (8) M8'; } if (status) status.textContent = ''; }, 2500);
+      }
+    }
+  } catch (e) {
+    console.error('[M9 Apply] Error:', e);
+    if (btn) btn.textContent = '❌ 失敗';
+    if (status) status.textContent = '錯誤: ' + e.message;
+    setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '📌 立即套用 (8) M8'; } }, 2500);
+  }
+};
+
 inputsForm.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();

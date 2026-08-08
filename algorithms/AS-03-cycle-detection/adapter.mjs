@@ -6992,15 +6992,17 @@ export const decisionEngineAdapter = {
   `,
 };
 
-// ---------- backTestAdapter export (M9 v0.5.0 — Sprint 3 sub-task 9.5 done) ----------
+// ---------- backTestAdapter export (M9 v0.6.0 — Sprint 3 sub-task 9.7 UI 升級 done) ----------
 //   大少 2026-08-08 22:28 — 9.5 Testing page entry 09 — AS-03-BT
+//   9.6 — HK.00700 pilot + spec doc + ROADMAP + 4 fixes
+//   9.7 — M9 UI 升級 (3 SVG charts + 6 色標 + 永遠 full show + 2 個真實可 click button + 大少話你知 LLM hook)
 //   用 modules/back-test.ts (esbuild bundle .bundle.js, browser-compatible)
 //   跑 walk-forward CV (9.1-9.3) + 自動 POST optimal + forward return records 落 cache (9.4)
-//   Render 顯示: 整體 metrics / Coarse Grid Top 5 / Fine Tune Best / Walk-Forward Folds + Apply to M8 按鈕
+//   Render 顯示: ⏰ header / 🎯 最佳參數 + Kelly pie / 📊 整體表現 + Walk-Forward bar / 📋 段細節 / 📜 過往判決 / 📖 大少話你知 / 🔄 Apply to M8
 export const backTestAdapter = {
   id: 'AS-03-BT',
   name: '回測驗證 (第九模組)',
-  version: '0.5.0',
+  version: '0.6.0',
   description: '用歷史 K 線重播之前嘅判決, 對比之後 5 / 10 / 20 日真實升咗幾多, 等你知道個演算法之前嘅判斷啱唔啱, 仲會自動搵出呢隻股票嘅最佳設定',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
@@ -7080,6 +7082,18 @@ export const backTestAdapter = {
       }
     }
 
+    // 4b. 9.7.3 — 拎 forward return history 從 cache (永久累積, 永遠 full show)
+    let forwardReturnHistory = [];
+    try {
+      const frResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/forward-return?limit=20`);
+      if (frResp.ok) {
+        const frData = await frResp.json();
+        forwardReturnHistory = frData.history || [];
+      }
+    } catch (e) {
+      console.warn('[backTestAdapter] fetch forward return history failed:', e);
+    }
+
     // 5. POST forward return records (累積, 永久保留)
     //    對每 fold 嘅 validate set 跑 runReplay 拎 results, 逐條 POST
     for (const fold of walkForwardResult.folds) {
@@ -7123,6 +7137,7 @@ export const backTestAdapter = {
       symbol,
       walkForwardResult,
       optimal,
+      forwardReturnHistory,  // 9.7.3 永遠 full show
       timestamp: Date.now(),
     };
   },
@@ -7130,46 +7145,199 @@ export const backTestAdapter = {
     if (!result || !result.walkForwardResult) {
       return '<p>❌ 冇 back test result</p>';
     }
-    const { walkForwardResult, optimal } = result;
+    const { walkForwardResult, optimal, forwardReturnHistory = [], symbol } = result;
     const { folds, overall } = walkForwardResult;
 
-    let html = `<h3>⏰ Back Test 結果 (M9 v0.5.0)</h3>`;
-    html += `<h4>🎯 Optimal Params (per-symbol)</h4>`;
-    html += `<div style="background: #e8f5e9; padding: 12px; border-radius: 8px; margin: 8px 0;">`;
-    html += `<p><b>Kelly fraction:</b> ${(overall.bestParams.kelly * 100).toFixed(1)}%</p>`;
-    html += `<p><b>RSI weight:</b> ${(overall.bestParams.rsiWeight * 100).toFixed(1)}%</p>`;
-    html += `<p><b>SSI weights:</b> MA ${(overall.bestParams.ssiWeights.ma * 100).toFixed(0)}% / HL ${(overall.bestParams.ssiWeights.hl * 100).toFixed(0)}% / TL ${(overall.bestParams.ssiWeights.tl * 100).toFixed(0)}%</p>`;
+    // 9.7.4 6 色標 helper (大少 11:57 永久 rule)
+    const colorByScore = (score) => {
+      // score 0-100, 越高越好
+      if (score >= 70) return '#26BA75';  // 綠
+      if (score >= 50) return '#F39C12';  // 黃
+      if (score > 0) return '#EE5151';    // 紅
+      return '#666';                        // 灰 (0 / null)
+    };
+    const colorByStability = (stability) => {
+      // stability 0-1
+      if (stability >= 0.7) return '#26BA75';
+      if (stability >= 0.4) return '#F39C12';
+      return '#EE5151';
+    };
+    const colorByKelly = (kelly) => {
+      // 越細越穩陣
+      if (kelly <= 0.15) return '#1890ff';  // 藍 (細倉, 穩陣)
+      if (kelly <= 0.30) return '#26BA75';  // 綠 (中倉)
+      if (kelly <= 0.45) return '#F39C12';  // 黃 (大倉)
+      return '#EE5151';                       // 紅 (滿倉, 博)
+    };
+    const hitEmoji = (hit) => hit === true ? '🟢' : hit === false ? '🔴' : '⚫';
+
+    let html = '';
+
+    // ===== Section 1: 大標題 + 簡述 =====
+    html += `<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 20px; border-radius: 12px; margin-bottom: 16px;">`;
+    html += `<h3 style="margin: 0 0 8px 0; font-size: 18px;">⏰ 回測驗證結果 (第九模組 v0.6.0)</h3>`;
+    html += `<p style="margin: 0; opacity: 0.95;">用歷史 K 線重播之前嘅判決, 對比之後 5 / 10 / 20 日真實升咗幾多</p>`;
+    html += `<p style="margin: 4px 0 0 0; opacity: 0.85; font-size: 13px;">📊 ${symbol} · ${folds.length} 段滾動驗證 · ${overall.totalValidateSamples} 個真實樣本</p>`;
     html += `</div>`;
 
-    html += `<h4>📊 Validation Metrics (大少 22:28 揀 B: Walk-Forward CV 3 段 rolling)</h4>`;
-    html += `<ul>`;
-    html += `<li><b>Average validate score:</b> ${overall.avgValidateScore.toFixed(1)}</li>`;
-    html += `<li><b>Stability score:</b> ${(overall.stabilityScore * 100).toFixed(0)}% (越接近 100% 越 stable)</li>`;
-    html += `<li><b>Total validate samples:</b> ${overall.totalValidateSamples}</li>`;
-    html += `<li><b>Folds completed:</b> ${folds.length}</li>`;
-    html += `</ul>`;
+    // ===== Section 2: 最佳參數 (帶 Kelly pie chart 9.7.2) =====
+    html += `<h4 style="margin: 16px 0 8px 0; color: #333;">🎯 呢隻股票嘅最佳參數</h4>`;
+    const kellyPct = overall.bestParams.kelly * 100;
+    const kellyColor = colorByKelly(overall.bestParams.kelly);
+    html += `<div style="display: flex; gap: 12px; align-items: center; background: #f0f8ff; padding: 16px; border-radius: 12px; margin-bottom: 12px;">`;
 
+    // Kelly pie chart (SVG, 永遠 full show)
+    const kellyAngle = (overall.bestParams.kelly / 0.5) * 360;  // 0.5 = half (100%)
+    html += `<svg width="100" height="100" viewBox="0 0 100 100" style="flex-shrink: 0;">`;
+    html += `<circle cx="50" cy="50" r="40" fill="#e0e0e0" />`;
+    html += `<path d="M 50 10 A 40 40 0 ${kellyAngle > 180 ? 1 : 0} 1 ${50 + 40 * Math.sin(kellyAngle * Math.PI / 180)} ${50 - 40 * Math.cos(kellyAngle * Math.PI / 180)} L 50 50 Z" fill="${kellyColor}" />`;
+    html += `<circle cx="50" cy="50" r="25" fill="white" />`;
+    html += `<text x="50" y="48" text-anchor="middle" font-size="14" font-weight="bold" fill="${kellyColor}">${kellyPct.toFixed(0)}%</text>`;
+    html += `<text x="50" y="62" text-anchor="middle" font-size="9" fill="#666">倉位</text>`;
+    html += `</svg>`;
+
+    html += `<div style="flex: 1; line-height: 1.6;">`;
+    html += `<p style="margin: 4px 0;"><b>建議倉位 (Kelly):</b> <span style="color: ${kellyColor}; font-weight: bold; font-size: 16px;">${kellyPct.toFixed(1)}%</span> ${kellyPct <= 15 ? '🛡️ 細倉穩陣' : kellyPct <= 30 ? '⚖️ 中倉平衡' : kellyPct <= 45 ? '⚡ 進取' : '🎲 大倉博一博'}</p>`;
+    html += `<p style="margin: 4px 0;"><b>RSI 情緒權重:</b> ${(overall.bestParams.rsiWeight * 100).toFixed(0)}%</p>`;
+    html += `<p style="margin: 4px 0;"><b>策略權重分配:</b> 均線 ${(overall.bestParams.ssiWeights.ma * 100).toFixed(0)}% · 高低點 ${(overall.bestParams.ssiWeights.hl * 100).toFixed(0)}% · 趨勢線 ${(overall.bestParams.ssiWeights.tl * 100).toFixed(0)}%</p>`;
+    html += `</div></div>`;
+
+    // ===== Section 3: 整體表現 (帶 Walk-Forward bar chart 9.7.2) =====
+    html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📊 整體表現 (3 段滾動交叉驗證)</h4>`;
+    const scoreColor = colorByScore(overall.avgValidateScore);
+    const stabColor = colorByStability(overall.stabilityScore);
+    html += `<div style="background: #f9f9f9; padding: 16px; border-radius: 12px; margin-bottom: 12px;">`;
+
+    // 4 個關鍵指標 (永遠 full show, 大少 11:57 永久 rule)
+    html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">`;
+    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: ${scoreColor};">${overall.avgValidateScore.toFixed(1)}</div><div style="font-size: 12px; color: #666;">平均驗證分數</div></div>`;
+    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: ${stabColor};">${(overall.stabilityScore * 100).toFixed(0)}%</div><div style="font-size: 12px; color: #666;">穩定度 (越接近 100% 越穩)</div></div>`;
+    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: #333;">${overall.totalValidateSamples}</div><div style="font-size: 12px; color: #666;">真實樣本數</div></div>`;
+    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: #333;">${folds.length}</div><div style="font-size: 12px; color: #666;">完成驗證段數</div></div>`;
+    html += `</div>`;
+
+    // ===== Section 4: Walk-Forward 3 段 bar chart (SVG 9.7.2) =====
     if (folds.length > 0) {
-      html += `<h4>🔀 Walk-Forward Folds (永遠 full show, 大少 11:57 永久 rule)</h4>`;
-      html += `<table style="width:100%; border-collapse: collapse; margin: 8px 0;">`;
-      html += `<tr style="background: #f0f0f0;"><th>Fold</th><th>Kelly</th><th>RSI</th><th>Tune Score</th><th>Validate Score</th><th>Samples</th></tr>`;
+      html += `<h5 style="margin: 16px 0 8px 0; color: #555;">🔀 每段驗證嘅表現 (藍 = 校準, 橙 = 真實)</h5>`;
+      const maxScore = Math.max(...folds.flatMap(f => [f.tuneScore, f.validateScore]), 100);
+      const barW = 280 / folds.length - 8;
+      const chartH = 120;
+      html += `<svg width="100%" height="${chartH + 30}" viewBox="0 0 300 ${chartH + 30}" style="background: white; border-radius: 8px; padding: 8px;">`;
+      // 標題
+      folds.forEach((fold, i) => {
+        const x = 10 + i * (barW + 8);
+        // 校準分 (藍)
+        const tuneH = (fold.tuneScore / maxScore) * chartH;
+        html += `<rect x="${x}" y="${chartH - tuneH + 5}" width="${barW * 0.45}" height="${tuneH}" fill="#1890ff" rx="2" />`;
+        html += `<text x="${x + barW * 0.225}" y="${chartH - tuneH - 1}" text-anchor="middle" font-size="9" fill="#1890ff">${fold.tuneScore.toFixed(0)}</text>`;
+        // 真實分 (橙)
+        const valH = (fold.validateScore / maxScore) * chartH;
+        html += `<rect x="${x + barW * 0.5}" y="${chartH - valH + 5}" width="${barW * 0.45}" height="${valH}" fill="#F39C12" rx="2" />`;
+        html += `<text x="${x + barW * 0.725}" y="${chartH - valH - 1}" text-anchor="middle" font-size="9" fill="#F39C12">${fold.validateScore.toFixed(0)}</text>`;
+        // 段號
+        html += `<text x="${x + barW / 2}" y="${chartH + 22}" text-anchor="middle" font-size="11" fill="#333">段 ${i + 1}</text>`;
+      });
+      // Y 軸標
+      html += `<line x1="0" y1="${chartH + 5}" x2="300" y2="${chartH + 5}" stroke="#ddd" />`;
+      html += `</svg>`;
+      html += `<div style="display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: #666;">`;
+      html += `<span>🟦 校準分 (用歷史 tune 出嘅分)</span><span>🟧 真實分 (用未來 validate 嘅分)</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    // ===== Section 5: Walk-Forward 段細節表 (永遠 full show 9.7.3) =====
+    if (folds.length > 0) {
+      html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📋 每段嘅最佳設定細節 (永遠 full show)</h4>`;
+      html += `<table style="width:100%; border-collapse: collapse; margin-bottom: 12px; background: white; border-radius: 8px; overflow: hidden;">`;
+      html += `<tr style="background: #f5f5f5;"><th style="padding: 10px; text-align: left;">段</th><th style="padding: 10px; text-align: right;">建議倉位</th><th style="padding: 10px; text-align: right;">情緒權重</th><th style="padding: 10px; text-align: right;">校準分</th><th style="padding: 10px; text-align: right;">真實分</th><th style="padding: 10px; text-align: right;">樣本數</th></tr>`;
       for (const fold of folds) {
-        html += `<tr style="border-bottom: 1px solid #ddd;">`;
-        html += `<td>${fold.foldIndex + 1}</td>`;
-        html += `<td>${(fold.bestParams.kelly * 100).toFixed(1)}%</td>`;
-        html += `<td>${(fold.bestParams.rsiWeight * 100).toFixed(1)}%</td>`;
-        html += `<td>${fold.tuneScore.toFixed(1)}</td>`;
-        html += `<td>${fold.validateScore.toFixed(1)}</td>`;
-        html += `<td>${fold.validateSamples}</td>`;
+        const fColor = colorByScore(fold.validateScore);
+        html += `<tr style="border-bottom: 1px solid #eee;">`;
+        html += `<td style="padding: 10px;">第 ${fold.foldIndex + 1} 段</td>`;
+        html += `<td style="padding: 10px; text-align: right; color: ${colorByKelly(fold.bestParams.kelly)}; font-weight: bold;">${(fold.bestParams.kelly * 100).toFixed(1)}%</td>`;
+        html += `<td style="padding: 10px; text-align: right;">${(fold.bestParams.rsiWeight * 100).toFixed(0)}%</td>`;
+        html += `<td style="padding: 10px; text-align: right; color: #1890ff;">${fold.tuneScore.toFixed(1)}</td>`;
+        html += `<td style="padding: 10px; text-align: right; color: ${fColor}; font-weight: bold;">${fold.validateScore.toFixed(1)}</td>`;
+        html += `<td style="padding: 10px; text-align: right;">${fold.validateSamples}</td>`;
         html += `</tr>`;
       }
       html += `</table>`;
     }
 
-    html += `<h4>🔄 Apply to M8</h4>`;
-    html += `<p>Optimal params 已自動 POST 落 per-symbol cache (30 日 expiry)。</p>`;
-    html += `<p>下次跑 08 — AS-03-DEC 嗰陣, M8 會自動用呢個 optimal (取代 default 5 個 adaptive params)。</p>`;
-    html += `<p>Forward return records 已累積 (永久保留), 用嚟 build per-symbol 成績表。</p>`;
+    // ===== Section 6: Forward return history (永遠 full show 9.7.3) =====
+    if (forwardReturnHistory.length > 0) {
+      html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📜 過往判決記錄 (永久累積, 永遠 full show)</h4>`;
+      html += `<p style="font-size: 12px; color: #888; margin-bottom: 8px;">顯示最近 ${forwardReturnHistory.length} 條 (總共可能仲多, 全部永久保留)</p>`;
+
+      // 9.7.2 散點圖 SVG
+      const recent20 = forwardReturnHistory.slice(0, 20);
+      const scatterW = 600;
+      const scatterH = 140;
+      html += `<svg width="100%" height="${scatterH}" viewBox="0 0 ${scatterW} ${scatterH}" style="background: white; border-radius: 8px; padding: 8px;">`;
+      // Y 軸 (0 中心線, ±10%)
+      html += `<line x1="30" y1="${scatterH / 2}" x2="${scatterW - 10}" y2="${scatterH / 2}" stroke="#ddd" stroke-dasharray="3,3" />`;
+      // 數據點
+      recent20.forEach((r, i) => {
+        if (r.fwd5 === null || r.fwd5 === undefined) return;
+        const x = 30 + (i / Math.max(1, recent20.length - 1)) * (scatterW - 40);
+        const y = scatterH / 2 - (r.fwd5 / 10) * (scatterH / 2 - 15);
+        const color = r.fwd5 > 0 ? '#26BA75' : '#EE5151';
+        html += `<circle cx="${x}" cy="${y}" r="4" fill="${color}" opacity="0.7" />`;
+        html += `<text x="${x}" y="${y - 7}" text-anchor="middle" font-size="8" fill="${color}">${r.fwd5 > 0 ? '+' : ''}${r.fwd5.toFixed(1)}%</text>`;
+      });
+      // Y 軸標
+      html += `<text x="5" y="15" font-size="9" fill="#999">+10%</text>`;
+      html += `<text x="5" y="${scatterH / 2 + 3}" font-size="9" fill="#999">0%</text>`;
+      html += `<text x="5" y="${scatterH - 3}" font-size="9" fill="#999">-10%</text>`;
+      // 標題
+      html += `<text x="${scatterW / 2}" y="14" text-anchor="middle" font-size="11" fill="#333">5 日後回報分佈 (綠 = 升, 紅 = 跌)</text>`;
+      html += `</svg>`;
+
+      // 詳細表
+      html += `<table style="width:100%; border-collapse: collapse; margin-top: 12px; background: white; border-radius: 8px; overflow: hidden; font-size: 13px;">`;
+      html += `<tr style="background: #f5f5f5;"><th style="padding: 8px; text-align: left;">日期</th><th style="padding: 8px; text-align: left;">行動</th><th style="padding: 8px; text-align: right;">5 日後</th><th style="padding: 8px; text-align: right;">10 日後</th><th style="padding: 8px; text-align: right;">20 日後</th></tr>`;
+      for (const r of forwardReturnHistory) {
+        html += `<tr style="border-bottom: 1px solid #f0f0f0;">`;
+        html += `<td style="padding: 8px;">${r.date}</td>`;
+        html += `<td style="padding: 8px;">${r.action}</td>`;
+        html += `<td style="padding: 8px; text-align: right;">${r.fwd5 === null ? '—' : `${hitEmoji(r.hit)} ${r.fwd5 > 0 ? '+' : ''}${r.fwd5.toFixed(2)}%`}</td>`;
+        html += `<td style="padding: 8px; text-align: right;">${r.fwd10 === null ? '—' : `${r.fwd10 > 0 ? '+' : ''}${r.fwd10.toFixed(2)}%`}</td>`;
+        html += `<td style="padding: 8px; text-align: right;">${r.fwd20 === null ? '—' : `${r.fwd20 > 0 ? '+' : ''}${r.fwd20.toFixed(2)}%`}</td>`;
+        html += `</tr>`;
+      }
+      html += `</table>`;
+    }
+
+    // ===== Section 7: 大少話你知 box (9.7.5 LLM hook placeholder) =====
+    html += `<div style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); color: #333; padding: 16px 20px; border-radius: 12px; margin: 16px 0;">`;
+    html += `<h4 style="margin: 0 0 8px 0; font-size: 16px;">📖 大少話你知</h4>`;
+    // 9.7.5 用 stable 程度 + score 簡單人話解讀
+    let advice = '';
+    if (overall.avgValidateScore >= 70 && overall.stabilityScore >= 0.7) {
+      advice = `呢隻股票嘅回測結果 <b>好穩定</b>, 過去 3 段都拎到高過 70 分, 而且設定幾乎一樣。建議用呢個 bestParams 落第八模組。`;
+    } else if (overall.avgValidateScore >= 50 && overall.stabilityScore >= 0.5) {
+      advice = `回測結果 <b>中等穩定</b>, 過去 3 段嘅分數有啲上落, 但大方向 OK。可以試用呢個設定, 但要 monitor 真實表現。`;
+    } else if (overall.totalValidateSamples < 30) {
+      advice = `樣本唔夠 (${overall.totalValidateSamples} 個), 結果 <b>唔可靠</b>。建議用返默認設定, 等多啲數據先再 tune。`;
+    } else {
+      advice = `回測結果 <b>唔太穩定</b>, 過去 3 段嘅最佳設定差異大, 唔建議用呢個 bestParams。`;
+    }
+    html += `<p style="margin: 4px 0; line-height: 1.6;">${advice}</p>`;
+    html += `<p style="margin: 8px 0 0 0; font-size: 12px; opacity: 0.7;">🪝 將來可換成大語言模型 (OpenAI / MiniMax / Kimi), 而家用 rule 寫嘅簡單解讀</p>`;
+    html += `</div>`;
+
+    // ===== Section 8: Apply to M8 button (9.7.6 真實可 click) =====
+    html += `<h4 style="margin: 16px 0 8px 0; color: #333;">🔄 套用呢個設定落第八模組</h4>`;
+    html += `<div style="background: #e8f5e9; padding: 16px; border-radius: 12px;">`;
+    html += `<p style="margin: 4px 0;">✅ 最佳設定已經自動儲存落 per-symbol 快取 (30 日內有效)。</p>`;
+    html += `<p style="margin: 4px 0; font-size: 13px; color: #555;">下次跑 <code>08 — AS-03-DEC</code> 嗰陣, 第八模組會自動用呢個設定 (取代默認)。</p>`;
+    html += `<div style="display: flex; gap: 8px; margin-top: 12px;">`;
+    html += `<button id="m9-recalibrate-btn" onclick="window.__recalibrateM9Optimal && window.__recalibrateM9Optimal()" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">🔄 重新校準</button>`;
+    html += `<button id="m9-apply-btn" onclick="window.__applyM9OptimalToM8 && window.__applyM9OptimalToM8()" style="background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">📌 立即套用 (8) M8</button>`;
+    html += `</div>`;
+    html += `<p id="m9-action-status" style="margin: 8px 0 0 0; font-size: 12px; color: #666;"></p>`;
+    html += `</div>`;
 
     return html;
   },
