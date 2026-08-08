@@ -54,6 +54,8 @@
 > **大少 2026-08-08 12:02 更新:** Stage 1 收官 spec + doc 同步 — M7+M8 合併 mega module 嘅 spec done (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), impl pending 等大少 review + confirm Plan A (Sprint 1: 6 個 modules 加 output fields + M7 impl; Sprint 2: M8 decision tree + trading card).  
 > **大少 2026-08-08 12:30 更新:** Sprint 1 收官 (Plan A 確認) — M7 Synthesizer 邏輯 impl done (SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位), 6 個 modules 加 standard verdict interface done, 64 個 tests pass, decisionEngineAdapter + testing page 整合 done (commits `e96f673f` `4b8b64fe` `f991d9db` `2acab95d`). Sprint 2 範圍: M8 finalAction 8 個 + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON cache + 10 個 SVG chart.  
 > **大少 2026-08-08 13:30 更新:** Plan A 拆返 M7 + M8 兩個獨立 module — 大少澄清「一齊優化」意思係「設計上一起考慮但 implementation 應該分開」, 而家拆返 2 個獨立 module + spec doc. 之前嘅 MODULE-07-08-DECISION-ENGINE.md (合併 spec) 改名做 MODULE-07-SYNTHESIZER.md (M7 spec), 新建 MODULE-08-DECISION-ENGINE.md (M8 spec, 6-7 日 Sprint 2 將加). Testing page REGISTRY 加返 07 — AS-03-SYN 個 entry, 08 改返只係 M8 (sprint 2 將 impl).
+>
+> **大少 2026-08-08 16:55 更新:** **Sprint 2 done — Stage 1 收官**! 9 個 sub-tasks (2.1-2.9) 全部 done, 8 commits (cd1d5ac6, c4e072a5, 8ad3af82, 917cc08d, f33774e9, 16388296, ccb13d2b, a3ffb91f), MODULE-08 v2.3.0. M8 包含: 8 個 finalAction 決策樹 (揸車比喻) + Trading card adaptive (3 vol buckets) + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook 預留, hardcoded template) + 5 個 adaptive params auto-calibrate (純 math) + L2 JSON file cache (7 日 expiry) + 4 個 SVG chart + 「🔄 重新校準」按鈕 + 10 隻 demo 股票 test cases (5 港 + 5 美, 200 assertions). 728 assertions pass (682 node + 46 python).
 
 | 編號 | Module | 狀態 (2026-08-08 12:02) | 點解先做 |
 |------|--------|------|----------|
@@ -64,7 +66,7 @@
 | 06 | Module 6: Volatility (新定義, 取代 Multi-TF) | ✅ v1.0.0 done (32/32) | 波動率收縮擴張, Squeeze + VCP + ATR 分解 |
 | 01 | **Module 1: 均線系統週期判斷法 v2.0** (with Volume & Slope) | ✅ **v2.0.0 done (31/31)** | 大少 2026-08-08 09:13 跟 docx Kimi v2.0 spec, 3 cycles + 13 fields + 三階段信心調整 |
 | 07 | **Module 7: Synthesizer** (M7 終極綜合判定) | ✅ **Sprint 1 done (大少 2026-08-08 13:30 Plan A 拆返)**: M7 Synthesizer 邏輯 impl (SSI + TCM + Alignment + 8 個 Grade + Kelly) + 64 個 tests + synthesizerAdapter + testing page enable. 獨立 module (M7 唔 chain M8). | M7 spec doc: `MODULE-07-SYNTHESIZER.md`. 6 個 modules 加權 + 5 個 sub-step 邏輯 (純 math, 唔用 AI). |
-| 08 | **Module 8: Decision Engine** (M8 終極綜合判斷引擎) | ⏸️ **Sprint 2 pending (大少 2026-08-08 13:30 Plan A 拆返)** | M8 spec doc: `MODULE-08-DECISION-ENGINE.md`. 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) 決策樹 + Trading card (entry_zone / stop_loss / take_profit / trailing_stop) + 短期走勢預測 (3 scenarios × 5/10/20 日) + 人話詳細解讀 (LLM hook 預留, 大少 13:30 永久 rule) + 5 個 adaptive params (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold) runtime auto-calibrate + L2 JSON file cache + 10 個 SVG chart. |
+| 08 | **Module 8: Decision Engine** (M8 終極綜合判斷引擎) | ✅ **Sprint 2 done (大少 2026-08-08 16:55, 8 commits)** | M8 spec doc: `MODULE-08-DECISION-ENGINE.md` v2.3.0. 8 個 finalAction 決策樹 (揸車比喻) + Trading card adaptive (3 vol buckets) + 短期走勢預測 9 scenarios + 人話詳細解讀 (LLM hook 預留, hardcoded template, 將來 swap 落 LLM) + 5 個 adaptive params auto-calibrate (純 math, 唔用 AI) + L2 JSON file cache (7 日 expiry) + 4 個 SVG chart (Sentiment Radar + Kelly Donut + Alignment Bar + Module State) + 「🔄 重新校準」按鈕 + 10 隻 demo 股票 test cases. 728 assertions pass. |
 | ⭐ 獨立 | **zmen均算法** (舊 M1 抽出, 唔加編號) | ✅ v0.3.0 (19/19) | 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 獨立一類 |
 
 ---
@@ -81,7 +83,7 @@
 | 05 | VolumePrice 成交量價格行為確認 | ✅ v2.0.0 done (47/47) | 15 rules V1-V15, 9 個根治 vs v1.0 |
 | 06 | Volatility 波動率收縮擴張 | ✅ v1.0.0 done (32/32) | 12 rules S1-S12, Squeeze + VCP + ATR 分解 |
 | 07 | **Synthesizer (M7)** | ✅ **Sprint 1 done (大少 2026-08-08 13:30 Plan A 拆返)** | 6 個 modules 加權 + SSI 戰略強度指數 + TCM 戰術交叉驗證矩陣 + Alignment 戰略戰術匹配度 + 8 個 Grade (A+~F) + Kelly 倉位 (half/quarter/octo) |
-| 08 | **Decision Engine (M8)** | ⏸️ **Sprint 2 pending (大少 2026-08-08 13:30 Plan A 拆返)** | 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) 決策樹 + Trading card (entry_zone / stop_loss / take_profit / trailing_stop) + 短期走勢預測 (3 scenarios × 5/10/20 日) + 人話詳細解讀 (LLM hook 預留) + 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache + 10 個 SVG chart |
+| 08 | **Decision Engine (M8)** | ✅ **Sprint 2 done (大少 2026-08-08 16:55)** | 8 個 finalAction 決策樹 (揸車比喻) + Trading card adaptive (3 vol buckets) + 短期走勢預測 9 scenarios + 人話詳細解讀 (LLM hook 預留) + 5 個 adaptive params auto-calibrate + L2 JSON file cache + 4 個 SVG chart + 10 隻 demo 股票 tests |
 
 ### 獨立算法 (大少 2026-08-08 抽出, 唔屬 7 個 modules 之一, 唔加編號)
 | Module | Status | 功用 |

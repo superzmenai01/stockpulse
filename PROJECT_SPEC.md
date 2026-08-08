@@ -425,7 +425,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 | 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | **v2.0.0** | ✅ |
 | 06 | Volatility 波動率收縮擴張 | `modules/volatility.ts` | **v1.0.0** | ✅ |
 | 07 | **終極綜合判定** (Synthesizer — M7) | `modules/synthesizer.ts` | **v1.0.0 (Sprint 1 done, 2026-08-08 13:30 Plan A 拆返)** | ✅ **Sprint 1 done**: M7 Synthesizer 邏輯 (SSI + TCM + Alignment + 8 個 Grade + Kelly) + 6 個 modules standard verdict interface + 64 個 tests + synthesizerAdapter + testing page enable |
-| 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` (stub) | **v0.0.0 (Sprint 2 pending)** | ⏸️ **Sprint 2 將加 (大少 2026-08-08 13:30 Plan A)**: 8 個 finalAction 決策樹 + Trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook) + 5 個 adaptive params + L2 cache |
+| 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` | **v2.3.0 (Sprint 2 done, 2026-08-08 16:55)** | ✅ **Sprint 2 done (大少 16:55, 8 commits)**: 8 個 finalAction 決策樹 (2.1) + Trading card adaptive (2.2) + 短期走勢 9 scenarios (2.3) + 人話詳細解讀 LLM hook (2.4) + 5 個 adaptive params auto-calibrate (2.5) + L2 JSON cache (2.6) + 10 隻 demo 股票 tests (2.7) + 4 個 SVG chart + 「🔄 重新校準」按鈕 (2.8) |
 | **獨立** | **zmen均算法** (唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ Hidden (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — |
 | ⏸️ Hidden (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — |
@@ -458,7 +458,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
   05 — AS-03-VP   (M5) ← 第 5 位 (編號 05)
   06 — AS-03-VOL  (M6) ← 第 6 位 (編號 06)
   07 — AS-03-SYN  (M7 Synthesizer) ← 第 7 位 (Sprint 1 done, 編號 07)
-  08 — AS-03-DEC  (M8 Decision Engine) ← 第 8 位 (Sprint 2 pending, 編號 08)
+  08 — AS-03-DEC  (M8 Decision Engine) ← 第 8 位 (Sprint 2 done, 編號 08) — 8 個 finalAction 揸車比喻 + Trading card + 短期走勢 + LLM hook 解讀 + adaptive params + L2 cache + SVG chart
   ────────────────
   zmen均算法 (舊 M1 v0.3.0) ← 最後 (獨立算法, 唔加編號)
   ```

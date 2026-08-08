@@ -290,7 +290,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 - **入口：** `/algorithms` 頁
 - **核心算法：**
   - **AS02** (公司質素分析) — `backend/services/as02_analyzer.py`
-  - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — Stage 1 收官: 6 個 modules production done + 1 個 mega module (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module "終極綜合判斷引擎 v2.0", spec done impl pending)
+  - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — **Stage 1 收官 done (2026-08-08 16:55)**: 6 個 modules production + M7 Synthesizer (v1.0.0) + M8 Decision Engine (v2.3.0, 8 個 finalAction + 揸車比喻 + Trading card adaptive + 短期走勢 9 scenarios + 人話詳細解讀 LLM hook + 5 個 adaptive params auto-calibrate + L2 JSON cache + 4 個 SVG chart + 10 隻 demo 股票 tests). 9 個 algorithms 全部 Active (1-8 + zmen均算法 獨立). 728 assertions pass (682 node + 46 python).
 - **AS03 模組 (2026-08-08 Stage 1 收官狀態):**
 
   > 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7 用編號 07, M8 用編號 08, zmen均算法 唔加 (獨立算法)。
@@ -306,7 +306,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   | 05 | AS-03-VP | 成交量價格行為確認 | 突破/縮量/OBV/量价背馳 (15 rules) | v2.0.0 |
   | 06 | AS-03-VOL | 波動率收縮擴張 | Squeeze + VCP + ATR 分解 (12 rules) | v1.0.0 |
   | 07 | **AS-03-SYN** | **終極綜合判定** (Synthesizer — M7) | 6 個 modules 綜合判定 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位) | **v1.0.0 (Sprint 1 done)** |
-  | 08 | **AS-03-DEC** | **終極綜合判斷引擎** (Decision Engine — M8) | Sprint 2 將加: 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + Trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook) + 5 個 adaptive params + L2 cache | **v0.0.0 (Sprint 2 pending)** |
+  | 08 | **AS-03-DEC** | **終極綜合判斷引擎** (Decision Engine — M8) | **Sprint 2 done (2026-08-08 16:55)**: 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 揸車比喻 + Trading card adaptive (3 vol buckets) + 短期走勢 9 scenarios (3×3) + 人話詳細解讀 (LLM hook, hardcoded template) + 5 個 adaptive params auto-calibrate (純 math) + L2 JSON file cache (7 日 expiry) + 4 個 SVG chart + 「🔄 重新校準」按鈕 | **v2.3.0 (Sprint 2 done, 8 commits)** |
   | **獨立** | **zmen均算法** (唔加編號) | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
   | ⏸️ Hidden Multi-TF | 多時間框架 | (Stage 1 done 先做) | v1.0.0 |
   | ⏸️ Hidden SlopeMomentum | 斜率動能 | (Stage 1 done 先做) | v1.0.0 |
