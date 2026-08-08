@@ -5751,3 +5751,485 @@ export const maAlignmentV2Adapter = {
 //   舊 M1 嘅 v0.3.0 邏輯保留, 用 zmenMAAdapter named export 暴露
 //   testing page 嘅 zmen均算法 entry 繼續用頂層 default
 // =====================================================================
+
+// =====================================================================
+// 大少 2026-08-08 12:30 — Sprint 1 sub-task 1.4 — M7 Synthesizer adapter
+//   M7 Synthesizer (DecisionEngine) 嘅 vanilla JS port
+//   spec: docs/research/AS-03-cycle-detection/MODULE-07-08-DECISION-ENGINE.md
+//   code (TypeScript source): modules/decision-engine.ts + std-verdict.ts
+// =====================================================================
+
+// ---------- 6 個 modules 嘅 base_weight (同 std-verdict.ts) ----------
+const DECISION_ENGINE_BASE_WEIGHTS = {
+  'ma-alignment': 0.25,
+  'hl-structure': 0.15,
+  'trendline': 0.20,
+  'indicators': 0.15,
+  'volume': 0.15,
+  'volatility': 0.10,
+};
+
+// ---------- 6 維情緒雷達計算 (同 std-verdict.ts computeSentiment6D) ----------
+function decisionEngineRSI(closes, period = 14) {
+  if (closes.length < period + 1) return 50;
+  const tail = closes.slice(-(period + 1));
+  let gains = 0, losses = 0;
+  for (let i = 1; i < tail.length; i++) {
+    const diff = tail[i] - tail[i - 1];
+    if (diff > 0) gains += diff;
+    else losses += -diff;
+  }
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+function decisionEnginePctB(closes, period = 20, stdMult = 2) {
+  if (closes.length < period) return 0.5;
+  const tail = closes.slice(-period);
+  const mean = tail.reduce((a, b) => a + b, 0) / period;
+  const sd = Math.sqrt(tail.reduce((acc, v) => acc + (v - mean) ** 2, 0) / period);
+  const upper = mean + stdMult * sd;
+  const lower = mean - stdMult * sd;
+  const last = tail[tail.length - 1];
+  if (upper === lower) return 0.5;
+  return (last - lower) / (upper - lower);
+}
+
+function decisionEngineBiasRatio(closes, period = 20) {
+  if (closes.length < period) return 0;
+  const mean = closes.slice(-period).reduce((a, b) => a + b, 0) / period;
+  if (mean === 0) return 0;
+  return (closes[closes.length - 1] - mean) / mean;
+}
+
+function decisionEngineATR(klines, period = 20) {
+  if (klines.length < 2) return 0;
+  const trs = [];
+  for (let i = 1; i < klines.length; i++) {
+    const tr = Math.max(
+      klines[i].high - klines[i].low,
+      Math.abs(klines[i].high - klines[i - 1].close),
+      Math.abs(klines[i].low - klines[i - 1].close),
+    );
+    trs.push(tr);
+  }
+  if (trs.length < period) return trs.reduce((a, b) => a + b, 0) / trs.length;
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trs.length; i++) {
+    atr = (atr * (period - 1) + trs[i]) / period;
+  }
+  return atr;
+}
+
+function decisionEngineROC(closes, period = 10) {
+  if (closes.length < period + 1) return 0;
+  const last = closes[closes.length - 1];
+  const past = closes[closes.length - 1 - period];
+  if (past === 0) return 0;
+  return (last - past) / past;
+}
+
+function clampDE(value, min = -1, max = 1) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function decisionEngineSentiment6D(klines) {
+  if (!klines || klines.length === 0) {
+    return { rsi: 0, bollinger_pct_b: 0, bias_ratio: 0, vol_skew: 0, turnover: 0, momentum_accel: 0 };
+  }
+  const closes = klines.map(k => k.close);
+  const rsi = clampDE((decisionEngineRSI(closes, 14) - 50) / 50);
+  const pctB = decisionEnginePctB(closes, 20, 2);
+  const bollinger_pct_b = clampDE(pctB * 2 - 1);
+  const biasRaw = decisionEngineBiasRatio(closes, 20);
+  const bias_ratio = clampDE(biasRaw / 0.20);
+
+  const vol_skew = klines.length < 30
+    ? 0
+    : (() => {
+        const recent = decisionEngineATR(klines.slice(-10), 10);
+        const prev = decisionEngineATR(klines.slice(-30, -10), 20);
+        const ratio = prev > 0 ? recent / prev : 1;
+        return clampDE((ratio - 1) * 2);
+      })();
+
+  const volumes = klines.map(k => k.volume);
+  const shortAvg = volumes.length >= 20 ? volumes.slice(-20).reduce((a, b) => a + b, 0) / 20 : 0;
+  const longAvg = volumes.length >= 250 ? volumes.slice(-250).reduce((a, b) => a + b, 0) / 250 : 1;
+  const turnoverRaw = longAvg > 0 ? shortAvg / longAvg : 1;
+  const turnover = clampDE((turnoverRaw - 1) * 1.0);
+
+  const momentum_accel = klines.length < 30
+    ? 0
+    : (() => {
+        const rocNow = decisionEngineROC(closes, 10);
+        const closesPrev = closes.slice(0, -5);
+        const rocPast = decisionEngineROC(closesPrev, 10);
+        return clampDE((rocNow - rocPast) * 5);
+      })();
+
+  return { rsi, bollinger_pct_b, bias_ratio, vol_skew, turnover, momentum_accel };
+}
+
+// ---------- M7 Synthesizer (DecisionEngine) — 5 個 sub-step ----------
+function decisionEngineExpectedReturn(state, confidence) {
+  const c = Math.max(0, Math.min(1, confidence));
+  switch (state) {
+    case 'UP': return +(c * 0.10).toFixed(4);
+    case 'DOWN': return -(c * 0.10).toFixed(4);
+    case 'TRAP': return -0.05;
+    default: return 0;
+  }
+}
+
+function decisionEngineMaxDD(klines) {
+  if (!klines || klines.length < 21) return 0.05;
+  const atr = decisionEngineATR(klines, 20);
+  const lastClose = klines[klines.length - 1].close;
+  if (lastClose === 0) return 0.05;
+  return clampDE((atr / lastClose) * 3, 0, 0.30);
+}
+
+function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
+  const base_weight = DECISION_ENGINE_BASE_WEIGHTS[moduleId];
+  const expected_return = decisionEngineExpectedReturn(verdict.state, verdict.confidence);
+  const max_drawdown_estimate = decisionEngineMaxDD(klines);
+  const sentiment_6d = decisionEngineSentiment6D(klines);
+  const rules_fired = (verdict.evidence || []).map(e => e.type);
+  const module_specific = verdict.meta || {};
+  return {
+    state: verdict.state,
+    confidence: Math.max(0, Math.min(1, verdict.confidence)),
+    base_weight,
+    expected_return,
+    max_drawdown_estimate,
+    sentiment_6d,
+    rules_fired,
+    module_id: moduleId,
+    module_specific,
+    timestamp: verdict.timestamp,
+  };
+}
+
+function decisionEngineComputeSSI(verdicts) {
+  const stateCount = {};
+  for (const v of verdicts) {
+    stateCount[v.state] = (stateCount[v.state] || 0) + 1;
+  }
+  const maxCount = Math.max(...Object.values(stateCount), 0);
+  const consistency = verdicts.length > 0 ? maxCount / verdicts.length : 0;
+
+  const totalWeight = verdicts.reduce((acc, v) => acc + v.base_weight, 0);
+  const confidence_avg = totalWeight > 0
+    ? verdicts.reduce((acc, v) => acc + v.confidence * v.base_weight, 0) / totalWeight
+    : 0;
+
+  const allRules = new Set();
+  for (const v of verdicts) for (const r of v.rules_fired) allRules.add(r);
+  const MAX_UNIQUE_RULES = 20;
+  const rules_coverage = Math.min(1, allRules.size / MAX_UNIQUE_RULES);
+
+  const ssi_score = consistency * 50 + confidence_avg * 30 + rules_coverage * 20;
+  return {
+    ssi_score: Math.round(ssi_score * 10) / 10,
+    breakdown: {
+      consistency: Math.round(consistency * 1000) / 1000,
+      confidence_avg: Math.round(confidence_avg * 1000) / 1000,
+      rules_coverage: Math.round(rules_coverage * 1000) / 1000,
+    },
+  };
+}
+
+function isOppositeState(s1, s2) {
+  return (s1 === 'UP' && s2 === 'DOWN') || (s1 === 'DOWN' && s2 === 'UP');
+}
+
+function decisionEngineComputeTCM(verdicts) {
+  const map = new Map(verdicts.map(v => [v.module_id, v]));
+  const pairs = [
+    ['ma-alignment', 'trendline'],
+    ['hl-structure', 'volume'],
+    ['indicators', 'volatility'],
+  ];
+  return pairs.map(([id1, id2]) => {
+    const v1 = map.get(id1);
+    const v2 = map.get(id2);
+    if (!v1 || !v2) return { pair: [id1, id2], alignment: 0, trap_penalty: 0 };
+    let alignment;
+    if (v1.state === v2.state) alignment = 1.0;
+    else if (isOppositeState(v1.state, v2.state)) alignment = -1.0;
+    else alignment = 0;
+    let trap_penalty;
+    if (alignment === -1) trap_penalty = 0.6;
+    else if (alignment === 0) trap_penalty = 0.2;
+    else trap_penalty = 0;
+    return { pair: [id1, id2], alignment, trap_penalty };
+  });
+}
+
+function decisionEngineComputeAlignment(verdicts) {
+  if (verdicts.length === 0) return 0;
+  const stateCount = {};
+  for (const v of verdicts) stateCount[v.state] = (stateCount[v.state] || 0) + 1;
+  return Math.round((Math.max(...Object.values(stateCount)) / verdicts.length) * 1000) / 1000;
+}
+
+function decisionEngineComputeGrade(ssi_score, alignment_score) {
+  const grade_score = Math.round((ssi_score * 0.6 + alignment_score * 100 * 0.4) * 10) / 10;
+  let grade;
+  if (grade_score >= 90) grade = 'A+';
+  else if (grade_score >= 80) grade = 'A';
+  else if (grade_score >= 70) grade = 'B+';
+  else if (grade_score >= 60) grade = 'B';
+  else if (grade_score >= 50) grade = 'C+';
+  else if (grade_score >= 40) grade = 'C';
+  else if (grade_score >= 30) grade = 'D';
+  else grade = 'F';
+  return {
+    grade,
+    grade_score,
+    reason: `分數 ${grade_score} (SSI ${ssi_score} × 60% + Alignment ${(alignment_score * 100).toFixed(1)} × 40%) → ${grade}`,
+  };
+}
+
+function decisionEngineComputeKelly(verdicts) {
+  if (verdicts.length === 0) return { fraction: 'quarter', numeric: 0.25, position: 0.25 };
+  const avgDD = verdicts.reduce((acc, v) => acc + v.max_drawdown_estimate, 0) / verdicts.length;
+  let fraction, numeric;
+  if (avgDD < 0.05) { fraction = 'half'; numeric = 0.5; }
+  else if (avgDD < 0.10) { fraction = 'quarter'; numeric = 0.25; }
+  else { fraction = 'octo'; numeric = 0.125; }
+  return { fraction, numeric, position: numeric };
+}
+
+// ---------- 主 analyze 函數 ----------
+export async function analyzeDecisionEngine(klines, options = {}) {
+  // 1) 跑 6 個 modules
+  const [
+    maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict,
+  ] = await Promise.all([
+    analyzeMAAlignmentV2(klines, options),
+    analyzeHLStructure(klines, options),
+    analyzeTrendline(klines, options),
+    analyzeIndicators(klines, options),
+    analyzeVolumePrice(klines, options),
+    analyzeVolatility(klines, options),
+  ]);
+
+  // 2) Transform 去 standard verdict
+  const standardVerdicts = [
+    decisionEngineToStandardVerdict(maVerdict, klines, 'ma-alignment'),
+    decisionEngineToStandardVerdict(hlVerdict, klines, 'hl-structure'),
+    decisionEngineToStandardVerdict(tlVerdict, klines, 'trendline'),
+    decisionEngineToStandardVerdict(indVerdict, klines, 'indicators'),
+    decisionEngineToStandardVerdict(vpVerdict, klines, 'volume'),
+    decisionEngineToStandardVerdict(volVerdict, klines, 'volatility'),
+  ];
+
+  // 3) 5 個 sub-step aggregation
+  if (standardVerdicts.length === 0) {
+    return {
+      ssi_score: 0, ssi_breakdown: { consistency: 0, confidence_avg: 0, rules_coverage: 0 },
+      tcm_matrix: [], alignment_score: 0, grade: 'F', grade_score: 0,
+      grade_reason: '無 module verdicts',
+      kelly_fraction: 'quarter', kelly_numeric: 0.25, kelly_position: 0.25,
+      module_verdicts: [], module_cycle_verdicts: { maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict },
+      timestamp: Date.now(),
+    };
+  }
+
+  const { ssi_score, breakdown } = decisionEngineComputeSSI(standardVerdicts);
+  const tcm_matrix = decisionEngineComputeTCM(standardVerdicts);
+  const alignment_score = decisionEngineComputeAlignment(standardVerdicts);
+  const { grade, grade_score, reason } = decisionEngineComputeGrade(ssi_score, alignment_score);
+  const { fraction, numeric, position } = decisionEngineComputeKelly(standardVerdicts);
+
+  return {
+    ssi_score,
+    ssi_breakdown: breakdown,
+    tcm_matrix,
+    alignment_score,
+    grade,
+    grade_score,
+    grade_reason: reason,
+    kelly_fraction: fraction,
+    kelly_numeric: numeric,
+    kelly_position: position,
+    module_verdicts: standardVerdicts,
+    module_cycle_verdicts: { maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict },
+    timestamp: Date.now(),
+  };
+}
+
+// ---------- renderDecisionEngineResult — Sprint 1 簡化版 ----------
+function decisionEngineStateColor(state) {
+  if (state === 'UP') return '#26BA75';        // 🟢 強勢
+  if (state === 'DOWN') return '#EE5151';      // 🔴 弱勢
+  if (state === 'TRAP') return '#722ed1';      // 🟣 陷阱
+  return '#F39C12';                              // 🟡 中性 (SIDEWAYS / TRANSITION)
+}
+
+function decisionEngineGradeColor(grade) {
+  if (grade === 'A+' || grade === 'A') return '#26BA75';
+  if (grade === 'B+' || grade === 'B') return '#1890ff';
+  if (grade === 'C+' || grade === 'C') return '#F39C12';
+  return '#EE5151';
+}
+
+function decisionEngineKellyLabel(fraction) {
+  if (fraction === 'half') return '半倉 (50%)';
+  if (fraction === 'quarter') return '四分一倉 (25%)';
+  return '八分一倉 (12.5%)';
+}
+
+function decisionEngineStateLabel(state) {
+  return ({ UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉勢中', TRAP: '陷阱' })[state] || state;
+}
+
+function decisionEngineModuleStateColor(state) {
+  if (state === 'UP') return '#26BA75';
+  if (state === 'DOWN') return '#EE5151';
+  if (state === 'TRAP') return '#722ed1';
+  return '#F39C12';
+}
+
+export function renderDecisionEngineResult(verdict) {
+  if (!verdict) return '<div class="result-error">無 verdict</div>';
+
+  const { ssi_score, ssi_breakdown, tcm_matrix, alignment_score, grade, grade_score, grade_reason, kelly_fraction, kelly_position, module_verdicts } = verdict;
+
+  // 6 個 module 嘅 breakdown
+  const moduleRows = (module_verdicts || []).map(mv => {
+    const color = decisionEngineModuleStateColor(mv.state);
+    return `
+      <tr>
+        <td>${mv.module_id}</td>
+        <td><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
+        <td>${(mv.confidence * 100).toFixed(0)}%</td>
+        <td>${(mv.base_weight * 100).toFixed(0)}%</td>
+        <td>${(mv.expected_return * 100).toFixed(2)}%</td>
+        <td>${(mv.max_drawdown_estimate * 100).toFixed(1)}%</td>
+        <td>${(mv.sentiment_6d.rsi * 100).toFixed(0)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // TCM 3 對 pair
+  const tcmRows = (tcm_matrix || []).map(p => {
+    const alignColor = p.alignment > 0 ? '#26BA75' : p.alignment < 0 ? '#EE5151' : '#F39C12';
+    return `
+      <tr>
+        <td>${p.pair[0]} ↔ ${p.pair[1]}</td>
+        <td><span style="color:${alignColor}">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
+        <td>${(p.trap_penalty * 100).toFixed(0)}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  const gradeColor = decisionEngineGradeColor(grade);
+  const kellyLabel = decisionEngineKellyLabel(kelly_fraction);
+
+  return `
+    <div class="decision-engine-result" style="font-family: system-ui, sans-serif;">
+      <!-- 頂部 verdict card -->
+      <div class="verdict-card" style="background:linear-gradient(135deg, ${gradeColor}22, ${gradeColor}08);border:2px solid ${gradeColor};border-radius:12px;padding:20px;margin-bottom:20px;text-align:center;">
+        <div style="font-size:14px;color:#666;margin-bottom:8px;">📊 終極綜合判斷 (M7 Synthesizer)</div>
+        <div style="font-size:48px;font-weight:700;color:${gradeColor};line-height:1;">${grade}</div>
+        <div style="font-size:18px;color:#666;margin-top:8px;">分數 ${grade_score.toFixed(1)} / 100</div>
+        <div style="font-size:14px;color:#999;margin-top:4px;">${grade_reason}</div>
+        <div style="display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:14px;">
+          <div>🟢 <strong>SSI</strong>: ${ssi_score.toFixed(1)} / 100</div>
+          <div>📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%</div>
+          <div>💰 <strong>Kelly</strong>: ${kellyLabel}</div>
+        </div>
+      </div>
+
+      <!-- 6 個 Metric Mini-Cards -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">SSI 一致性</div>
+          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.consistency * 100).toFixed(0)}%</div>
+        </div>
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">SSI 平均信心</div>
+          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.confidence_avg * 100).toFixed(0)}%</div>
+        </div>
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">SSI 規則覆蓋</div>
+          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.rules_coverage * 100).toFixed(0)}%</div>
+        </div>
+      </div>
+
+      <!-- 6 個 modules 嘅 breakdown -->
+      <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個 Modules 嘅 Standard Verdict</h4>
+      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f0f0f0;">
+            <th style="text-align:left;padding:8px;">Module</th>
+            <th style="text-align:left;padding:8px;">State</th>
+            <th style="text-align:right;padding:8px;">Conf</th>
+            <th style="text-align:right;padding:8px;">Weight</th>
+            <th style="text-align:right;padding:8px;">Exp.Ret</th>
+            <th style="text-align:right;padding:8px;">MaxDD</th>
+            <th style="text-align:right;padding:8px;">RSI</th>
+          </tr>
+        </thead>
+        <tbody>${moduleRows}</tbody>
+      </table>
+
+      <!-- TCM 3 對 pair -->
+      <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對 Pair)</h4>
+      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f0f0f0;">
+            <th style="text-align:left;padding:8px;">Pair</th>
+            <th style="text-align:right;padding:8px;">Alignment</th>
+            <th style="text-align:right;padding:8px;">Trap Penalty</th>
+          </tr>
+        </thead>
+        <tbody>${tcmRows}</tbody>
+      </table>
+
+      <!-- Sprint 1 提示: M8 finalAction + trading card 留俾 Sprint 2 -->
+      <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
+        <strong>📍 Sprint 1 範圍:</strong> 終極綜合判斷引擎 (M7 Synthesizer) 已上線<br>
+        <strong>🚧 Sprint 2 範圍:</strong> M8 Decision Engine 嘅 finalAction 8 個 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON cache
+      </div>
+    </div>
+  `;
+}
+
+// ---------- decisionEngineAdapter export ----------
+export const decisionEngineAdapter = {
+  id: 'AS-03-ENG',
+  name: '終極綜合判斷引擎 v2.0 (M7 Synthesizer + M8 Decision Engine)',
+  version: '2.0.0',
+  description: '大少 2026-08-08 12:30 Sprint 1 — 6 個 modules 嘅綜合判定 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位). Sprint 2 將加 M8 finalAction + trading card + 5 個 adaptive params',
+  inputs: [
+    { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
+  ],
+  analyze: analyzeDecisionEngine,
+  renderResult: renderDecisionEngineResult,
+  getHelp: () => `
+    <h3>📊 終極綜合判斷引擎 v2.0 (M7 Synthesizer)</h3>
+    <p>大少 2026-08-08 12:30 Sprint 1 — 6 個 modules 嘅綜合判定</p>
+    <h4>5 個 Sub-step:</h4>
+    <ol>
+      <li><strong>SSI 戰略強度指數</strong> (0-100): consistency × 50 + confidence_avg × 30 + rules_coverage × 20</li>
+      <li><strong>TCM 戰術交叉驗證矩陣</strong> (3 對 pair): MA-TL / HL-VP / IND-VOL</li>
+      <li><strong>Alignment Score</strong> (0-1): 最大 state group 嘅比例</li>
+      <li><strong>Grade</strong> (8 個): A+ / A / B+ / B / C+ / C / D / F</li>
+      <li><strong>Kelly 倉位</strong>: half/quarter/octo, 跟 avg 波動率自動切</li>
+    </ol>
+    <h4>Sprint 2 將加:</h4>
+    <ul>
+      <li>M8 finalAction 8 個 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION)</li>
+      <li>Trading card (entry_zone / stop_loss / take_profit / trailing_stop)</li>
+      <li>5 個 adaptive params runtime auto-calibrate</li>
+      <li>L2 JSON file cache (~/.stockpulse/adaptive_params/&lt;symbol&gt;.json)</li>
+    </ul>
+  `,
+};

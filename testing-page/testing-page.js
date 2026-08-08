@@ -99,16 +99,9 @@ const REGISTRY = [
     displayName: '08 — AS-03-ENG',  // 大少 2026-08-08 11:22: M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    // adapterExport: 'decisionEngineAdapter'  — 仲未 impl, Stage 1 收官 spec done 等大少 review + confirm Plan A
-    // ⏸️ Spec done (36.6KB, 16 sections, MODULE-07-08-DECISION-ENGINE.md), impl pending
-    //   5 個 adaptive params runtime auto-calibrate (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold)
-    //   L2 JSON file cache (~/.stockpulse/adaptive_params/<symbol>.json)
-    //   8 個 finalAction: BUY / ADD / HOLD / REDUCE / SELL / WAIT / TRAP / TRANSITION
-    //   8 個 grade: A+ / A / B+ / B / C+ / C / D / F
-    //   10 個 SVG chart (Sentiment Radar / Timeframe Alignment / Trend Comparison / Position Donut / 等)
-    //   UX: 永遠全 Show, 多圖少文字, 顏色對應狀態
-    //   Plan A: Sprint 1 (4-5 日) M7 + 6 個 modules 加 output fields + impl + tests
-    //           Sprint 2 (2-3 日) M8 decision tree + trading card + 5 adaptive params + L2 cache
+    adapterExport: 'decisionEngineAdapter',  // 大少 2026-08-08 12:30 Sprint 1 sub-task 1.4: M7 Synthesizer impl done, Sprint 2 將加 M8 finalAction + trading card + 5 adaptive params + L2 cache
+    // Sprint 1 範圍: 6 個 modules → standard verdict → SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位
+    // Sprint 2 範圍: 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache + 8 個 finalAction + 10 個 SVG chart
   },
   // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
   // 舊 M1 改名「zmen均算法」, 搬去 REGISTRY 尾
