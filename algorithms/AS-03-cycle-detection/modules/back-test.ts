@@ -278,3 +278,297 @@ export function formatForwardReturn(
   const hitEmoji = hit === true ? '🟢' : hit === false ? '🔴' : '⚫';
   return { returnText, hitEmoji };
 }
+
+// =============================================================
+// 9.2 — Coarse Grid + Fine Tune + Adaptive Window
+// =============================================================
+// 大少 2026-08-08 22:28 確認嘅 search strategy:
+//   - 2 個 tuneable params (Kelly + RSI weight), 3 個 values each = 9 combinations
+//   - SSI weights 暫 tune 1 個 (default 變化), 9.4 將加 full per-symbol
+//   - 揾 top 5 by score
+//   - 對 top 5 做 ±20% fine tune (5 base × 3 variations × 2 params = 30 candidates)
+//   - Adaptive window: 6 個月 start, samples < 30 自動 +3 個月, max 18 個月
+// =============================================================
+
+/** Score 公式 (大少 22:28 確認): 命中率 50% + 平均回報 50%
+ *  - 命中率 0-100 (%), 平均回報假設 normalise /5 變 0-20
+ *  - 範圍大約 -50 to +100
+ *  - 全部 null → return -Infinity (避免揀到空 result)
+ */
+export function scoreResult(summary: ReplaySummary): number {
+  const hitRate = summary.hitRate5d ?? 0;
+  const avgReturn = summary.avgForwardReturn5d ?? 0;
+  // hitRate 0-100, 50% weight
+  // avgReturn / 5 假設 avg 5% 已經好, 50% weight
+  return (hitRate * 0.5) + ((avgReturn / 5) * 0.5 * 100);
+}
+
+/** SSI weight 預設 3 個 variations (大少 22:28 確認 tune 1 個 dimension) */
+export const DEFAULT_SSI_WEIGHTS_VARIATIONS: Array<{ ma: number; hl: number; tl: number }> = [
+  { ma: 0.4, hl: 0.3, tl: 0.3 },  // 偏 MA
+  { ma: 0.3, hl: 0.3, tl: 0.4 },  // 偏 TL
+  { ma: 0.3, hl: 0.4, tl: 0.3 },  // 偏 HL
+];
+
+/** Kelly 預設 3 個 values (跟 types.ts KellyFraction 對應) */
+export const DEFAULT_KELLY_VALUES: number[] = [0.125, 0.25, 0.5];  // octo / quarter / half
+
+/** RSI weight 預設 3 個 values */
+export const DEFAULT_RSI_WEIGHTS: number[] = [0.10, 0.20, 0.30];
+
+// ----- Coarse grid types -----
+
+export interface CoarseGridEntry {
+  params: { kelly: number; rsiWeight: number; ssiWeights: { ma: number; hl: number; tl: number } };
+  score: number;
+  hitRate5d: number | null;
+  avgReturn5d: number | null;
+  resultsCount: number;
+  summary: ReplaySummary;
+}
+
+export interface CoarseGridResult {
+  entries: CoarseGridEntry[];           // 9 個, sorted by score desc
+  top5: CoarseGridEntry[];              // top 5 by score
+}
+
+export interface CoarseGridOptions {
+  klines: KLine[];
+  decisionFn: (klines: KLine[], options: any) => Promise<DecisionVerdict>;
+  baseReplayConfig?: Partial<ReplayConfig>;
+  kellyValues?: number[];               // default DEFAULT_KELLY_VALUES (3)
+  rsiWeights?: number[];                // default DEFAULT_RSI_WEIGHTS (3)
+  ssiWeightsVariations?: Array<{ ma: number; hl: number; tl: number }>;  // default 3
+  baseSymbol: string;
+}
+
+/** 跑 9 個 (or 27 個 if ssiWeightsVariations 3) coarse grid combinations
+ *  - default 3 × 3 × 1 = 9 (kelly × rsi × 1 ssi)
+ *  - 全部 sorted by score desc
+ */
+export async function runCoarseGrid(options: CoarseGridOptions): Promise<CoarseGridResult> {
+  const kellyValues = options.kellyValues ?? DEFAULT_KELLY_VALUES;
+  const rsiWeights = options.rsiWeights ?? DEFAULT_RSI_WEIGHTS;
+  // 預設用第一個 ssiWeights variation (大少 22:28 確認 tune 1 個 dimension 開始)
+  const ssiWeights = (options.ssiWeightsVariations ?? DEFAULT_SSI_WEIGHTS_VARIATIONS)[0];
+
+  const entries: CoarseGridEntry[] = [];
+
+  for (const kelly of kellyValues) {
+    for (const rsiWeight of rsiWeights) {
+      const params = { kelly, rsiWeight, ssiWeights };
+      const replayConfig: ReplayConfig = {
+        symbol: options.baseSymbol,
+        klines: options.klines,
+        holdDays: [5, 10, 20],
+        stepDays: 5,
+        lookbackDays: 60,
+        ...options.baseReplayConfig,
+        params: { ...(options.baseReplayConfig?.params ?? {}), ...params },
+      };
+
+      const summary = await runReplay(options.klines, replayConfig, options.decisionFn);
+      const score = scoreResult(summary);
+      entries.push({
+        params,
+        score,
+        hitRate5d: summary.hitRate5d,
+        avgReturn5d: summary.avgForwardReturn5d,
+        resultsCount: summary.totalDays,
+        summary,
+      });
+    }
+  }
+
+  // Sort by score desc
+  entries.sort((a, b) => b.score - a.score);
+  const top5 = entries.slice(0, 5);
+
+  return { entries, top5 };
+}
+
+// ----- Fine tune types -----
+
+export interface FineTuneEntry {
+  baseParams: { kelly: number; rsiWeight: number; ssiWeights: { ma: number; hl: number; tl: number } };
+  variation: { kellyMul: number; rsiWeightMul: number };
+  params: { kelly: number; rsiWeight: number; ssiWeights: { ma: number; hl: number; tl: number } };
+  score: number;
+  hitRate5d: number | null;
+  avgReturn5d: number | null;
+  resultsCount: number;
+  summary: ReplaySummary;
+}
+
+export interface FineTuneResult {
+  entries: FineTuneEntry[];    // 5 base × 3 variations × 2 params = 30, sorted by score desc
+  best: FineTuneEntry;         // 揾 best score
+}
+
+export interface FineTuneOptions {
+  klines: KLine[];
+  decisionFn: (klines: KLine[], options: any) => Promise<DecisionVerdict>;
+  top5: CoarseGridEntry[];
+  baseReplayConfig?: Partial<ReplayConfig>;
+  baseSymbol: string;
+  fineTunePercent?: number;   // default 0.2 (±20%)
+}
+
+/** 對 top 5 做 ±20% fine tune (大少 22:28 確認)
+ *  - 5 base × 3 variations (-20% / 0 / +20% 對 Kelly)
+ *  - + 5 base × 3 variations (-20% / 0 / +20% 對 RSI weight)
+ *  = 5 × 3 + 5 × 3 = 30 candidates (但 0% case 同 base 重複, 實質 5 × 4 = 20 unique)
+ *  - 但因為每個 entry 都係獨立, count 會係 30 個 entries, 其中 10 個重複 base
+ *  - 我哋 keep 全部 30 個, sort, 揀 best
+ */
+export async function runFineTune(options: FineTuneOptions): Promise<FineTuneResult> {
+  const fineTunePct = options.fineTunePercent ?? 0.2;
+  const entries: FineTuneEntry[] = [];
+
+  for (const base of options.top5) {
+    // Kelly ±20% × 3
+    const kellyVariations = [
+      base.params.kelly * (1 - fineTunePct),
+      base.params.kelly,
+      base.params.kelly * (1 + fineTunePct),
+    ];
+    // RSI weight ±20% × 3
+    const rsiWeightVariations = [
+      base.params.rsiWeight * (1 - fineTunePct),
+      base.params.rsiWeight,
+      base.params.rsiWeight * (1 + fineTunePct),
+    ];
+
+    // Kelly variations
+    for (let i = 0; i < kellyVariations.length; i++) {
+      const kelly = kellyVariations[i];
+      const params = { kelly, rsiWeight: base.params.rsiWeight, ssiWeights: base.params.ssiWeights };
+      const replayConfig: ReplayConfig = {
+        symbol: options.baseSymbol,
+        klines: options.klines,
+        holdDays: [5, 10, 20],
+        stepDays: 5,
+        lookbackDays: 60,
+        ...options.baseReplayConfig,
+        params: { ...(options.baseReplayConfig?.params ?? {}), ...params },
+      };
+      const summary = await runReplay(options.klines, replayConfig, options.decisionFn);
+      const score = scoreResult(summary);
+      entries.push({
+        baseParams: base.params,
+        variation: { kellyMul: i === 0 ? -fineTunePct : i === 1 ? 0 : fineTunePct, rsiWeightMul: 0 },
+        params,
+        score,
+        hitRate5d: summary.hitRate5d,
+        avgReturn5d: summary.avgForwardReturn5d,
+        resultsCount: summary.totalDays,
+        summary,
+      });
+    }
+
+    // RSI weight variations
+    for (let i = 0; i < rsiWeightVariations.length; i++) {
+      const rsiWeight = rsiWeightVariations[i];
+      const params = { kelly: base.params.kelly, rsiWeight, ssiWeights: base.params.ssiWeights };
+      const replayConfig: ReplayConfig = {
+        symbol: options.baseSymbol,
+        klines: options.klines,
+        holdDays: [5, 10, 20],
+        stepDays: 5,
+        lookbackDays: 60,
+        ...options.baseReplayConfig,
+        params: { ...(options.baseReplayConfig?.params ?? {}), ...params },
+      };
+      const summary = await runReplay(options.klines, replayConfig, options.decisionFn);
+      const score = scoreResult(summary);
+      entries.push({
+        baseParams: base.params,
+        variation: { kellyMul: 0, rsiWeightMul: i === 0 ? -fineTunePct : i === 1 ? 0 : fineTunePct },
+        params,
+        score,
+        hitRate5d: summary.hitRate5d,
+        avgReturn5d: summary.avgForwardReturn5d,
+        resultsCount: summary.totalDays,
+        summary,
+      });
+    }
+  }
+
+  // Sort by score desc
+  entries.sort((a, b) => b.score - a.score);
+  const best = entries[0];
+
+  return { entries, best };
+}
+
+// ----- Adaptive window types -----
+
+export interface AdaptiveWindowOptions {
+  klines: KLine[];
+  decisionFn: (klines: KLine[], options: any) => Promise<DecisionVerdict>;
+  baseReplayConfig?: Partial<ReplayConfig>;
+  baseSymbol: string;
+  initialDays?: number;     // default 126 (6 月)
+  extendDays?: number;      // default 63 (3 月)
+  maxDays?: number;         // default 378 (18 月)
+  minSamples?: number;      // default 30
+}
+
+export interface AdaptiveWindowResult {
+  finalKlines: KLine[];           // extended klines after adaptive window
+  initialDays: number;            // start days
+  finalDays: number;              // after extend
+  extendCount: number;            // 0, 1, 2, 3, 4
+  finalSamples: number;           // final runReplay totalDays
+  minSamples: number;             // target
+  summary: ReplaySummary;         // final runReplay with extended klines
+}
+
+/** Adaptive window (大少 22:28 確認): 6 個月 start, samples < min 自動 +3 個月, max 18 個月
+ *  - 預設 6 月 = 126 trading days, 3 月 = 63, 18 月 = 378
+ *  - 拎 klines 最後 initialDays 嘅, 跑 runReplay
+ *  - if totalDays < minSamples, extend +extendDays, 重做
+ *  - 直至 totalDays ≥ minSamples OR finalDays ≥ maxDays
+ */
+export async function runAdaptiveWindow(options: AdaptiveWindowOptions): Promise<AdaptiveWindowResult> {
+  const initialDays = options.initialDays ?? 126;
+  const extendDays = options.extendDays ?? 63;
+  const maxDays = options.maxDays ?? 378;
+  const minSamples = options.minSamples ?? 30;
+
+  let currentDays = initialDays;
+  let extendCount = 0;
+  let currentKlines = options.klines.slice(-initialDays);
+  let summary: ReplaySummary;
+
+  while (true) {
+    const replayConfig: ReplayConfig = {
+      symbol: options.baseSymbol,
+      klines: currentKlines,
+      holdDays: [5, 10, 20],
+      stepDays: 5,
+      lookbackDays: 60,
+      ...options.baseReplayConfig,
+    };
+    summary = await runReplay(currentKlines, replayConfig, options.decisionFn);
+
+    if (summary.totalDays >= minSamples || currentDays >= maxDays) {
+      break;
+    }
+
+    // Extend
+    currentDays = Math.min(maxDays, currentDays + extendDays);
+    currentKlines = options.klines.slice(-currentDays);
+    extendCount++;
+  }
+
+  return {
+    finalKlines: currentKlines,
+    initialDays,
+    finalDays: currentDays,
+    extendCount,
+    finalSamples: summary!.totalDays,
+    minSamples,
+    summary: summary!,
+  };
+}
