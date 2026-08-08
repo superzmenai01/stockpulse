@@ -172,22 +172,63 @@ function getRawRSI(verdicts: ModuleStandardVerdict[]): number {
 }
 
 // =============================================================
-// Trading card formula (2.1 static, 2.2 adaptive)
+// Trading card formula — Sprint 2 sub-task 2.2 adaptive
 // =============================================================
 
-/** 交易卡 4 個 fields — 2.1 static, 2.2 將跟 Kelly fraction 自動調整
- *  公式 (大少 13:30 confirm):
+/** 交易卡 4 個 fields — 2.2 adaptive formula
+ *
+ *  3 個 volatility bucket 跟 synthesizerVerdict.kelly_fraction + weighted avg max_drawdown_estimate 自動切:
+ *    高波動 (kelly='octo' OR maxdd > 0.10):
+ *      entry_zone ±2.5%, stop_loss -5%, take_profit +8%, trailing_stop -7%
+ *    中波動 (kelly='quarter' OR maxdd 0.05-0.10):  ← default
+ *      entry_zone ±1.5%, stop_loss -3%, take_profit +5%, trailing_stop -5%
+ *    低波動 (kelly='half' AND maxdd < 0.05):
+ *      entry_zone ±1.0%, stop_loss -2%, take_profit +4%, trailing_stop -3%
+ *
+ *  設計原理: 波動高嘅股票, 止蝕止賺要闊啲 (避免被正常波動震走),
+ *           波動低嘅股票, 止蝕止賺可以收窄 (更精準出入場)
+ *
+ *  2.1 公式 (大少 13:30 confirm):
  *    entry_zone = [currentPrice × 0.985, currentPrice × 1.015]  // ±1.5%
  *    stop_loss = currentPrice × 0.97                              // -3%
  *    take_profit = currentPrice × 1.05                            // +5%
  *    trailing_stop = currentPrice × 0.95                          // 5% trailing
  */
-function computeTradingCard(currentPrice: number): TradingCard {
+function computeTradingCard(
+  currentPrice: number,
+  kellyFraction: KellyFraction,
+  maxDrawdown: number,
+): TradingCard {
+  let entryWidth: number;
+  let stopPct: number;
+  let tpPct: number;
+  let trailingPct: number;
+
+  if (kellyFraction === 'octo' || maxDrawdown > 0.10) {
+    // 高波動 bucket
+    entryWidth = 0.025;   // ±2.5%
+    stopPct = 0.05;       // -5%
+    tpPct = 0.08;         // +8%
+    trailingPct = 0.07;   // -7%
+  } else if (kellyFraction === 'half' && maxDrawdown < 0.05) {
+    // 低波動 bucket
+    entryWidth = 0.010;   // ±1.0%
+    stopPct = 0.02;       // -2%
+    tpPct = 0.04;         // +4%
+    trailingPct = 0.03;   // -3%
+  } else {
+    // 中波動 bucket (default — quarter OR half + 中 maxdd)
+    entryWidth = 0.015;   // ±1.5%
+    stopPct = 0.03;       // -3%
+    tpPct = 0.05;         // +5%
+    trailingPct = 0.05;   // -5%
+  }
+
   return {
-    entry_zone: [currentPrice * 0.985, currentPrice * 1.015],
-    stop_loss: currentPrice * 0.97,
-    take_profit: currentPrice * 1.05,
-    trailing_stop: currentPrice * 0.95,
+    entry_zone: [currentPrice * (1 - entryWidth), currentPrice * (1 + entryWidth)],
+    stop_loss: currentPrice * (1 - stopPct),
+    take_profit: currentPrice * (1 + tpPct),
+    trailing_stop: currentPrice * (1 - trailingPct),
   };
 }
 
@@ -296,8 +337,8 @@ export class DecisionEngine {
       final_action_reason = `未能匹配明確 trigger (state=${majorityState}, grade=${grade}, alignment=${(alignment * 100).toFixed(0)}%, RSI=${rsi.toFixed(0)}), 預設等待觀察`;
     }
 
-    // Step 7: trading card (2.1 static, 2.2 adaptive)
-    const trading_card = computeTradingCard(currentPrice);
+    // Step 7: trading card (2.2 adaptive — 跟 kelly_fraction + max_drawdown_estimate)
+    const trading_card = computeTradingCard(currentPrice, sv.kelly_fraction, max_drawdown_estimate);
 
     // Step 8: short term forecast (2.3 將 impl)
     const short_term_forecast: ForecastScenario[] = [];

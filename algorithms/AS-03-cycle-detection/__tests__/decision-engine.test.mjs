@@ -531,33 +531,90 @@ section('11. Priority order (TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > A
 }
 
 // =============================================================
-// Test 12: Trading card (2.1 static)
+// Test 12: Trading card (2.2 adaptive — 3 volatility buckets)
 // =============================================================
-section('12. Trading card formula (2.1 static, 2.2 將改 adaptive)');
+section('12. Trading card formula (2.2 adaptive — 跟 kelly_fraction + max_drawdown)');
 
-// 12.1-12.5: currentPrice = 100
+// 12.1-12.5: 高波動 bucket (kelly=octo, maxdd=0.12) → ±2.5% / -5% / +8% / -7%
 {
   const verdicts = make6Verdicts('UP', {
     indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+    'ma-alignment': { max_drawdown_estimate: 0.12 },
+    'hl-structure': { max_drawdown_estimate: 0.12 },
+    trendline: { max_drawdown_estimate: 0.12 },
+    volume: { max_drawdown_estimate: 0.12 },
+    volatility: { max_drawdown_estimate: 0.12 },
   });
-  const sv = makeSynth('B+', 0.7, { verdicts });
+  const sv = makeSynth('B+', 0.7, { verdicts, kelly_fraction: 'octo', kelly_numeric: 0.125 });
   const d = await engine.decide({ synthesizerVerdict: sv, marketData: { currentPrice: 100 } });
-  assert('12.1 entry_zone low = 98.5', Math.abs(d.trading_card.entry_zone[0] - 98.5) < 0.01);
-  assert('12.2 entry_zone high = 101.5', Math.abs(d.trading_card.entry_zone[1] - 101.5) < 0.01);
-  assert('12.3 stop_loss = 97', Math.abs(d.trading_card.stop_loss - 97) < 0.01);
-  assert('12.4 take_profit = 105', Math.abs(d.trading_card.take_profit - 105) < 0.01);
-  assert('12.5 trailing_stop = 95', Math.abs(d.trading_card.trailing_stop - 95) < 0.01);
+  assert('12.1 high vol entry_zone low = 97.5 (±2.5%)', Math.abs(d.trading_card.entry_zone[0] - 97.5) < 0.01);
+  assert('12.2 high vol entry_zone high = 102.5 (±2.5%)', Math.abs(d.trading_card.entry_zone[1] - 102.5) < 0.01);
+  assert('12.3 high vol stop_loss = 95 (-5%)', Math.abs(d.trading_card.stop_loss - 95) < 0.01);
+  assert('12.4 high vol take_profit = 108 (+8%)', Math.abs(d.trading_card.take_profit - 108) < 0.01);
+  assert('12.5 high vol trailing_stop = 93 (-7%)', Math.abs(d.trading_card.trailing_stop - 93) < 0.01);
 }
 
-// 12.6-12.7: currentPrice = 0 (default)
+// 12.6-12.10: 中波動 bucket (kelly=quarter, maxdd=0.08) → ±1.5% / -3% / +5% / -5% (2.1 公式保留)
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+    'ma-alignment': { max_drawdown_estimate: 0.08 },
+    'hl-structure': { max_drawdown_estimate: 0.08 },
+    trendline: { max_drawdown_estimate: 0.08 },
+    volume: { max_drawdown_estimate: 0.08 },
+    volatility: { max_drawdown_estimate: 0.08 },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts, kelly_fraction: 'quarter', kelly_numeric: 0.25 });
+  const d = await engine.decide({ synthesizerVerdict: sv, marketData: { currentPrice: 100 } });
+  assert('12.6 medium vol entry_zone low = 98.5 (±1.5%)', Math.abs(d.trading_card.entry_zone[0] - 98.5) < 0.01);
+  assert('12.7 medium vol entry_zone high = 101.5 (±1.5%)', Math.abs(d.trading_card.entry_zone[1] - 101.5) < 0.01);
+  assert('12.8 medium vol stop_loss = 97 (-3%)', Math.abs(d.trading_card.stop_loss - 97) < 0.01);
+  assert('12.9 medium vol take_profit = 105 (+5%)', Math.abs(d.trading_card.take_profit - 105) < 0.01);
+  assert('12.10 medium vol trailing_stop = 95 (-5%)', Math.abs(d.trading_card.trailing_stop - 95) < 0.01);
+}
+
+// 12.11-12.15: 低波動 bucket (kelly=half, maxdd=0.04) → ±1.0% / -2% / +4% / -3%
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+    'ma-alignment': { max_drawdown_estimate: 0.04 },
+    'hl-structure': { max_drawdown_estimate: 0.04 },
+    trendline: { max_drawdown_estimate: 0.04 },
+    volume: { max_drawdown_estimate: 0.04 },
+    volatility: { max_drawdown_estimate: 0.04 },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts, kelly_fraction: 'half', kelly_numeric: 0.5 });
+  const d = await engine.decide({ synthesizerVerdict: sv, marketData: { currentPrice: 100 } });
+  assert('12.11 low vol entry_zone low = 99.0 (±1.0%)', Math.abs(d.trading_card.entry_zone[0] - 99.0) < 0.01);
+  assert('12.12 low vol entry_zone high = 101.0 (±1.0%)', Math.abs(d.trading_card.entry_zone[1] - 101.0) < 0.01);
+  assert('12.13 low vol stop_loss = 98 (-2%)', Math.abs(d.trading_card.stop_loss - 98) < 0.01);
+  assert('12.14 low vol take_profit = 104 (+4%)', Math.abs(d.trading_card.take_profit - 104) < 0.01);
+  assert('12.15 low vol trailing_stop = 97 (-3%)', Math.abs(d.trading_card.trailing_stop - 97) < 0.01);
+}
+
+// 12.16: 高波動 override (kelly=quarter 但 maxdd=0.12 > 0.10) → 仍係高波動 bucket
+{
+  const verdicts = make6Verdicts('UP', {
+    indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
+    'ma-alignment': { max_drawdown_estimate: 0.12 },
+    'hl-structure': { max_drawdown_estimate: 0.12 },
+    trendline: { max_drawdown_estimate: 0.12 },
+    volume: { max_drawdown_estimate: 0.12 },
+    volatility: { max_drawdown_estimate: 0.12 },
+  });
+  const sv = makeSynth('B+', 0.7, { verdicts, kelly_fraction: 'quarter', kelly_numeric: 0.25 });
+  const d = await engine.decide({ synthesizerVerdict: sv, marketData: { currentPrice: 100 } });
+  assert('12.16 kelly=quarter 但 maxdd=0.12 → high vol (maxdd 優先)', Math.abs(d.trading_card.stop_loss - 95) < 0.01);
+}
+
+// 12.17: currentPrice = 0 fallback
 {
   const verdicts = make6Verdicts('UP', {
     indicators: { sentiment_6d: { rsi: 0.2, bollinger_pct_b: 0.2, bias_ratio: 0.1, vol_skew: 0, turnover: 0, momentum_accel: 0.1 } },
   });
   const sv = makeSynth('B+', 0.7, { verdicts });
   const d = await engine.decide({ synthesizerVerdict: sv });
-  assert('12.6 default currentPrice 0 → entry_zone 0,0', d.trading_card.entry_zone[0] === 0 && d.trading_card.entry_zone[1] === 0);
-  assert('12.7 default currentPrice 0 → stop_loss 0', d.trading_card.stop_loss === 0);
+  assert('12.17 currentPrice 0 → all 0', d.trading_card.entry_zone[0] === 0 && d.trading_card.stop_loss === 0);
 }
 
 // =============================================================

@@ -81,24 +81,46 @@ DecisionVerdict (final 嘅 output)
 
 ---
 
-## 4. Trading Card (4 個 fields, 純 math)
+## 4. Trading Card (4 個 fields) — **Sprint 2 sub-task 2.2 adaptive impl done**
 
 ```typescript
 interface TradingCard {
-  entry_zone: [number, number];    // [low, high] 入場價區間 (現價 ± 1.5%)
-  stop_loss: number;                // 止蝕 (現價 - 3% 跌破即 cut loss)
-  take_profit: number;              // 目標 (現價 + 5%, 1.5:1 risk-reward)
-  trailing_stop: number;            // 移動止蝕 (現價 × 0.95, 5% trailing)
+  entry_zone: [number, number];    // [low, high] 入場價區間
+  stop_loss: number;                // 止蝕 (跌破即 cut loss)
+  take_profit: number;              // 目標
+  trailing_stop: number;            // 移動止蝕
 }
-
-// Formula
-entry_zone = [currentPrice × 0.985, currentPrice × 1.015]  // ±1.5%
-stop_loss = currentPrice × 0.97                              // -3%
-take_profit = currentPrice × 1.05                            // +5%
-trailing_stop = currentPrice × 0.95                          // 5% trailing
 ```
 
-**自適應**: 而家 static (3% SL, 5% TP), Sprint 2 將用 5 個 adaptive params 嘅 #3 Kelly 倉位分數調整 (high vol 加大 SL/TP, low vol 收細).
+**Adaptive formula (2.2 — 跟 `synthesizerVerdict.kelly_fraction` + `weighted avg max_drawdown_estimate`)**:
+
+| Volatility Bucket | Trigger | entry_zone | stop_loss | take_profit | trailing_stop | R:R |
+|-------------------|---------|------------|-----------|-------------|---------------|-----|
+| 🔴 **高波動** | `kelly='octo'` OR `maxdd > 0.10` | 現價 ± 2.5% | 現價 - 5% | 現價 + 8% | 現價 - 7% | 1.6:1 |
+| 🟡 **中波動** (default) | `kelly='quarter'` OR `maxdd 0.05-0.10` | 現價 ± 1.5% | 現價 - 3% | 現價 + 5% | 現價 - 5% | 1.67:1 |
+| 🟢 **低波動** | `kelly='half'` AND `maxdd < 0.05` | 現價 ± 1.0% | 現價 - 2% | 現價 + 4% | 現價 - 3% | 2.0:1 |
+
+**Algorithm** (純 math):
+```typescript
+function computeTradingCard(currentPrice, kellyFraction, maxDrawdown) {
+  if (kellyFraction === 'octo' || maxDrawdown > 0.10) {
+    // 高波動 — 闊止蝕止賺避免被震走
+    return makeCard(currentPrice, 0.025, 0.05, 0.08, 0.07);
+  } else if (kellyFraction === 'half' && maxDrawdown < 0.05) {
+    // 低波動 — 窄止蝕止賺更精準
+    return makeCard(currentPrice, 0.010, 0.02, 0.04, 0.03);
+  } else {
+    // 中波動 default
+    return makeCard(currentPrice, 0.015, 0.03, 0.05, 0.05);
+  }
+}
+```
+
+**設計原理**: 波動高嘅股票, 止蝕止賺要闊啲 (避免被正常波動震走); 波動低嘅股票, 止蝕止賺可以收窄 (更精準出入場).
+
+**Tests**: 17 assertions (5 高波動 + 5 中波動 + 5 低波動 + 1 maxdd override + 1 currentPrice=0 fallback)
+
+**未來 (Sprint 2 sub-task 2.5)**: 5 個 adaptive params 嘅 #3 Kelly 倉位分數 (跟 ATR% auto-calibrate) 將 refine 呢個 bucket 切換 threshold (而家 static maxdd > 0.10 / < 0.05).
 
 ---
 
@@ -252,8 +274,8 @@ open http://localhost:8765/testing-page/
 | Date | Version | 改動 | Commit |
 |------|---------|------|--------|
 | 2026-08-08 13:30 | v0.0.0 (stub) | M8 spec doc 拆返自 MODULE-07-08-DECISION-ENGINE.md (Plan A 拆返 M7+M8) | 36496159 |
-| 2026-08-08 15:42 | v1.0.0 (sub-task 2.1) | M8 finalAction 8 個決策樹 + 揸車比喻 final_action_reason + trading card static formula + decisionEngineAdapter 真正 render | TBD (本 commit) |
-| TBD | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (跟 5 個 adaptive params) | TBD |
+| 2026-08-08 15:42 | v1.0.0 (sub-task 2.1) | M8 finalAction 8 個決策樹 + 揸車比喻 final_action_reason + trading card static formula + decisionEngineAdapter 真正 render | cd1d5ac6 |
+| 2026-08-08 16:05 | v1.1.0 (sub-task 2.2) | Trading card adaptive formula (3 個 volatility buckets: high/medium/low, 跟 kelly_fraction + max_drawdown) | TBD (本 commit) |
 | TBD | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) | TBD |
 | TBD | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook, hardcoded template) | TBD |
 | TBD | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation) | TBD |

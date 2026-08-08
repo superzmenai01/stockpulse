@@ -6413,10 +6413,17 @@ export const decisionEngineAdapter = {
       `;
     }).join('');
 
-    // Trading card 2.1 公式 (2.2 將 adaptive)
+    // Trading card 2.2 adaptive (跟 synthesizerVerdict.kelly_fraction + max_drawdown_estimate)
     const tc = trading_card || { entry_zone: [0, 0], stop_loss: 0, take_profit: 0, trailing_stop: 0 };
+    // 判斷 volatility bucket 顯示
+    const synthKf = kelly_fraction;
+    let volBucketLabel = '';
+    if (synthKf === 'octo') volBucketLabel = '🔴 高波動 (octo) — 入場闊±2.5% / 止蝕-5% / 目標+8%';
+    else if (synthKf === 'quarter') volBucketLabel = '🟡 中波動 (quarter) — 入場±1.5% / 止蝕-3% / 目標+5%';
+    else if (synthKf === 'half') volBucketLabel = '🟢 低波動 (half) — 入場窄±1.0% / 止蝕-2% / 目標+4%';
     const tradingCardHTML = `
-      <h4 style="margin-top:24px;margin-bottom:8px;">💰 交易卡 (Trading Card — 2.1 static, 2.2 adaptive)</h4>
+      <h4 style="margin-top:24px;margin-bottom:4px;">💰 交易卡 (Trading Card — 2.2 adaptive)</h4>
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">${volBucketLabel}</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
         <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
           <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
@@ -6510,10 +6517,9 @@ export const decisionEngineAdapter = {
 
         <!-- Sprint 2 進度提示 (下個 commits 將加) -->
         <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-          <strong>✅ Sprint 2 sub-task 2.1 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + 交易卡 (static)<br>
+          <strong>✅ Sprint 2 sub-task 2.1-2.2 done:</strong> 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + 交易卡 adaptive (跟 volatility)<br>
           <strong>🚧 Sprint 2 仍待做:</strong>
           <ol style="margin-top:4px;">
-            <li>2.2 Trading card adaptive (跟 5 個 adaptive params)</li>
             <li>2.3 短期走勢預測 (3 scenarios × 5/10/20 日)</li>
             <li>2.4 人話詳細解讀 (LLM hook 預留 — 大少 13:30 永久 rule)</li>
             <li>2.5 5 個 adaptive params runtime auto-calibrate (squeeze/fake breakout/M1+M3 derivation)</li>
