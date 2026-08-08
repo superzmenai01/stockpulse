@@ -22,7 +22,7 @@ import { VolatilityModule } from './modules/volatility.ts';  // 大少 2026-08-0
 // import { SlopeMomentum } from './modules/slope-momentum.ts';
 
 import { MultiTFOrchestrator } from './orchestrator/multi-tf.ts';
-import { Synthesizer } from './orchestrator/synthesize.ts';
+import { Synthesizer as OrchSynthesizer } from './orchestrator/synthesize.ts';  // 大少 2026-08-08 13:30 — alias 因為 M7 Synthesizer 喺 modules/synthesizer.ts 都叫 Synthesizer
 import { RegimeChangeAlerter } from './orchestrator/alert.ts';
 import { Aggregator } from './orchestrator/aggregator.ts';
 import { DEFAULT_ENABLE_FLAGS, type EnableFlags } from './config.ts';
@@ -74,7 +74,7 @@ export class CycleDetector {
     id: CycleModuleId; version: string; detect: (k: KLine[], c: CycleContext) => Promise<CycleVerdict>;
   }>;
   private readonly multiTF: MultiTFOrchestrator;
-  private readonly synthesizer: Synthesizer;
+  private readonly synthesizer: OrchSynthesizer;
   private readonly alerter: RegimeChangeAlerter;
   private readonly aggregator: Aggregator;
 
@@ -89,7 +89,7 @@ export class CycleDetector {
       // 大少 2026-08-07 23:15 — slope-momentum 暫時隱藏,Stage 1 done 最後先做返
     };
     this.multiTF = new MultiTFOrchestrator();
-    this.synthesizer = new Synthesizer();
+    this.synthesizer = new OrchSynthesizer();
     this.alerter = new RegimeChangeAlerter();
     this.aggregator = new Aggregator();
   }
@@ -234,12 +234,16 @@ export { TrendlineModule, toStandardVerdictTL } from './modules/trendline.ts';
 export { IndicatorsModule, toStandardVerdictIND } from './modules/indicators.ts';
 export { VolumePrice, toStandardVerdictVP } from './modules/volume.ts';
 export { VolatilityModule, toStandardVerdictVOL } from './modules/volatility.ts';
-// 大少 2026-08-08 12:30 — Sprint 1 sub-task 1.2 — M7 Synthesizer
-export { DecisionEngine, synthesizeAll, type SynthesizeInput } from './modules/decision-engine.ts';
+// 大少 2026-08-08 13:30 — Plan A 拆返 M7 + M8 兩個獨立 module (之前 sprint 1 合併做 1 個 mega module, 而家拆返)
+//   M7 Synthesizer (5 個 sub-step: SSI + TCM + Alignment + Grade + Kelly)
+export { Synthesizer, synthesizeAll, type SynthesizeInput } from './modules/synthesizer.ts';
+//   M8 Decision Engine (Sprint 2 將加: finalAction 8 個 + trading card + 短期走勢 + 人話解讀)
+export { DecisionEngine, type FinalAction, type ForecastScenario, type DecisionVerdict } from './modules/decision-engine.ts';
 // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
 // export { SlopeMomentum } from './modules/slope-momentum.ts';
 
 export { MultiTFOrchestrator } from './orchestrator/multi-tf.ts';
-export { Synthesizer } from './orchestrator/synthesize.ts';
+// 大少 2026-08-08 13:30 — OrchSynthesizer 唔再 export 出去 (避免同 M7 Synthesizer 衝突),
+//   testing page 用 M7 嗰個就夠
 export { RegimeChangeAlerter } from './orchestrator/alert.ts';
 export { Aggregator } from './orchestrator/aggregator.ts';

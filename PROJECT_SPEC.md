@@ -413,8 +413,8 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 
 ### Module 結構 (7 個 done + 1 個獨立 + 2 個 hidden, Stage 1 收官)
 
-> 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7+M8 合併 mega module 用編號 08, zmen均算法 唔加 (獨立算法)。
-> 大少 2026-08-08 11:22 指示: M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module (testing page 1 個 entry, spec 拆 2 份 reference, codebase 1 個 file)。
+> 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7 用編號 07, M8 用編號 08, zmen均算法 唔加 (獨立算法)。
+> 大少 2026-08-08 13:30 指示: Plan A 拆返 M7 + M8 兩個獨立 module (testing page 2 個 entries, 2 份 spec doc, 2 個 codebase files).
 
 | 編號 | Module | 主檔 | Version | 3 Sections |
 |------|--------|------|---------|-----------|
@@ -424,7 +424,8 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 | 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ |
 | 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | **v2.0.0** | ✅ |
 | 06 | Volatility 波動率收縮擴張 | `modules/volatility.ts` | **v1.0.0** | ✅ |
-| 07 | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | `modules/decision-engine.ts` | **v2.0.0 (M7 Sprint 1 done, M8 Sprint 2 pending)** | ✅ **Sprint 1 done (大少 2026-08-08 12:30)**: M7 Synthesizer 邏輯 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位) + 6 個 modules standard verdict interface + 64 個 tests + decisionEngineAdapter + testing page enable. Sprint 2 pending: M8 finalAction 8 個 + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache + 10 個 SVG chart |
+| 07 | **終極綜合判定** (Synthesizer — M7) | `modules/synthesizer.ts` | **v1.0.0 (Sprint 1 done, 2026-08-08 13:30 Plan A 拆返)** | ✅ **Sprint 1 done**: M7 Synthesizer 邏輯 (SSI + TCM + Alignment + 8 個 Grade + Kelly) + 6 個 modules standard verdict interface + 64 個 tests + synthesizerAdapter + testing page enable |
+| 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` (stub) | **v0.0.0 (Sprint 2 pending)** | ⏸️ **Sprint 2 將加 (大少 2026-08-08 13:30 Plan A)**: 8 個 finalAction 決策樹 + Trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook) + 5 個 adaptive params + L2 cache |
 | **獨立** | **zmen均算法** (唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ Hidden (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — |
 | ⏸️ Hidden (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — |
@@ -448,7 +449,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 `http://localhost:8765/testing-page/`
 - Vanilla JS standalone HTML (CDN lightweight-charts v4.2.3)
 - 唔 embed StockPulse main app
-- 8 algorithms registered dropdown 排位 (大少 2026-08-08 10:06 加編號 + 2026-08-08 11:22 加 M7+M8 merged):
+- 9 algorithms registered dropdown 排位 (大少 2026-08-08 10:06 加編號 + 2026-08-08 13:30 拆返 M7+M8):
   ```
   01 — AS-03-MA   (M1 v2.0) ← 第 1 位 (新 M1 跟 docx v2.0 spec, 編號 01)
   02 — AS-03-HL   (M2) ← 第 2 位 (編號 02)
@@ -456,7 +457,8 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
   04 — AS-03-IND  (M4) ← 第 4 位 (編號 04)
   05 — AS-03-VP   (M5) ← 第 5 位 (編號 05)
   06 — AS-03-VOL  (M6) ← 第 6 位 (編號 06)
-  08 — AS-03-ENG  (M7+M8 合併做 1 個 mega module) ← 第 7 位 (Stage 1 收官, 編號 08, 排第 7 位因為 zmen均算法 排尾)
+  07 — AS-03-SYN  (M7 Synthesizer) ← 第 7 位 (Sprint 1 done, 編號 07)
+  08 — AS-03-DEC  (M8 Decision Engine) ← 第 8 位 (Sprint 2 pending, 編號 08)
   ────────────────
   zmen均算法 (舊 M1 v0.3.0) ← 最後 (獨立算法, 唔加編號)
   ```

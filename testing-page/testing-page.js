@@ -91,17 +91,26 @@ const REGISTRY = [
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'volatilityAdapter',
   },
-  // (M7: Synthesizer + M8: Decision Engine — 合併做 1 個 mega module, 見下一個 entry 排 [6])
-  //   大少 2026-08-08 11:22 指示: M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module
-  //   (testing page 1 個 entry, spec 拆 2 份 reference, codebase 1 個 file)
+  // 大少 2026-08-08 13:30 — Plan A 拆返 M7 + M8 兩個獨立 entry
+  // 之前 sprint 1 合併用 mega module `AS-03-ENG` (08), 大少澄清設計上一起考慮但 implementation 應該分開, 而家拆返
+  // ---- M7 Synthesizer (07) — Sprint 1 done, testing page 1 個 entry ----
   {
-    id: 'AS-03-ENG',
-    displayName: '08 — AS-03-ENG',  // 大少 2026-08-08 11:22: M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module
+    id: 'AS-03-SYN',
+    displayName: '07 — AS-03-SYN',  // 大少 2026-08-08 10:06: 編號 07 = M7 Synthesizer (大少 13:30 拆返獨立)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    adapterExport: 'decisionEngineAdapter',  // 大少 2026-08-08 12:30 Sprint 1 sub-task 1.4: M7 Synthesizer impl done, Sprint 2 將加 M8 finalAction + trading card + 5 adaptive params + L2 cache
-    // Sprint 1 範圍: 6 個 modules → standard verdict → SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位
-    // Sprint 2 範圍: 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache + 8 個 finalAction + 10 個 SVG chart
+    adapterExport: 'synthesizerAdapter',  // 大少 2026-08-08 13:30 Plan A: 拆返 synthesizerAdapter (之前叫 decisionEngineAdapter)
+    // Sprint 1 done — M7 Synthesizer 邏輯 (6 個 modules → SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位)
+    // Sprint 2 將加 M8 chain (M7 嘅 SynthesizerVerdict 喂入去 M8)
+  },
+  // ---- M8 Decision Engine (08) — Sprint 2 將 impl ----
+  {
+    id: 'AS-03-DEC',
+    displayName: '08 — AS-03-DEC',  // 大少 2026-08-08 10:06: 編號 08 = M8 Decision Engine (大少 13:30 拆返獨立)
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'decisionEngineAdapter',  // 大少 2026-08-08 13:30 Plan A: M8 stub, 會 throw "impl pending", testing page 顯示 ❌ 加载失败
+    // ⏸️ Sprint 2 將加: finalAction 8 個 + trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook 預留) + 5 個 adaptive params + L2 cache
   },
   // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
   // 舊 M1 改名「zmen均算法」, 搬去 REGISTRY 尾

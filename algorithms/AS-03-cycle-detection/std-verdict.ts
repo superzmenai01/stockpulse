@@ -301,7 +301,11 @@ export function toStandardVerdict(input: ToStandardVerdictInput): ModuleStandard
     ?? {};
 
   return {
-    state: verdict.state,
+    // Plan B fix (大少 2026-08-08 13:30) — defensive state default
+    // 如果 verdict.state 係 undefined / null / 空字串, fallback 去 'SIDEWAYS'
+    state: (verdict.state && ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION', 'TRAP'].includes(verdict.state))
+      ? verdict.state as CycleState
+      : 'SIDEWAYS',
     confidence: clamp(verdict.confidence, 0, 1),
     base_weight,
     expected_return,

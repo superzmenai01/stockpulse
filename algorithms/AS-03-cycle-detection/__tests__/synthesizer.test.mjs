@@ -1,7 +1,7 @@
-// __tests__/decision-engine.test.mjs
+// __tests__/synthesizer.test.mjs
 //
-// 大少 2026-08-08 12:30 — Sprint 1 sub-task 1.3
-//   M7 Synthesizer (DecisionEngine) 嘅 tests
+// 大少 2026-08-08 13:30 — Plan A 拆返 M7 + M8
+//   M7 Synthesizer 嘅 tests (之前叫 decision-engine.test.mjs, 大少 plan A 改名)
 //
 // Test scope: 16 tests, 60+ assertions
 //   - 一致上升 / 一致下跌 / 矛盾 / 4+2 / 5+1 / 全部 SIDEWAYS / Empty
@@ -12,7 +12,7 @@
 //   - Grade score formula
 //   - synthesizeAll convenience function
 
-import { DecisionEngine, synthesizeAll } from '../index.ts';
+import { Synthesizer, synthesizeAll } from '../index.ts';
 
 // =============================================================
 // Test utilities
@@ -74,7 +74,7 @@ function makeMixedSV(states) {
   }));
 }
 
-const engine = new DecisionEngine();
+const engine = new Synthesizer();
 
 // =============================================================
 // Test 1: Empty input → F grade

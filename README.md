@@ -293,8 +293,9 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — Stage 1 收官: 6 個 modules production done + 1 個 mega module (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module "終極綜合判斷引擎 v2.0", spec done impl pending)
 - **AS03 模組 (2026-08-08 Stage 1 收官狀態):**
 
-  > 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7+M8 合併 mega module 用編號 08, zmen均算法 唔加 (獨立算法)。
-  > 大少 2026-08-08 11:22 指示: M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module (testing page 1 個 entry, spec 拆 2 份 reference, codebase 1 個 file)。
+  > 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7 用編號 07, M8 用編號 08, zmen均算法 唔加 (獨立算法)。
+  > 大少 2026-08-08 11:22 指示: M7 Synthesizer + M8 Decision Engine 一齊優化 (設計上一起考慮)。
+  > 大少 2026-08-08 13:30 指示: Plan A 拆返 M7 + M8 兩個獨立 module (testing page 2 個 entries, 2 份 spec doc, 2 個 codebase files, implementation 分開做).
 
   | 編號 | Module | 算法 | 用途 | Version |
   |------|--------|------|------|---------|
@@ -304,7 +305,8 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   | 04 | AS-03-IND | 動能背馳與衰竭 | RSI/MACD/背馳/衰竭檢測 | v1.0.0 |
   | 05 | AS-03-VP | 成交量價格行為確認 | 突破/縮量/OBV/量价背馳 (15 rules) | v2.0.0 |
   | 06 | AS-03-VOL | 波動率收縮擴張 | Squeeze + VCP + ATR 分解 (12 rules) | v1.0.0 |
-  | 07 (預留) | **AS-03-ENG** | **終極綜合判斷引擎 v2.0** (M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module) | Sprint 1 done: M7 Synthesizer 邏輯 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位). Sprint 2 pending: M8 finalAction 8 個 + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON file cache + 10 個 SVG chart | **v2.0.0 (M7 done, Sprint 2 M8 pending)** |
+  | 07 | **AS-03-SYN** | **終極綜合判定** (Synthesizer — M7) | 6 個 modules 綜合判定 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位) | **v1.0.0 (Sprint 1 done)** |
+  | 08 | **AS-03-DEC** | **終極綜合判斷引擎** (Decision Engine — M8) | Sprint 2 將加: 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + Trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook) + 5 個 adaptive params + L2 cache | **v0.0.0 (Sprint 2 pending)** |
   | **獨立** | **zmen均算法** (唔加編號) | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
   | ⏸️ Hidden Multi-TF | 多時間框架 | (Stage 1 done 先做) | v1.0.0 |
   | ⏸️ Hidden SlopeMomentum | 斜率動能 | (Stage 1 done 先做) | v1.0.0 |

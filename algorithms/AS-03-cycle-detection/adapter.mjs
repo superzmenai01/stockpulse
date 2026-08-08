@@ -5901,7 +5901,11 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
   const rules_fired = (verdict.evidence || []).map(e => e.type);
   const module_specific = verdict.meta || {};
   return {
-    state: verdict.state,
+    // Plan B fix (大少 2026-08-08 13:30) — defensive state default
+    // 如果 verdict.state 係 undefined / null / 空字串 / 唔喺 5 個 value 入面, fallback 去 'SIDEWAYS'
+    state: (verdict.state && ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION', 'TRAP'].includes(verdict.state))
+      ? verdict.state
+      : 'SIDEWAYS',
     confidence: Math.max(0, Math.min(1, verdict.confidence)),
     base_weight,
     expected_return,
@@ -6086,14 +6090,20 @@ function decisionEngineKellyLabel(fraction) {
 }
 
 function decisionEngineStateLabel(state) {
-  return ({ UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉勢中', TRAP: '陷阱' })[state] || state;
+  // Plan B fix (大少 2026-08-08 13:30) — defensive label fallback
+  // 如果 state 係 undefined / null / 唔 match 5 個 value, 顯示 "未知" 而唔係 "undefined"
+  if (!state || !['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION', 'TRAP'].includes(state)) {
+    return '未知';
+  }
+  return ({ UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉勢中', TRAP: '陷阱' })[state];
 }
 
 function decisionEngineModuleStateColor(state) {
+  // Plan B fix (大少 2026-08-08 13:30) — defensive color fallback
   if (state === 'UP') return '#26BA75';
   if (state === 'DOWN') return '#EE5151';
   if (state === 'TRAP') return '#722ed1';
-  return '#F39C12';
+  return '#F39C12';  // SIDEWAYS / TRANSITION / unknown
 }
 
 export function renderDecisionEngineResult(verdict) {
@@ -6202,20 +6212,23 @@ export function renderDecisionEngineResult(verdict) {
   `;
 }
 
-// ---------- decisionEngineAdapter export ----------
-export const decisionEngineAdapter = {
-  id: 'AS-03-ENG',
-  name: '終極綜合判斷引擎 v2.0 (M7 Synthesizer + M8 Decision Engine)',
-  version: '2.0.0',
-  description: '大少 2026-08-08 12:30 Sprint 1 — 6 個 modules 嘅綜合判定 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位). Sprint 2 將加 M8 finalAction + trading card + 5 個 adaptive params',
+// ---------- synthesizerAdapter export (M7) ----------
+//   大少 2026-08-08 13:30 — Plan A 拆返 M7 + M8 兩個獨立 adapter
+//   之前 sprint 1 嘅 decisionEngineAdapter 而家變 synthesizerAdapter (M7 only)
+//   M8 部分 (finalAction + trading card + 短期走勢 + adaptive params) 將喺 Sprint 2 寫
+export const synthesizerAdapter = {
+  id: 'AS-03-SYN',
+  name: '終極綜合判定 (Synthesizer v1.0.0 — M7)',
+  version: '1.0.0',
+  description: '大少 2026-08-08 13:30 Plan A — 6 個 modules 嘅綜合判定 (SSI 戰略強度指數 + TCM 戰術交叉驗證 + Alignment + 8 個 Grade + Kelly 倉位). 之前叫 decisionEngineAdapter (sprint 1 合併), 而家拆返 M7.',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
   ],
   analyze: analyzeDecisionEngine,
   renderResult: renderDecisionEngineResult,
   getHelp: () => `
-    <h3>📊 終極綜合判斷引擎 v2.0 (M7 Synthesizer)</h3>
-    <p>大少 2026-08-08 12:30 Sprint 1 — 6 個 modules 嘅綜合判定</p>
+    <h3>📊 終極綜合判定 (Synthesizer v1.0.0 — M7)</h3>
+    <p>大少 2026-08-08 13:30 Plan A — 6 個 modules 嘅綜合判定 (M7)</p>
     <h4>5 個 Sub-step:</h4>
     <ol>
       <li><strong>SSI 戰略強度指數</strong> (0-100): consistency × 50 + confidence_avg × 30 + rules_coverage × 20</li>
@@ -6224,12 +6237,58 @@ export const decisionEngineAdapter = {
       <li><strong>Grade</strong> (8 個): A+ / A / B+ / B / C+ / C / D / F</li>
       <li><strong>Kelly 倉位</strong>: half/quarter/octo, 跟 avg 波動率自動切</li>
     </ol>
-    <h4>Sprint 2 將加:</h4>
+    <h4>M8 (Sprint 2 將加):</h4>
     <ul>
-      <li>M8 finalAction 8 個 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION)</li>
+      <li>finalAction 8 個 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION)</li>
       <li>Trading card (entry_zone / stop_loss / take_profit / trailing_stop)</li>
+      <li>短期走勢預測 (3 scenarios × 5/10/20 日)</li>
+      <li>人話詳細解讀 (LLM hook 預留, 大少 13:30 永久 rule)</li>
       <li>5 個 adaptive params runtime auto-calibrate</li>
       <li>L2 JSON file cache (~/.stockpulse/adaptive_params/&lt;symbol&gt;.json)</li>
+    </ul>
+  `,
+};
+
+// ---------- decisionEngineAdapter export (M8 — STUB, Sprint 2 將 impl) ----------
+//   大少 2026-08-08 13:30 — M8 仲未 impl, testing page 揀呢個 entry 會 throw "impl pending"
+export const decisionEngineAdapter = {
+  id: 'AS-03-DEC',
+  name: '終極綜合判斷引擎 (Decision Engine v0.0.0 — M8, Sprint 2 將加)',
+  version: '0.0.0',
+  description: '大少 2026-08-08 13:30 Plan A — M8 Decision Engine 嘅 STUB. Sprint 2 將加 finalAction 8 個 + trading card + 短期走勢預測 + 人話詳細解讀 (LLM hook 預留) + 5 個 adaptive params + L2 cache.',
+  inputs: [
+    { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
+  ],
+  analyze: async () => {
+    throw new Error('[M8 DecisionEngine] 仲未 impl. 大少 2026-08-08 13:30 Plan A 拆返 M7 + M8, M8 範圍: finalAction 8 個 + trading card + 短期走勢預測 + 人話詳細解讀 + 5 個 adaptive params + L2 cache. 將喺 Sprint 2 寫. 而家 testing page 揀呢個 entry 會見到 ❌ 加载失败.');
+  },
+  renderResult: () => `
+    <div class="result-error" style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:20px;margin:20px 0;">
+      <h3 style="color:#856404;margin-top:0;">🚧 M8 Decision Engine 仲未 impl</h3>
+      <p>大少 2026-08-08 13:30 Plan A 拆返 M7 + M8 兩個獨立 module.</p>
+      <p>而家呢個 entry 係 STUB. Sprint 2 將加:</p>
+      <ol>
+        <li>8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) 決策樹</li>
+        <li>Trading card (entry_zone / stop_loss / take_profit / trailing_stop)</li>
+        <li>短期走勢預測 (3 scenarios × 5/10/20 日)</li>
+        <li>人話詳細解讀 (LLM hook 預留 — 大少 13:30 永久 rule)</li>
+        <li>5 個 adaptive params runtime auto-calibrate</li>
+        <li>L2 JSON file cache (~/.stockpulse/adaptive_params/&lt;symbol&gt;.json)</li>
+      </ol>
+      <p>請用 <code>07 — AS-03-SYN (Synthesizer)</code> 跑 M7 部分.</p>
+    </div>
+  `,
+  getHelp: () => `
+    <h3>🚧 Decision Engine (M8) — Sprint 2 將加</h3>
+    <p>大少 2026-08-08 13:30 Plan A — M8 仲未 impl.</p>
+    <p>Sprint 2 範圍:</p>
+    <ul>
+      <li>8 個 finalAction 決策樹</li>
+      <li>Trading card (entry/stop/target/trailing)</li>
+      <li>短期走勢預測 (3 scenarios × 5/10/20 日)</li>
+      <li>人話詳細解讀 (LLM hook 預留)</li>
+      <li>5 個 adaptive params runtime auto-calibrate</li>
+      <li>L2 JSON file cache</li>
     </ul>
   `,
 };
