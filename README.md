@@ -302,7 +302,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   | AS-03-VP | 成交量價格行為確認 | 突破/縮量/OBV/量价背馳 (15 rules) | v2.0.0 |
   | AS-03-VOL | 波動率收縮擴張 | Squeeze + VCP + ATR 分解 (12 rules) | v1.0.0 |
   | AS-03-SYN | Synthesizer 綜合判定 | TBD | — |
-  | **zmen均算去 (獨立)** | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
+  | **zmen均算法 (獨立)** | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
   | ⏸️ Hidden Multi-TF | 多時間框架 | (Stage 1 done 先做) | v1.0.0 |
   | ⏸️ Hidden SlopeMomentum | 斜率動能 | (Stage 1 done 先做) | v1.0.0 |
 

@@ -3,7 +3,7 @@
 // 14+ tests, 19+ assertions (跟 v0.3.0 zmen-ma-alignment.test.mjs 19 assertions 對齊)
 //
 // 大少 2026-08-08 09:13: 新 M1 v2.0 (跟 Kimi docx v2.0 spec) 取代舊 M1
-// 喺 testing page dropdown 第 1 位, 舊 v0.3.0 抽離做 zmen均算去 排去尾。
+// 喺 testing page dropdown 第 1 位, 舊 v0.3.0 抽離做 zmen均算法 排去尾。
 
 import {
   MAAlignmentV2Module,

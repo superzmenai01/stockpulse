@@ -24,8 +24,8 @@ const BACKEND_URL = 'http://localhost:18792';
 //   例: adapterExport: 'volumePriceAdapter' 會取 adapter.volumePriceAdapter
 //
 // === 大少 2026-08-08 08:47 指示 ===
-// 舊 M1「均線系統週期斷法」改名「zmen均算去」, 從 7 個 modules 抽離
-// (唔屬於 AS-03 7 個 modules 計算)。REGISTRY array 將 zmen均算去
+// 舊 M1「均線系統週期斷法」改名「zmen均算法」, 從 7 個 modules 抽離
+// (唔屬於 AS-03 7 個 modules 計算)。REGISTRY array 將 zmen均算法
 // 放最尾, 7 個 modules 嘅 M2-M6 排位不變。
 // 新 M1 位置 (AS-03 7 個 modules 嘅第 1 個) 暫時空, 等大少提供新 spec。
 // ===========================================================================
@@ -77,16 +77,17 @@ const REGISTRY = [
   },
   // (M7: Synthesizer — 🚧 Pending, Stage 1 最後一個)
   // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
-  // 舊 M1 改名「zmen均算去」, 搬去 REGISTRY 尾
-  // 大少 2026-08-08 08:47:「zmen均算去」係大少自己想出嚟嘅算法, 從
+  // 舊 M1 改名「zmen均算法」, 搬去 REGISTRY 尾
+  // 大少 2026-08-08 08:47:「zmen均算法」係大少自己想出嚟嘅算法, 從
   // 7 個 modules 抽離, 排去 dropdown 最後, 獨立一類
+  // 大少 2026-08-08 09:50: 改名「zmen均算法」→「zmen均算法」(算法 vs 算去 typo 修正)
   // 大少 2026-08-08 09:13: implementation file 改叫 zmen-ma-alignment.ts
   {
     id: 'AS-03',
-    displayName: 'zmen均算去',  // 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules
+    displayName: 'zmen均算法',  // 大少 2026-08-08 09:50: 舊 M1 改名 + 抽離 7 個 modules
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    // 預設 = 頂層 exports (向後兼容 ma-alignment v0.3.0 adapter 嘅 analyze 函數, 留俾 zmen均算去)
+    // 預設 = 頂層 exports (向後兼容 ma-alignment v0.3.0 adapter 嘅 analyze 函數, 留俾 zmen均算法)
     // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
     //   唔再獨立 expose AS-03-VP dropdown
     // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返

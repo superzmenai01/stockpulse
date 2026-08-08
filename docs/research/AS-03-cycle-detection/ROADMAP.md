@@ -48,7 +48,7 @@
 
 ## 2. Stage 1 內部排序（最 critical 嘅先做）
 
-> **大少 2026-08-08 09:13 更新:** 舊 M1「均線系統週期斷法」改名「zmen均算去」+ 抽離 7 個 modules 獨立處理 (file: `zmen-ma-alignment.ts` + spec: `ZMEN-MA-ALIGNMENT.md`)。新 M1「均線系統週期判斷法 v2.0」跟 docx Kimi v2.0 spec 全新做 (3 cycles + 成交量加權 + 斜率動能), file 佔用返 `ma-alignment.ts` + spec `MODULE-01-MA-ALIGNMENT.md`。
+> **大少 2026-08-08 09:13 更新:** 舊 M1「均線系統週期斷法」改名「zmen均算法」+ 抽離 7 個 modules 獨立處理 (file: `zmen-ma-alignment.ts` + spec: `ZMEN-MA-ALIGNMENT.md`)。新 M1「均線系統週期判斷法 v2.0」跟 docx Kimi v2.0 spec 全新做 (3 cycles + 成交量加權 + 斜率動能), file 佔用返 `ma-alignment.ts` + spec `MODULE-01-MA-ALIGNMENT.md`。
 
 | 優先 | Module | 狀態 (2026-08-08) | 點解先做 |
 |------|--------|------|----------|
@@ -59,7 +59,7 @@
 | 5 | Module 6: Volatility (新定義, 取代 Multi-TF) | ✅ v1.0.0 done (32/32) | 波動率收縮擴張, Squeeze + VCP + ATR 分解 |
 | 6 | **Module 1: 均線系統週期判斷法 v2.0** (with Volume & Slope) | ✅ **v2.0.0 done (31/31)** | 大少 2026-08-08 09:13 跟 docx Kimi v2.0 spec, 3 cycles + 13 fields + 三階段信心調整 |
 | 7 | **Module 7: Synthesizer** | 🚧 Pending (Stage 1 最後一個) | 最後做（要 aggregate 1-6 結果，Confluence 都可以做類似嘢）|
-| ⭐ 獨立 | **zmen均算去** (舊 M1 抽出) | ✅ v0.3.0 (19/19) | 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 獨立一類 |
+| ⭐ 獨立 | **zmen均算法** (舊 M1 抽出) | ✅ v0.3.0 (19/19) | 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 獨立一類 |
 
 ---
 
@@ -79,7 +79,7 @@
 ### 獨立算法 (大少 2026-08-08 抽出, 唔屬 7 個 modules 之一)
 | Module | Status | 功用 |
 |--------|--------|------|
-| **zmen均算去** (舊 M1 改名) | ✅ v0.3.0 done (19/19) | MA5/10/60 排列 + 10 條 rule A-J — 抽離獨立處理, 排去 dropdown 最後, file 改名 zmen-ma-alignment.ts |
+| **zmen均算法** (舊 M1 改名) | ✅ v0.3.0 done (19/19) | MA5/10/60 排列 + 10 條 rule A-J — 抽離獨立處理, 排去 dropdown 最後, file 改名 zmen-ma-alignment.ts |
 
 ### 隱藏 (Stage 1 done 先做返)
 | # | Module | Status | 功用 |

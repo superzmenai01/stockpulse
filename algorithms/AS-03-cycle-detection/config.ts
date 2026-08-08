@@ -322,7 +322,7 @@ export const DEFAULT_CYCLE_CONFIG: CycleConfig = {
  * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`
  *
  * 大少 2026-08-08 09:13 指示: 舊 M1 v0.3.0 (10 rules A-J, 4 states) 抽離
- * 做獨立算法叫 zmen均算去 (file 改名 zmen-ma-alignment.ts), 新 M1 v2.0
+ * 做獨立算法叫 zmen均算法 (file 改名 zmen-ma-alignment.ts), 新 M1 v2.0
  * 跟 docx Kimi v2.0 spec 重新做, 3 cycles + 成交量加權 + 斜率動能
  * 兩維度擴展, 信心指數 = base × volume × slope 三階段調整。
  *

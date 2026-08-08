@@ -16,7 +16,7 @@
 // Run: cd ~/stockpulse/algorithms/AS-03-cycle-detection
 //      node --experimental-strip-types __tests__/ma-alignment.test.mjs
 
-import { MAAlignmentModule } from '../modules/ma-alignment.ts';
+import { ZmenMAAlignmentModule } from '../modules/zmen-ma-alignment.ts';
 import { DEFAULT_MA_ALIGNMENT_CONFIG } from '../config.ts';
 
 let passed = 0;
@@ -110,7 +110,7 @@ async function test1() {
   console.log('\n📊 T1: Step 1 validation (< 90 days throws)');
   const klines = genKLines({ count: 50 });
   try {
-    await new MAAlignmentModule().detect(klines, ctx);
+    await new ZmenMAAlignmentModule().detect(klines, ctx);
     assert('T1.1: should throw for 50 days', false);
   } catch (err) {
     assert('T1.1: throws for 50 days (< 90 min)', err.message.includes('Insufficient data'),
@@ -118,7 +118,7 @@ async function test1() {
   }
   // 89 days 應該都 throw
   try {
-    await new MAAlignmentModule().detect(genKLines({ count: 89 }), ctx);
+    await new ZmenMAAlignmentModule().detect(genKLines({ count: 89 }), ctx);
     assert('T1.2: should throw for 89 days', false);
   } catch (err) {
     assert('T1.2: throws for 89 days', err.message.includes('Insufficient data'),
@@ -126,7 +126,7 @@ async function test1() {
   }
   // 90 days 應該 OK
   try {
-    const v = await new MAAlignmentModule().detect(genKLines({ count: 90 }), ctx);
+    const v = await new ZmenMAAlignmentModule().detect(genKLines({ count: 90 }), ctx);
     assert('T1.3: 90 days passes', v !== null);
   } catch (err) {
     assert('T1.3: 90 days passes', false, `got error: ${err.message}`);
@@ -141,7 +141,7 @@ async function test2() {
     count: 100,
     segments: [{ start: 0, end: 99, fromPrice: 100, toPrice: 110 }],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T2.1: Case A fires', v.meta.matchedRules.includes('A'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -158,7 +158,7 @@ async function test3() {
     count: 100,
     segments: [{ start: 0, end: 99, fromPrice: 110, toPrice: 100 }],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T3.1: Case B fires', v.meta.matchedRules.includes('B'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -181,7 +181,7 @@ async function test4() {
     lowOverrideLastN: 5,
     lowOverrideValue: 95,
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T4.1: Case C fires', v.meta.matchedRules.includes('C'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -203,7 +203,7 @@ async function test5() {
     highOverrideLastN: 5,
     highOverrideValue: 115,
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T5.1: Case D fires', v.meta.matchedRules.includes('D'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -224,7 +224,7 @@ async function test6() {
       { start: 95, end: 99, fromPrice: 105, toPrice: 105 },
     ],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T6.1: Case F fires', v.meta.matchedRules.includes('F'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -245,7 +245,7 @@ async function test7() {
       { start: 95, end: 99, fromPrice: 95, toPrice: 95 },
     ],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T7.1: Case G fires', v.meta.matchedRules.includes('G'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -266,7 +266,7 @@ async function test8() {
       { start: 100, end: 100, fromPrice: 130, toPrice: 130 }, // day 100 spike up
     ],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T8.1: Case H reverse-up fires', v.meta.matchedRules.includes('H-reverse-up'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -285,7 +285,7 @@ async function test9() {
     count: 100,
     segments: [{ start: 0, end: 99, fromPrice: 100, toPrice: 100 }],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T9.1: Case I fires', v.meta.matchedRules.includes('I'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -303,7 +303,7 @@ async function test10() {
     count: 100,
     segments: [{ start: 0, end: 99, fromPrice: 100, toPrice: 100 }],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   assert('T10.1: Case J fires', v.meta.matchedRules.includes('J'),
     `matched: ${JSON.stringify(v.meta.matchedRules)}`);
@@ -323,7 +323,7 @@ async function test11() {
       { start: 90, end: 99, fromPrice: 110, toPrice: 110 },
     ],
   });
-  const v = await new MAAlignmentModule().detect(klines, ctx);
+  const v = await new ZmenMAAlignmentModule().detect(klines, ctx);
 
   // Case A (last 5 days MA5 > MA60)
   // Case I (low ≥ MA5 × 0.98)

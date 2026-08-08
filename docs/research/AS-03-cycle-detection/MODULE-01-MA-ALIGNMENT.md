@@ -5,7 +5,7 @@
 > **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/ma-alignment.test.mjs` (新寫)
 > **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`maAlignmentV2Adapter`)
 >
-> **大少 2026-08-08 09:13 指示**: 舊 M1 嘅 v0.3.0 (10 rules A-J, 4 states H/A/B/F/G/C/D + TRANSITION) 抽離做獨立算法叫 **zmen均算去**, moduleId 保留 'ma-alignment', spec doc 改叫 `ZMEN-MA-ALIGNMENT.md`。
+> **大少 2026-08-08 09:13 指示**: 舊 M1 嘅 v0.3.0 (10 rules A-J, 4 states H/A/B/F/G/C/D + TRANSITION) 抽離做獨立算法叫 **zmen均算法**, moduleId 保留 'ma-alignment', spec doc 改叫 `ZMEN-MA-ALIGNMENT.md`。
 >
 > 新 M1 v2.0 跟 Kimi 出嘅 docx spec 重新做, 3 個 cycle state (uptrend / downtrend / sideways) + 成交量加權 + 斜率動能 兩維度擴展。
 
@@ -24,7 +24,7 @@
 
 **舊 M1 v0.3.0 vs 新 M1 v2.0 對比**:
 
-| 維度 | 舊 M1 v0.3.0 (zmen均算去) | 新 M1 v2.0 (均線系統週期判斷法) |
+| 維度 | 舊 M1 v0.3.0 (zmen均算法) | 新 M1 v2.0 (均線系統週期判斷法) |
 |------|---------------------------|--------------------------------|
 | Cycle states | 4 個 (UP / DOWN / SIDEWAYS / TRANSITION) | 3 個 (uptrend / downtrend / sideways) |
 | Rules | 10 條 (A-J) | 1 個 3 步算法 (排列 + 粘合 + 信心) |
@@ -242,7 +242,7 @@ confidence = ROUND(confidence, 4);
 | `downtrend` | 下跌週期 | 🔴 紅色 |
 | `sideways` | 橫行週期 | 🟡 黃色 |
 
-**對比舊 M1 v0.3.0 (zmen均算去)**:
+**對比舊 M1 v0.3.0 (zmen均算法)**:
 - 舊 M1 嘅 4 個 state (UP / DOWN / SIDEWAYS / TRANSITION) → 簡化做 3 個
 - TRANSITION 移除: 因為新 M1 用 volume + slope 兩維度做信心微調, 轉勢訊號由 M4 Indicators (動能背馳) 同 M2 HL Structure (峰谷結構) 負責
 
@@ -381,7 +381,7 @@ confidence = ROUND(confidence, 4);
 ## 12. Spec 連結
 
 - **對應 docx**: `docs/演算法概念SPECS/01均線系統週期判斷法.docx` (Kimi v2.0 spec, 166 paragraphs)
-- **舊 v0.3.0 spec** (zmen均算去 抽離後保留): `docs/research/AS-03-cycle-detection/ZMEN-MA-ALIGNMENT.md`
+- **舊 v0.3.0 spec** (zmen均算法 抽離後保留): `docs/research/AS-03-cycle-detection/ZMEN-MA-ALIGNMENT.md`
 - **Roadmap**: `docs/research/AS-03-cycle-detection/ROADMAP.md` §2 Stage 1 排序表
 
 ## 13. Changelog
@@ -389,7 +389,7 @@ confidence = ROUND(confidence, 4);
 | Date | Version | 改動 | Commit |
 |------|---------|------|--------|
 | 2026-08-08 | v2.0.0 | 全新 module, 跟 docx Kimi v2.0 spec, 3 cycles + volume + slope 兩維度擴展 | TBD |
-| 2026-08-08 | — | 舊 v0.3.0 (10 rules A-J) 抽離做 zmen均算去 獨立算法 | `861bd921` |
+| 2026-08-08 | — | 舊 v0.3.0 (10 rules A-J) 抽離做 zmen均算法 獨立算法 | `861bd921` |
 | 2026-08-08 | — | 舊 M1 文件 rename ma-alignment → zmen-ma-alignment | `861bd921` |
 | 2026-08-04 | v0.3.0 | 舊 M1: 大少 A-J 10 條 rule-based 算法 (#10332) | `840c405d` |
 | 2026-08-03 | v0.2.0 | Kimi 13 個算法 (已 drop) | — |

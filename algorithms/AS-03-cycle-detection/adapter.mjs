@@ -5018,7 +5018,7 @@ export const indicatorsAdapter = {
 };
 // =====================================================================
 // 2026-08-08 — Module 1 v2.0 均線系統週期判斷法 (with Volume & Slope 擴展)
-//   大少指示: 舊 M1 v0.3.0 抽離做 zmen均算去 (檔案 zmen-ma-alignment.ts),
+//   大少指示: 舊 M1 v0.3.0 抽離做 zmen均算法 (檔案 zmen-ma-alignment.ts),
 //   新 M1 v2.0 跟 docx Kimi v2.0 spec 做全新 implementation.
 //   - 3 個 cycle states (uptrend / downtrend / sideways)
 //   - 13 個 output fields
@@ -5471,7 +5471,7 @@ function renderMAAlignmentV2UsageGuide(verdict) {
 function getMAAlignmentV2Help() {
   return `
     <h3>Module 1 v2.0 — 均線系統週期判斷法 (with Volume & Slope)</h3>
-    <p>大少 2026-08-08 指示新 M1 v2.0 (跟 docx Kimi v2.0 spec) 取代舊 M1 v0.3.0, 舊 M1 抽離做 zmen均算去。</p>
+    <p>大少 2026-08-08 指示新 M1 v2.0 (跟 docx Kimi v2.0 spec) 取代舊 M1 v0.3.0, 舊 M1 抽離做 zmen均算法。</p>
     <h4>Spec 連結</h4>
     <ul>
       <li>Spec doc: <code>docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md</code></li>
@@ -5493,6 +5493,84 @@ function getMAAlignmentV2Help() {
   `;
 }
 
+// Helper: 計 MA 歷史 series (M1 v2.0 用, 4 條 MA: [5, 10, 20, 60])
+// 頭 period-1 個 point 直接 skip (未夠 data 計 MA, 唔出 null 避免 lightweight-charts 當 0 畫)
+function _computeMASeriesV2(klines, period) {
+  const out = [];
+  for (let i = period - 1; i < klines.length; i++) {
+    const time = _maNormalizeTime(klines[i].time ?? klines[i].timestamp ?? klines[i].date);
+    if (time == null) continue;
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      sum += klines[j].close;
+    }
+    out.push({ time, value: sum / period });
+  }
+  out.sort((a, b) => a.time - b.time);
+  const dedup = [];
+  for (let i = 0; i < out.length; i++) {
+    if (i === 0 || out[i].time !== out[i - 1].time) dedup.push(out[i]);
+  }
+  return dedup;
+}
+
+// M1 v2.0 嘅 chart overlay (跟 zmen均算法 pattern, 4 條 MA trend lines: MA5/10/20/60)
+// 大少 2026-08-08 09:50 指示: M1 v2.0 嘅圖表要加返 MA 線, 參考 zmen均算法
+function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
+  if (!chartRefs || !chartRefs.chart) {
+    console.warn('[renderMAAlignmentV2ChartOverlay] chartRefs.chart 缺失');
+    return;
+  }
+  if (!verdict || !verdict.meta) {
+    console.warn('[renderMAAlignmentV2ChartOverlay] verdict 缺失');
+    return;
+  }
+  if (!Array.isArray(klines) || klines.length === 0) {
+    console.warn('[renderMAAlignmentV2ChartOverlay] klines 缺失或空');
+    return;
+  }
+
+  const chart = chartRefs.chart;
+  if (typeof chart.addLineSeries !== 'function') {
+    console.error('[renderMAAlignmentV2ChartOverlay] chart 冇 addLineSeries method');
+    return;
+  }
+
+  // 移除舊 MA line series (如果之前 render 過)
+  if (chartRefs.maV2LineSeries) {
+    for (const key of Object.keys(chartRefs.maV2LineSeries)) {
+      try { chart.removeSeries(chartRefs.maV2LineSeries[key]); } catch (e) { /* ignore */ }
+    }
+  }
+  chartRefs.maV2LineSeries = {};
+
+  // 4 條 MA periods (跟 DEFAULT_MA_ALIGNMENT_V2_CONFIG.maPeriods)
+  const periods = [5, 10, 20, 60];
+  const maColors = {
+    5: '#FF6B6B',   // 紅 — 短期趨勢
+    10: '#4ECDC4',  // 青 — 中短期趨勢
+    20: '#FFA500',  // 橙 — 中期趨勢
+    60: '#45B7D1',  // 藍 — 長期趨勢
+  };
+
+  for (const period of periods) {
+    const series = _computeMASeriesV2(klines, period);
+    try {
+      const s = chart.addLineSeries({
+        color: maColors[period],
+        lineWidth: 2,
+        title: `MA${period}`,
+        priceLineVisible: false,
+        lastValueVisible: true,
+      });
+      s.setData(series);
+      chartRefs.maV2LineSeries[`ma${period}`] = s;
+    } catch (e) {
+      console.error(`[renderMAAlignmentV2ChartOverlay] MA${period} addLineSeries 失敗:`, e);
+    }
+  }
+}
+
 export const maAlignmentV2Adapter = {
   id: 'AS-03-MA',
   name: '均線系統週期判斷法 v2.0 (with Volume & Slope)',
@@ -5510,11 +5588,12 @@ export const maAlignmentV2Adapter = {
   ],
   analyze: analyzeMAAlignmentV2,
   renderResult: renderMAAlignmentV2Result,
+  renderChartOverlay: renderMAAlignmentV2ChartOverlay,
   getHelp: getMAAlignmentV2Help,
 };
 
 // =====================================================================
-// 2026-08-08 09:13 — zmen均算去 (舊 M1 v0.3.0 抽離獨立)
+// 2026-08-08 09:13 — zmen均算法 (舊 M1 v0.3.0 抽離獨立)
 //   舊 M1 嘅 v0.3.0 邏輯保留, 用 zmenMAAdapter named export 暴露
-//   testing page 嘅 zmen均算去 entry 繼續用頂層 default
+//   testing page 嘅 zmen均算法 entry 繼續用頂層 default
 // =====================================================================

@@ -10,7 +10,7 @@ import {
   CycleDetector,
   VERSION,
   DEFAULT_MA_ALIGNMENT_CONFIG,
-  ZmenMAAlignmentModule,  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算去, class name 跟住改
+  ZmenMAAlignmentModule,  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算法, class name 跟住改
   HLStructureModule,
   TrendlineModule,
   IndicatorsModule,

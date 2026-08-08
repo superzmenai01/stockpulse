@@ -9,7 +9,7 @@
 // ⏳ 暫定用 MA Alignment 做 HTF proxy — 大少可以指定用其他 module
 
 import type { CycleContext, CycleVerdict, KLine } from '../types.ts';
-import { ZmenMAAlignmentModule } from '../modules/zmen-ma-alignment.ts';  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算去
+import { ZmenMAAlignmentModule } from '../modules/zmen-ma-alignment.ts';  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算法
 
 export class MultiTFOrchestrator {
   private readonly htfProxy: ZmenMAAlignmentModule;

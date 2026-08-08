@@ -1,9 +1,9 @@
-// modules/zmen-ma-alignment.ts — AS-03 · zmen均算去 (舊 M1 MA Alignment v0.3.0 改名抽離)
+// modules/zmen-ma-alignment.ts — AS-03 · zmen均算法 (舊 M1 MA Alignment v0.3.0 改名抽離)
 //
-// 大少 2026-08-08 08:47 指示: 舊 M1「均線系統週期斷法」改名「zmen均算去」,
+// 大少 2026-08-08 08:47 指示: 舊 M1「均線系統週期斷法」改名「zmen均算法」,
 // 從 7 個 modules 抽離獨立處理, 唔屬於 AS-03 7 個 modules 計算。
 // Module id 'ma-alignment' 保留 (Synthesizer + testing page 仲有引用),
-// display name 喺 testing page REGISTRY 用 'zmen均算去' 顯示。
+// display name 喺 testing page REGISTRY 用 'zmen均算法' 顯示。
 //
 // 大少 #10332 決定: 全部 Kimi v0.2.0 算法刪走，換上大少嘅 A-J 10 條 rule
 //

@@ -1,7 +1,7 @@
 // modules/ma-alignment.ts — AS-03 · 點 1: 均線系統週期判斷法 v2.0 (with Volume & Slope)
 //
 // 大少 2026-08-08 09:13 指示: 舊 v0.3.0 嘅 M1 (10 rules A-J, 4 states H/A/B/F/G/C/D + TRANSITION)
-// 抽離做獨立算法叫 zmen均算去 (file 改 zmen-ma-alignment.ts, moduleId 保留 'ma-alignment')。
+// 抽離做獨立算法叫 zmen均算法 (file 改 zmen-ma-alignment.ts, moduleId 保留 'ma-alignment')。
 //
 // 新 M1 v2.0 跟 Kimi 出嘅 docx v2.0 spec 重新做, 3 個 cycle state
 // (uptrend / downtrend / sideways) + 成交量加權 + 斜率動能 兩維度擴展。
