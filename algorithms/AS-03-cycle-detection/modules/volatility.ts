@@ -22,9 +22,10 @@
 // State 派生: cycle (uptrend / downtrend / sideways) + state (UP / DOWN / SIDEWAYS)
 
 import type {
-  CycleContext, CycleModule, CycleVerdict, KLine,
+  CycleContext, CycleModule, CycleVerdict, KLine, ModuleStandardVerdict,
 } from '../types.ts';
 import { DEFAULT_VOLATILITY_CONFIG, type VolatilityConfig } from '../config.ts';
+import { runAndStandardize } from '../std-verdict.ts';
 
 interface MatchedRule {
   id: string;
@@ -436,4 +437,20 @@ export class VolatilityModule implements CycleModule<KLine[]> {
     const variance = closes.reduce((acc, c) => acc + (c - mean) ** 2, 0) / closes.length;
     return Math.sqrt(variance);
   }
+}
+
+// =============================================================
+// 大少 2026-08-08 12:00 — Sprint 1 sub-task 1.1 — M7 standard verdict wrapper
+// =============================================================
+/** M6 Volatility 嘅 standard verdict wrapper
+ *  @example
+ *    const sv = await toStandardVerdictVOL(klines, { symbol: 'HK.00700', ltf: '1d' });
+ *    console.log(sv.base_weight);  // 0.10
+ */
+export async function toStandardVerdictVOL(
+  klines: KLine[],
+  ctx: CycleContext,
+  config: VolatilityConfig = DEFAULT_VOLATILITY_CONFIG,
+): Promise<ModuleStandardVerdict> {
+  return runAndStandardize(new VolatilityModule(config), klines, ctx, 'volatility');
 }

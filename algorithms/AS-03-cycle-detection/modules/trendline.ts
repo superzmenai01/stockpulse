@@ -23,9 +23,10 @@
 // (H + G 同時 fire → TRANSITION)
 
 import type {
-  CycleContext, CycleModule, CycleVerdict, Evidence, KLine, CycleState,
+  CycleContext, CycleModule, CycleVerdict, Evidence, KLine, CycleState, ModuleStandardVerdict,
 } from '../types.ts';
 import { DEFAULT_TRENDLINE_CONFIG, type TrendlineConfig } from '../config.ts';
+import { runAndStandardize } from '../std-verdict.ts';
 
 // ============ Internal types ============
 
@@ -723,3 +724,19 @@ export class TrendlineModule implements CycleModule<KLine[]> {
 }
 
 export default TrendlineModule;
+
+// =============================================================
+// 大少 2026-08-08 12:00 — Sprint 1 sub-task 1.1 — M7 standard verdict wrapper
+// =============================================================
+/** M3 Trendline 嘅 standard verdict wrapper
+ *  @example
+ *    const sv = await toStandardVerdictTL(klines, { symbol: 'HK.00700', ltf: '1d' });
+ *    console.log(sv.base_weight);  // 0.20
+ */
+export async function toStandardVerdictTL(
+  klines: KLine[],
+  ctx: CycleContext,
+  config: TrendlineConfig = DEFAULT_TRENDLINE_CONFIG,
+): Promise<ModuleStandardVerdict> {
+  return runAndStandardize(new TrendlineModule(config), klines, ctx, 'trendline');
+}

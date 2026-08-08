@@ -3,8 +3,12 @@
 // 所有 module / orchestrator / alert 嘅介面合約集中呢度。
 // 改呢度 = 改 contract，要小心。
 
-/** 4 個 cycle state — D002 (2026-08-04) */
-export type CycleState = 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION';
+/** 5 個 cycle state — D002 (2026-08-04) + 大少 2026-08-08 12:00 加 'TRAP'
+ *  - UP / DOWN / SIDEWAYS: 6 個 modules 自己 return
+ *  - TRANSITION: 6 個 modules 自己 return (e.g. H rule in ma-alignment)
+ *  - TRAP: M7 Synthesizer / M8 Decision Engine 推導 (矛盾或假突破), 6 個 modules 唔會 return
+ */
+export type CycleState = 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION' | 'TRAP';
 
 /**
  * Raw MA alignment output — 3 states per docx v2.0 algorithm
@@ -34,13 +38,15 @@ export type SignalType = 'CONFIRM' | 'DISCONFIRM' | 'NEUTRAL';
 
 /**
  * 5 個 peer module IDs (大少 #10809 — 加 slope-momentum,大少 2026-08-07 23:15 隱藏)
+ * 大少 2026-08-08 12:00: 加 'volatility' (M6) — Sprint 1 6 個 modules 全部加入 CycleDetector
  */
 export type CycleModuleId =
   | 'ma-alignment'
   | 'hl-structure'
   | 'trendline'
   | 'indicators'
-  | 'volume';
+  | 'volume'
+  | 'volatility';
 //   | 'slope-momentum'  // 大少 2026-08-07 23:15 暫時隱藏,Stage 1 done 最後先做返
 
 /** 支援嘅 timeframe */
@@ -148,3 +154,76 @@ export interface CycleModule<I = KLine[]> {
   version: string;
   detect(input: I, ctx: CycleContext): Promise<CycleVerdict>;
 }
+
+// =============================================================
+// 大少 2026-08-08 12:00 — M7 Synthesizer 嘅 standard interface (Stage 1 收官準備)
+// =============================================================
+// 6 個 modules (M1-M6) 嘅 output 統一去呢個 shape, 方便 M7 / M8 讀
+// 設計原則: 向後兼容, 每個 module 嘅 detail fields 仍然喺 module_specific 入面
+// =============================================================
+
+/** 6 維情緒雷達 (M7/M8 會用嚟畫 radar chart)
+ *  每個 field 標準化去 [-1, +1]:
+ *    rsi:                RSI(14) 標準化 ((rsi-50)/50)
+ *    bollinger_pct_b:    Bollinger %B 標準化 (%B × 2 - 1)
+ *    bias_ratio:         乖離率標準化 (現價 vs MA20, 限制 ±20%)
+ *    vol_skew:           波動偏度 (20 日 historical vol skew)
+ *    turnover:           換手率 (20 日平均 vs 250 日 baseline)
+ *    momentum_accel:     動能加速度 (10 日 ROC 嘅 derivative)
+ */
+export interface Sentiment6D {
+  rsi: number;              // -1 ~ +1
+  bollinger_pct_b: number;  // -1 ~ +1
+  bias_ratio: number;       // -1 ~ +1
+  vol_skew: number;         // -1 ~ +1
+  turnover: number;         // -1 ~ +1
+  momentum_accel: number;   // -1 ~ +1
+}
+
+/** Standard verdict — 6 個 modules 共用嘅 output shape
+ *  M7 Synthesizer 讀呢個 shape 計 SSI / grade / Kelly
+ *  M8 Decision Engine 讀呢個 shape 推導 finalAction + trading card
+ */
+export interface ModuleStandardVerdict {
+  // 5 個 core fields (所有 modules 必有)
+  state: CycleState;             // UP / DOWN / SIDEWAYS / TRANSITION / TRAP
+  confidence: number;            // 0-1, 信心分數
+  base_weight: number;           // 0-1, 畀 SSI 加權用 (大少 2026-08-08 12:00: 5 個 modules 加埋 = 1.0, 跟 5 個 adaptive params 嘅 SSI 戰略層權重 auto-calibrate)
+  expected_return: number;       // -0.1 ~ +0.1, 預期回報率 (例如 +0.05 = 5%)
+  max_drawdown_estimate: number; // 0 ~ 0.3, 估計最大回撤 (例如 0.08 = 8%)
+
+  // 6 維情緒雷達 (M7/M8 會畫成 radar chart)
+  sentiment_6d: Sentiment6D;
+
+  // Trace
+  rules_fired: string[];         // 命中嘅 rule IDs (e.g. ["A", "H-G"])
+  module_id: CycleModuleId;      // 邊個 module 出嘅 verdict (M7 用嚟辨識)
+  module_specific: Record<string, unknown>;  // 保留 module 自己嘅 detail fields (向後兼容)
+  timestamp: number;
+}
+
+/** 6 個 modules 嘅 base_weight 預設值
+ *  大少 2026-08-08 12:00 確認嘅 defaults, 之後跟 5 個 adaptive params
+ *  嘅 SSI 戰略層權重 auto-calibrate (runtime 60 日 R² 重新 normalize)
+ *  6 個 modules 加埋 = 1.00 (M7 內部 normalize 用呢個做 base)
+ *
+ *  Rationale:
+ *    ma-alignment 0.25 — 大多數 technical analysis 嘅基礎
+ *    hl-structure 0.15  — 形態識別, 但慢
+ *    trendline 0.20     — 支撐/壓力 + 突破檢測
+ *    indicators 0.15    — 情緒指標, 補充
+ *    volume 0.15        — 量能 confirm, 重要但 non-trending 時 noise 大
+ *    volatility 0.10    — 波動率, 影響 Kelly 倉位多過方向
+ */
+export const BASE_WEIGHTS: Record<CycleModuleId, number> = {
+  'ma-alignment': 0.25,
+  'hl-structure': 0.15,
+  'trendline': 0.20,
+  'indicators': 0.15,
+  'volume': 0.15,
+  'volatility': 0.10,
+  // 大少 2026-08-07 23:15 — slope-momentum 暫時隱藏, Stage 1 done 最後先做返
+  // 'slope-momentum': 0.10,
+};
+// 註: 加埋 = 1.00, M7 內部直接用, 唔需要 normalize
+// 註 2: 跟 5 個 adaptive params 嘅 SSI 戰略層權重 auto-calibrate 會重 scale, 保持總和 = 1.0

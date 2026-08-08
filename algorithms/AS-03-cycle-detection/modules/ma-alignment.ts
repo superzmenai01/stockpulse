@@ -24,9 +24,10 @@
 // Docx: docs/演算法概念SPECS/01均線系統週期判斷法.docx (Kimi v2.0)
 
 import type {
-  CycleContext, CycleModule, CycleVerdict, KLine,
+  CycleContext, CycleModule, CycleVerdict, KLine, ModuleStandardVerdict,
 } from '../types.ts';
 import { DEFAULT_MA_ALIGNMENT_V2_CONFIG, type MAAlignmentV2Config } from '../config.ts';
+import { runAndStandardize } from '../std-verdict.ts';
 
 export type MAAlignmentV2Cycle = 'uptrend' | 'downtrend' | 'sideways';
 export type MAAlignmentV2VolumeSignal = 'expanding' | 'shrinking' | 'neutral';
@@ -356,3 +357,21 @@ export class MAAlignmentV2Module implements CycleModule<KLine[]> {
 }
 
 export default MAAlignmentV2Module;
+
+// =============================================================
+// 大少 2026-08-08 12:00 — Sprint 1 sub-task 1.1 — M7 standard verdict wrapper
+// =============================================================
+/** M1 MA alignment v2.0 嘅 standard verdict wrapper
+ *  將 CycleVerdict (含 maValues / maRanks / volumeTrendRatio / momentumScore 等)
+ *  轉成 ModuleStandardVerdict (4 個 fields + sentiment_6d)
+ *  @example
+ *    const sv = await toStandardVerdictMA(klines, { symbol: 'HK.00700', ltf: '1d' });
+ *    console.log(sv.base_weight);  // 0.25
+ */
+export async function toStandardVerdictMA(
+  klines: KLine[],
+  ctx: CycleContext,
+  config: MAAlignmentV2Config = DEFAULT_MA_ALIGNMENT_V2_CONFIG,
+): Promise<ModuleStandardVerdict> {
+  return runAndStandardize(new MAAlignmentV2Module(config), klines, ctx, 'ma-alignment');
+}

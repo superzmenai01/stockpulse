@@ -79,9 +79,11 @@ async function main() {
   const maVerdict = await detector.runModule('ma-alignment', dummyKlines, {
     symbol: 'TEST', ltf: '1d',
   });
-  assert("maVerdict.moduleId === 'ma-alignment'", maVerdict.moduleId === 'ma-alignment');
-  assert('maVerdict.state valid (UP/DOWN/SIDEWAYS/TRANSITION)',
-    ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION'].includes(maVerdict.state));
+  // 大少 2026-08-08 12:00: Sprint 1 — M1 v2.0 嘅 module class id 係 'ma-alignment-v2'
+  //   (之前 v0.3.0 zmen均算法 嘅 id 係 'ma-alignment', 但 v0.3.0 已經抽離獨立, 唔屬 7 個 modules)
+  assert("maVerdict.moduleId === 'ma-alignment-v2'", maVerdict.moduleId === 'ma-alignment-v2');
+  assert('maVerdict.state valid (UP/DOWN/SIDEWAYS/TRANSITION/TRAP)',
+    ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION', 'TRAP'].includes(maVerdict.state));
   assert('maVerdict.confidence >= 0', maVerdict.confidence >= 0);
   assert('maVerdict.interpretation truthy', typeof maVerdict.interpretation === 'string' && maVerdict.interpretation.length > 0);
   assert('maVerdict.timestamp is number', typeof maVerdict.timestamp === 'number');
@@ -96,8 +98,9 @@ async function main() {
   assert("report.symbol === 'TEST'", report.symbol === 'TEST');
   assert("report.ltf === '1d'", report.ltf === '1d');
   // 大少 #10809 — 預設 enableFlags: maAlignment/volumePrice/hl-structure/trendline/indicators ON
-  //   大少 2026-08-07 23:15 — slopeMomentum 暫時隱藏,所以 report.moduleVerdicts.length 仍然係 5
-  assert('report.moduleVerdicts.length === 5', report.moduleVerdicts.length === 5);
+  // 大少 2026-08-07 23:15 — slopeMomentum 暫時隱藏,所以以前係 5
+  // 大少 2026-08-08 12:00: Sprint 1 — 加埋 'volatility' (M6), 所以而家係 6
+  assert('report.moduleVerdicts.length === 6', report.moduleVerdicts.length === 6);
   assert('report.alerts.length === 0 (no HTF klines)', report.alerts.length === 0);
   assert('report.synthesized defined', report.synthesized !== undefined);
   assert('report.timestamp is number', typeof report.timestamp === 'number');

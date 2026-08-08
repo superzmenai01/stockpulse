@@ -23,9 +23,10 @@
 // - Plain language 解讀 (大少 #10299)
 
 import type {
-  CycleContext, CycleModule, CycleVerdict, Evidence, KLine, CycleState,
+  CycleContext, CycleModule, CycleVerdict, Evidence, KLine, CycleState, ModuleStandardVerdict,
 } from '../types.ts';
 import { DEFAULT_INDICATORS_CONFIG, type IndicatorsConfig } from '../config.ts';
+import { runAndStandardize } from '../std-verdict.ts';
 
 // ============ Internal types ============
 
@@ -739,3 +740,19 @@ export class IndicatorsModule implements CycleModule<KLine[]> {
 }
 
 export default IndicatorsModule;
+
+// =============================================================
+// 大少 2026-08-08 12:00 — Sprint 1 sub-task 1.1 — M7 standard verdict wrapper
+// =============================================================
+/** M4 Indicators (RSI/MACD/背馳/衰竭) 嘅 standard verdict wrapper
+ *  @example
+ *    const sv = await toStandardVerdictIND(klines, { symbol: 'HK.00700', ltf: '1d' });
+ *    console.log(sv.base_weight);  // 0.15
+ */
+export async function toStandardVerdictIND(
+  klines: KLine[],
+  ctx: CycleContext,
+  config: IndicatorsConfig = DEFAULT_INDICATORS_CONFIG,
+): Promise<ModuleStandardVerdict> {
+  return runAndStandardize(new IndicatorsModule(config), klines, ctx, 'indicators');
+}

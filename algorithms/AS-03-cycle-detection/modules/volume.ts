@@ -30,9 +30,10 @@
 //   signal: CONFIRM / DISCONFIRM / NEUTRAL (供 M1 alignment 使用)
 
 import type {
-  CycleContext, CycleModule, CycleVerdict, KLine, SignalType,
+  CycleContext, CycleModule, CycleVerdict, KLine, ModuleStandardVerdict, SignalType,
 } from '../types.ts';
 import { DEFAULT_VOLUME_PRICE_CONFIG, type VolumePriceConfig } from '../config.ts';
+import { runAndStandardize } from '../std-verdict.ts';
 
 interface MatchedRule {
   id: string;
@@ -668,4 +669,20 @@ export class VolumePrice implements CycleModule<KLine[]> {
     if (cycle === 'downtrend') return 'DOWN';
     return 'SIDEWAYS';
   }
+}
+
+// =============================================================
+// 大少 2026-08-08 12:00 — Sprint 1 sub-task 1.1 — M7 standard verdict wrapper
+// =============================================================
+/** M5 VolumePrice v2.0 嘅 standard verdict wrapper
+ *  @example
+ *    const sv = await toStandardVerdictVP(klines, { symbol: 'HK.00700', ltf: '1d' });
+ *    console.log(sv.base_weight);  // 0.15
+ */
+export async function toStandardVerdictVP(
+  klines: KLine[],
+  ctx: CycleContext,
+  config: VolumePriceConfig = DEFAULT_VOLUME_PRICE_CONFIG,
+): Promise<ModuleStandardVerdict> {
+  return runAndStandardize(new VolumePrice(config), klines, ctx, 'volume');
 }

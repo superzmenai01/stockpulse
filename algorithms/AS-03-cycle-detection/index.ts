@@ -11,11 +11,13 @@ import type {
   CycleContext, CycleModuleId, CycleReport, CycleState, CycleVerdict, KLine,
 } from './types.ts';
 
-import { ZmenMAAlignmentModule } from './modules/zmen-ma-alignment.ts';  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算法
+import { ZmenMAAlignmentModule } from './modules/zmen-ma-alignment.ts';  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算法 (獨立算法, 唔屬 7 個 modules)
+import { MAAlignmentV2Module } from './modules/ma-alignment.ts';  // 大少 2026-08-08 12:00: Sprint 1 — M1 v2.0 應該係 7 個 modules 嘅 M1, 而 zmen均算法 係獨立
 import { HLStructureModule } from './modules/hl-structure.ts';
 import { TrendlineModule } from './modules/trendline.ts';
 import { IndicatorsModule } from './modules/indicators.ts';
 import { VolumePrice } from './modules/volume.ts';
+import { VolatilityModule } from './modules/volatility.ts';  // 大少 2026-08-08 12:00: Sprint 1 — M6 應該加入 CycleDetector
 // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
 // import { SlopeMomentum } from './modules/slope-momentum.ts';
 
@@ -39,6 +41,7 @@ export interface AnalyzeOptions {
 /**
  * 將 user-friendly EnableFlags 轉成 Record<CycleModuleId, boolean>
  * 對應: maAlignment → ma-alignment, volumePrice → volume, 等
+ * 大少 2026-08-08 12:00: Sprint 1 — 加 'volatility' 映射
  */
 function enableFlagsToRecord(flags: EnableFlags): Record<CycleModuleId, boolean> {
   return {
@@ -48,6 +51,7 @@ function enableFlagsToRecord(flags: EnableFlags): Record<CycleModuleId, boolean>
     'hl-structure': flags.hlStructure,
     'trendline': flags.trendline,
     'indicators': flags.indicators,
+    'volatility': flags.volatility,
   };
 }
 
@@ -76,11 +80,12 @@ export class CycleDetector {
 
   constructor() {
     this.modules = {
-      'ma-alignment': new ZmenMAAlignmentModule(),  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算法
+      'ma-alignment': new MAAlignmentV2Module(),  // 大少 2026-08-08 12:00: Sprint 1 — M1 = MAAlignmentV2Module (新 v2.0), 而 ZmenMAAlignmentModule 係 zmen均算法 (獨立算法, 唔屬 7 個 modules)
       'hl-structure': new HLStructureModule(),
       'trendline': new TrendlineModule(),
       'indicators': new IndicatorsModule(),
       'volume': new VolumePrice(),
+      'volatility': new VolatilityModule(),  // 大少 2026-08-08 12:00: Sprint 1 — M6 加入 CycleDetector
       // 大少 2026-08-07 23:15 — slope-momentum 暫時隱藏,Stage 1 done 最後先做返
     };
     this.multiTF = new MultiTFOrchestrator();
@@ -215,12 +220,20 @@ export class CycleDetector {
 // Re-exports
 export * from './types.ts';
 export * from './config.ts';
+// 大少 2026-08-08 12:00 — Sprint 1 sub-task 1.1 — re-export std-verdict helpers
+export {
+  toStandardVerdict, runAndStandardize,
+  computeSentiment6D, computeExpectedReturn, computeMaxDrawdownEstimate,
+  type ToStandardVerdictInput, type RunAndStandardizeOptions,
+} from './std-verdict.ts';
 
 export { ZmenMAAlignmentModule } from './modules/zmen-ma-alignment.ts';  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算法
-export { HLStructureModule } from './modules/hl-structure.ts';
-export { TrendlineModule } from './modules/trendline.ts';
-export { IndicatorsModule } from './modules/indicators.ts';
-export { VolumePrice } from './modules/volume.ts';
+export { MAAlignmentV2Module, toStandardVerdictMA } from './modules/ma-alignment.ts';
+export { HLStructureModule, toStandardVerdictHL } from './modules/hl-structure.ts';
+export { TrendlineModule, toStandardVerdictTL } from './modules/trendline.ts';
+export { IndicatorsModule, toStandardVerdictIND } from './modules/indicators.ts';
+export { VolumePrice, toStandardVerdictVP } from './modules/volume.ts';
+export { VolatilityModule, toStandardVerdictVOL } from './modules/volatility.ts';
 // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
 // export { SlopeMomentum } from './modules/slope-momentum.ts';
 

@@ -119,6 +119,7 @@ export const DEFAULT_VOLATILITY_CONFIG: VolatilityConfig = {
  *
  * maAlignment = core mandatory (always true, 唔可以 disable)
  * 其他 5 個 module 都可以 toggle
+ * 大少 2026-08-08 12:00: Sprint 1 — 加 'volatility' (M6)
  */
 export interface EnableFlags {
   maAlignment: true;                 // core — locked true
@@ -127,6 +128,7 @@ export interface EnableFlags {
   hlStructure: boolean;
   trendline: boolean;
   indicators: boolean;
+  volatility: boolean;               // 大少 2026-08-08 12:00: Sprint 1 — 加 M6 波動率
 }
 
 export const DEFAULT_ENABLE_FLAGS: EnableFlags = {
@@ -136,6 +138,7 @@ export const DEFAULT_ENABLE_FLAGS: EnableFlags = {
   hlStructure: true,
   trendline: true,                   // 趨勢線預設 ON
   indicators: true,
+  volatility: true,                  // 大少 2026-08-08 12:00: Sprint 1 — M6 波動率預設 ON
 };
 
 /**
