@@ -48,6 +48,8 @@
 
 ## 2. Stage 1 內部排序（最 critical 嘅先做）
 
+> **大少 2026-08-08 08:47 更新:** 舊 M1「均線系統週期斷法」改名「zmen均算去」, 從 7 個 modules 抽離獨立處理。新 M1 位置 (新 spec) 等大少提供, 仲叫「均線系統週期斷法」。
+
 | 優先 | Module | 狀態 (2026-08-08) | 點解先做 |
 |------|--------|------|----------|
 | 🥇 | ~~Module 6: Multi-TF~~ | ⏸️ Hidden 等 Stage 1 done | Entry Timing 嘅基礎 — 但 testing page 唔支援 multi-timeframe, 大少 2026-08-07 23:15 指示 Stage 1 done 先做返 |
@@ -56,21 +58,28 @@
 | 4 | Module 5: VolumePrice v2.0 (overwrite Volume OBV) | ✅ v2.0.0 done (47/47) | 量能 confirm, 完整 9 個根治 vs v1.0 |
 | 5 | Module 6: Volatility (新定義, 取代 Multi-TF) | ✅ v1.0.0 done (32/32) | 波動率收縮擴張, Squeeze + VCP + ATR 分解 |
 | 6 | **Module 7: Synthesizer** | 🚧 Pending (Stage 1 最後一個) | 最後做（要 aggregate 1-6 結果，Confluence 都可以做類似嘢）|
+| 🚧 1 | **Module 1: 均線系統週期斷法 (新 spec)** | 🚧 **Pending** | 大少 2026-08-08 08:47 將提供新 spec, 新 algorithm 唔一定等於舊 M1 邏輯 |
+| ⭐ 獨立 | **zmen均算去** (舊 M1 抽出) | ✅ v0.3.0 (19/19) | 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 獨立一類 |
 
 ---
 
 ## 3. 12 Modules 目標設計
 
-### 而家 7 個 modules (AS-03 既有)
+### 而家 7 個 modules (AS-03 既有) — 大少 2026-08-08: M1 位置暫空, 等新 spec
 | # | Module | Status (2026-08-08) | 功用 |
 |---|--------|--------|------|
-| 1 | MA Alignment | ✅ v0.3.0 done (19/19) | 10 條 rule A-J 識別走勢 + 轉勢 |
+| 1 | **均線系統週期斷法 (新 spec)** | 🚧 **Pending** | 大少 2026-08-08 將提供新 spec, 新 algorithm 唔一定等於舊 M1 邏輯 |
 | 2 | HL Structure | ✅ v0.1.0 done (12/12) | peaks/troughs + 形態 (頭肩頂/雙底) |
 | 3 | Trendline | ✅ v0.1.0 done (20/20) | 10 條 rule A-J, 動態 OLS + 觸線 + 真假突破 |
 | 4 | Indicators 動能背馳與衰竭 | ✅ v1.0.0 done (36/36) | RSI + MACD + Bollinger + 背馳 + 衰竭 |
 | 5 | VolumePrice 成交量價格行為確認 | ✅ v2.0.0 done (47/47) | 15 rules V1-V15, 9 個根治 vs v1.0 |
 | 6 | Volatility 波動率收縮擴張 | ✅ v1.0.0 done (32/32) | 12 rules S1-S12, Squeeze + VCP + ATR 分解 |
 | 7 | Synthesizer | 🚧 Pending | 1-6 綜合判決 (Stage 1 最後一個) |
+
+### 獨立算法 (大少 2026-08-08 抽出, 唔屬 7 個 modules 之一)
+| Module | Status | 功用 |
+|--------|--------|------|
+| **zmen均算去** (舊 M1 改名) | ✅ v0.3.0 done (19/19) | MA5/10/60 排列 + 10 條 rule A-J — 抽離獨立處理, 排去 dropdown 最後 |
 
 ### 隱藏 (Stage 1 done 先做返)
 | # | Module | Status | 功用 |

@@ -1399,17 +1399,18 @@ if (currentAdapter.renderChartOverlay) {
 
 `algorithms/AS-03-cycle-detection/` — 股票週期判定系統,Stage 1 (完成 Module 1-7) Roadmap。
 
-### Module 進度 (7 個 done + 2 個 hidden 等 Stage 1 done)
+### Module 進度 (6 個 done + 1 個 Pending + 1 個獨立 + 2 個 hidden)
 
 | # | Module | 檔案 | Version | 3 Sections | Status |
 |---|--------|------|---------|-----------|--------|
-| 1 | MA Alignment 均線系統 | `modules/ma-alignment.ts` | v0.3.0 | ✅ | ✅ Production |
+| 1 | **均線系統週期斷法 (新 spec)** | TBD | — | — | 🚧 **Pending** — 大少 2026-08-08 08:47 將提供新 spec (新 algorithm 唔一定等於舊 M1 邏輯) |
 | 2 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
 | 3 | Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
 | 4 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ | ✅ Production (RSI + MACD + Bollinger + 背馳 + 衰竭) |
-| 5 | **VolumePrice 成交量價格行為確認** | `modules/volume.ts` | **v2.0.0** | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) |
+| 5 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | v2.0.0 | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) |
 | 6 | **Volatility 波動率收縮擴張** | `modules/volatility.ts` | **v1.0.0** | ✅ | ✅ Production (全新, 12 rules S1-S12, 5 setups, 3 failure modes) |
 | 7 | Synthesizer 綜合判定 | TBD | — | — | 🚧 Pending (Stage 1 最後一個) |
+| **獨立** | **zmen均算去** (舊 M1 抽出) | `modules/ma-alignment.ts` | v0.3.0 | ✅ | ⭐ **獨立算法** — 大少 2026-08-08 08:47 將舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ 隱藏 (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — | ⏸️ Hidden — 大少 2026-08-07 23:15 指示等 Stage 1 全部 done 先做返 |
 | ⏸️ 隱藏 (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — | ⏸️ Hidden — 大少 2026-08-07 23:15 指示等 Stage 1 全部 done 先做返 |
 
@@ -1440,13 +1441,14 @@ if (currentAdapter.renderChartOverlay) {
 
 | Module | Spec 連結 | 備註 |
 |--------|-----------|------|
-| 1. MA Alignment | `MODULE-01-MA-ALIGNMENT.md` | v0.3.0 (10 rules A-J) |
+| 1. 均線系統週期斷法 (新) | TBD | 🚧 Pending — 大少 2026-08-08 08:47 將提供新 spec |
 | 2. HL Structure | `MODULE-02-HL-STRUCTURE.md` | v0.1.0 (Peak-Trough) |
 | 3. Trendline | `MODULE-03-TRENDLINE.md` | v0.1.0 (10 rules A-J) |
 | 4. Indicators | `MODULE-04-MOMENTUM-DIVERGENCE.md` | v1.0.0 (RSI/MACD/背馳/衰竭) |
 | 5. VolumePrice v2.0 | `MODULE-05-VOLUME-PRICE-V2.md` | **v2.0 overwrite** (15 rules V1-V15, 5 buy + 4 減分, 9 個根治 vs v1.0) |
 | 6. Volatility | `MODULE-06-VOLATILITY.md` | **v1.0 全新** (12 rules S1-S12, Squeeze + ATR 分解 + VCP, 5 setups, 3 failure modes) |
 | 7. Synthesizer | `MODULE-07-SYNTHESIZER.md` | 草案 (Stage 1 最後一個) |
+| **獨立 (zmen均算去)** | `MODULE-01-MA-ALIGNMENT.md` (舊 M1) | v0.3.0 (10 rules A-J) — 舊 M1 抽離獨立處理, 仲叫呢個 spec doc |
 | ⏸️ Hidden Multi-TF | — | 已刪除 spec (v1.0 仍喺 archive) |
 | ⏸️ Hidden SlopeMomentum | — | 已刪除 spec (v1.0 仍喺 archive) |
 
@@ -1535,7 +1537,8 @@ if (currentAdapter.renderChartOverlay) {
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
-| 2026-08-08 | 大少「Update Stockpulse」(今 turn) | `6441feef` + `2280f7d0` + `79eaa3ae` + `9de7f0eb` + `47a9e88a` + `a58ce65c` | ARCHITECTURE §11 (Module 5/6 done, 2 hidden, Spec 連結 table), §13.2 (qfq 永久 fix done) |
+| 2026-08-08 | **大少 2026-08-08 08:47: M1 改名 + 抽出獨立 (今 turn)** | TBD (Step 1 patch) | ARCHITECTURE §11 (6 done + 1 pending + 1 獨立 + 2 hidden, Spec 連結), README §AS03 模組, PROJECT_SPEC §Module 結構 + Testing page, ROADMAP §2+§3, testing-page.js REGISTRY (M1 搬去尾, displayName `AS-03-MA` → `zmen均算去`) |
+| 2026-08-08 | 大少「Update Stockpulse」(上 turn) | `fdc5321d` + `6441feef` + `2280f7d0` + `79eaa3ae` + `9de7f0eb` + `47a9e88a` + `a58ce65c` | ARCHITECTURE §11 (Module 5/6 done, 2 hidden, Spec 連結 table), §13.2 (qfq 永久 fix done) |
 | 2026-08-07 | 大少「Update Stockpulse」(上 turn) | `bf46c232` + `c2b8b278` + `1dab3422` + `c0152bae` + `ec8b2cfe` + `9aa429fe` | ARCHITECTURE §11-14, API §K-line endpoint, README §Algorithm System, PROJECT_SPEC §Algorithm |
 | 2026-08-06 | 大少 #8602 KlineCache v2 | `2f1f8cc7` 等 | ARCHITECTURE §3.5 |
 | 2026-08-06 | AS-02 Spec sync | `4dfe7771` | ARCHITECTURE §4 |

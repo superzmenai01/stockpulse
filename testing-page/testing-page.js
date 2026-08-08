@@ -19,61 +19,68 @@ const BACKEND_URL = 'http://localhost:18792';
 // ===== Algorithm Registry（永久 design）=====
 // 加新 algorithm: 寫 algorithms/AS-XX/adapter.mjs + 加 1 行去呢度
 //
-// adapterExport (optional): 如果 adapter.mjs export 多過一個 adapter，
+// adapterExport (optional): 如果 adapter.mjs export 多過一個 adapter,
 //   用呢個 field 指定要攞邊一個 named export
 //   例: adapterExport: 'volumePriceAdapter' 會取 adapter.volumePriceAdapter
+//
+// === 大少 2026-08-08 08:47 指示 ===
+// 舊 M1「均線系統週期斷法」改名「zmen均算去」, 從 7 個 modules 抽離
+// (唔屬於 AS-03 7 個 modules 計算)。REGISTRY array 將 zmen均算去
+// 放最尾, 7 個 modules 嘅 M2-M6 排位不變。
+// 新 M1 位置 (AS-03 7 個 modules 嘅第 1 個) 暫時空, 等大少提供新 spec。
+// ===========================================================================
 const REGISTRY = [
-  {
-    id: 'AS-03',
-    displayName: 'AS-03-MA',  // 大少 #11085 (2026-08-07): dropdown 顯示用 MA suffix, 跟 AS-03-HL / AS-03-TL naming pattern
-    folder: 'AS-03-cycle-detection',
-    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    // 預設 = 頂層 exports (向後兼容 ma-alignment adapter)
-    // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
-    //   唔再獨立 expose AS-03-VP dropdown
-    // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
-  },
-  // 2026-08-07 大少 + MiniMax Code — Module 2 v0.1.0 (高低點結構法)
-  // 獨立 entry, named export `hlStructureAdapter` 喺 adapter.mjs
+  // ---- AS-03 7 個 modules (M1 暫時空, M2-M6 done, M7 仍 Pending) ----
+  // M2: 高低點結構法 (原本 M2, 排位不變)
   {
     id: 'AS-03-HL',
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'hlStructureAdapter',
   },
-  // 2026-08-07 大少 + MiniMax Code — Module 3 v0.1.0 (趨勢線法)
-  // 獨立 entry, named export `trendlineAdapter` 喺 adapter.mjs
+  // M3: 趨勢線法
   {
     id: 'AS-03-TL',
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'trendlineAdapter',
   },
-  // 2026-08-07 大少 + MiniMax Code — Module 4 v1.0.0 (動能背馳與衰竭)
-  // 獨立 entry, named export `indicatorsAdapter` 喺 adapter.mjs
+  // M4: 動能背馳與衰竭
   {
     id: 'AS-03-IND',
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'indicatorsAdapter',
   },
-  // 2026-08-08 大少 + MiniMax Code — Module 5 v2.0.0 (成交量價格行為確認)
-  // 獨立 entry, named export `volumePriceAdapter` 喺 adapter.mjs
-  // 完整重寫 v1.0 → v2.0, 15 條 rule (V1-V15), 5 種 buy + 4 種減分覆蓋
+  // M5: 成交量價格行為確認 v2.0
   {
     id: 'AS-03-VP',
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'volumePriceAdapter',
   },
-  // 2026-08-08 大少 + MiniMax Code — Module 6 v1.0.0 (波動率收縮擴張)
-  // 獨立 entry, named export `volatilityAdapter` 喺 adapter.mjs
-  // 全新 module, 12 條 rule (S1-S12), 5 種 setup, 3 種 failure mode
+  // M6: 波動率收縮擴張
   {
     id: 'AS-03-VOL',
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'volatilityAdapter',
+  },
+  // (M1: 新均線系統週期斷法 — 🚧 Pending, 等大少提供新 spec)
+  // (M7: Synthesizer — 🚧 Pending, Stage 1 最後一個)
+  // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
+  // 舊 M1 改名「zmen均算去」, 搬去 REGISTRY 尾
+  // 大少 2026-08-08 08:47:「zmen均算去」係大少自己想出嚟嘅算法, 從
+  // 7 個 modules 抽離, 排去 dropdown 最後, 獨立一類
+  {
+    id: 'AS-03',
+    displayName: 'zmen均算去',  // 大少 2026-08-08 08:47: 舊 M1 改名 + 抽離 7 個 modules
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    // 預設 = 頂層 exports (向後兼容 ma-alignment adapter 嘅 analyze 函數)
+    // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
+    //   唔再獨立 expose AS-03-VP dropdown
+    // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返
   },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
