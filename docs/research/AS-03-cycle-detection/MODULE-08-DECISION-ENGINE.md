@@ -346,6 +346,47 @@ open http://localhost:8765/testing-page/
 
 ## 12. Changelog
 
+## 13. 10 隻 Demo 股票 Test Cases (Sprint 2 sub-task 2.7)
+
+大少 11:39 confirm 嘅 10 隻 demo 股票 (5 港 + 5 美):
+
+| Symbol | Name | Mock startPrice | Volatility |
+|--------|------|----------------|------------|
+| 🇭🇰 HK.00700 | 騰訊 | $380 | 1.8% |
+| 🇭🇰 HK.09988 | 阿里 | $85 | 2.2% |
+| 🇭🇰 HK.03690 | 美團 | $120 | 2.5% |
+| 🇭🇰 HK.01024 | 快手 | $50 | 3.0% |
+| 🇭🇰 HK.01810 | 小米 | $15 | 2.5% |
+| 🇺🇸 US.AAPL | 蘋果 | $175 | 1.5% |
+| 🇺🇸 US.MSFT | 微軟 | $380 | 1.3% |
+| 🇺🇸 US.GOOG | 谷歌 | $140 | 1.8% |
+| 🇺🇸 US.NVDA | 英偉達 | $850 | 3.0% |
+| 🇺🇸 US.TSLA | 特斯拉 | $240 | 3.5% |
+
+**Test approach** (deterministic + reproducible):
+- 每個 symbol 用 hash 拎 stable seed
+- Seeded random walk (LCG) 生成 252 日 mock klines
+- 跑完整 flow: `calibrateAdaptiveParams` + `engine.decide()` + verify output
+- 唔 fetch 真實數據 (避免 backend 依賴)
+
+**Tests**: 10 stocks × 20 assertions = **200 assertions**, 100% pass (decision-engine-demo.test.mjs)
+
+每隻股票 20 個 assertion categories:
+1. 252 個 mock klines 生成成功
+2. 所有 OHLC > 0
+3. `calibrateAdaptiveParams` 唔 crash
+4-8. 5 個 adaptive params 全部 valid range (ssiWeights sum = 1.0, rsiWeight 0.1-0.5, kellyFraction in [half, quarter, octo], markowitzCorr 3 對 in [-1, +1], hurstThresholds 0.5/0.45 ± 0.05)
+9. `engine.decide()` 唔 crash
+10. finalAction 8 個之一 (唔係 unknown)
+11-15. trading card 4 個 fields 全部 > 0
+16. entry_zone[0] < entry_zone[1] (low < high)
+17. stop_loss < currentPrice < take_profit (邏輯 sanity check)
+18. 9 個 short_term_forecast
+19. interpretation 唔空
+20. 9 個 forecast probability 總和 = 3.0 (3 scenarios × 3 timeframes × 1.0)
+
+## 12. Changelog
+
 | Date | Version | 改動 | Commit |
 |------|---------|------|--------|
 | 2026-08-08 13:30 | v0.0.0 (stub) | M8 spec doc 拆返自 MODULE-07-08-DECISION-ENGINE.md (Plan A 拆返 M7+M8) | 36496159 |
@@ -354,4 +395,5 @@ open http://localhost:8765/testing-page/
 | 2026-08-08 16:08 | v1.2.0 (sub-task 2.3) | 短期走勢預測 9 scenarios (3 × 3 timeframes) + 3 × 3 table render + example + algorithm | 8ad3af82 |
 | 2026-08-08 16:15 | v1.3.0 (sub-task 2.4) | 人話詳細解讀 (LLM hook 預留 + 8 個 hardcoded template + InterpretationContext interface) | 917cc08d |
 | 2026-08-08 16:25 | v2.0.0 (sub-task 2.5) | 5 個 adaptive params runtime auto-calibrate (純 math: R²/ATR/Pearson/Hurst + apply + 3 個 market data detect helpers) | f33774e9 |
-| 2026-08-08 16:35 | v2.1.0 (sub-task 2.6) | L2 JSON file cache (~/.stockpulse/adaptive_params/) + Python FastAPI GET/POST/DELETE + 「🔄 重新校準」按鈕 (UI placeholder) | TBD (本 commit) |
+| 2026-08-08 16:35 | v2.1.0 (sub-task 2.6) | L2 JSON file cache (~/.stockpulse/adaptive_params/) + Python FastAPI GET/POST/DELETE + 「🔄 重新校準」按鈕 (UI placeholder) | 16388296 |
+| 2026-08-08 16:45 | v2.2.0 (sub-task 2.7) | 10 隻 demo 股票 test cases (5 港 + 5 美, seeded random walk 252 日 klines, 200 assertions) | TBD (本 commit) |
