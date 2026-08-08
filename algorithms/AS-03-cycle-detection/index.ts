@@ -11,7 +11,7 @@ import type {
   CycleContext, CycleModuleId, CycleReport, CycleState, CycleVerdict, KLine,
 } from './types.ts';
 
-import { MAAlignmentModule } from './modules/ma-alignment.ts';
+import { ZmenMAAlignmentModule } from './modules/zmen-ma-alignment.ts';  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算去
 import { HLStructureModule } from './modules/hl-structure.ts';
 import { TrendlineModule } from './modules/trendline.ts';
 import { IndicatorsModule } from './modules/indicators.ts';
@@ -76,7 +76,7 @@ export class CycleDetector {
 
   constructor() {
     this.modules = {
-      'ma-alignment': new MAAlignmentModule(),
+      'ma-alignment': new ZmenMAAlignmentModule(),  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算去
       'hl-structure': new HLStructureModule(),
       'trendline': new TrendlineModule(),
       'indicators': new IndicatorsModule(),
@@ -216,7 +216,7 @@ export class CycleDetector {
 export * from './types.ts';
 export * from './config.ts';
 
-export { MAAlignmentModule } from './modules/ma-alignment.ts';
+export { ZmenMAAlignmentModule } from './modules/zmen-ma-alignment.ts';  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算去
 export { HLStructureModule } from './modules/hl-structure.ts';
 export { TrendlineModule } from './modules/trendline.ts';
 export { IndicatorsModule } from './modules/indicators.ts';

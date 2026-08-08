@@ -1,4 +1,9 @@
-// modules/ma-alignment.ts — AS-03 · 點 1: 均線系統週期判斷法 (v0.3.0)
+// modules/zmen-ma-alignment.ts — AS-03 · zmen均算去 (舊 M1 MA Alignment v0.3.0 改名抽離)
+//
+// 大少 2026-08-08 08:47 指示: 舊 M1「均線系統週期斷法」改名「zmen均算去」,
+// 從 7 個 modules 抽離獨立處理, 唔屬於 AS-03 7 個 modules 計算。
+// Module id 'ma-alignment' 保留 (Synthesizer + testing page 仲有引用),
+// display name 喺 testing page REGISTRY 用 'zmen均算去' 顯示。
 //
 // 大少 #10332 決定: 全部 Kimi v0.2.0 算法刪走，換上大少嘅 A-J 10 條 rule
 //
@@ -28,9 +33,9 @@ import type {
 } from '../types.ts';
 import { DEFAULT_MA_ALIGNMENT_CONFIG, type MAAlignmentConfig } from '../config.ts';
 
-export class MAAlignmentModule implements CycleModule<KLine[]> {
-  readonly id = 'ma-alignment' as const;
-  readonly version = '0.3.0';  // ⬆️ 0.2.0 → 0.3.0 (大少 #10332 大改)
+export class ZmenMAAlignmentModule implements CycleModule<KLine[]> {
+  readonly id = 'ma-alignment' as const;  // moduleId 保留, display name 由 testing page REGISTRY 控制
+  readonly version = '0.3.0';  // v0.3.0 (大少 #10332 大改) — 抽離 7 個 modules 後獨立 maintain
 
   private readonly cfg: MAAlignmentConfig;
 
@@ -44,7 +49,7 @@ export class MAAlignmentModule implements CycleModule<KLine[]> {
     // ============ Step 1: 數據驗證 ============
     if (klines.length < cfg.minDataDays) {
       throw new Error(
-        `[MAAlignment] Insufficient data: need ≥ ${cfg.minDataDays} bars, got ${klines.length}`,
+        `[ZmenMAAlignment] Insufficient data: need ≥ ${cfg.minDataDays} bars, got ${klines.length}`,
       );
     }
     // 取最後 dataWindowDays 條 (< dataWindowDays 就全部用)
@@ -286,4 +291,4 @@ function round(value: number, decimals: number): number {
   return Math.round(value * factor) / factor;
 }
 
-export default MAAlignmentModule;
+export default ZmenMAAlignmentModule;

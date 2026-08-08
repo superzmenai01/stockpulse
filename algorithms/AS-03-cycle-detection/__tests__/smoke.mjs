@@ -10,7 +10,7 @@ import {
   CycleDetector,
   VERSION,
   DEFAULT_MA_ALIGNMENT_CONFIG,
-  MAAlignmentModule,
+  ZmenMAAlignmentModule,  // 大少 2026-08-08 09:13: 舊 M1 改名 zmen均算去, class name 跟住改
   HLStructureModule,
   TrendlineModule,
   IndicatorsModule,
@@ -58,7 +58,7 @@ async function main() {
 
   // Test 3: 5 個 peer modules instantiate (大少 #10809 — Module 5 VolumePrice)
   //   大少 2026-08-07 23:15 — Module 8 SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
-  assert("MAAlignmentModule.id === 'ma-alignment'", new MAAlignmentModule().id === 'ma-alignment');
+  assert("ZmenMAAlignmentModule.id === 'ma-alignment'", new ZmenMAAlignmentModule().id === 'ma-alignment');
   assert("HLStructureModule.id === 'hl-structure'", new HLStructureModule().id === 'hl-structure');
   assert("TrendlineModule.id === 'trendline'", new TrendlineModule().id === 'trendline');
   assert("IndicatorsModule.id === 'indicators'", new IndicatorsModule().id === 'indicators');
