@@ -619,6 +619,7 @@ function renderMAResult(verdict) {
   const color = stateColors[verdict.state] || '#666';
   const stateLabel = stateLabels[verdict.state] || verdict.state;
   const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 信號強' : verdict.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
 
   const matchedRules = verdict.meta?.matchedRules || [];
   const evidence = verdict.evidence || [];
@@ -634,10 +635,29 @@ function renderMAResult(verdict) {
         return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
       }).join('');
 
+  // 📌 解讀 box 詳細解說 (plain language)
+  const interpretationDetail = verdict.state === 'UP' ? `
+    <p>📌 <strong>簡單講</strong>: 10 條 rule 中觸發咗 ${matchedRules.length} 條上升相關 rule (e.g. 連續 5 日 MA5 > MA60), 典型上升趨勢訊號。</p>
+    <p>📊 <strong>咩意思</strong>: MA5 喺 ${verdict.meta.latestMA5}, MA10 喺 ${verdict.meta.latestMA10}, MA60 喺 ${verdict.meta.latestMA60}, 短期均線喺長期均線上面, 上升趨勢確認。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 上升趨勢確認, 可考慮持有 / 逢回調加倉。留意 H rule (7 日反轉) 同 F rule (升勢調整) 嘅見頂警號。</p>
+  ` : verdict.state === 'DOWN' ? `
+    <p>📌 <strong>簡單講</strong>: 10 條 rule 中觸發咗 ${matchedRules.length} 條下跌相關 rule, 典型下跌趨勢訊號。</p>
+    <p>📊 <strong>咩意思</strong>: MA5 喺 ${verdict.meta.latestMA5}, MA10 喺 ${verdict.meta.latestMA10}, MA60 喺 ${verdict.meta.latestMA60}, 短期均線喺長期均線下面, 下跌趨勢確認。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 下跌趨勢確認, 觀望 / 減倉。留意 H rule (7 日反轉) 同 G rule (跌勢調整) 嘅見底警號。</p>
+  ` : verdict.state === 'TRANSITION' ? `
+    <p>📌 <strong>簡單講</strong>: 觸發 H rule (7 日反轉), 短期均線同長期均線嘅位置出現反轉, 趨勢可能即將改變方向。</p>
+    <p>📊 <strong>咩意思</strong>: 短期內由上升轉下跌, 或由下跌轉上升, 屬於高風險高回報嘅轉折點。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 等待方向確認, 唔好搶跑。等新趨勢確認 + 量能配合再入市。</p>
+  ` : `
+    <p>📌 <strong>簡單講</strong>: 10 條 rule 中只觸發咗 C/D/G 等橫行 rule, 冇明確方向, 股票喺一個範圍內運行。</p>
+    <p>📊 <strong>咩意思</strong>: MA5 ${verdict.meta.latestMA5}, MA10 ${verdict.meta.latestMA10}, MA60 ${verdict.meta.latestMA60}, 均線交叉或距離近, 結構混亂。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 橫行結構, 等待方向確認。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機。</p>
+  `;
+
   return `
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
-        <h4>📐 MA Alignment (mandatory)</h4>
+        <h4>📐 zmen均算法 (v0.3.0, 舊 M1 抽出獨立)</h4>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -646,7 +666,7 @@ function renderMAResult(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
-          <div class="conf-label">信心指數</div>
+          <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
@@ -657,6 +677,7 @@ function renderMAResult(verdict) {
 
       <div class="interpretation">
         <strong>📌 解讀：</strong>${verdict.interpretation}
+        ${interpretationDetail}
       </div>
 
       <div class="ma-values">
@@ -1567,6 +1588,23 @@ export function renderVolumeResult(verdict) {
     ? '<span style="color: #52c41a;">無</span>'
     : falseSignalFlags.map(f => `<span class="false-flag">⚠️ ${f}</span>`).join(' ');
 
+  // 📌 資金判斷 + 買入時機評分解讀 (plain language)
+  const buyScoreExplain = buyTimingScore >= 0.7 ? '高買入時機評分, 適合入市' : buyTimingScore >= 0.4 ? '中等買入時機評分, 觀望或小注' : '低買入時機評分, 唔建議入市';
+  const signalExplain = signal === 'CONFIRM' ? '成交量確認趨勢, 信號強' : signal === 'DISCONFIRM' ? '成交量反對趨勢, 要小心' : '成交量中性, 唔確認亦唔反對';
+  const interpretationDetail = signal === 'CONFIRM' ? `
+    <p>📌 <strong>簡單講</strong>: 成交量支持目前嘅趨勢, 大戶資金流入 (${regimeLabels[volumeRegime]}), 識別到 ${rulesFired} 條 V-rules 觸發, 突破確認。</p>
+    <p>📊 <strong>咩意思</strong>: 買入時機評分 ${buyScorePct}% (${buyScoreExplain}) · 估計勝率 ${winProbPct}% (根據歷史 backtest 統計, 唔係未來保證) · 體制: ${regimeLabels[volumeRegime]}。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 資金跟進 + 趨勢確認, 強烈買入訊號, 可考慮入市。配合 M1 MA 確認大方向 + M4 Indicators 確認動能背馳狀態。</p>
+  ` : signal === 'DISCONFIRM' ? `
+    <p>📌 <strong>簡單講</strong>: 成交量反對目前嘅趨勢, 大戶資金流出 (${regimeLabels[volumeRegime]}), ${falseSignalFlags.length > 0 ? `有 ${falseSignalFlags.length} 個假突破警號` : '突破未確認'}。</p>
+    <p>📊 <strong>咩意思</strong>: 買入時機評分 ${buyScorePct}% (${buyScoreExplain}) · 估計勝率 ${winProbPct}% · 體制: ${regimeLabels[volumeRegime]}。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 量价背馳, 即使趨勢向上都要小心假突破, 唔好追高。等待量能重新確認先入市。</p>
+  ` : `
+    <p>📌 <strong>簡單講</strong>: 成交量中性, ${regimeLabels[volumeRegime]}, 識別到 ${rulesFired} 條 V-rules 觸發, 信號唔清晰。</p>
+    <p>📊 <strong>咩意思</strong>: 買入時機評分 ${buyScorePct}% (${buyScoreExplain}) · 估計勝率 ${winProbPct}% · 體制: ${regimeLabels[volumeRegime]}。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 量能中性, 等待方向確認。配合 M1 MA 確認大方向, 留意量能變化 (放量跟進 = 真突破)。</p>
+  `;
+
   return `
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
@@ -1579,11 +1617,11 @@ export function renderVolumeResult(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${buyScorePct}%</div>
-          <div class="conf-label">買入時機評分</div>
+          <div class="conf-label">買入時機評分 — ${buyScoreExplain}</div>
         </div>
         <div class="data-summary">
-          <div class="summary-row"><span>綜合信心:</span> <strong>${confidencePct}%</strong></div>
-          <div class="summary-row"><span>估計勝率:</span> <strong>${winProbPct}%</strong></div>
+          <div class="summary-row"><span>綜合信心:</span> <strong>${confidencePct}% (${confidencePct >= 70 ? '高信心' : confidencePct >= 40 ? '中等信心' : '低信心'})</strong></div>
+          <div class="summary-row"><span>估計勝率:</span> <strong>${winProbPct}% (歷史統計, 唔係保證)</strong></div>
           <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays || 0}</strong></div>
           <div class="summary-row"><span>觸發 Rules:</span> <strong>${rulesFired} 條</strong></div>
         </div>
@@ -1591,6 +1629,8 @@ export function renderVolumeResult(verdict) {
 
       <div class="interpretation">
         <strong>📌 資金判斷：</strong>${verdict.interpretation}
+        ${interpretationDetail}
+        <p>💡 <strong>Signal 點解咁講</strong>: ${signalExplain}。</p>
       </div>
 
       <div class="signal-row">
@@ -2210,6 +2250,30 @@ export function renderVolatilityResult(verdict) {
   const matchedRulesHtml = matchedRules.length === 0
     ? '<li style="color: #888;">無 rule 觸發</li>'
     : matchedRules.map(rid => { const [l, s] = ruleMap[rid] || [rid, 'medium']; return '<li class="rule-' + s + '"><strong>' + rid + '</strong> — ' + l + ' <small>(' + s + ')</small></li>'; }).join('');
+
+  // 📌 波動率結構 + 入場評分解讀 (plain language)
+  const entryExplain = entryScorePct >= 70 ? '高入場評分, 適合入市' : entryScorePct >= 40 ? '中等入場評分, 觀望或小注' : '低入場評分, 唔建議入市';
+  const setupDetail = setupType === 'mtf_squeeze_fire' ? `
+    <p>📌 <strong>簡單講</strong>: 出現黃金 Squeeze Fire setup, 即 Squeeze 壓縮一段時間後開始爆發, ATR 開始擴張, 典型嘅大波動開始訊號。</p>
+    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 大波動開始, 配合 M1 MA 確認方向 + M5 量价確認資金跟進 = 黃金買點。留意失敗模式 ${failureLabels[failureMode] || failureMode}。</p>
+  ` : setupType === 'confirmed_vcp_breakout' ? `
+    <p>📌 <strong>簡單講</strong>: 出現教科書 VCP 突破 setup, 波動率持續收縮後放量突破, 典型嘅趨勢啟動訊號。</p>
+    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: VCP 突破, 趨勢啟動訊號強烈, 配合 M1 MA + M2 HL 確認結構轉強 = 強烈買入。</p>
+  ` : setupType === 'genuine_squeeze_forming' ? `
+    <p>📌 <strong>簡單講</strong>: 真正嘅 Squeeze 蓄力中, 波動率持續壓縮, 典型嘅突破前蓄力階段。</p>
+    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 蓄力中, 等待突破訊號。配合 M1 MA + 量能變化捕捉突破時機, 唔好搶跑。</p>
+  ` : setupType === 'clean_trend_expansion' ? `
+    <p>📌 <strong>簡單講</strong>: 趨勢擴張, 噪音低, 跟進有力, 典型嘅乾淨趨勢運行。</p>
+    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 乾淨趨勢, 可考慮持有 / 順勢入市。留意失敗模式 ${failureLabels[failureMode] || failureMode}。</p>
+  ` : `
+    <p>📌 <strong>簡單講</strong>: 暫時冇明確嘅波動率 setup, 結構混亂或者趨勢唔清晰。</p>
+    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 等待方向確認, 唔好強行入市。配合 M1 MA 確認大方向, 留意 Squeeze 訊號 (可能係蓄力)。</p>
+  `;
   return `
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
@@ -2222,17 +2286,18 @@ export function renderVolatilityResult(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${entryScorePct}%</div>
-          <div class="conf-label">入場評分</div>
+          <div class="conf-label">入場評分 — ${entryExplain}</div>
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>Setup:</span> <strong>${setupLabels[setupType] || setupType}</strong></div>
-          <div class="summary-row"><span>估計勝率:</span> <strong>${winProbPct}%</strong></div>
+          <div class="summary-row"><span>估計勝率:</span> <strong>${winProbPct}% (歷史統計, 唔係保證)</strong></div>
           <div class="summary-row"><span>失敗模式:</span> <strong>${failureLabels[failureMode] || failureMode}</strong></div>
           <div class="summary-row"><span>觸發 Rules:</span> <strong>${rulesFired} 條</strong></div>
         </div>
       </div>
       <div class="interpretation">
         <strong>📌 波動率結構：</strong>${verdict.interpretation}
+        ${setupDetail}
       </div>
       <div class="key-metrics">
         <div class="metric-card">
@@ -2851,6 +2916,7 @@ async function analyzeHLStructure(klines, options) {
 function renderHLStructureResult(verdict) {
   const cycleColor = verdict.cycle === 'uptrend' ? '#26BA75' : verdict.cycle === 'downtrend' ? '#EE5151' : '#F39C12';
   const confidencePct = (verdict.confidence * 100).toFixed(0);
+  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 信號強' : verdict.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
 
   const patternText = {
     'head_and_shoulder': '⚠️ 頭肩頂 (可能見頂)',
@@ -2858,6 +2924,21 @@ function renderHLStructureResult(verdict) {
     'double_top': '⚠️ 雙頂 (可能見頂)',
     'none': '無形態預警',
   }[verdict.pattern_alert] || '無形態預警';
+
+  // 📌 判斷 box 詳細解說 (plain language)
+  const interpretationDetail = verdict.cycle === 'uptrend' ? `
+    <p>📌 <strong>簡單講</strong>: 股票峰谷結構係「越嚟越高」, 即每個 peak 高過上一個 peak (HH), 每個 trough 都高過上一個 trough (HL), 典型上升趨勢嘅結構。</p>
+    <p>📊 <strong>咩意思</strong>: 結構分數 ${verdict.structure_score} 反映峰谷上升嘅一致度, 識別咗 ${verdict.peaks.length} 個峰點 + ${verdict.troughs.length} 個谷點, 趨勢結構清晰。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 上升趨勢確認, 可考慮持有 / 逢回調加倉。留意 ${patternText} 嘅預警 — 見頂形態出現要考慮減倉。</p>
+  ` : verdict.cycle === 'downtrend' ? `
+    <p>📌 <strong>簡單講</strong>: 股票峰谷結構係「越嚟越低」, 即每個 peak 低過上一個 peak (LH), 每個 trough 都低過上一個 trough (LL), 典型下跌趨勢嘅結構。</p>
+    <p>📊 <strong>咩意思</strong>: 結構分數 ${verdict.structure_score} 反映峰谷下跌嘅一致度, 識別咗 ${verdict.peaks.length} 個峰點 + ${verdict.troughs.length} 個谷點, 趨勢結構清晰。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 下跌趨勢確認, 觀望 / 減倉。留意 ${patternText} 嘅預警 — 見底形態出現可能係反彈機會。</p>
+  ` : `
+    <p>📌 <strong>簡單講</strong>: 股票峰谷結構唔係典型嘅多頭或空頭, 峰同谷都喺同一個範圍內, 代表近期股價喺一個箱體入面震盪。</p>
+    <p>📊 <strong>咩意思</strong>: 結構分數 ${verdict.structure_score} 反映結構混亂度, 識別咗 ${verdict.peaks.length} 個峰點 + ${verdict.troughs.length} 個谷點, 等待方向確認。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 橫行結構, 等待方向確認。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機; ${patternText} 仍然要留意。</p>
+  `;
 
   return `
     <div class="as03-verdict as03-module-card">
@@ -2871,7 +2952,7 @@ function renderHLStructureResult(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
-          <div class="conf-label">信心指數</div>
+          <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>峰點:</span> <strong>${verdict.peaks.length}</strong></div>
@@ -2882,6 +2963,7 @@ function renderHLStructureResult(verdict) {
 
       <div class="interpretation">
         <strong>📌 判斷：</strong>${verdict.reason}
+        ${interpretationDetail}
       </div>
 
       ${verdict.box_boundary ? `
@@ -3722,6 +3804,7 @@ function renderTrendlineResult(verdict) {
   const color = stateColors[verdict.state] || '#666';
   const stateLabel = stateLabels[verdict.state] || verdict.state;
   const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 信號強' : verdict.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
   const matchedRules = verdict.meta?.matchedRules || [];
   const evidence = verdict.evidence || [];
 
@@ -3735,6 +3818,25 @@ function renderTrendlineResult(verdict) {
         return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
       }).join('');
 
+  // 📌 解讀 box 詳細解說 (plain language)
+  const interpretationDetail = verdict.state === 'UP' ? `
+    <p>📌 <strong>簡單講</strong>: 股票喺上升趨勢線通道運行, 每次回調都守住支撐線, 每次反彈都觸及壓力線, 典型上升通道結構。</p>
+    <p>📊 <strong>咩意思</strong>: 支撐斜率向上 (${verdict.meta.supportLine?.slope ?? 'N/A'}), R² ${verdict.meta.supportLine?.r2 ?? 'N/A'} 反映擬合度; 通道寬度 ${(verdict.meta.channel?.widthPct * 100).toFixed(2)}%。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 上升趨勢確認, 喺支撐線附近買入 / 壓力線附近減倉係合理策略, 跌破支撐線要小心趨勢反轉。</p>
+  ` : verdict.state === 'DOWN' ? `
+    <p>📌 <strong>簡單講</strong>: 股票喺下降趨勢線通道運行, 每次反彈都被壓力線壓住, 每次下跌都跌穿前低, 典型下降通道結構。</p>
+    <p>📊 <strong>咩意思</strong>: 壓力斜率向下, 通道寬度 ${(verdict.meta.channel?.widthPct * 100).toFixed(2)}%, 趨勢向下穩定。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 下跌趨勢確認, 觀望 / 唔好接刀; 等突破壓力線先考慮撈底。</p>
+  ` : verdict.state === 'TRANSITION' ? `
+    <p>📌 <strong>簡單講</strong>: 支撐同壓力線都出現真突破訊號, 趨勢可能即將反轉, 需要密切留意後續走勢。</p>
+    <p>📊 <strong>咩意思</strong>: 同時觸發多條突破 rules, 趨勢線信號強烈但方向未明, 屬於高風險高回報嘅轉折點。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 等待方向確認, 唔好搶跑; 等 breakout 確認 + 量能配合再入市。</p>
+  ` : `
+    <p>📌 <strong>簡單講</strong>: 支撐同壓力線都未被有效突破, 股票喺一個橫行範圍內運行, 等待方向確認。</p>
+    <p>📊 <strong>咩意思</strong>: 通道寬度 ${(verdict.meta.channel?.widthPct * 100).toFixed(2)}%, 結構混亂, 趨勢線信號唔清晰。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 等待突破方向, 配合 M6 Volatility Squeeze 訊號捕捉突破時機。</p>
+  `;
+
   return `
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
@@ -3747,7 +3849,7 @@ function renderTrendlineResult(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
-          <div class="conf-label">信心指數</div>
+          <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
@@ -3758,6 +3860,7 @@ function renderTrendlineResult(verdict) {
 
       <div class="interpretation">
         <strong>📌 解讀：</strong>${verdict.interpretation}
+        ${interpretationDetail}
       </div>
 
       <div class="trendline-values">
@@ -4669,6 +4772,7 @@ function renderIndicatorsResult(verdict) {
   const color = stateColors[verdict.state] || '#666';
   const stateLabel = stateLabels[verdict.state] || verdict.state;
   const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 信號強' : verdict.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
   const signal = verdict.meta?.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
   const ms = verdict.meta?.momentumState || {};
   const div = verdict.meta?.divergence || { totalCount: 0 };
@@ -4679,6 +4783,30 @@ function renderIndicatorsResult(verdict) {
   const reasonsHtml = signal.reasons && signal.reasons.length > 0
     ? signal.reasons.map(r => `<li>${r}</li>`).join('')
     : '<li style="color: #888;">無觸發條件 (hold / 觀望)</li>';
+
+  // 📌 解讀 + 觀望 box 詳細解說 (plain language)
+  const signalStrengthPct = (signal.strength * 100).toFixed(0);
+  const winProbPct = ((verdict.meta?.winProbability || 0.5) * 100).toFixed(0);
+  const interpretationDetail = signal.type === 'buy' ? `
+    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 兩條動能指標都出現買入訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向上。</p>
+    <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 動能向上確認, 高勝率買入時機, 可考慮入市, 但留意 RSI 超買可能係短期見頂警號, 配合 M1 MA 確認大方向 + M5 量价確認資金跟進。</p>
+  ` : signal.type === 'sell' ? `
+    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 都出現賣出訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向下。</p>
+    <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 動能向下確認, 觀望 / 減倉, 配合 M1 MA 確認下跌趨勢 + M2 HL 確認結構轉弱。</p>
+  ` : `
+    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 都冇明確買入或賣出訊號, 動能中性, 識別到 ${div.totalCount} 個背馳/衰竭點 (如果有)。</p>
+    <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+    <p>💡 <strong>點睇呢個結果</strong>: 動能中性, 等待方向確認。背馳點出現時要特別留意, 可能係見頂 / 見底嘅早期警號, 配合 M1 MA 確認大方向。</p>
+  `;
+  const signalBoxDetail = signal.type === 'hold' ? `
+    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 10 條 buy/sell rules 嘅觸發數量同權重, 0% = 完全冇 rules 觸發, 100% = 全部 rules 觸發。強度越高, 信號越強, 越值得參考。</p>
+    <p>💡 <strong>勝率估算 ${winProbPct}% 點嚟?</strong> 勝率估算係根據 RSI + MACD 狀態 (超買/超賣/中性) 同歷史 backtest 統計得出嘅歷史勝率, 代表同類訊號過去嘅表現, 唔係未來保證。</p>
+  ` : `
+    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 10 條 buy/sell rules 嘅觸發數量同權重, ${signalStrengthPct}% = ${signal.reasons.length} 條 rules 觸發嘅綜合分數。</p>
+    <p>💡 <strong>勝率估算 ${winProbPct}% 點嚟?</strong> 勝率估算係根據 RSI + MACD 狀態 (超買/超賣/中性) 同歷史 backtest 統計得出, ${winProbPct}% 代表同類訊號過去嘅平均勝率, 唔係未來保證。</p>
+  `;
 
   return `
     <div class="as03-verdict as03-module-card">
@@ -4692,7 +4820,7 @@ function renderIndicatorsResult(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
-          <div class="conf-label">信心指數</div>
+          <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
@@ -4703,6 +4831,7 @@ function renderIndicatorsResult(verdict) {
 
       <div class="interpretation">
         <strong>📌 解讀：</strong>${verdict.interpretation}
+        ${interpretationDetail}
       </div>
 
       <div class="indicators-signal" style="background: ${actionColor}22; border-left: 4px solid ${actionColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
@@ -4710,9 +4839,10 @@ function renderIndicatorsResult(verdict) {
           <div style="font-size: 28px;">${actionEmoji}</div>
           <div>
             <div style="font-size: 18px; font-weight: bold; color: ${actionColor};">${signal.action || '觀望'}</div>
-            <div style="font-size: 12px; color: #888;">訊號強度: ${(signal.strength * 100).toFixed(0)}% · 勝率估算: ${((verdict.meta?.winProbability || 0.5) * 100).toFixed(0)}%</div>
+            <div style="font-size: 12px; color: #888;">訊號強度: ${signalStrengthPct}% · 勝率估算: ${winProbPct}%</div>
           </div>
         </div>
+        ${signalBoxDetail}
       </div>
 
       <div class="momentum-state">
@@ -5298,6 +5428,7 @@ function renderMAAlignmentV2Result(verdict) {
   }
   const cycleColor = meta.cycle === 'uptrend' ? '#26BA75' : meta.cycle === 'downtrend' ? '#EE5151' : '#F39C12';
   const confidencePct = (meta.confidence * 100).toFixed(0);
+  const confidenceExplain = meta.confidence >= 0.7 ? '高信心, 信號強' : meta.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
   const cycleCode = meta.cycle.toUpperCase();
 
   // 主題排列 (e.g. "MA5 > MA10 > MA20 > MA60" 代表典型多頭)
@@ -5305,6 +5436,28 @@ function renderMAAlignmentV2Result(verdict) {
   const isTypicalUp = arrangementText === 'MA5 > MA10 > MA20 > MA60';
   const isTypicalDown = arrangementText === 'MA60 > MA20 > MA10 > MA5';
   const arrangementLabel = isTypicalUp ? '典型多頭排列' : isTypicalDown ? '典型空頭排列' : '非典型排列';
+
+  // 📌 判斷 box 詳細解說 (plain language)
+  let interpretationDetail = '';
+  if (meta.cycle === 'uptrend') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 股票 4 條均線 (MA5/10/20/60) 排列係由細到大, 短期均線喺長期均線上面, 代表近期股價一直喺高位跑。短期、中期、長期均線全部向上, 趨勢確認向上。</p>
+      <p>📊 <strong>咩意思</strong>: ${arrangementLabel}, Spread ${(meta.maxSpreadPct * 100).toFixed(2)}%, 即係均線之間嘅距離大, 上升趨勢穩固。基礎信心 ${meta.baseConfidence} (純睇 MA 排列同 spread 得出)。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 可以考慮持有或喺回調時加倉, 但要留意成交量同短期均線斜率嘅變化 — 縮量升 / MA5 斜率轉負都可能係見頂警號。</p>
+    `;
+  } else if (meta.cycle === 'downtrend') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 股票 4 條均線排列係由大到細, 短期均線喺長期均線下面, 代表近期股價一直跑緊低位。短期、中期、長期均線全部向下, 趨勢確認向下。</p>
+      <p>📊 <strong>咩意思</strong>: ${arrangementLabel}, Spread ${(meta.maxSpreadPct * 100).toFixed(2)}%, 均線之間嘅距離大, 下跌趨勢穩固。基礎信心 ${meta.baseConfidence}。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀。留意有冇縮量 (下跌動能減弱) 或長期斜率轉正 (可能見底) 嘅反彈訊號。</p>
+    `;
+  } else {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 股票 4 條均線排列唔係典型嘅多頭或空頭 (即係交叉咗 / 距離好近), 代表近期股價冇明確方向, 喺一個範圍內上落。</p>
+      <p>📊 <strong>咩意思</strong>: ${arrangementLabel}, Spread ${(meta.maxSpreadPct * 100).toFixed(2)}%, 均線之間嘅距離細, 趨勢唔明確。橫行可能係蓄力 (等待突破) 或者轉勢 (等待方向確認)。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 等待突破方向, 唔好喺橫行期間強行入市。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機; 配合 M5 量价可以睇突破嘅真偽。</p>
+    `;
+  }
 
   return `
     <div class="as03-verdict as03-module-card">
@@ -5318,7 +5471,7 @@ function renderMAAlignmentV2Result(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
-          <div class="conf-label">信心指數</div>
+          <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>排列:</span> <strong>${arrangementLabel}</strong></div>
@@ -5329,6 +5482,7 @@ function renderMAAlignmentV2Result(verdict) {
 
       <div class="interpretation">
         <strong>📌 判斷：</strong>${meta.reason}
+        ${interpretationDetail}
       </div>
 
       <div class="ma-info">

@@ -497,14 +497,16 @@ aside h4 {
 
 .summary-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   color: #555;
-  gap: 12px;
+  gap: 6px;
+  align-items: baseline;
 }
 
 .summary-row strong {
   color: #333;
   font-family: 'SF Mono', Monaco, monospace;
+  margin-left: 4px;
 }
 
 .interpretation {
