@@ -227,3 +227,70 @@ export const BASE_WEIGHTS: Record<CycleModuleId, number> = {
 };
 // 註: 加埋 = 1.00, M7 內部直接用, 唔需要 normalize
 // 註 2: 跟 5 個 adaptive params 嘅 SSI 戰略層權重 auto-calibrate 會重 scale, 保持總和 = 1.0
+
+// =============================================================
+// 大少 2026-08-08 12:30 — M7 Synthesizer output type (Sprint 1 sub-task 1.2)
+// =============================================================
+
+/** Kelly fraction — 跟 ATR% 自動切
+ *  - half:   0.50 (波動低, ATR% < 5%)
+ *  - quarter: 0.25 (波動中, 5% ≤ ATR% < 10%)
+ *  - octo:   0.125 (波動高, ATR% ≥ 10%)
+ */
+export type KellyFraction = 'half' | 'quarter' | 'octo';
+
+/** Grade 評級 — 8 個 level (A+~F)
+ *  計分: 0-30=F, 30-40=D, 40-50=C, 50-60=C+, 60-70=B, 70-80=B+, 80-90=A, 90-100=A+
+ */
+export type Grade = 'A+' | 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D' | 'F';
+
+/** SSI 戰略強度指數 breakdown
+ *  - consistency: 6 個 modules state 一致程度 (全部 UP = 1.0, 5個一致 1個唔同 = 0.8)
+ *  - confidence_avg: 6 個 modules confidence 加權平均 (用 base_weight)
+ *  - rules_coverage: 6 個 modules 嘅 rules_fired union 嘅覆蓋率 (max 20 unique rules, normalize 0-1)
+ */
+export interface SSIBreakdown {
+  consistency: number;       // 0-1
+  confidence_avg: number;    // 0-1
+  rules_coverage: number;    // 0-1
+}
+
+/** TCM 戰術交叉驗證矩陣 — 1 對 pair 嘅結果
+ *  - alignment: -1 to +1 (state 一致 = +1, 矛盾 = -1, 部分 = 0)
+ *  - trap_penalty: 0-1 (虛漲 × 0.6, 假突破 × 0.3, 矛盾 = 0)
+ */
+export interface TCMPairResult {
+  pair: [CycleModuleId, CycleModuleId];
+  alignment: number;         // -1 to +1
+  trap_penalty: number;      // 0-1
+}
+
+/** M7 Synthesizer 嘅 final verdict
+ *  6 個 ModuleStandardVerdict → SynthesizerVerdict
+ *  M8 Decision Engine 將來再吃 SynthesizerVerdict 推導 trading card
+ */
+export interface SynthesizerVerdict {
+  // SSI 戰略強度指數
+  ssi_score: number;         // 0-100
+  ssi_breakdown: SSIBreakdown;
+
+  // TCM 戰術交叉驗證矩陣 (3 對 pair)
+  tcm_matrix: TCMPairResult[];
+
+  // Alignment Score 戰略戰術匹配度
+  alignment_score: number;   // 0-1
+
+  // Grade 評級
+  grade: Grade;
+  grade_score: number;       // 0-100 (numeric)
+  grade_reason: string;      // 中文 (點解畀呢個 grade)
+
+  // Kelly 倉位
+  kelly_fraction: KellyFraction;
+  kelly_numeric: number;     // 0.5 / 0.25 / 0.125
+  kelly_position: number;    // 0-1 (position size)
+
+  // Meta
+  module_verdicts: ModuleStandardVerdict[];  // 6 個 input (trace)
+  timestamp: number;
+}

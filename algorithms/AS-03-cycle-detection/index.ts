@@ -234,6 +234,8 @@ export { TrendlineModule, toStandardVerdictTL } from './modules/trendline.ts';
 export { IndicatorsModule, toStandardVerdictIND } from './modules/indicators.ts';
 export { VolumePrice, toStandardVerdictVP } from './modules/volume.ts';
 export { VolatilityModule, toStandardVerdictVOL } from './modules/volatility.ts';
+// 大少 2026-08-08 12:30 — Sprint 1 sub-task 1.2 — M7 Synthesizer
+export { DecisionEngine, synthesizeAll, type SynthesizeInput } from './modules/decision-engine.ts';
 // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
 // export { SlopeMomentum } from './modules/slope-momentum.ts';
 
