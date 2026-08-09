@@ -21,6 +21,11 @@ export interface ElliottWaveResult {
 }
 
 function waveLabelText(wave: number): string {
+  // 大少 2026-08-09 21:18 EW bug fix: 統一 convention — algorithm 用 1-5 推進 + 6=A / 7=B / 8=C 調整
+  if (wave === 6) return 'A'
+  if (wave === 7) return 'B'
+  if (wave === 8) return 'C'
+  // 0, -1, -2 backward compat (唔再 generate 但留 fallback)
   if (wave === 0) return 'A'
   if (wave === -1) return 'B'
   if (wave === -2) return 'C'
