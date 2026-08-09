@@ -577,6 +577,53 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 
 ---
 
+## 📊 Stock Price 即時股價 (Stage 1+, 大少 15:45 揀)
+
+大少喺 testing page 紅框最左位置加「最新股價 + 日期時間」column,frontend 5 秒 polling backend 拎即時股價。休市時 keep last known + 加「(休市)」caption。
+
+### Endpoint
+
+| Method | URL | 用途 |
+|--------|-----|------|
+| `GET` | `/api/stock-price/{symbol}` | 拎當下股價 (Futu `ctx.get_cur_kline` 今日 partial bar close) + is_market_open + is_stale + currency |
+
+### 6 個 Response field
+
+| Field | Type | 用途 |
+|-------|------|------|
+| `symbol` | str | 股票 code (e.g. 'HK.00700' / 'US.AAPL') |
+| `price` | float / null | 當下股價 (close from today partial bar) |
+| `time` | str (ISO 8601) | server fetch time (HKT) |
+| `bar_time` | str (HH:MM:SS) | today bar 嘅 time / null |
+| `is_market_open` | bool | 簡單 weekday + hour 判斷 (HK 9:30-16:00 / US HKT 21:30-04:00 next day) |
+| `is_stale` | bool | true if price is null (休市 / 連接未建立 / OpenD 拎唔到 bar) |
+| `currency` | str | 'HKD' / 'USD' |
+
+### 大少 15:45 預設 (5 個 default)
+
+1. **Polling 頻率**: 5 秒 (前端 `setInterval`)
+2. **Date/time format**: `MM-DD HH:mm:ss` (12 char)
+3. **休市 hold 邏輯**: 拎唔到 price → keep last known + 顯示「(休市)」caption
+4. **Backend source**: `ctx.get_cur_kline` (已存在, KLineCache._fetch_today_bar 同 pattern)
+5. **UI 位置**: Trading card row 最左 column, date/time 上 + price 下
+
+### Use Case
+
+1. 大少喺 testing page 揀 AS-03-DEC algo + 輸入 stock code
+2. 撳「跑算法」→ backend 跑 verdict, frontend render trading card
+3. 跑完 algo 自動 start 5 秒 polling `/api/stock-price/{symbol}`
+4. Trading card row 改 5 column, 最左加新 column 顯示「⏱️ 08-09 15:35:42 / HK$ 497.50」
+5. 開市時股價 update 正常;16:00 後 / 週末 → freeze last known + 加「(休市)」caption
+6. 換 algo → 自動停舊 polling, start 新 polling
+
+### Spec Doc 連結
+
+- `ARCHITECTURE.md` §15.10 — Stock Price 即時股價 詳細 spec
+- `API.md` 📊 Stock Price API section
+- `README.md` 近期重要更新 row
+
+---
+
 ## 📊 當前實現狀態
 
 ### ✅ 已完成

@@ -22,6 +22,7 @@ from api.as02 import router as as02_router
 from api.network import router as network_router
 from api.adaptive_params import router as adaptive_params_router  # Sprint 2 sub-task 2.6, 大少 16:30
 from api.trade_journal import router as trade_journal_router  # Stage 1+ MVP, 大少 11:07
+from api.stock_price import router as stock_price_router  # Stage 1+ 即時股價, 大少 15:45
 from models.saved_runs import init_saved_runs_table
 from models.llm_settings import init_llm_settings_table
 from models.algorithm_dq_log import init_algorithm_dq_log_table
@@ -87,6 +88,7 @@ app.include_router(as02_router)  # already has prefix="/api/as02"
 app.include_router(network_router)  # already has prefix="/api/network"
 app.include_router(adaptive_params_router)  # already has prefix="/api/adaptive-params" (Sprint 2 sub-task 2.6, 大少 16:30)
 app.include_router(trade_journal_router)  # Stage 1+ MVP, 大少 11:07
+app.include_router(stock_price_router)  # Stage 1+ 即時股價, 大少 15:45
 app.include_router(ws_router, prefix="/ws")
 
 @app.get("/api/health")

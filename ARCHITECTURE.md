@@ -1791,3 +1791,57 @@ return = (actual_exit_price - entry_price) / entry_price
 9. `README.md` — Trade Journal row 加 PUT/DELETE/stats
 10. `PROJECT_SPEC.md` — Stage 1+ Trade Journal section 加 PUT/DELETE/stats
 
+---
+
+### 15.10 Stock Price 即時股價 (Stage 1+, 大少 15:45 揀)
+
+大少喺 testing page 紅框最左位置加「最新股價 + 日期時間」column,frontend 5 秒 polling backend 拎即時股價。休市時 keep last known price + time,加「(休市)」caption。
+
+**Backend 改 (`backend/api/stock_price.py` 新 file):**
+- `GET /api/stock-price/{symbol}` — 用 Futu `ctx.get_cur_kline(code, num=1, ktype=KLType.K_DAY, autype='qfq')` 拎今日 partial bar 嘅 close
+- `is_market_open` 簡單 weekday + hour 判斷:
+  - HK 9:30-12:00 + 13:00-16:00 (Mon-Fri, HKT)
+  - US HKT 21:30-04:00 next day (Mon-Fri, 簡化, 唔分夏冬令)
+  - Sat/Sun → false
+- 公眾假期 / DST: 唔處理 (Stage 1+ 簡單版)
+- 拎唔到 price (休市 / OpenD 連接未建立 / dev 環境) → 返 200 + `price=null + is_stale=true + message` (frontend polling loop 唔 break)
+
+**Frontend 改 (`testing-page/testing-page.js`):**
+- 5 個新 function: `startRealTimePrice(symbol)` / `stopRealTimePrice()` / `fetchLatestPrice()` / `formatDateTime()` / `formatPrice()` / `updatePriceColumn()`
+- 跑完 algo (`runAlgorithm` line 624 renderResult 之後) 自動 call `startRealTimePrice(currentOptions.code)`
+- 換 algo / page unload 自動 stop polling (`window.beforeunload`)
+- `updatePriceColumn()` 喺 trading card row 嘅「🎯 入場區間」parent grid 嘅最左 insert 新 column,改 `grid-template-columns: repeat(5, 1fr)` (4 → 5)
+- 新 column 結構:
+  - 上: `⏱️ MM-DD HH:mm:ss` (server fetch time)
+  - 下: `HK$ 497.50` / `US$ 175.43` (latest price, 18px 大字, 橙色)
+  - 右側 status: ` (休市)` (if is_stale=true)
+
+**大少 15:45 預設 (5 個 default):**
+1. Polling 頻率: **5 秒** (backend 壓力細, frontend 5 秒 update smooth)
+2. Date/time format: `MM-DD HH:mm:ss` (12 char, 短 format)
+3. 休市 hold 邏輯: keep last known + 顯示「(休市)」caption
+4. Backend source: `ctx.get_cur_kline` (已存在, KLineCache._fetch_today_bar 同 pattern)
+5. UI 位置: Trading card row 最左 column, date/time 上 + price 下
+
+**Spec 永久 rule 收穫 (1 個):**
+- **`get_quote_ctx()` returns None 處理永久 rule** — TestClient 唔 trigger FastAPI lifespan, 所以 `ws.router._futu_ctx` 喺 pytest / dev 環境係 None。endpoint 必須 handle 呢個 case 返 200 + is_stale=true, 唔可以 raise 503, 否則 frontend polling loop 會 break。
+
+**Use case (大少 workflow):**
+1. 大少喺 testing page 揀 algo + 輸入 stock code
+2. 撳「跑算法」→ backend 跑 verdict, frontend render trading card 4 column
+3. 跑完 algo 自動 start 5 秒 polling `/api/stock-price/{symbol}`
+4. Trading card row 改 5 column, 最左加新 column 顯示「⏱️ 08-09 15:35:42 / HK$ 497.50」
+5. 5 秒後 backend fetch 返新 price, frontend update column 內容
+6. 開市時股價 update 正常;16:00 後 / 週末 → freeze last known + 加「(休市)」caption
+7. 換 algo → 自動停舊 polling, start 新 polling (start 入面 call stopRealTimePrice)
+
+**Files 改動 (本 §15.10 commit):**
+1. `backend/api/stock_price.py` (新) — 即時股價 endpoint + is_market_open 判斷
+2. `backend/main.py` — import + include_router
+3. `backend/tests/test_stock_price.py` (新) — 1 個 test (200 + 6 field 結構)
+4. `testing-page/testing-page.js` — 5 個新 function + runAlgorithm hook
+5. `testing-page/index.html` — `?v=2.3.6` → `?v=2.3.7` (HTML cache bust sync 永久 rule)
+6. `API.md` — 📊 Stock Price API section
+7. `ARCHITECTURE.md` — 本 §15.10 section
+8. `README.md` — 近期重要更新 row
+9. `PROJECT_SPEC.md` — Stage 1+ Stock Price section

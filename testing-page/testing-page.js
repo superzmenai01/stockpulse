@@ -626,6 +626,10 @@ async function runAlgorithm() {
       resultPanel.innerHTML = `<pre>${JSON.stringify(verdict, null, 2)}</pre>`;
     }
 
+    // 3.5 大少 15:45: 跑完 algo 自動 start real-time price polling (5 秒 polling 最新股價 + 日期時間)
+    // Trading card 最左加新 column「最新股價」(date/time 上 + price 下)
+    startRealTimePrice(code);
+
     // 4. 大少 #10431 — 撳完 test 後 render K 線圖表（full width）
     const chartRefs = renderChart(klines, code, period);
 
@@ -1216,6 +1220,129 @@ function renderTradeJournalSection() {
   loadTradeJournalStats();
 }
 
+// ===== Real-Time Price Section (Stage 1+ 即時股價, 大少 15:45 揀) =====
+//   - 5 秒 polling backend /api/stock-price/{symbol}
+//   - Trading card row 最左加新 column「最新股價」(date/time 上 + price 下)
+//   - 休市 / 連接未建立 → keep last known price + time,加 (休市) caption
+//   - 跑完 algo 自動 start, 換 algo / page unload 自動 stop
+
+let realTimePriceState = {
+  intervalId: null,
+  symbol: null,
+  lastPrice: null,
+  lastTime: null,
+  isStale: true,
+  currency: 'HKD',
+};
+
+function startRealTimePrice(symbol) {
+  if (!symbol) return;
+  stopRealTimePrice();
+  realTimePriceState.symbol = symbol;
+  // 即時 fetch 一次
+  fetchLatestPrice();
+  // 5 秒 polling (大少 15:45 揀)
+  realTimePriceState.intervalId = setInterval(() => fetchLatestPrice(), 5000);
+  console.log(`[real-time-price] start polling ${symbol} every 5s`);
+}
+
+function stopRealTimePrice() {
+  if (realTimePriceState.intervalId) {
+    clearInterval(realTimePriceState.intervalId);
+    realTimePriceState.intervalId = null;
+    console.log('[real-time-price] stop polling');
+  }
+}
+
+async function fetchLatestPrice() {
+  const symbol = realTimePriceState.symbol;
+  if (!symbol) return;
+  try {
+    const resp = await fetch(`http://localhost:18792/api/stock-price/${encodeURIComponent(symbol)}`);
+    if (!resp.ok) {
+      console.warn(`[real-time-price] fetch ${symbol} HTTP ${resp.status}`);
+      return;
+    }
+    const data = await resp.json();
+    if (data.price !== null && data.price !== undefined) {
+      realTimePriceState.lastPrice = data.price;
+      realTimePriceState.lastTime = data.time;
+    }
+    realTimePriceState.isStale = data.is_stale === true;
+    realTimePriceState.currency = data.currency || 'HKD';
+    updatePriceColumn();
+  } catch (e) {
+    console.error('[real-time-price] fetch error:', e);
+  }
+}
+
+function formatDateTime(isoStr) {
+  if (!isoStr) return '—';
+  try {
+    const d = new Date(isoStr);
+    const MM = String(d.getMonth() + 1).padStart(2, '0');
+    const DD = String(d.getDate()).padStart(2, '0');
+    const HH = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${MM}-${DD} ${HH}:${mm}:${ss}`;
+  } catch (e) {
+    return '—';
+  }
+}
+
+function formatPrice(price, currency) {
+  if (price === null || price === undefined) return '—';
+  const symbol = currency === 'USD' ? 'US$' : 'HK$';
+  return `${symbol} ${price.toFixed(2)}`;
+}
+
+function updatePriceColumn() {
+  // 搵 trading card 嘅「🎯 入場區間」 div,然後攞 parent grid container
+  const entryZoneDiv = Array.from(document.querySelectorAll('div')).find(
+    el => el.textContent && el.textContent.trim() === '🎯 入場區間 (±1.5%)'
+  );
+  if (!entryZoneDiv) return;
+  // entryZoneDiv 嘅 parent = trading-card-field (.trading-card-field style)
+  // trading-card-field 嘅 parent = grid container
+  const field = entryZoneDiv.parentElement;
+  if (!field) return;
+  const grid = field.parentElement;
+  if (!grid) return;
+
+  // 搵或加 new column
+  let newCol = document.getElementById('latest-price-column');
+  if (!newCol) {
+    newCol = document.createElement('div');
+    newCol.id = 'latest-price-column';
+    newCol.className = 'trading-card-field latest-price-column';
+    newCol.style.cssText = 'background:#fff8e1;border:1px solid #F39C12;border-radius:8px;padding:12px;';
+    newCol.innerHTML = `
+      <div style="font-size:11px;color:#666;display:flex;justify-content:space-between;align-items:center;">
+        <span>⏱️ <span id="latest-price-time">—</span></span>
+        <span id="latest-price-market-status" style="color:#888;font-size:10px;"></span>
+      </div>
+      <div id="latest-price-value" style="font-size:18px;font-weight:700;color:#F39C12;margin-top:4px;">—</div>
+    `;
+    // Insert 最左 (before first child)
+    grid.insertBefore(newCol, grid.firstChild);
+    // 改 grid template 5 column (4 → 5)
+    grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+  }
+
+  // Update content
+  const timeEl = document.getElementById('latest-price-time');
+  const valueEl = document.getElementById('latest-price-value');
+  const marketStatusEl = document.getElementById('latest-price-market-status');
+  if (timeEl) timeEl.textContent = formatDateTime(realTimePriceState.lastTime);
+  if (valueEl) valueEl.textContent = formatPrice(realTimePriceState.lastPrice, realTimePriceState.currency);
+  if (marketStatusEl) {
+    marketStatusEl.textContent = realTimePriceState.isStale ? ' (休市)' : '';
+  }
+}
+
 // ===== Start =====
 
 init();
+// Page unload 自動停 polling
+window.addEventListener('beforeunload', stopRealTimePrice);

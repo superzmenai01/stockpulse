@@ -680,6 +680,74 @@ Health check endpoint.
 
 ---
 
+## 📊 Stock Price API (Stage 1+ 即時股價, 大少 15:45 揀)
+
+大少喺 testing page 紅框最左位置加「最新股價 + 日期時間」column,frontend 5 秒 polling backend 拎即時股價。
+
+### `GET /api/stock-price/{symbol}`
+
+拎即時股價 (今日 partial bar 嘅 close price),用 Futu OpenD `ctx.get_cur_kline(K_DAY)`。
+
+**Response 200 (拎到 price):**
+```json
+{
+  "symbol": "HK.00700",
+  "price": 497.50,
+  "time": "2026-08-09T15:35:42",
+  "bar_time": "15:35:42",
+  "is_market_open": true,
+  "is_stale": false,
+  "currency": "HKD"
+}
+```
+
+**Response 200 (拎唔到 price, is_stale=true):**
+```json
+{
+  "symbol": "HK.00700",
+  "price": null,
+  "time": "2026-08-09T15:35:42",
+  "is_market_open": false,
+  "is_stale": true,
+  "currency": "HKD",
+  "message": "Futu 拎唔到 price (可能休市 / 未連接)"
+}
+```
+
+**Response 503:** Futu OpenD 連接未建立 (但已改返 200 + is_stale=true, frontend polling loop 唔會 break)
+
+**6 個 field 定義:**
+- `symbol` — 股票 code (e.g. 'HK.00700' / 'US.AAPL')
+- `price` — 當下股價 (close price from today partial bar) / null
+- `time` — server fetch time (ISO 8601, HKT)
+- `bar_time` — today bar 嘅 time (HH:MM:SS) / null
+- `is_market_open` — 簡單 weekday + hour 判斷 (HK 9:30-16:00, US HKT 21:30-04:00 next day)
+- `is_stale` — true if price is null (休市 / 連接未建立 / OpenD 拎唔到 bar)
+- `currency` — 'HKD' (HK.*) / 'USD' (US.*)
+
+**大少 15:45 預設:**
+- Polling 頻率: 5 秒 (前端 `setInterval`)
+- Date/time format: `MM-DD HH:mm:ss` (12 char)
+- 休市 hold 邏輯: 拎唔到 price → keep last known + 顯示「(休市)」caption, frontend handle
+- Backend source: `ctx.get_cur_kline` (Futu OpenD 今日 partial bar)
+- 公眾假期 / DST: 唔處理 (Stage 1+ 簡單版, weekday + hour 判斷)
+
+**Use case:**
+1. 大少喺 testing page 揀 AS-03-DEC algo,輸入股票 code
+2. 撳「跑算法」→ backend 跑 verdict,frontend render trading card
+3. 跑完 algo 自動 start 5 秒 polling `/api/stock-price/{symbol}`
+4. Trading card row 最左加新 column「⏱️ 日期時間 + 股價」, 5 秒 update 一次
+5. 開市時股價 update 正常;休市時 freeze last known + 加「(休市)」caption
+6. 換 algo / page unload 自動 stop polling
+
+**Edge case:**
+- OpenD dev 環境 mock → `price=null + is_stale=true + message='Futu OpenD 連接未建立'`
+- 收市後 (HK 16:00 後) → `is_market_open=false`, 但如果今日 bar 仲有 close 都可以拎到 price
+- 週末 (Sat/Sun) → `is_market_open=false` (weekday 判斷)
+- 換 stock → 自動停舊 polling, start 新 polling (因為 start 入面 call stopRealTimePrice)
+
+---
+
 ## 📦 K-line API 改動 (大少 #11070, 2026-08-07 + 大少 09:29 1w 永久 fix)
 
 ### `GET /api/kline` — 1w period 永久 fix (大少 09:29, commit `6b71affc`)
