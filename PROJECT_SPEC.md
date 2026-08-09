@@ -416,6 +416,10 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 > 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7 用編號 07, M8 用編號 08, M9 用編號 09, zmen均算法 唔加 (獨立算法)。
 > 大少 2026-08-08 13:30 指示: Plan A 拆返 M7 + M8 兩個獨立 module (testing page 2 個 entries, 2 份 spec doc, 2 個 codebase files).
 > 大少 2026-08-08 22:28 指示: M9 Back Test 開工, Sprint 3 全部 6 個 sub-tasks (9.1-9.6) + 9.7 UI 升級 全部 done (23:55 收官).
+> 大少 2026-08-09 09:29 指示: Backend 1w period bug 修 (PERIOD_MAP 加 K_WEEK, 補返 weekly history), 10 隻 (5 港 + 5 美) Pilot 收官 10:02.
+> 大少 2026-08-09 09:54 指示: Top 3 (US.AAPL/MSFT/GOOGL) M9 bestParams 套用落 M8 (Node script 拎 1w cache POST 落 M8 cache).
+> 大少 2026-08-09 10:57 指示: M9 Pilot 4 個 followup bugs 全部 defer 落 Stage 1+ 處理, Pilot 收官優先.
+> 大少 2026-08-09 10:57 指示: M9 Pilot 4 個 followup bugs 全部 defer 落 Stage 1+ 處理, Pilot 收官優先.
 
 | 編號 | Module | 主檔 | Version | 3 Sections |
 |------|--------|------|---------|-----------|
@@ -427,7 +431,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 | 06 | Volatility 波動率收縮擴張 | `modules/volatility.ts` | **v1.0.0** | ✅ |
 | 07 | **終極綜合判定** (Synthesizer — M7) | `modules/synthesizer.ts` | **v1.0.0 (Sprint 1 done, 2026-08-08 13:30 Plan A 拆返)** | ✅ **Sprint 1 done**: M7 Synthesizer 邏輯 (SSI + TCM + Alignment + 8 個 Grade + Kelly) + 6 個 modules standard verdict interface + 64 個 tests + synthesizerAdapter + testing page enable |
 | 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` | **v2.3.0 (Sprint 2 done, 2026-08-08 16:55)** | ✅ **Sprint 2 done (大少 16:55, 8 commits)**: 8 個 finalAction 決策樹 (2.1) + Trading card adaptive (2.2) + 短期走勢 9 scenarios (2.3) + 人話詳細解讀 LLM hook (2.4) + 5 個 adaptive params auto-calibrate (2.5) + L2 JSON cache (2.6) + 10 隻 demo 股票 tests (2.7) + 4 個 SVG chart + 「🔄 重新校準」按鈕 (2.8) |
-| **09** | **回測驗證** (Back Test — M9, 時光機驗證官) | `modules/back-test.ts` | **v0.6.0 (Sprint 3 done, 2026-08-08 23:55)** | ✅ **Sprint 3 done (大少 22:28 啟動, 23:55 收官, 7 commits 9.1-9.7)**: Replay engine (9.1, 17 tests) + Coarse grid 9 + Fine tune ±20% top 5 (9.2, 16 tests) + Walk-Forward CV 3 folds rolling (9.3, 13 tests) + Per-symbol optimal cache 30 日 + Forward return 永久 (9.4, 16 tests) + Testing page entry 09 + back-test bundle (9.5) + HK.00700 pilot (9.6) + M9 UI 升級: 3 SVG (Kelly pie + Walk-Forward bar + Forward return scatter) + 6 色標 + 永遠 full show 過往判決 + 大少話你知 box (4 scenario LLM hook) + 2 個 button (重新校準 + 立即套用 M8) (9.7) |
+| **09** | **回測驗證** (Back Test — M9, 時光機驗證官) | `modules/back-test.ts` | **v0.6.0 (Sprint 3 done 2026-08-08 + Pilot 收官 2026-08-09)** | ✅ **Sprint 3 done (大少 22:28 啟動, 23:55 收官, 7 commits 9.1-9.7) + Pilot 收官 (大少 10:02)**: Replay engine + Coarse/Fine grid + Walk-Forward CV 3 folds + Per-symbol optimal cache 30 日 + Forward return 永久 + Testing page entry 09 + HK.00700 pilot + M9 UI 升級 (3 SVG + 6 色標 + 永遠 full show + 大少話你知 + 2 button) + **10 隻 (5 港 + 5 美) Pilot** (1w 統一 config, 399 forward return records 永久累積) + **Top 3 apply 落 M8** (US.AAPL 103.6/82%, US.MSFT 88.8/78%, US.GOOGL 82.0/76%) + **Backend 1w fix** (PERIOD_MAP 加 K_WEEK, 補返 5-10 年 weekly history) |
 | **獨立** | **zmen均算法** (唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
 | ⏸️ Hidden (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — |
 | ⏸️ Hidden (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — |

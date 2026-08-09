@@ -544,6 +544,29 @@ Health check endpoint.
 
 ---
 
+## 📦 K-line API 改動 (大少 #11070, 2026-08-07 + 大少 09:29 1w 永久 fix)
+
+### `GET /api/kline` — 1w period 永久 fix (大少 09:29, commit `6b71affc`)
+
+**Bug (之前)**: `backend/api/kline.py` PERIOD_MAP 只有 `1m / 1d / 1M / 1y`, doc 講 `1w` 支持但實作缺漏, `?period=1w` 返 `400 {"detail":"不支援的週期: 1w"}`。
+
+**Fix** (1 行):
+```python
+PERIOD_MAP = {
+    '1m': KLType.K_1M,
+    '1d': KLType.K_DAY,
+    '1w': KLType.K_WEEK,  # ← 加呢行, 大少 09:29 永久 fix (補返 5-10 年 weekly history)
+    '1M': KLType.K_MON,
+    '1y': KLType.K_YEAR,
+}
+```
+
+**影響**: M9 Pilot 拎 5-10 年 weekly history, 7 隻 data 唔夠 stocks 全部拎到有意義 results (15-39 samples)。
+
+**永久 Rule (大少 09:29)**: 所有 PERIOD 必須 register 落 PERIOD_MAP, doc 同實作必須 sync。將來加新 period (5m/15m/30m/60m 仲欠) 跟 same pattern。
+
+---
+
 ## 📦 K-line API 改動 (大少 #11070, 2026-08-07)
 
 ### `GET /api/kline`
@@ -604,6 +627,8 @@ Health check endpoint.
 
 | 日期 | 改動 | 大少 reference |
 |---|---|---|
+| 2026-08-09 10:57 | **M9 Pilot 收官 + Spec Sync #6** (10 隻 1w 統一 bench, 399 forward return records, Top 3 apply 落 M8, 4 個 followup bugs defer 落 Stage 1+) | 大少 09:34 / 09:54 / 10:02 / 10:57 |
+| 2026-08-09 09:29 | **Backend 1w period 永久 fix** (`PERIOD_MAP` 加 `KLType.K_WEEK`, 補返 5-10 年 weekly history) | 大少 09:29 揀 B |
 | 2026-08-08 23:55 | **Sprint 3 收官 + i18n 繁體人話 + Spec Sync #5** (M9 v0.6.0 9.1-9.7 全 done, testing page 全部繁體人話, 4 份 single source of truth doc 同步更新) | 大少 22:28 / 23:55 / 23:57 / 24:00 |
 | 2026-08-08 22:28 | **M9 Back Test 啟動 + 4 個新 endpoints (per-symbol optimal + forward return)** (M9 v0.5.0 → v0.6.0, 9.1-9.6 done, HK.00700 pilot 3/3 folds ✅, 24ms) | 大少 22:28 |
 | 2026-08-08 | **M8 Decision Engine 完成** (5 個 adaptive params + L2 JSON cache 7 日 expiry + 4 個 SVG chart + 8 個 finalAction + 揸車比喻 + LLM hook) | 大少 Sprint 2 done |

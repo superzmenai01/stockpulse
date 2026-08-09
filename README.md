@@ -290,7 +290,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 - **入口：** `/algorithms` 頁
 - **核心算法：**
   - **AS02** (公司質素分析) — `backend/services/as02_analyzer.py`
-  - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — **Stage 1 收官 done (2026-08-08 16:55) + Sprint 3 收官 done (2026-08-08 23:55)**: 6 個 modules production + M7 Synthesizer (v1.0.0) + M8 Decision Engine (v2.3.0, 8 個 finalAction + 揸車比喻 + Trading card adaptive + 短期走勢 9 scenarios + 人話詳細解讀 LLM hook + 5 個 adaptive params auto-calibrate + L2 JSON cache + 4 個 SVG chart + 10 隻 demo 股票 tests) + **M9 Back Test (v0.6.0, 9.1-9.7 全部 done)**: Replay engine + Coarse/Fine grid search + Walk-Forward 3 folds CV + Per-symbol optimal cache (30 日 expiry) + Forward return 永久記錄 (半衰期 180 日) + 4 個 endpoints + Testing page entry 09 + HK.00700 pilot (3/3 folds, 24ms) + M9 UI 升級 (3 SVG + 6 色標 + 永遠 full show + 2 button). 9 個 algorithms 全部 Active (1-8 + 9 + zmen均算法 獨立). 776 assertions pass (730 node + 46 python).
+  - **AS03** (股票週期判定) — `algorithms/AS-03-cycle-detection/` — **Stage 1 收官 done (2026-08-08 16:55) + Sprint 3 收官 done (2026-08-08 23:55) + M9 Pilot 收官 done (2026-08-09 10:02)**: 6 個 modules production + M7 Synthesizer (v1.0.0) + M8 Decision Engine (v2.3.0, 8 個 finalAction + 揸車比喻 + Trading card adaptive + 短期走勢 9 scenarios + 人話詳細解讀 LLM hook + 5 個 adaptive params auto-calibrate + L2 JSON cache + 4 個 SVG chart + 10 隻 demo 股票 tests) + **M9 Back Test (v0.6.0, 9.1-9.7 全部 done)**: Replay engine + Coarse/Fine grid search + Walk-Forward 3 folds CV + Per-symbol optimal cache (30 日 expiry) + Forward return 永久記錄 (半衰期 180 日) + 4 個 endpoints + Testing page entry 09 + **10 隻 (5 港 + 5 美) pilot 收官** (1w 統一 config, 399 forward return records 永久累積) + **Top 3 真正可落實倉位** (大少 11:57 永久 rule stability ≥ 70%): US.AAPL 103.6/82%, US.MSFT 88.8/78%, US.GOOGL 82.0/76% + **M9 → M8 Apply flow** (大少 09:54 Option B): Node script 拎 1w bestParams POST 落 M8 cache (5 個 fields), testing page 切 08 — AS-03-DEC verify M8 用咗 ssiWeights 40/30/30 + rsiWeight 0.10 (大少 11:57 永久 rule). 9 個 algorithms 全部 Active (1-8 + 9 + zmen均算法 獨立). 776 assertions pass (730 node + 46 python).
 - **AS03 模組 (2026-08-08 Stage 1 收官狀態):**
 
   > 大少 2026-08-08 10:06 指示: 6 個 modules 加編號 01-06 喺 dropdown displayName, M7 用編號 07, M8 用編號 08, zmen均算法 唔加 (獨立算法)。
@@ -358,6 +358,8 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 | 2026-08 | Fallback chain + retry policy (LLM 穩定性) |
 | 2026-08 | README + PROJECT_SPEC + ARCHITECTURE + API 文檔重整 (本文件) |
 | 2026-08 | AS-02 移除 auto-save: 改為 user 手動點「💾 儲存」(大少 #9700) |
+| 2026-08-09 | **M9 Pilot 收官** — 10 隻 (5 港 + 5 美) 用 1w 統一 config, 399 forward return records 永久累積, Top 3 (US.AAPL/MSFT/GOOGL) apply 落 M8 落實倉位 | 大少 09:34 / 09:54 / 10:57 |
+| 2026-08-09 | **Backend 1w period fix** — `backend/api/kline.py` PERIOD_MAP 加 `KLType.K_WEEK`, M9 拎 5-10 年 weekly history, 補返 7 隻 stocks data 唔夠問題 | 大少 09:29 揀 B |
 | **2026-08-03** | **LaunchAgent 永久 fix: Vite + logrotate auto-manage (Vite reboot deadlock + log disk 96% full)** |
 
 ---
