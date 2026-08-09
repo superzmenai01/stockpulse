@@ -6,7 +6,7 @@
 
 不影響其他 test (其他 test 用唔同 table)。
 
-Spec: docs/research/AS-03-cycle-detection/MODULE-10-TRADE-JOURNAL.md
+Spec: docs/research/AS-03-cycle-detection/MODULE-J-TRADE-JOURNAL.md
 """
 import pytest
 

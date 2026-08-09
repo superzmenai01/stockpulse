@@ -231,10 +231,9 @@
 | 8b | **SlopeMomentum (舊 M8)** | 🚧 **Stage 2 第二次 focus (M8 v1.0.0 re-elevate impl done)** | 2026-08-09 | v1.0.0 | 33/33 (Node) + 9/9 (pytest) | [MODULE-08-SLOPE-MOMENTUM.md](./MODULE-08-SLOPE-MOMENTUM.md) |
 | 8c | Cycle Synthesizer (兩線第一線) | ✅ Sprint 2 done | 2026-08-09 | — | 14/14 | [MODULE-08-CYCLE-SYNTHESIZER.md](./MODULE-08-CYCLE-SYNTHESIZER.md) |
 | 9 | Back Test (M9, 9.1-9.6 done) | ✅ Sprint 3 done | 2026-08-08 | v0.6.0 | — | [MODULE-09-BACK-TEST.md](./MODULE-09-BACK-TEST.md) |
-| 10 | Trade Journal (MVP + Followup) | ✅ Stage 1+ done | 2026-08-09 | — | 16/16 | [MODULE-10-TRADE-JOURNAL.md](./MODULE-10-TRADE-JOURNAL.md) |
+| J | Trade Journal (MVP + Followup) | ✅ Stage 1+ done | 2026-08-09 | — | 16/16 | [MODULE-J-TRADE-JOURNAL.md](./MODULE-J-TRADE-JOURNAL.md) |
 | 11 | **Backtest Timeline (M11)** | 🚧 **Stage 2 第三次 focus (M11 v0.1.0 impl done)** | 2026-08-10 | v0.1.0 | 40/40 (Node) + 10/10 (pytest) | [MODULE-11-BACKTEST-TIMELINE.md](./MODULE-11-BACKTEST-TIMELINE.md) |
 | 12 | Risk-Reward (M12) | ⏳ Stage 2 (跟住) | TBD | TBD | TBD | TBD |
-| J | Trade Journal UI (Testing Page) | ✅ Stage 1+ done | 2026-08-09 | — | — | [MODULE-10-TRADE-JOURNAL.md §5](./MODULE-10-TRADE-JOURNAL.md) |
 | ⭐獨立 | zmen均算法 (舊 M1 v0.3.0 抽出) | ✅ done | 2026-08-08 | v0.3.0 | 19/19 | [ZMEN-MA-ALIGNMENT.md](./ZMEN-MA-ALIGNMENT.md) |
 
 **Stage 2 重新 plan scope** (大少 2026-08-09 21:24 確認 go):

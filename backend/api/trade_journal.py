@@ -11,7 +11,7 @@ Modular FastAPI router:
 
 DB init 喺 main.py lifespan 啟動時呼叫 `init_trade_journal_table()`.
 
-Spec: docs/research/AS-03-cycle-detection/MODULE-10-TRADE-JOURNAL.md
+Spec: docs/research/AS-03-cycle-detection/MODULE-J-TRADE-JOURNAL.md
 """
 import logging
 import re

@@ -1,4 +1,4 @@
-# Module 10 — Trade Journal (時光機實戰日誌)
+# Module J — Trade Journal (時光機實戰日誌)
 
 > **Status**: v0.1.0 MVP (大少 2026-08-09 11:07 揀 MVP scope)
 > **Stage**: Stage 1+ 真實 forward return tracking
@@ -167,4 +167,4 @@ testing page 加 1 個新 section (永久顯示, 跟其他 sections 一齊):
 - `backend/main.py` (include_router)
 - `backend/tests/test_trade_journal.py` (NEW, pytest)
 - `testing-page/testing-page.js` (加 section)
-- `docs/research/AS-03-cycle-detection/MODULE-10-TRADE-JOURNAL.md` (本 doc, NEW)
+- `docs/research/AS-03-cycle-detection/MODULE-J-TRADE-JOURNAL.md` (本 doc, NEW)

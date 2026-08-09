@@ -314,7 +314,7 @@ function deriveState(tfVerdicts: { '1D': Verdict, '1W': Verdict, '1M': Verdict }
 - `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` — M7 點用 M5 verdict
 - `docs/research/AS-03-cycle-detection/MODULE-08-DECISION-ENGINE.md` — M8 點用 M5 verdict
 - `docs/research/AS-03-cycle-detection/MODULE-09-BACK-TEST.md` — Walk-Forward CV
-- `docs/research/AS-03-cycle-detection/MODULE-10-TRADE-JOURNAL.md` — Trade Journal integration
+- `docs/research/AS-03-cycle-detection/MODULE-J-TRADE-JOURNAL.md` — Trade Journal integration
 - `~/stockpulse/AGENTS.md` — Multi-TF "永遠 full show" 永久 rule
 - 大少 2026-08-09 14:16 揀 A drop + 21:30 確認 go Stage 2 重新 plan
 - 大少 21:30 confirm 4 個 design decision 全 A (1D+1W+1M / 分層 weights / 動態 MA / 12:1)
