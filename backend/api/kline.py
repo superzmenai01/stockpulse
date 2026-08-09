@@ -20,6 +20,7 @@ _cache = KlineCache()
 PERIOD_MAP = {
     '1m': KLType.K_1M,   # 1分鐘K
     '1d': KLType.K_DAY,  # 日K
+    '1w': KLType.K_WEEK, # 週K (大少 2026-08-09 09:29 修 — 原本 PERIOD_MAP 缺, doc 講有但 400)
     '1M': KLType.K_MON,  # 月K
     '1y': KLType.K_YEAR, # 年K
 }

@@ -1,24 +1,22 @@
 #!/usr/bin/env node
 /**
- * M9 Back Test Pilot v3 — Re-run 7 隻 data-唔夠嘅 stocks
+ * M9 Back Test Pilot v3 — Re-run 7 隻 data-唔夠嘅 stocks 用 1w period
  *
  * 大少 2026-08-09 09:15 揀 B (我嘅建議)
+ * 大少 2026-08-09 09:29 揀 B (再揀一次 — 修 backend 1w bug + Re-run 用 1w)
  *
  * V2 (1d) 結果: HK.01810/03690/09988 = 0 samples, US 4 隻 = 3 samples (OpenD 1d history 太短)
- * V3 fallback: 1d + stepDays=2 (vs 5) 拎 5x more samples per fold
+ * V3.5 (1w) — 修咗 backend 1w bug, 拎 5-10 年 weekly history, 補返 7 隻 samples
  *
- * 原本 plan 1w period 但 backend PERIOD_MAP 唔支持, 只 support 1m/1d/1M/1y
- *   - 1w: 唔 support
- *   - 1M: 拎 73 monthly, 3 folds × stepDays=2 = 1 sample/fold, 唔夠
- *   - 1d (with stepDays=2): 308 條 1d, 3 folds × 17 step × 5/fold = 5-15 samples, 顯著改善 v2
- *   → 用 1d + stepDays=2 fallback
+ * Backend 1w fix: `backend/api/kline.py` PERIOD_MAP 加 `'1w': KLType.K_WEEK`
+ *   - 之前 PERIOD_MAP 只有 1m/1d/1M/1y, doc 講 1w support 但 400 error
  *
  * Config:
- *   - period 1d
- *   - count 500 (request), 實際拎 182-308 條 (per stock OpenD 1d limit)
- *   - stepDays 2 (vs v2 5, 拎 2.5x more step positions)
- *   - lookbackDays 60
- *   - min klines 30 (vs v2 60)
+ *   - period 1w
+ *   - count 500 (500 週 ≈ 9.6 年)
+ *   - stepDays 2 (每 2 週跑一次, 拎更多 step 位置)
+ *   - lookbackDays 60 (60 日 ≈ 9 週, 夠 6 個 modules 計算)
+ *   - min klines 30
  */
 
 import { runWalkForwardCV, runReplay } from '../build/back-test.bundle.js';
@@ -246,8 +244,8 @@ async function postForwardReturn(symbol, fold) {
 async function runOne(stock) {
   const t0 = Date.now();
   try {
-    process.stdout.write(`📊 ${stock.symbol.padEnd(12)} (${stock.name.padEnd(10)}) [1d] ... `);
-    const klines = await fetchKlines(stock.symbol, '1d', 500);
+    process.stdout.write(`📊 ${stock.symbol.padEnd(12)} (${stock.name.padEnd(10)}) [1w] ... `);
+    const klines = await fetchKlines(stock.symbol, '1w', 500);
     if (klines.length < 90) {
       console.log(`⚠️  skip (klines=${klines.length})`);
       return { symbol: stock.symbol, name: stock.name, market: stock.market, status: 'skip', reason: 'data 唔夠' };
@@ -287,9 +285,9 @@ async function runOne(stock) {
 }
 
 async function main() {
-  console.log('🚀 M9 Back Test Pilot v3 — Re-run 7 隻用 1d fallback (1w 唔 support)');
+  console.log('🚀 M9 Back Test Pilot v3 — Re-run 7 隻用 1w period (backend 1w bug 已修)');
   console.log(`Backend: ${BACKEND}`);
-  console.log(`Config: 1d period · 500 request (實際 182-308 條) · 3 folds rolling · stepDays=2 (vs v2 5) · 真 M8 decisionFn\n`);
+  console.log(`Config: 1w period · 500 bars (~9.6 年) · 3 folds rolling · stepDays=2 · 真 M8 decisionFn\n`);
 
   const t0 = Date.now();
   const results = [];
