@@ -8417,7 +8417,18 @@ export const backtestTimelineAdapter = {
       }
       html += `</table></div></details>`;
     } else {
-      html += `<div style="background: #f9f9f9; padding: 20px; border-radius: 12px; text-align: center; color: #666;">📭 過去 ${dateRange} 日冇 verdict 記錄, 試吓撳 M9 (回測驗證) 先累積數據。</div>`;
+      // 大少 2026-08-10 00:42 — Empty state 加 M9 引導 (button 唔用, 純 instruction 因為 testing page dropdown UX bug + M9 寫入 vs M11 讀取 separation)
+      html += `<div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); padding: 20px 24px; border-radius: 12px; margin: 16px 0; border-left: 4px solid #ff9800;">`;
+      html += `<h4 style="margin: 0 0 8px 0; color: #e65100;">📭 暫時冇 ${symbol} 嘅 forward return 數據</h4>`;
+      html += `<p style="margin: 4px 0; color: #666; line-height: 1.6;">M11 嘅 timeline 視乎 <b>M9 back test</b> 累積嘅 forward return 數據。你呢隻股票 <code style="background: #fff; padding: 2px 6px; border-radius: 4px;">${symbol}</code> 未跑過 M9, 所以呢度空白。</p>`;
+      html += `<p style="margin: 12px 0 4px 0; color: #333; font-weight: bold;">👉 點樣累積 forward return 數據:</p>`;
+      html += `<ol style="margin: 4px 0 0 24px; color: #555; line-height: 1.8; font-size: 14px;">`;
+      html += `<li>去 testing page 上面 dropdown 揀 <code style="background: #fff; padding: 2px 6px; border-radius: 4px;">09 — AS-03-BT</code> (M9 回測驗證)</li>`;
+      html += `<li>喺「股票代碼」input 填返 <code style="background: #fff; padding: 2px 6px; border-radius: 4px;">${symbol}</code></li>`;
+      html += `<li>撳「跑算法」, 等 M9 跑完 (幾秒到 1 分鐘, 視乎數據量)</li>`;
+      html += `<li>返嚟呢度 reload, 撳「跑算法」就會見到 timeline + 黃金買點</li>`;
+      html += `</ol>`;
+      html += `</div>`;
     }
 
     // ===== Section 5: Golden entries (永遠 full show) =====
