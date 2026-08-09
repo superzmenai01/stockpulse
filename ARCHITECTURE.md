@@ -1703,3 +1703,91 @@ bdbdb120 feat(as03-m9-pilot): M9 Pilot v4 — Re-run v2 3 隻用 1w
 2. testing-page .mjs cache bust 永久 rule — 改 adapter.mjs 要同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X`
 - 兩個永久 rule 都已加落 User Memory (大少 12:00 + 13:10)
 
+---
+
+### 15.9 Trade Journal Followup (Stage 1+ Full scope, 大少 15:04 揀 A)
+
+大少 15:04 揀 A「Full scope (PUT mark 啱/錯 + DELETE 刪 entry + GET 統計 6 metrics) + 全部 6 個 metrics」, 1 hour scope 落地。
+
+**4 個新 column (DB schema, idempotent migration 喺 `models/trade_journal.py._ensure_columns`):**
+- `actual_exit_date` (TEXT, optional) — 真實賣出日期
+- `actual_exit_price` (REAL, optional) — 真實賣出價
+- `is_correct` (INTEGER 0/1/NULL) — 啱(True)/錯(False)/未 mark(NULL)
+- `updated_at` (TEXT) — 最後改時間
+
+**3 個新 endpoint (Stage 1+ followup):**
+- `PUT /api/trade-journal/{id}` — Body 全部 optional (actual_exit_date / actual_exit_price / is_correct / notes), 只 update 有 fill in 嘅 field, updated_at 自動 set
+- `DELETE /api/trade-journal/{id}` — 刪 entry, 200 `{deleted: true, id: N}` / 404
+- `GET /api/trade-journal/stats?symbol=&days=30` — 6 metrics (見下), **必須 register 喺 GET /{entry_id} 之前** (FastAPI route 配對係順序嘅)
+
+**6 個 metrics 設計 (大少 15:04 揀 default):**
+- `total` — window 內 total entries
+- `correct_count` — `is_correct = 1` 嘅 entry 數
+- `hit_rate` — `correct_count / (entries with is_correct not null)`, 0-1 之間 (前端顯示乘 100 加 %)
+- `avg_return_5d` — holding period <= 5 日嘅 entry 平均 forward return
+- `avg_return_20d` — holding period 5-20 日嘅 entry 平均 forward return
+- `best_worst_trade.best` / `.worst` — 所有 holding period 嘅最高/最低 forward return
+
+**3 forward return bucket 邏輯 (大少 15:04 default):**
+- holding period = `actual_exit_date - entry_date` (日數)
+- holding ≤ 5 日 → 入 `avg_return_5d` bucket
+- 5 < holding ≤ 20 日 → 入 `avg_return_20d` bucket
+- holding > 20 日 → 唔入 avg bucket (但入 `best_worst_trade`)
+- 自動分桶, 大少只需要 mark 一次 actual_exit_date + actual_exit_price, system 自動根據 holding period 分桶
+
+**Forward return 計算:**
+```python
+return = (actual_exit_price - entry_price) / entry_price
+```
+
+**大少 15:04 預設 (defaults):**
+- forward return 用 `actual_exit_price` (大少手動 mark 真實賣出價, 唔自動 fetch 5/20 日後股價)
+- `is_correct` 手動 mark (大少自己判斷, NULL = 未 mark)
+- hit_rate 用小數 (0.667), 前端顯示 * 100 加 % 號
+- DB column 用 standard naming (`actual_exit_*` / `is_correct` / `updated_at`)
+
+**Testing page UI 改:**
+- 每個 entry 旁邊加 4 個 button: ✅ 啱 (綠) / ❌ 錯 (紅) / ✏️ 改 (黃, prompt 拎 actual_exit_price + actual_exit_date + is_correct) / 🗑️ 刪 (灰, confirm dialog)
+- 統計 panel 加喺 section 最頂, 6 個 metrics chip 永遠 full show, 6 個顏色 (藍/綠/紫/黃/橙/灰藍)
+- 永遠 full show 即使 null 都 show `—` (跟 M8/M9 永久 rule, 大少 11:57)
+
+**Pytest 加 5 個 test:**
+1. `test_trade_journal_put_happy` — POST + PUT mark 啱 → 200, 4 個 field 全部 persist
+2. `test_trade_journal_put_404` — PUT 不存在 id → 404
+3. `test_trade_journal_delete_happy` — POST + DELETE → 200, 再 GET 應該 404
+4. `test_trade_journal_delete_404` — DELETE 不存在 id → 404
+5. `test_trade_journal_stats_6_metrics` — POST 3 entry (唔同 holding period 5d/20d/超出) + PUT 標記 + GET stats → 驗 6 個 metrics 齊
+
+**Conftest.py 永久 fixture (Stage 1+ followup 加):**
+- `scope="session"` autouse fixture — session 開始 reset schema (init_trade_journal_table + DELETE) 1 次
+- 原因: TestClient 唔 trigger FastAPI lifespan, 所以 4 個新 column 唔會自動加, 必須 explicit init
+- scope=session 因為 existing test (duplicate_409 / list_filter / get_by_id) 依賴前一個 test 嘅 entry, function scope 會清晒
+
+**Spec sync scope (本 §15.9 commit 涉及 4 份 spec doc + 1 個 testing page cache bust):**
+- `API.md` — 加 Trade Journal API section (6 個 endpoint + 4 個新 column + 6 個 metrics schema)
+- `ARCHITECTURE.md` — 本 §15.9 section
+- `README.md` — Trade Journal row 加 PUT/DELETE/stats
+- `PROJECT_SPEC.md` — Stage 1+ Trade Journal section 加 PUT/DELETE/stats
+- `testing-page/index.html` — `?v=2.3.5` → `?v=2.3.6` (跟 HTML cache bust 永久 rule)
+- `testing-page/testing-page.js` — `ALGO_CACHE_BUST` 唔使 bump (冇改 .mjs)
+
+**Use case:**
+1. 大少喺 testing page 見 M8 BUY 訊號 (US.AAPL / MSFT / GOOGL Top 3) → 落實倉位 → 加 Trade Journal entry
+2. 過 5/20 日 → 返去 testing page → 撳「✏️ 改」+ 輸入 actual_exit_price + actual_exit_date
+3. 撳「✅ 啱」或「❌ 錯」 mark 啱錯
+4. 統計 panel 自動計算 6 個 metrics (命中率 / avg return / best/worst)
+5. 累積 30+ 樣本 → tune 5 個 adaptive params (Stage 1+ Bayesian tune, 1-2 hour)
+6. Stage 1+ 真實 forward return workflow 完成
+
+**Files 改動 (本 §15.9 commit):**
+1. `backend/models/trade_journal.py` — 加 4 column + update_entry() + delete_entry() + get_stats()
+2. `backend/api/trade_journal.py` — 加 PUT/DELETE/stats endpoint + Pydantic schema
+3. `backend/tests/test_trade_journal_followup.py` (新 file) — 5 個新 test
+4. `backend/tests/conftest.py` (新 file) — session scope autouse fixture
+5. `testing-page/testing-page.js` — 4 個 button + 統計 panel + 5 個新 function
+6. `testing-page/index.html` — `?v=2.3.5` → `?v=2.3.6`
+7. `API.md` — 加 Trade Journal API section
+8. `ARCHITECTURE.md` — 本 §15.9 section
+9. `README.md` — Trade Journal row 加 PUT/DELETE/stats
+10. `PROJECT_SPEC.md` — Stage 1+ Trade Journal section 加 PUT/DELETE/stats
+

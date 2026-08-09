@@ -500,6 +500,83 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 
 ---
 
+## 📓 Trade Journal (Stage 1+ MVP + Followup, 大少 15:04 揀 Full scope)
+
+大少真正落實倉位後記錄落 Trade Journal, 之後 mark 啱/錯, 拎真實 forward return, 之後 tune 5 個 adaptive params (Stage 1+ 真實 forward return tracking)。
+
+### 6 個 Endpoint
+
+| Method | URL | 用途 |
+|--------|-----|------|
+| `POST` | `/api/trade-journal` | 加 entry (永久保留, UNIQUE(symbol, entry_date) 防止重複) |
+| `GET` | `/api/trade-journal` | 列出 entries (optional filter by symbol, limit 1-500) |
+| `GET` | `/api/trade-journal/stats?symbol=&days=30` | 計算 6 個 metrics 過去 N 日 (Stage 1+ followup) |
+| `GET` | `/api/trade-journal/{id}` | 拎單一 entry by id |
+| `PUT` | `/api/trade-journal/{id}` | 改 entry 嘅 actual exit + 啱/錯 mark (Stage 1+ followup) |
+| `DELETE` | `/api/trade-journal/{id}` | 刪 entry by id (Stage 1+ followup) |
+
+### DB Schema (13 column)
+
+| Column | Type | Nullable | 用途 |
+|--------|------|----------|------|
+| `id` | INTEGER PK AUTOINCREMENT | NO | 自動編號 |
+| `symbol` | TEXT | NO | 股票 code (e.g. 'HK.00700') |
+| `entry_date` | TEXT | NO | 買入日期 YYYY-MM-DD (UNIQUE with symbol) |
+| `entry_price` | REAL | NO | 買入價 (> 0) |
+| `shares` | REAL | NO DEFAULT 1.0 | 買入股數 |
+| `target_price` | REAL | YES | 目標價 (optional) |
+| `stop_loss` | REAL | YES | 止蝕價 (optional) |
+| `notes` | TEXT | YES | 大少 備註 |
+| `created_at` | TEXT | NO DEFAULT NOW | 創建時間 |
+| `actual_exit_date` | TEXT | YES | 真實賣出日期 (Stage 1+ followup) |
+| `actual_exit_price` | REAL | YES | 真實賣出價 (Stage 1+ followup) |
+| `is_correct` | INTEGER | YES (0/1/NULL) | 啱(True)/錯(False)/未 mark(NULL) (Stage 1+ followup) |
+| `updated_at` | TEXT | YES | 最後改時間 (Stage 1+ followup) |
+
+### 6 個 Metrics (大少 15:04 揀 default)
+
+| Metric | 計法 | 用途 |
+|--------|------|------|
+| `total` | window 內 total entries | 統計 window 大小 |
+| `correct_count` | `is_correct = 1` 嘅 entry 數 | 啱嘅次數 |
+| `hit_rate` | `correct_count / (entries with is_correct not null)`, 0-1 | 命中率 (前端顯示 * 100 加 % 號) |
+| `avg_return_5d` | holding period ≤ 5 日嘅 entry 平均 forward return | 短線表現 |
+| `avg_return_20d` | holding period 5-20 日嘅 entry 平均 forward return | 中線表現 |
+| `best_worst_trade.best` | 所有 holding period 嘅最高 forward return | 最佳表現 |
+| `best_worst_trade.worst` | 所有 holding period 嘅最低 forward return | 最差表現 |
+
+### 3 Forward Return Bucket 邏輯 (大少 15:04 default)
+
+- holding period = `actual_exit_date - entry_date` (日數)
+- holding ≤ 5 日 → 入 `avg_return_5d` bucket
+- 5 < holding ≤ 20 日 → 入 `avg_return_20d` bucket
+- holding > 20 日 → 唔入 avg bucket, 但入 `best_worst_trade`
+- 自動分桶, 大少只需要 mark 一次 actual_exit_date + actual_exit_price, system 自動根據 holding period 分桶
+
+### 大少 15:04 預設 (defaults)
+
+- forward return 用 `actual_exit_price` (大少手動 mark 真實賣出價, 唔自動 fetch 5/20 日後股價 — 簡單可靠, 對齊大少真實買賣日)
+- `is_correct` 手動 mark (大少自己判斷, NULL = 未 mark — MVP 簡單版, Stage 1+ 30+ 樣本後再考慮 auto-calculate)
+- hit_rate 用小數 (0.667), 前端顯示 * 100 加 % 號
+- DB column 用 standard naming (`actual_exit_*` / `is_correct` / `updated_at`)
+
+### Use Case
+
+1. 大少喺 testing page 見 M8 BUY 訊號 (US.AAPL / MSFT / GOOGL Top 3) → 落實倉位 → 加 Trade Journal entry
+2. 過 5/20 日 → 返去 testing page → 撳「✏️ 改」+ 輸入 actual_exit_price + actual_exit_date
+3. 撳「✅ 啱」或「❌ 錯」 mark 啱錯
+4. 統計 panel 自動計算 6 個 metrics (命中率 / avg return / best/worst)
+5. 累積 30+ 樣本 → tune 5 個 adaptive params (Stage 1+ Bayesian tune, 1-2 hour)
+6. Stage 1+ 真實 forward return workflow 完成
+
+### Spec Doc 連結
+
+- `ARCHITECTURE.md` §15.9 — Trade Journal Followup 詳細 spec (4 個新 column + 3 個新 endpoint + 6 個 metrics 設計 + 3 forward return bucket 邏輯)
+- `API.md` 📓 Trade Journal API section — 6 個 endpoint 詳細 + 4 個新 column + 6 個 metrics schema
+- `README.md` 📓 Trade Journal section — 6 個 endpoint 列表 + Testing page UI 設計
+
+---
+
 ## 📊 當前實現狀態
 
 ### ✅ 已完成
@@ -509,6 +586,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 - [x] 實時報價顯示
 - [x] 取消訂閱冷卻提示
 - [x] 設計文檔（PROJECT_SPEC.md）
+- [x] **Trade Journal (Stage 1+ MVP + Followup, 2026-08-09 15:04 揀 Full scope)**: 6 個 endpoint (POST/GET/GET-stats/GET-id/PUT/DELETE) + 4 個新 column (actual_exit_date / actual_exit_price / is_correct / updated_at, idempotent migration) + 6 個 metrics (total / correct_count / hit_rate / avg_return_5d / avg_return_20d / best_worst_trade) + 3 forward return bucket 邏輯 (≤5日 / 5-20日 / >20日) + 5 個 pytest + testing page 4 個 button (啱/錯/改/刪) + 統計 panel (6 色, 永遠 full show) + 4 份 spec doc 同步
 
 ### ⏳ 待實現
 - [ ] 數據庫建設

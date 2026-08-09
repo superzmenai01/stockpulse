@@ -546,6 +546,140 @@ Health check endpoint.
 
 ---
 
+## 📓 Trade Journal API (Stage 1+ MVP + Followup, 大少 15:04 揀 Full scope)
+
+大少真正落實倉位後記錄落 Trade Journal, 之後 mark 啱/錯, 拎真實 forward return, 之後 tune 5 個 adaptive params (Stage 1+ 真實 forward return tracking)。
+
+**Endpoints (6 個):**
+
+| Method | URL | 用途 |
+|--------|-----|------|
+| `POST` | `/api/trade-journal` | 加 entry (永久保留) |
+| `GET` | `/api/trade-journal` | 列出 entries (optional filter by symbol) |
+| `GET` | `/api/trade-journal/stats` | 計算 6 個 metrics 過去 N 日 (Stage 1+ followup) |
+| `GET` | `/api/trade-journal/{id}` | 拎單一 entry by id |
+| `PUT` | `/api/trade-journal/{id}` | 改 entry 嘅 actual exit + 啱/錯 mark (Stage 1+ followup) |
+| `DELETE` | `/api/trade-journal/{id}` | 刪 entry by id (Stage 1+ followup) |
+
+**DB schema (Stage 1+ followup 加 4 個 column, idempotent migration 喺 `models/trade_journal.py`):**
+- `actual_exit_date` (TEXT, optional) — 真實賣出日期
+- `actual_exit_price` (REAL, optional) — 真實賣出價
+- `is_correct` (INTEGER 0/1/NULL) — 啱(True)/錯(False)/未 mark(NULL)
+- `updated_at` (TEXT) — 最後改時間
+- `UNIQUE(symbol, entry_date)` — 防止重複 add (大少 11:57 永久 rule)
+
+### `POST /api/trade-journal`
+
+加 1 條 Trade Journal entry (永久保留)。
+
+**Body:**
+```json
+{
+  "symbol": "HK.00700",
+  "entry_date": "2026-08-09",
+  "entry_price": 493.40,
+  "shares": 100,
+  "target_price": 530.00,
+  "stop_loss": 480.00,
+  "notes": "騰訊反彈, M9 拎到 high score BUY 訊號"
+}
+```
+
+**Response 200:** TradeJournalEntry (見下)
+**Response 400:** entry_date 唔係 YYYY-MM-DD 格式 / entry_price <= 0
+**Response 409:** (symbol, entry_date) UNIQUE constraint 撞 (大少 11:57 永久 rule)
+
+### `GET /api/trade-journal`
+
+列出 entries (newest first by entry_date DESC, id DESC).
+
+**Query params:** `symbol` (optional), `limit` (1-500, default 50), `offset` (default 0)
+**Response 200:** `{ entries: [...], count: N }`
+
+### `GET /api/trade-journal/stats` (Stage 1+ followup)
+
+計算 6 個 metrics 過去 N 日 (大少 15:04 揀 6 個 metrics)。
+
+**Query params:** `symbol` (optional), `days` (1-365, default 30)
+
+**Response 200:**
+```json
+{
+  "total": 12,
+  "correct_count": 8,
+  "hit_rate": 0.667,
+  "avg_return_5d": 0.025,
+  "avg_return_20d": 0.041,
+  "best_worst_trade": { "best": 0.18, "worst": -0.05 },
+  "filter": { "symbol": "US.AAPL", "days": 30 }
+}
+```
+
+**6 個 metrics 定義:**
+- `total` — window 內 total entries
+- `correct_count` — `is_correct = 1` 嘅 entry 數
+- `hit_rate` — `correct_count / (entries with is_correct not null)`, 0-1 之間 (前端顯示乘 100 加 %)
+- `avg_return_5d` — holding period <= 5 日嘅 entry 平均 forward return
+- `avg_return_20d` — holding period 5-20 日嘅 entry 平均 forward return
+- `best_worst_trade.best` / `.worst` — 所有 holding period 嘅最高/最低 forward return
+
+**Edge case:** `total = 0` → `hit_rate` + 所有 avg 都係 `null`
+
+### `GET /api/trade-journal/{id}`
+
+拎單一 entry by id. Response 200 TradeJournalEntry / 404 not found.
+
+### `PUT /api/trade-journal/{id}` (Stage 1+ followup)
+
+改 entry 嘅 actual exit + 啱/錯 mark。所有 field optional, 只 update 有 fill in 嘅 field。
+
+**Body:**
+```json
+{
+  "actual_exit_date": "2026-08-15",
+  "actual_exit_price": 510.00,
+  "is_correct": true,
+  "notes": "Mark 啱 (可以 override notes)"
+}
+```
+
+**Response 200:** updated TradeJournalEntry (updated_at 自動 set)
+**Response 400:** actual_exit_date 唔係 YYYY-MM-DD 格式 / actual_exit_price <= 0
+**Response 404:** entry id 唔存在
+
+**大少 15:04 預設行為:**
+- forward return 用 `actual_exit_price` (大少手動 mark 真實賣出價, 唔自動 fetch)
+- `is_correct` 手動 mark (大少自己判斷, NULL = 未 mark)
+- holding period 自動分 5d (<=5 日) / 20d (5-20 日) bucket
+
+### `DELETE /api/trade-journal/{id}` (Stage 1+ followup)
+
+刪 entry by id. Response 200 `{deleted: true, id: N}` / 404 not found.
+
+### TradeJournalEntry schema (full)
+
+```json
+{
+  "id": 1,
+  "symbol": "HK.00700",
+  "entry_date": "2026-08-09",
+  "entry_price": 493.40,
+  "shares": 100,
+  "target_price": 530.00,
+  "stop_loss": 480.00,
+  "notes": "...",
+  "created_at": "2026-08-09 07:09:52",
+  "actual_exit_date": "2026-08-15",
+  "actual_exit_price": 510.00,
+  "is_correct": 1,
+  "updated_at": "2026-08-09T15:14:34Z"
+}
+```
+
+**Use case:** 大少喺 testing page 見 M8 BUY 訊號 → 落實倉位 → 加 Trade Journal entry → 過 5/20 日 → 返去 mark 啱/錯 → 統計 panel 自動計 6 個 metrics → 累積 30+ 樣本 → tune 5 個 adaptive params (Stage 1+ Bayesian tune)。
+
+---
+
 ## 📦 K-line API 改動 (大少 #11070, 2026-08-07 + 大少 09:29 1w 永久 fix)
 
 ### `GET /api/kline` — 1w period 永久 fix (大少 09:29, commit `6b71affc`)

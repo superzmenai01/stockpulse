@@ -345,6 +345,25 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 - **功能：** Telegram 內即時報價 + 策略觸發 + 簡易查詢
 - **Backend：** `miniapp/backend/main.py`
 
+### 📓 Trade Journal (Stage 1+ MVP + Followup, 大少 15:04 揀 Full scope)
+- **位置：** Testing page `http://localhost:8765/testing-page/` 嘅 📓 Trade Journal section
+- **功能：** 大少真正落實倉位後記錄, 之後 mark 啱/錯, 拎真實 forward return, 之後 tune 5 個 adaptive params (Stage 1+ 真實 forward return tracking)
+- **API：** `/api/trade-journal/*` (6 個 endpoint)
+  - `POST /api/trade-journal` — 加 entry (永久保留, UNIQUE(symbol, entry_date))
+  - `GET /api/trade-journal` — 列出 entries (optional filter by symbol)
+  - `GET /api/trade-journal/stats?symbol=&days=30` — 計算 6 個 metrics (Stage 1+ followup)
+  - `GET /api/trade-journal/{id}` — 拎單一 entry
+  - `PUT /api/trade-journal/{id}` — 改 actual exit + 啱/錯 mark (Stage 1+ followup)
+  - `DELETE /api/trade-journal/{id}` — 刪 entry (Stage 1+ followup)
+- **DB schema:** `trade_journal` table (13 column, 4 個 followup 加: `actual_exit_date` / `actual_exit_price` / `is_correct` / `updated_at`, idempotent migration 喺 `models/trade_journal.py._ensure_columns`)
+- **Testing page UI:**
+  - 統計 panel (6 個 metrics chip, 永遠 full show, 6 色: 藍/綠/紫/黃/橙/灰藍)
+  - 每個 entry 旁邊 4 個 button: ✅ 啱 (綠) / ❌ 錯 (紅) / ✏️ 改 (黃, prompt 拎 actual_exit_price + actual_exit_date + is_correct) / 🗑️ 刪 (灰)
+  - 永遠 full show 即使 null 都 show `—` (跟 M8/M9 永久 rule, 大少 11:57)
+- **6 個 metrics:** `total` / `correct_count` / `hit_rate` / `avg_return_5d` / `avg_return_20d` / `best_worst_trade` ({best, worst})
+- **3 forward return bucket 邏輯:** holding period = actual_exit_date - entry_date; ≤ 5 日 → `avg_return_5d`, 5-20 日 → `avg_return_20d`, > 20 日 → 唔入 avg bucket 但入 `best_worst_trade`
+- **Spec:** `ARCHITECTURE.md` §15.9 + `API.md` 📓 Trade Journal API section + `PROJECT_SPEC.md` Stage 1+ Trade Journal section
+
 ---
 
 ## 📅 近期重要更新 (2026-05 → 2026-08)
@@ -361,6 +380,7 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 | 2026-08-09 | **M9 Pilot 收官** — 10 隻 (5 港 + 5 美) 用 1w 統一 config, 399 forward return records 永久累積, Top 3 (US.AAPL/MSFT/GOOGL) apply 落 M8 落實倉位 | 大少 09:34 / 09:54 / 10:57 |
 | 2026-08-09 | **Backend 1w period fix** — `backend/api/kline.py` PERIOD_MAP 加 `KLType.K_WEEK`, M9 拎 5-10 年 weekly history, 補返 7 隻 stocks data 唔夠問題 | 大少 09:29 揀 B |
 | 2026-08-09 | **Sprint 2 收官 (2.9 spec doc final done)** — AS-03-DEC v2.0.0 (1.0.0 → 1.8.0 → 2.0.0) + 4 個 followup bugs 全部 fix: **Bug 1** (testing page race condition, `da32c4db`) + **Bug 2** (M8 kelly override 落 Synthesizer, `639e6d70`) + **Bug 3+4** (version 顯示 1.0.0 → 2.0.0 + testing page .mjs cache bust sync 永久 rule, `d61d96d6`) + 2 個 testing page 永久 rule 加咗落 memory (HTML cache bust sync + .mjs cache bust) | 大少 12:00 / 12:30 / 13:00 / 13:15 |
+| 2026-08-09 | **Trade Journal followup (Stage 1+ Full scope)** — PUT mark 啱錯 + DELETE 刪 entry + GET stats 6 metrics + 4 個新 DB column (idempotent migration) + 5 個 pytest + testing page 4 個 button (啱/錯/改/刪) + 統計 panel (6 色) + 4 份 spec doc sync + HTML cache bust `?v=2.3.5` → `?v=2.3.6` | 大少 15:04 |
 | **2026-08-03** | **LaunchAgent 永久 fix: Vite + logrotate auto-manage (Vite reboot deadlock + log disk 96% full)** |
 
 ---

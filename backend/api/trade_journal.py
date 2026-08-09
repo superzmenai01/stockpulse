@@ -1,9 +1,13 @@
 """
-api/trade_journal.py — Trade Journal API (Stage 1+ MVP, 大少 11:07)
+api/trade_journal.py — Trade Journal API (Stage 1+ MVP + Followup, 大少 15:04 揀 Full scope)
 
 Modular FastAPI router:
-- POST /api/trade-journal        加 entry
-- GET  /api/trade-journal        列出 entries (optional filter by symbol)
+- POST /api/trade-journal           加 entry
+- GET  /api/trade-journal           列出 entries (optional filter by symbol)
+- GET  /api/trade-journal/stats     統計 6 個 metrics (Stage 1+ followup)
+- GET  /api/trade-journal/{id}      拎單一 entry
+- PUT  /api/trade-journal/{id}      Mark 啱/錯 + 改 actual exit (Stage 1+ followup)
+- DELETE /api/trade-journal/{id}    刪 entry (Stage 1+ followup)
 
 DB init 喺 main.py lifespan 啟動時呼叫 `init_trade_journal_table()`.
 
@@ -40,6 +44,18 @@ class TradeJournalAdd(BaseModel):
     notes: Optional[str] = Field(default="", description="大少 備註 (optional)")
 
 
+# Stage 1+ followup (大少 15:04 揀 Full scope): PUT 改 entry schema
+class TradeJournalUpdate(BaseModel):
+    """PUT body — 全部 optional, 只 update 有 fill in 嘅 field.
+
+    大少 15:04 default #4: is_correct 手動 mark, True = 啱, False = 錯, 唔傳 = 唔改
+    """
+    actual_exit_date: Optional[str] = Field(default=None, description="真實賣出日期 YYYY-MM-DD (optional)")
+    actual_exit_price: Optional[float] = Field(default=None, gt=0, description="真實賣出價 (optional, must > 0)")
+    is_correct: Optional[bool] = Field(default=None, description="啱(True) / 錯(False) mark (optional)")
+    notes: Optional[str] = Field(default=None, description="改備註 (optional)")
+
+
 class TradeJournalEntry(BaseModel):
     id: int
     symbol: str
@@ -50,11 +66,37 @@ class TradeJournalEntry(BaseModel):
     stop_loss: Optional[float] = None
     notes: Optional[str] = ""
     created_at: str
+    # Stage 1+ followup 4 個新 field
+    actual_exit_date: Optional[str] = None
+    actual_exit_price: Optional[float] = None
+    is_correct: Optional[int] = None  # 0/1/NULL
+    updated_at: Optional[str] = None
 
 
 class TradeJournalListResponse(BaseModel):
     entries: list[TradeJournalEntry]
     count: int
+
+
+# Stage 1+ followup: GET stats response schema
+class TradeJournalStatsBestWorst(BaseModel):
+    best: Optional[float] = None
+    worst: Optional[float] = None
+
+
+class TradeJournalStatsFilter(BaseModel):
+    symbol: Optional[str] = None
+    days: int = 30
+
+
+class TradeJournalStatsResponse(BaseModel):
+    total: int
+    correct_count: int
+    hit_rate: Optional[float] = None
+    avg_return_5d: Optional[float] = None
+    avg_return_20d: Optional[float] = None
+    best_worst_trade: TradeJournalStatsBestWorst
+    filter: TradeJournalStatsFilter
 
 
 # ============================================================================
@@ -108,6 +150,25 @@ async def list_trade_journal_entries(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Stage 1+ followup (大少 15:04): 必須 register 喺 GET /{entry_id} 之前
+# 因為 FastAPI route 配對係順序嘅, 否則 /stats 會被 /{entry_id} 攔截
+@router.get("/stats", response_model=TradeJournalStatsResponse)
+async def get_trade_journal_stats(
+    symbol: Optional[str] = Query(default=None, description="Filter by stock code (optional)"),
+    days: int = Query(default=30, ge=1, le=365, description="統計過去 N 日 (1-365, default 30)"),
+) -> dict:
+    """[GET] 計算 6 個 metrics 過去 N 日.
+
+    大少 15:04 揀 6 個 metrics:
+    - total / correct_count / hit_rate / avg_return_5d / avg_return_20d / best_worst_trade
+    """
+    try:
+        return model.get_stats(symbol=symbol, days=days)
+    except Exception as e:
+        logger.error(f"[trade-journal] get_stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{entry_id}", response_model=TradeJournalEntry)
 async def get_trade_journal_entry(entry_id: int) -> dict:
     """[GET] 拎單一 entry by id (helper for future PUT/DELETE)"""
@@ -115,3 +176,52 @@ async def get_trade_journal_entry(entry_id: int) -> dict:
     if not result:
         raise HTTPException(status_code=404, detail=f"Entry #{entry_id} not found")
     return result
+
+
+# Stage 1+ followup (大少 15:04): PUT 改 entry
+@router.put("/{entry_id}", response_model=TradeJournalEntry)
+async def update_trade_journal_entry(entry_id: int, req: TradeJournalUpdate) -> dict:
+    """[PUT] 改 entry 嘅 actual exit + 啱/錯 mark.
+
+    Body field 全部 optional, 只 update 有 fill in 嘅 field.
+    大少 15:04 default:
+    - forward return 用 actual_exit_price (大少手動 mark 真實賣出價)
+    - is_correct 手動 mark (大少自己判斷)
+    """
+    # Validate actual_exit_date format if provided
+    if req.actual_exit_date is not None and not DATE_REGEX.match(req.actual_exit_date):
+        raise HTTPException(status_code=400, detail="actual_exit_date 必須係 YYYY-MM-DD 格式")
+    try:
+        result = model.update_entry(
+            entry_id=entry_id,
+            actual_exit_date=req.actual_exit_date,
+            actual_exit_price=req.actual_exit_price,
+            is_correct=req.is_correct,
+            notes=req.notes,
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Entry #{entry_id} not found")
+        logger.info(f"[trade-journal] 改 entry #{entry_id}: {req.model_dump(exclude_none=True)}")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[trade-journal] update_entry error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Stage 1+ followup (大少 15:04): DELETE 刪 entry
+@router.delete("/{entry_id}")
+async def delete_trade_journal_entry(entry_id: int) -> dict:
+    """[DELETE] 刪 entry by id. Returns 200 if deleted, 404 if not exist."""
+    try:
+        deleted = model.delete_entry(entry_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Entry #{entry_id} not found")
+        logger.info(f"[trade-journal] 刪 entry #{entry_id}")
+        return {"deleted": True, "id": entry_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[trade-journal] delete_entry error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

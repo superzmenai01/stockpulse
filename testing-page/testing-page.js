@@ -896,10 +896,138 @@ inputsForm.addEventListener('keydown', (e) => {
   }
 });
 
-// ===== Trade Journal Section (Stage 1+ MVP, 大少 11:07) =====
-//   - Input form: 大少 mark 真實落實倉位 (symbol, entry_date, entry_price, shares, target_price, stop_loss, notes)
-//   - List 已有 entries (newest first, 永遠 full show, 大少 11:57 永久 rule)
-//   - POST /api/trade-journal + GET /api/trade-journal (Stage 1+ 永久保留)
+// ===== Trade Journal Section (Stage 1+ MVP + Followup, 大少 15:04 揀 Full scope) =====
+//   - 統計 panel: 6 個 metrics (永遠 full show, 6 色, 大少 11:57 永久 rule)
+//   - 每個 entry 加 4 個 button: 啱 / 錯 / 改 / 刪
+//   - API: POST / GET / PUT / DELETE / stats (Stage 1+ 永久保留)
+
+async function loadTradeJournalStats() {
+  const panelEl = document.getElementById('trade-journal-stats');
+  if (!panelEl) return;
+  try {
+    const resp = await fetch('http://localhost:18792/api/trade-journal/stats?days=30');
+    if (!resp.ok) {
+      panelEl.innerHTML = '<p style="color: #EE5151;">❌ 拎唔到統計</p>';
+      return;
+    }
+    const stats = await resp.json();
+    const pct = (v) => v === null || v === undefined ? '—' : (v * 100).toFixed(1) + '%';
+    const num = (v) => v === null || v === undefined ? '—' : v;
+    const chip = (label, value, color) =>
+      `<div style="background: ${color}15; border: 1px solid ${color}; border-radius: 6px; padding: 8px 12px; text-align: center; min-width: 100px;">
+        <div style="font-size: 11px; color: ${color}; font-weight: 600;">${label}</div>
+        <div style="font-size: 16px; color: ${color}; font-weight: 700; margin-top: 2px;">${value}</div>
+      </div>`;
+    const bw = stats.best_worst_trade || {};
+    panelEl.innerHTML = `
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        ${chip('總筆數', num(stats.total), '#1890ff')}
+        ${chip('啱嘅次數', num(stats.correct_count), '#26BA75')}
+        ${chip('命中率', pct(stats.hit_rate), '#8B5CF6')}
+        ${chip('5 日回報', pct(stats.avg_return_5d), '#F39C12')}
+        ${chip('20 日回報', pct(stats.avg_return_20d), '#FF6B35')}
+        ${chip('最佳/最差', `${pct(bw.best)} / ${pct(bw.worst)}`, '#5B7C99')}
+        <button id="tj-stats-refresh" type="button" style="background: #f0f0f0; color: #333; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px;">🔄 重新整理</button>
+      </div>
+      <p style="font-size: 11px; color: #888; margin: 6px 0 0 0;">統計過去 30 日 (${stats.filter?.symbol || '全部股票'})</p>
+    `;
+    const refreshBtn = document.getElementById('tj-stats-refresh');
+    if (refreshBtn) refreshBtn.addEventListener('click', () => { loadTradeJournal(); loadTradeJournalStats(); });
+  } catch (e) {
+    console.error('[Trade Journal] stats error:', e);
+    panelEl.innerHTML = '<p style="color: #EE5151;">❌ 統計錯誤: ' + e.message + '</p>';
+  }
+}
+
+async function putMark(id, isCorrect) {
+  if (!confirm(isCorrect ? '確認 mark 呢個 entry 做「啱」?' : '確認 mark 呢個 entry 做「錯」?')) return;
+  try {
+    const resp = await fetch(`http://localhost:18792/api/trade-journal/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_correct: isCorrect }),
+    });
+    if (resp.ok) {
+      await loadTradeJournal();
+      await loadTradeJournalStats();
+    } else {
+      const err = await resp.json();
+      alert('❌ Mark 失敗: ' + (err.detail || resp.status));
+    }
+  } catch (e) {
+    console.error('[Trade Journal] put mark error:', e);
+    alert('❌ 錯誤: ' + e.message);
+  }
+}
+
+async function deleteEntry(id) {
+  if (!confirm('確認刪除呢個 entry? 刪咗就冇得返转头 (永久保留 rule)')) return;
+  try {
+    const resp = await fetch(`http://localhost:18792/api/trade-journal/${id}`, { method: 'DELETE' });
+    if (resp.ok) {
+      await loadTradeJournal();
+      await loadTradeJournalStats();
+    } else if (resp.status === 404) {
+      alert('❌ Entry 已經唔存在');
+    } else {
+      const err = await resp.json();
+      alert('❌ 刪除失敗: ' + (err.detail || resp.status));
+    }
+  } catch (e) {
+    console.error('[Trade Journal] delete error:', e);
+    alert('❌ 錯誤: ' + e.message);
+  }
+}
+
+async function openEditForm(id) {
+  const entryResp = await fetch(`http://localhost:18792/api/trade-journal/${id}`);
+  if (!entryResp.ok) {
+    alert('❌ 拎唔到 entry 資料');
+    return;
+  }
+  const entry = await entryResp.json();
+  const exitPrice = prompt('輸入實際賣出價 (留空跳過):', entry.actual_exit_price || '');
+  if (exitPrice === null) return; // 用戶 cancel
+  const exitDate = prompt('輸入實際賣出日期 YYYY-MM-DD (留空跳過):', entry.actual_exit_date || '');
+  if (exitDate === null) return;
+  const isCorrect = prompt('Mark 啱 (y) / 錯 (n) / 跳過 (空白):', entry.is_correct === 1 ? 'y' : entry.is_correct === 0 ? 'n' : '');
+  if (isCorrect === null) return;
+
+  const payload = {};
+  if (exitPrice.trim() !== '') {
+    const p = parseFloat(exitPrice);
+    if (isNaN(p) || p <= 0) { alert('❌ 賣出價必須 > 0'); return; }
+    payload.actual_exit_price = p;
+  }
+  if (exitDate.trim() !== '') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(exitDate)) { alert('❌ 日期格式必須係 YYYY-MM-DD'); return; }
+    payload.actual_exit_date = exitDate;
+  }
+  if (isCorrect.toLowerCase() === 'y') payload.is_correct = true;
+  else if (isCorrect.toLowerCase() === 'n') payload.is_correct = false;
+
+  if (Object.keys(payload).length === 0) {
+    alert('冇嘢改, 跳過');
+    return;
+  }
+  try {
+    const resp = await fetch(`http://localhost:18792/api/trade-journal/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (resp.ok) {
+      await loadTradeJournal();
+      await loadTradeJournalStats();
+    } else {
+      const err = await resp.json();
+      alert('❌ 改失敗: ' + (err.detail || resp.status));
+    }
+  } catch (e) {
+    console.error('[Trade Journal] edit error:', e);
+    alert('❌ 錯誤: ' + e.message);
+  }
+}
 
 async function loadTradeJournal() {
   const listEl = document.getElementById('trade-journal-list');
@@ -924,7 +1052,10 @@ async function loadTradeJournal() {
     html += '<th style="padding: 8px; text-align: right;">股數</th>';
     html += '<th style="padding: 8px; text-align: right;">目標價</th>';
     html += '<th style="padding: 8px; text-align: right;">止蝕價</th>';
+    html += '<th style="padding: 8px; text-align: right;">賣出價</th>';
+    html += '<th style="padding: 8px; text-align: center;">啱/錯</th>';
     html += '<th style="padding: 8px; text-align: left;">備註</th>';
+    html += '<th style="padding: 8px; text-align: center; min-width: 200px;">操作</th>';
     html += '</tr>';
     for (const e of entries) {
       html += '<tr style="border-bottom: 1px solid #eee;">';
@@ -934,7 +1065,23 @@ async function loadTradeJournal() {
       html += `<td style="padding: 8px; text-align: right;">${e.shares}</td>`;
       html += `<td style="padding: 8px; text-align: right;">${e.target_price ? '$' + e.target_price.toFixed(2) : '—'}</td>`;
       html += `<td style="padding: 8px; text-align: right;">${e.stop_loss ? '$' + e.stop_loss.toFixed(2) : '—'}</td>`;
+      html += `<td style="padding: 8px; text-align: right;">${e.actual_exit_price ? '$' + e.actual_exit_price.toFixed(2) : '<span style="color: #888;">—</span>'}</td>`;
+      // 啱/錯 mark 狀態 chip
+      if (e.is_correct === 1) {
+        html += '<td style="padding: 8px; text-align: center;"><span style="background: #26BA7520; color: #26BA75; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">✅ 啱</span></td>';
+      } else if (e.is_correct === 0) {
+        html += '<td style="padding: 8px; text-align: center;"><span style="background: #EE515120; color: #EE5151; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">❌ 錯</span></td>';
+      } else {
+        html += '<td style="padding: 8px; text-align: center; color: #888;">—</td>';
+      }
       html += `<td style="padding: 8px; color: #666; font-size: 12px;">${e.notes || ''}</td>`;
+      // 操作 button (Stage 1+ followup: 4 個 button)
+      html += '<td style="padding: 4px; text-align: center; white-space: nowrap;">';
+      html += `<button onclick="putMark(${e.id}, true)" style="background: #26BA75; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; margin: 1px;" title="Mark 啱">✅ 啱</button>`;
+      html += `<button onclick="putMark(${e.id}, false)" style="background: #EE5151; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; margin: 1px;" title="Mark 錯">❌ 錯</button>`;
+      html += `<button onclick="openEditForm(${e.id})" style="background: #F39C12; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; margin: 1px;" title="改 actual exit">✏️ 改</button>`;
+      html += `<button onclick="deleteEntry(${e.id})" style="background: #888; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; margin: 1px;" title="刪 entry">🗑️ 刪</button>`;
+      html += '</td>';
       html += '</tr>';
     }
     html += '</table>';
@@ -1004,8 +1151,17 @@ function renderTradeJournalSection() {
   container.className = 'result-section';
   container.style.cssText = 'margin: 16px 0; padding: 16px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);';
   container.innerHTML = `
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">📓 Trade Journal (時光機實戰日誌 — Stage 1+ MVP)</h3>
-    <p style="font-size: 12px; color: #888; margin: 0 0 12px 0;">大少真正落實倉位後, 記錄落 Trade Journal, 拎真實 forward return, 之後 tune 5 個 adaptive params</p>
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">📓 Trade Journal (時光機實戰日誌 — Stage 1+ Followup)</h3>
+    <p style="font-size: 12px; color: #888; margin: 0 0 12px 0;">大少真正落實倉位後, 記錄落 Trade Journal, 之後用 4 個 button mark 啱/錯/改/刪, 統計 panel 6 個 metrics 自動計算命中率同 forward return</p>
+
+    <!-- Stage 1+ followup: 統計 panel (6 個 metrics, 6 色, 永遠 full show, 大少 11:57 永久 rule) -->
+    <div style="background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+      <h4 style="margin: 0 0 8px 0; font-size: 14px;">📊 統計 (過去 30 日, 6 個 metrics)</h4>
+      <div id="trade-journal-stats">
+        <p style="color: #888;">撈緊...</p>
+      </div>
+    </div>
+
     <div style="background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
       <h4 style="margin: 0 0 8px 0; font-size: 14px;">📝 新增 entry</h4>
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
@@ -1055,8 +1211,9 @@ function renderTradeJournalSection() {
   // Bind button
   const btn = document.getElementById('tj-add-btn');
   if (btn) btn.addEventListener('click', addTradeJournalEntry);
-  // 初始 load list
+  // 初始 load list + stats (Stage 1+ followup)
   loadTradeJournal();
+  loadTradeJournalStats();
 }
 
 // ===== Start =====
