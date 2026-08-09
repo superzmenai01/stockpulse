@@ -2038,3 +2038,65 @@ return = (actual_exit_price - entry_price) / entry_price
 ### Spec 永久 rule 收穫 (1 個 new rule)
 
 - **M5 toggle 預設 OFF 永久 rule**: 因為 testing page UI 唔支援 3 timeframe fetch (Stage 2 統一處理), `enableMultiTF` toggle 預設 OFF, 唔可以自動啟用。Backend caller 仍然可以透過 options 直接 invoke, 唔受 toggle 影響。Stage 2 統一處理 testing page 3 timeframe fetch UI 時, 啟用 toggle。
+
+---
+
+## §15.14 — M8 SlopeMomentum Implementation Done (大少 22:34 confirm 4 個 A) [2026-08-09]
+
+**大少 2026-08-09 22:34 確認 4 個 design decision 全 A — M8 (舊 SlopeMomentum) 重新做返 (Stage 2 第二次 focus, 14:16 揀 A drop 嘅第二個, workflow 7 步)**。
+
+### 4 個 design decision (大少 22:34 confirm 全 A)
+
+| # | Decision | 大少揀 | 細節 |
+|---|----------|--------|------|
+| D1 | State output | A | 4 state — UP/DOWN/SIDEWAYS/TRANSITION (v1.0 spec 原本, TRANSITION 獨立配合 M8 兩線策略 swing mode 8 個 finalAction) |
+| D2 | 短期 slope threshold (M1/M2/M10) | A | 0.5% (v1.0 spec 原本, 1 週 1% ≈ 20% 年化, 主流 setting) |
+| D3 | Reversal window (M7/M8 zero-cross) | A | 5 日 (v1.0 spec 原本, 1 週, 平衡 detection speed vs noise) |
+| D4 | 與 ma-alignment H rule 嘅重疊處理 | A | 兩者獨立 trigger, state 睇 priority (v1.0 spec 原本, 已喺 spec §D 寫咗 mapping table) |
+
+### Implementation done (5 個 file)
+
+1. **`modules/slope-momentum.ts`** (~370 行, 13.7 KB) — `analyzeSlopeMomentum()` + 10 條 rule M1-M10 + 3 個 slope histories (MA5/MA10/MA20) + zero-cross detection (M7/M8) + 4 state output + absolute EPSILON tolerance (1e-9, 容忍 floating point noise)
+2. **`tests/test-slope-momentum.mjs`** (~370 行, 15.1 KB) — 14 個 scenario + 19 個 sub-assertion (33 total assertion)
+3. **`build/slope-momentum.bundle.js`** (9.3 KB, esbuild IIFE) — browser 入口 `window.SlopeMomentum.analyzeSlopeMomentum`
+4. **`adapter.mjs` v2.2.0 → v2.3.0** — `enableSlopeMomentum` toggle (default OFF) + `analyzeSlopeMomentum()` + `renderSlopeMomentumResult()` + slope-momentum dispatch
+5. **`backend/tests/test_slope_momentum.py`** (9 個 pytest: Node test runner + bundle file + module exports + spec doc)
+
+### 演算法摘要
+
+```ts
+// 計算 MA5/MA10/MA20 + 各 period slope history
+// 10 條 rule check:
+//   M1. slope(MA5, 5) > +0.5% + 連續 3 日 daily slope ↑ → strong UP
+//   M2. slope(MA5, 5) < -0.5% + 連續 3 日 daily slope ↓ → strong DOWN
+//   M3. slope(MA10, 10) > +0.3% → medium UP
+//   M4. slope(MA10, 10) < -0.3% → medium DOWN
+//   M5. slope(MA20, 20) > +0.2% → medium UP
+//   M6. slope(MA20, 20) < -0.2% → medium DOWN
+//   M7. MA5 slope 5 日內 zero-cross 由負轉正 → strong TRANSITION UP
+//   M8. MA5 slope 5 日內 zero-cross 由正轉負 → strong TRANSITION DOWN
+//   M9. |slope(MA5, 5)| < 0.1% → weak SIDEWAYS
+//   M10. |slope(MA5, 5)| > 0.5% → weak momentum 加強
+// State derivation priority: M7/M8→TRANSITION > 強 rule (M1/M2) > medium rule (M3/M4/M5/M6) > weak rule (M9/M10)
+// Confidence: strong 0.7 / medium 0.5 / weak +0.10 bonus, cap 1.0
+```
+
+### Verify (大少 debug 永久 rule: 改完要 auto-verify + evidence-based report)
+
+- ✅ Node test (`node --experimental-strip-types tests/test-slope-momentum.mjs`): **33 passed, 0 failed**
+- ✅ pytest (`backend/tests/test_slope_momentum.py`): **9 passed**
+- ✅ pytest 整體 (`backend/tests/`): **100 passed** (83 舊 + 8 M5 + 9 M8)
+- ✅ `node --check adapter.mjs`: exit 0
+- ✅ esbuild bundle: 9.3 KB, no errors
+
+### Entry contract (testing page 整合)
+
+- **Toggle 入口**: `inputs[].key = 'enableSlopeMomentum'` (default false, 暫時唔用)
+- **Caller 提供**: `options.klines` 單一 timeframe K-line (同 ma-alignment 一樣)
+- **Behavior**: IF `enableSlopeMomentum=true` → push 落 moduleVerdicts 用 expert-rules aggregator combine (同 ma-alignment + VolumePrice 平級)
+- **Backend caller**: 啟用 toggle 即可 invoke
+- **Browser loading**: dynamic inject `<script src="/algorithms/AS-03-cycle-detection/build/slope-momentum.bundle.js">` 然後 polling `window.SlopeMomentum.analyzeSlopeMomentum`
+
+### Spec 永久 rule 收穫 (1 個 new rule)
+
+- **M8 強 rule 凌駕 medium rule 永久 rule**: deriveState 嘅 priority 唔可以簡單用 UP rule 排前 — 強 rule (M1/M2 strong) 應該凌駕 medium rule (M3/M4/M5/M6) 同 weak rule (M9/M10), 否則會出現矛盾 (e.g. M2 strong DOWN + M10 weak UP → 應該 DOWN, 唔係 UP)。Spec doc §4 Step 4 已經明記 priority order。

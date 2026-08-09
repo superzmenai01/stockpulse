@@ -228,7 +228,7 @@
 | 6 | Volatility (新定義, 取代 Multi-TF) | ✅ Stage 1 done | 2026-08-08 | v1.0.0 | 32/32 | [MODULE-06-VOLATILITY.md](./MODULE-06-VOLATILITY.md) |
 | 7 | Synthesizer (M7) | ✅ Sprint 1 done | 2026-08-08 | — | 64/64 | [MODULE-07-SYNTHESIZER.md](./MODULE-07-SYNTHESIZER.md) |
 | 8 | Decision Engine (M8, 兩線策略) | ✅ Sprint 2 done | 2026-08-08 | v2.1.0 | 200/200 | [MODULE-08-DECISION-ENGINE.md](./MODULE-08-DECISION-ENGINE.md) |
-| 8b | **SlopeMomentum (舊 M8)** | ⏸️ **Stage 2 (大少 14:16 揀 A drop)** | TBD | TBD | TBD | [MODULE-08-SLOPE-MOMENTUM.md](./MODULE-08-SLOPE-MOMENTUM.md) (TBD) |
+| 8b | **SlopeMomentum (舊 M8)** | 🚧 **Stage 2 第二次 focus (M8 v1.0.0 re-elevate impl done)** | 2026-08-09 | v1.0.0 | 33/33 (Node) + 9/9 (pytest) | [MODULE-08-SLOPE-MOMENTUM.md](./MODULE-08-SLOPE-MOMENTUM.md) |
 | 8c | Cycle Synthesizer (兩線第一線) | ✅ Sprint 2 done | 2026-08-09 | — | 14/14 | [MODULE-08-CYCLE-SYNTHESIZER.md](./MODULE-08-CYCLE-SYNTHESIZER.md) |
 | 9 | Back Test (M9, 9.1-9.6 done) | ✅ Sprint 3 done | 2026-08-08 | v0.6.0 | — | [MODULE-09-BACK-TEST.md](./MODULE-09-BACK-TEST.md) |
 | 10 | Trade Journal (MVP + Followup) | ✅ Stage 1+ done | 2026-08-09 | — | 16/16 | [MODULE-10-TRADE-JOURNAL.md](./MODULE-10-TRADE-JOURNAL.md) |
