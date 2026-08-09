@@ -55,7 +55,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 00:13 M11 Backtest Timeline impl: ALGO_CACHE_BUST = '2.4.0' (M11 Backtest Timeline v0.1.0 入口 + analyzeBacktestTimeline + renderTimelineResult)
 // 大少 2026-08-10 00:42 M11 empty state 引導 M9: ALGO_CACHE_BUST = '2.5.0' (renderTimelineResult empty state 加 M9 引導 step 1-4)
 // 大少 2026-08-10 07:20 Bug 1 fix: ALGO_CACHE_BUST = '2.6.0' (postJSON helper + 3 個 POST check response.ok + UI error banner + K 線 debug log)
-const ALGO_CACHE_BUST = '2.6.0';
+// 大少 2026-08-10 07:35 fix: ALGO_CACHE_BUST = '2.6.1' (debug log 擺去 normalizedKlines 之後, 避免 raw timestamp 係 string/undefined 嘅 crash)
+const ALGO_CACHE_BUST = '2.6.1';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

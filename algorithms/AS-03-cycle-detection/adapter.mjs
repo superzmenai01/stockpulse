@@ -7949,16 +7949,6 @@ export const backTestAdapter = {
   analyze: async (klines, options = {}) => {
     const symbol = options.symbol || options.code || 'unknown';
 
-    // 大少 2026-08-10 Bug 1 fix A.3 — debug log 記 K 線 / fold split 狀況
-    // 用嚟診斷「0 validate samples」嘅 root cause (data 太短 / window 太細)
-    const klineCount = (klines || []).length;
-    const klineDateRange = klineCount > 0 ? {
-      start: new Date(klines[0].timestamp).toISOString().substring(0, 10),
-      end: new Date(klines[klineCount - 1].timestamp).toISOString().substring(0, 10),
-      days: Math.round((klines[klineCount - 1].timestamp - klines[0].timestamp) / 86400000),
-    } : null;
-    console.log(`[backTestAdapter] start analyze ${symbol}, klines=${klineCount}, range=${JSON.stringify(klineDateRange)}`);
-
     // 0. Normalize klines: backend 用 'time' (ISO string), back-test.ts 用 'timestamp' (number)
     //    將 'time' 轉做 'timestamp' (ms since epoch)
     const normalizedKlines = klines.map(k => {
@@ -7970,6 +7960,17 @@ export const backTestAdapter = {
       }
       return k;
     });
+
+    // 大少 2026-08-10 Bug 1 fix A.3 — debug log 記 K 線 / fold split 狀況
+    // 用嚟診斷「0 validate samples」嘅 root cause (data 太短 / window 太細)
+    // 大少 2026-08-10 07:35 fix: 擺去 normalizedKlines 之後, 避免 raw klines[0].timestamp 係 string/undefined 嘅 crash
+    const klineCount = normalizedKlines.length;
+    const klineDateRange = klineCount > 0 ? {
+      start: new Date(normalizedKlines[0].timestamp).toISOString().substring(0, 10),
+      end: new Date(normalizedKlines[klineCount - 1].timestamp).toISOString().substring(0, 10),
+      days: Math.round((normalizedKlines[klineCount - 1].timestamp - normalizedKlines[0].timestamp) / 86400000),
+    } : null;
+    console.log(`[backTestAdapter] start analyze ${symbol}, klines=${klineCount}, range=${JSON.stringify(klineDateRange)}`);
 
     // 1. Import back-test bundle (browser-compatible ESM)
     const backTest = await import('./build/back-test.bundle.js');
