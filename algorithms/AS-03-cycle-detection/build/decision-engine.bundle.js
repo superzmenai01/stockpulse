@@ -1,5 +1,10 @@
 // modules/decision-engine.ts
 var GRADE_ORDER = ["F", "D", "C", "C+", "B", "B+", "A", "A+"];
+var KELLY_NUMERIC_MAP = {
+  half: 0.5,
+  quarter: 0.25,
+  octo: 0.125
+};
 function gradeIndex(g) {
   return GRADE_ORDER.indexOf(g);
 }
@@ -250,7 +255,6 @@ function computeHurstExponent(prices) {
   }
   if (logRs.length < 2) return 0.5;
   const r2 = linearRegressionR2(logNs, logRs);
-  void r2;
   const n = logNs.length;
   const meanLogN = logNs.reduce((a, b) => a + b, 0) / n;
   const meanLogR = logRs.reduce((a, b) => a + b, 0) / n;
@@ -349,8 +353,14 @@ function calibrateAdaptiveParams(klines, sentiment6DHistory = []) {
   };
 }
 function applyAdaptiveParamsToSynthesizer(sv, params) {
+  const kf = params.kellyFraction;
+  const kNum = KELLY_NUMERIC_MAP[kf];
   return {
     ...sv,
+    // 大少 12:30 Bug 2 fix: Kelly override (string + numeric + position)
+    kelly_fraction: kf,
+    kelly_numeric: kNum ?? sv.kelly_numeric,
+    kelly_position: kNum ?? sv.kelly_position,
     // 將 params 放落 module_specific 供 testing page render
     module_verdicts: sv.module_verdicts.map((mv) => {
       if (mv.module_id === "ma-alignment" || mv.module_id === "hl-structure" || mv.module_id === "trendline") {

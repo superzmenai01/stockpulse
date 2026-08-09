@@ -102,6 +102,15 @@ export interface DecisionVerdict {
 
 const GRADE_ORDER: Grade[] = ['F', 'D', 'C', 'C+', 'B', 'B+', 'A', 'A+'];
 
+// 大少 2026-08-09 12:30 Bug 2 fix — Kelly string → numeric 對照表
+// 用喺 applyAdaptiveParamsToSynthesizer 將 params.kellyFraction (string) override 落 sv.kelly_numeric / kelly_position
+// Note: 同 adapter.mjs renderKellyDonut 嘅 map 同步 (改要一齊改)
+const KELLY_NUMERIC_MAP: Record<'half' | 'quarter' | 'octo', number> = {
+  half: 0.5,
+  quarter: 0.25,
+  octo: 0.125,
+};
+
 function gradeIndex(g: Grade): number {
   return GRADE_ORDER.indexOf(g);
 }
@@ -751,8 +760,21 @@ export function applyAdaptiveParamsToSynthesizer(
 ): SynthesizerVerdict {
   // 如果 params SSI weight 唔同 default, recalc SSI score
   // 簡化: weight 影響係 linear 嘅, 唔使 recompute, 只係 log 變動
+
+  // 大少 2026-08-09 12:30 Bug 2 fix: apply params.kellyFraction override
+  // 之前: trading card 嘅 Kelly 永遠用 sv.kelly_fraction (M8 內部 default 計算),
+  //        完全忽略 M9 POST 落 cache 嘅 params.kellyFraction ('octo' etc)
+  // Root cause: 此 function 只 apply ssiWeights, 冇 apply kellyFraction
+  // Fix: 將 params.kellyFraction 落 sv.kelly_fraction / kelly_numeric / kelly_position
+  const kf = params.kellyFraction;
+  const kNum = KELLY_NUMERIC_MAP[kf];
+
   return {
     ...sv,
+    // 大少 12:30 Bug 2 fix: Kelly override (string + numeric + position)
+    kelly_fraction: kf,
+    kelly_numeric: kNum ?? sv.kelly_numeric,
+    kelly_position: kNum ?? sv.kelly_position,
     // 將 params 放落 module_specific 供 testing page render
     module_verdicts: sv.module_verdicts.map((mv) => {
       if (mv.module_id === 'ma-alignment' || mv.module_id === 'hl-structure' || mv.module_id === 'trendline') {
