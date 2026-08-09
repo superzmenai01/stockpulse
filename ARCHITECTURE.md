@@ -1912,3 +1912,72 @@ return = (actual_exit_price - entry_price) / entry_price
 5. decidePosition 推 8 個 finalAction (priority chain) + Position Trading Card (動態 MA5 stop)
 6. Render 第一線 (position) + 第二線 (swing) 兩線都顯示, 第一線先, 第二線後
 7. UI 永遠 full show: 3 個 cycle synth 結果 + 5 個 trigger badge + 2 個 transition + position trading card + 大少話你知
+
+---
+
+## §15.12 — Stage 2 Roadmap 重新 plan (大少 21:24 confirm) [2026-08-09]
+
+**大少 2026-08-09 21:24 確認 go — Stage 2 重新 plan 12 modules 目標 roadmap**。
+
+### Stage 2 scope (4 個 module re-elevate)
+1. **🥇 M5 Multi-TF (日/週/月 framework)** — 大少 14:16 揀 A drop 嘅其中一個, Stage 2 第一次 focus
+2. **🥈 舊 M8 SlopeMomentum** — 大少 14:16 揀 A drop 嘅第二個, Stage 2 第二次 focus
+3. **🥉 M11 Backtest Timeline** — Stage 4 升級 scope, Stage 2 第三次 focus
+4. **M12 Risk-Reward** — Stage 6 升級 scope, Stage 2 第四次 focus
+
+### M5 Multi-TF design (Stage 2 第一次 focus — 待大少 confirm 4 個 decision)
+
+**§7 ROADMAP 4 個 decision** (大少 workflow rule「先 Confirm 後動手」— 必先揀晒先做 spec):
+
+1. **Multi-TF 嘅 timeframe 組合** (ROADMAP §7 建議):
+   - **A (推薦)**: 1D (主) + 1W (confirm) + 1M (大方向) = 3 個 timeframe
+   - **B**: 1D + 1W (2 個 timeframe, 簡化)
+   - **C**: 1D + 4h + 1W + 1M (4 個 timeframe, 完整 multi-TF)
+
+2. **Confluence 嘅 weights 分層** (ROADMAP §7 建議):
+   - **A (推薦)**: 分層 — MA 30% + 形態 25% + 量 25% + 轉勢 20%
+   - **B**: 平均 (每個 module 同 weight, 1/N)
+   - **C**: 動態 weight (跟 ATR% + sentiment 6D 自動調)
+
+3. **Entry Timing 嘅 pullback 邏輯** (ROADMAP §7 建議):
+   - **A (推薦)**: 動態 MA10/MA20 (跟股價 update)
+   - **B**: Fixed percentage (例: 從 52 週高拉 5-10%)
+   - **C**: Fibonacci retracement (0.382 / 0.5 / 0.618)
+
+4. **Walk-Forward 嘅 in-sample:out-of-sample 比例** (ROADMAP §7 建議):
+   - **A (推薦)**: 跟 Pardo 標準 12:1
+   - **B**: 8:1 (大少 M9 已用 3 folds rolling, 比較寬鬆)
+   - **C**: 20:1 (嚴格, 樣本少)
+
+### M5 Multi-TF spec outline (待大少 confirm decision 1-4 後寫詳細 spec)
+
+- **Input**: 3 個 timeframe K 線 (1D + 1W + 1M) — 從 backend 拎
+- **Output**: 統一 verdict shape (跟 M1-M6 ModuleStandardVerdict) + multi-TF 一致性評分
+- **Algorithm (suggested)**:
+  - 每個 timeframe 跑 1 個 module 嘅 sub-algorithm (e.g. MA alignment + HL + Trendline)
+  - 3 個 timeframe verdict 加權平均 (高 TF 權重高, 例: 1M 40% + 1W 35% + 1D 25%)
+  - 一致性: 3 個 TF 同方向 = high confidence; 1 個 TF 唔同 = low confidence + ⚠️
+  - Conflict: 2+ TF 唔同方向 = CONFLICT state
+- **State**: UP / DOWN / SIDEWAYS / CONFLICT (跟 M1-M9 convention)
+- **UI 顯示**: 永遠 full show 3 個 timeframe 嘅 sub-verdict + 加權綜合 + 一致性評分
+
+### Stage 2 執行 plan (跟大少 workflow 永久 rule)
+- **每次一個 module** (大少指示 14:16 workflow 7 步)
+- **每個 module 一個 commit** (atomic)
+- **大少手動 verify testing page** 才做下一個
+- **大少 feedback → 改 spec** (永久 confirm rule)
+
+### Files 改動 scope (估計, 視乎 spec 細節)
+1. `algorithms/AS-03-cycle-detection/modules/multi-tf.ts` (新, ~200-400 lines)
+2. `algorithms/AS-03-cycle-detection/build/multi-tf.bundle.js` (esbuild)
+3. `algorithms/AS-03-cycle-detection/adapter.mjs` (加 5 個 module entry)
+4. `algorithms/AS-03-cycle-detection/tests/test-multi-tf.mjs` (10+ tests)
+5. `backend/tests/test_multi_tf.py` (pytest wrapper)
+6. `docs/research/AS-03-cycle-detection/MODULE-05-MULTI-TIMEFRAME.md` (新, 5-15 KB spec)
+7. `ARCHITECTURE.md` §15.12 (本 section, 已寫)
+8. `ROADMAP.md` §8 Status table (已 update)
+9. `README.md` 近期重要更新 (Stage 2 完成時)
+10. `PROJECT_SPEC.md` 已完成 checklist (Stage 2 完成時)
+
+### Spec 永久 rule 收穫 (1 個)
+- **大少 14:16 揀 A drop 永久 rule**: Stage 1 收官後要重新 plan 12 modules 嘅隱藏 module (M5 Multi-TF + 舊 M8 SlopeMomentum), 唔可以塞入其他 module 編號。Spec doc + Status table 必須保留獨立 module # 編號 (5 同 8b) 等 Stage 2 重新 elevate。

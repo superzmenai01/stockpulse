@@ -213,21 +213,44 @@
 
 ## 8. Status 追蹤 (每次做完一個 module 更新)
 
-| # | Module | Status | 完成日期 | Test |
-|---|--------|--------|---------|------|
-| 1 | MA Alignment | ✅ v0.3.0 | 2026-08-04 | 19/19 |
-| 2 | HL Structure | ✅ v0.1.0 | 2026-08-07 | 12/12 |
-| 3 | Trendline | ⏳ Stage 1 | TBD | TBD |
-| 4 | Indicators | ⏳ Stage 1 | TBD | TBD |
-| 5 | Volume OBV | ⏳ Stage 1 | TBD | TBD |
-| 6 | Multi-TF | ⏳ Stage 1 (🥇) | TBD | TBD |
-| 7 | Synthesizer | ⏳ Stage 1 | TBD | TBD |
-| 8 | Confluence | ⏳ Stage 3 | TBD | TBD |
-| 9 | Entry Timing | ⏳ Stage 4 | TBD | TBD |
-| 10 | Probability | ⏳ Stage 6 | TBD | TBD |
-| 11 | Backtest Timeline | ⏳ Stage 4 | TBD | TBD |
-| 12 | Risk-Reward | ⏳ Stage 6 | TBD | TBD |
-| J | Trade Journal | ⏳ Stage 5 | TBD | TBD |
+**最後更新:** 2026-08-09 21:30 (Stage 2 重新 plan + Sprint 1+ 收官 spec doc sync)
+
+> **Status 永久 rule 收穫**: 每個 module 一個 entry, 冇得 merge/split 編號 (大少 14:16 揀 A 確認 M5 + 舊 M8 兩個隱藏 module 留返 Stage 2 重新 plan, 唔可以塞入其他 module 編號)。
+
+| # | Module | Status | 完成日期 | Version | Test | Spec Doc |
+|---|--------|--------|---------|---------|------|----------|
+| 1 | MA Alignment (新 v2.0) | ✅ Stage 1 done | 2026-08-08 | v2.0.0 | 31/31 | [MODULE-01-MA-ALIGNMENT.md](./MODULE-01-MA-ALIGNMENT.md) |
+| 2 | HL Structure | ✅ Stage 1 done | 2026-08-07 | v0.1.0 | 12/12 | [MODULE-02-HL-STRUCTURE.md](./MODULE-02-HL-STRUCTURE.md) |
+| 3 | Trendline | ✅ Stage 1 done | 2026-08-07 | v0.1.0 | 20/20 | [MODULE-03-TRENDLINE.md](./MODULE-03-TRENDLINE.md) |
+| 4 | Indicators (MACD/RSI/Boll) | ✅ Stage 1 done | 2026-08-07 | v1.0.0 | 36/36 | [MODULE-04-MOMENTUM-DIVERGENCE.md](./MODULE-04-MOMENTUM-DIVERGENCE.md) |
+| 5 | **Multi-TF (日/週/月)** | ⏸️ **Stage 2 (大少 14:16 揀 A drop)** | TBD | TBD | TBD | [MODULE-05-MULTI-TIMEFRAME.md](./MODULE-05-MULTI-TIMEFRAME.md) (TBD) |
+| 5b | Volume OBV (v1) / VolumePrice (v2) | ✅ Stage 1 done | 2026-08-08 | v2.0.0 | 47/47 | [MODULE-05-VOLUME-PRICE-V2.md](./MODULE-05-VOLUME-PRICE-V2.md) |
+| 6 | Volatility (新定義, 取代 Multi-TF) | ✅ Stage 1 done | 2026-08-08 | v1.0.0 | 32/32 | [MODULE-06-VOLATILITY.md](./MODULE-06-VOLATILITY.md) |
+| 7 | Synthesizer (M7) | ✅ Sprint 1 done | 2026-08-08 | — | 64/64 | [MODULE-07-SYNTHESIZER.md](./MODULE-07-SYNTHESIZER.md) |
+| 8 | Decision Engine (M8, 兩線策略) | ✅ Sprint 2 done | 2026-08-08 | v2.1.0 | 200/200 | [MODULE-08-DECISION-ENGINE.md](./MODULE-08-DECISION-ENGINE.md) |
+| 8b | **SlopeMomentum (舊 M8)** | ⏸️ **Stage 2 (大少 14:16 揀 A drop)** | TBD | TBD | TBD | [MODULE-08-SLOPE-MOMENTUM.md](./MODULE-08-SLOPE-MOMENTUM.md) (TBD) |
+| 8c | Cycle Synthesizer (兩線第一線) | ✅ Sprint 2 done | 2026-08-09 | — | 14/14 | [MODULE-08-CYCLE-SYNTHESIZER.md](./MODULE-08-CYCLE-SYNTHESIZER.md) |
+| 9 | Back Test (M9, 9.1-9.6 done) | ✅ Sprint 3 done | 2026-08-08 | v0.6.0 | — | [MODULE-09-BACK-TEST.md](./MODULE-09-BACK-TEST.md) |
+| 10 | Trade Journal (MVP + Followup) | ✅ Stage 1+ done | 2026-08-09 | — | 16/16 | [MODULE-10-TRADE-JOURNAL.md](./MODULE-10-TRADE-JOURNAL.md) |
+| 11 | Backtest Timeline (M11) | ⏳ Stage 2 (優先) | TBD | TBD | TBD | TBD |
+| 12 | Risk-Reward (M12) | ⏳ Stage 2 (跟住) | TBD | TBD | TBD | TBD |
+| J | Trade Journal UI (Testing Page) | ✅ Stage 1+ done | 2026-08-09 | — | — | [MODULE-10-TRADE-JOURNAL.md §5](./MODULE-10-TRADE-JOURNAL.md) |
+| ⭐獨立 | zmen均算法 (舊 M1 v0.3.0 抽出) | ✅ done | 2026-08-08 | v0.3.0 | 19/19 | [ZMEN-MA-ALIGNMENT.md](./ZMEN-MA-ALIGNMENT.md) |
+
+**Stage 2 重新 plan scope** (大少 2026-08-09 21:24 確認 go):
+- 🥇 **M5 Multi-TF (日/週/月)** — Stage 2 第一次 focus, ROADMAP §7 標記 🥇
+- 🥈 **舊 M8 SlopeMomentum** — Stage 2 第二次 focus
+- 🥉 **M11 Backtest Timeline** — Stage 2 第三次 focus (Stage 4 升級)
+- M12 Risk-Reward — Stage 2 第四次 focus (Stage 6 升級)
+
+**每個 module workflow 7 步** (大少永久 rule):
+1. Spec (5-15 KB MODULE-XX.md)
+2. Implementation (modules/X.ts + esbuild bundle)
+3. Tests (10+ test cases)
+4. Verify (syntax + import + run all tests)
+5. Testing page update (adapter.mjs renderResult + renderChartOverlay)
+6. Doc sync (ARCHITECTURE.md §15 + ROADMAP.md §8)
+7. Commit + push (一個 module 一個 commit)
 
 ---
 
