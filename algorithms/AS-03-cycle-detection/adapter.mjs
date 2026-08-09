@@ -6684,14 +6684,14 @@ export const synthesizerAdapter = {
   `,
 };
 
-// ---------- decisionEngineAdapter export (M8 v1.0.0 — Sprint 2 sub-task 2.1 impl) ----------
+// ---------- decisionEngineAdapter export (M8 v1.8.0 — Sprint 2 sub-task 2.1-2.8 done) ----------
 //   大少 2026-08-08 15:42 — Sprint 2 sub-task 2.1 done
 //   8 個 finalAction 決策樹 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) 已上線
 //   Trading card / 短期走勢 / 人話解讀 / adaptive params 將喺 2.2-2.5 commits impl
 export const decisionEngineAdapter = {
   id: 'AS-03-DEC',
   name: '終極綜合判斷引擎 (第八模組)',
-  version: '1.0.0',
+  version: '1.8.0',  // 大少 2026-08-09 13:00 Bug 3+4 fix: Sprint 2 8/9 sub-tasks done (2.1-2.8), 等 2.9 spec doc final 後再 bump 2.0.0
   description: '用第七模組嘅綜合分數再推導出 8 個行動指令 (買入、加注、持有、減注、賣出、再睇、陷阱、轉勢), 每個都用揸車嘅比喻解釋點解, 仲會畀埋交易範圍同目標價',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
@@ -6966,7 +6966,7 @@ export const decisionEngineAdapter = {
     `;
   },
   getHelp: () => `
-    <h3>🚦 終極綜合判斷引擎 (Decision Engine v1.0.0 — M8)</h3>
+    <h3>🚦 終極綜合判斷引擎 (Decision Engine v1.8.0 — M8)</h3>
     <p>用第七模組嘅綜合分數再推導出 8 個行動指令, 每個都用揸車嘅比喻解釋</p>
     <h4>8 個行動指令 + 揸車比喻:</h4>
     <ul>

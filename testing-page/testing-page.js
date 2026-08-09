@@ -39,6 +39,16 @@ const BACKEND_URL = 'http://localhost:18792';
 //        等大少 review + confirm Plan A (Sprint 1: 6 個 modules 加 output fields + M7 impl;
 //        Sprint 2: M8 decision tree + trading card + 5 adaptive params + L2 cache)
 // ===========================================================================
+
+// 大少 2026-08-09 13:00 Bug 3+4 fix: testing page cache bust adapterPath
+// 之前 testing-page.js 嘅 HTML cache bust (?v=2.3.X) 唔影響 .mjs 嘅 load,
+// 改 algorithms/AS-03-cycle-detection/adapter.mjs 之後 browser 仍 load 緊 cached 舊 version
+// Fix: 將 ALGO_CACHE_BUST 加落每個 adapterPath 嘅 query string, 改 .mjs 之後要 bump
+// 永久 rule: 改 algorithms/AS-03-cycle-detection/adapter.mjs 之後, 同時 bump testing-page/index.html
+//          嘅 ?v=2.3.X + testing-page.js 嘅 ALGO_CACHE_BUST (2 個地方)
+// 大少 Bug 3+4 fix 第一次用: ALGO_CACHE_BUST = '1.8.0' (AS-03-DEC 嘅 M8 v1.0.0 → v1.8.0)
+const ALGO_CACHE_BUST = '1.8.0';
+
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
   // M1: 均線系統週期判斷法 v2.0 (with Volume & Slope 擴展)
@@ -187,7 +197,9 @@ async function init() {
 
   for (const algo of REGISTRY) {
     try {
-      const mod = await import(algo.adapterPath);
+      // 大少 2026-08-09 13:00 Bug 3+4 fix: 加 ALGO_CACHE_BUST query string cache bust
+      // 改 adapter.mjs 之後要 bump 個 constant, 唔受 HTML cache bust (?v=2.3.X) 影響
+      const mod = await import(algo.adapterPath + '?v=' + ALGO_CACHE_BUST);
       // 如果有 adapterExport, 用 named export; 否則用 default exports
       algo.adapter = algo.adapterExport ? mod[algo.adapterExport] : mod;
       const option = document.createElement('option');
