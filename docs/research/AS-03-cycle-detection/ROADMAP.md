@@ -93,11 +93,11 @@
 |--------|--------|------|
 | **zmen均算法** (舊 M1 改名) | ✅ v0.3.0 done (19/19) | MA5/10/60 排列 + 10 條 rule A-J — 抽離獨立處理, 排去 dropdown 最後, file 改名 zmen-ma-alignment.ts |
 
-### 隱藏 (Stage 1 done 先做返)
+### 隱藏 → Deferred (大少 2026-08-09 14:16 揀 A drop 呢個 task, Stage 2+ 重新 plan)
 | 編號 | Module | Status | 功用 |
 |------|--------|--------|------|
-| ⏸️ Hidden | Multi-TF (舊 M5) | ⏸️ Hidden (testing page 唔支援) | 跨時間框架 confirm |
-| ⏸️ Hidden | SlopeMomentum (舊 M8) | ⏸️ Hidden | 斜率動能 |
+| ⏸️ Deferred | Multi-TF (舊 M5) | ⏸️ Deferred (Stage 2+ 重新 plan, 14:16 Spec Sync #7+) | 跨時間框架 confirm |
+| ⏸️ Deferred | SlopeMomentum (舊 M8) | ⏸️ Deferred (Stage 2+ 重新 plan, 14:16 Spec Sync #7+) | 斜率動能 |
 
 ### 新 5 個 modules (Roadmap 加, 2026-08-08 11:22 M7+M8 合併後)
 > **改動說明:** 大少 2026-08-08 11:22 指示 M7 Synthesizer + M8 Decision Engine 合併做 1 個 mega module (即上表 編號 08), 所以新 6 個 modules 變新 5 個 (Confluence 由 M7+M8 mega module 包咗, 唔再獨立)。新 5 個從編號 09 開始 (08 已被 mega module 用咗)。

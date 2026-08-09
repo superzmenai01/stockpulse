@@ -433,8 +433,8 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 | 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` | **v2.0.0 (Sprint 2 收官, 2026-08-09 13:15)** | ✅ **Sprint 2 收官 (大少 16:55 8 commits + 13:15 2.9 spec doc final + 4 fix commits)**: 8 個 finalAction 決策樹 (2.1) + Trading card adaptive (2.2) + 短期走勢 9 scenarios (2.3) + 人話詳細解讀 LLM hook (2.4) + 5 個 adaptive params auto-calibrate (2.5) + L2 JSON cache (2.6) + 10 隻 demo 股票 tests (2.7) + 4 個 SVG chart + 「🔄 重新校準」按鈕 (2.8) + 2.9 spec doc final (Spec Sync #7, README + PROJECT_SPEC + ARCHITECTURE + API 4 份 spec doc 同步) + **Bug 1 fix** (testing page race condition `da32c4db`) + **Bug 2 fix** (M8 kelly override 落 Synthesizer `applyAdaptiveParamsToSynthesizer`, `639e6d70`) + **Bug 3+4 fix** (version 1.0.0 → 2.0.0 + testing page .mjs cache bust sync 永久 rule, `d61d96d6`) |
 | **09** | **回測驗證** (Back Test — M9, 時光機驗證官) | `modules/back-test.ts` | **v0.6.0 (Sprint 3 done 2026-08-08 + Pilot 收官 2026-08-09)** | ✅ **Sprint 3 done (大少 22:28 啟動, 23:55 收官, 7 commits 9.1-9.7) + Pilot 收官 (大少 10:02)**: Replay engine + Coarse/Fine grid + Walk-Forward CV 3 folds + Per-symbol optimal cache 30 日 + Forward return 永久 + Testing page entry 09 + HK.00700 pilot + M9 UI 升級 (3 SVG + 6 色標 + 永遠 full show + 大少話你知 + 2 button) + **10 隻 (5 港 + 5 美) Pilot** (1w 統一 config, 399 forward return records 永久累積) + **Top 3 apply 落 M8** (US.AAPL 103.6/82%, US.MSFT 88.8/78%, US.GOOGL 82.0/76%) + **Backend 1w fix** (PERIOD_MAP 加 K_WEEK, 補返 5-10 年 weekly history) |
 | **獨立** | **zmen均算法** (唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ⭐ 獨立算法 — 抽離 7 個 modules, 排去 dropdown 尾, 唔屬於 AS-03 7 個 modules 計算 |
-| ⏸️ Hidden (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — |
-| ⏸️ Hidden (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — |
+| ⏸️ Deferred (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — (大少 2026-08-09 14:16 揀 A drop, Stage 2+ 重新 plan) |
+| ⏸️ Deferred (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — (大少 2026-08-09 14:16 揀 A drop, Stage 2+ 重新 plan) |
 
 ### 3-Section 永久 Rule (大少 #11056)
 

@@ -309,8 +309,8 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   | 08 | **AS-03-DEC** | **終極綜合判斷引擎** (Decision Engine — M8) | **Sprint 2 收官 (2026-08-09 13:15)**: 8 個 finalAction (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 揸車比喻 + Trading card adaptive (3 vol buckets) + 短期走勢 9 scenarios (3×3) + 人話詳細解讀 (LLM hook, hardcoded template) + 5 個 adaptive params auto-calibrate (純 math) + L2 JSON file cache (7 日 expiry) + 4 個 SVG chart + 「🔄 重新校準」按鈕 + **Bug 1 fix (testing page race condition) + Bug 2 fix (M8 kelly override 落 Synthesizer) + Bug 3+4 fix (version 1.0.0 → 2.0.0)** | **v2.0.0 (Sprint 2 收官, 9 commits + 4 fix commits)** |
   | **09** | **AS-03-BT** | **回測驗證 (Back Test — M9, 時光機驗證官)** | **Sprint 3 done (2026-08-08 22:28, 6 commits 9.1-9.6 + 9.7 UI 升級)**: Replay engine (用歷史 K 線重播之前嘅判決, 對比 5/10/20 日後真實升跌) + Coarse grid (9 candidates) + Fine tune (±20% top 5 = 30 candidates) + Adaptive window 6→9→12→15→18 個月 + Walk-Forward CV 3 段 rolling (大少 22:28 揀 B) + Per-symbol optimal cache (30 日 expiry) + Forward return 永久記錄 (半衰期 180 日 weighted) + 4 個 endpoints (`GET/POST /back-test`, `GET/POST /forward-return`) + Testing page entry 09 + HK.00700 pilot (3/3 folds, 24ms) + M9 UI 升級: 3 SVG (Kelly pie + Walk-Forward bar + Forward return scatter) + 6 色標 + 永遠 full show 過往判決 + 大少話你知 box (4 scenario LLM hook) + 2 個 button (重新校準 + 立即套用 M8) | **v0.6.0 (Sprint 3 done, 7 commits)** |
   | **獨立** | **zmen均算法** (唔加編號) | 舊 M1 改名 + 抽離 7 個 modules | MA5/10/60 排列 + 10 條 rule 判 UP/DOWN/SIDEWAYS | v0.3.0 |
-  | ⏸️ Hidden Multi-TF | 多時間框架 | (Stage 1 done 先做) | v1.0.0 |
-  | ⏸️ Hidden SlopeMomentum | 斜率動能 | (Stage 1 done 先做) | v1.0.0 |
+  | ⏸️ Deferred Multi-TF | 多時間框架 | (大少 2026-08-09 14:16 揀 A drop, Stage 2+ 重新 plan) | v1.0.0 |
+  | ⏸️ Deferred SlopeMomentum | 斜率動能 | (大少 2026-08-09 14:16 揀 A drop, Stage 2+ 重新 plan) | v1.0.0 |
 
   **3-Section Rule (永久, 大少 #11056)**: 每個 module 嘅結果必須有 📖 詳細解讀 + 🎯 策略建議 + 💡 點用點睇 (plain language)。
 - **AS02 Pipeline：** 股票清單 → 財務數據 → LLM 分析 → 結果顯示（auto DQ log）
