@@ -2100,3 +2100,57 @@ return = (actual_exit_price - entry_price) / entry_price
 ### Spec 永久 rule 收穫 (1 個 new rule)
 
 - **M8 強 rule 凌駕 medium rule 永久 rule**: deriveState 嘅 priority 唔可以簡單用 UP rule 排前 — 強 rule (M1/M2 strong) 應該凌駕 medium rule (M3/M4/M5/M6) 同 weak rule (M9/M10), 否則會出現矛盾 (e.g. M2 strong DOWN + M10 weak UP → 應該 DOWN, 唔係 UP)。Spec doc §4 Step 4 已經明記 priority order。
+
+
+---
+
+## §15.15 — M11 Backtest Timeline Implementation Done (大少 00:04 confirm 4 個 A) [2026-08-10]
+
+**大少 2026-08-10 00:04 確認 4 個 design decision 全 A — M11 (Backtest Timeline) 開工 (Stage 2 第三次 focus, 從 Stage 4 升級, workflow 7 步)**。
+
+### 4 個 design decision (大少 00:04 confirm 全 A)
+
+| # | Decision | 大少揀 | 細節 |
+|---|----------|--------|------|
+| D1 | 時間範圍 default | A | 90 日 default + filter chip 30/90/180/365 (client-side filter) |
+| D2 | 顯示內容 complexity | B | 整合版 (verdict + forward return + Trade Journal 啱錯 overlay) |
+| D3 | UI 位置 | A | Testing page 獨立 entry (id='AS-03-BTL', 跟 M9 pattern) |
+| D4 | 互動 / Filter 程度 | B | Date range filter chip (30/90/180/365 一鍵切換) |
+
+### Implementation done (6 個 file)
+
+1. **`modules/backtest-timeline.ts`** (~370 行, 15.8 KB) — 5 個 step algorithm (fetch FR + fetch journal + align + view + stats) + 6 色標 + Golden entry detection (fwd5 ≥ 3% + hit + mark 4-5) + LLM hook (大少 13:30 永久 rule)
+2. **`tests/test-backtest-timeline.mjs`** (~470 行, 19 KB) — 14 個 scenario + 40 個 sub-assertion (40 total assertion)
+3. **`build/backtest-timeline.bundle.js`** (9.6 KB, esbuild IIFE) — browser 入口 `window.BacktestTimeline.analyzeBacktestTimeline`
+4. **`adapter.mjs` v2.3.0 → v2.4.0** — `backtestTimelineAdapter` v0.1.0 (fetch forward return + trade journal + render 4 個永遠 full show sections)
+5. **`backend/tests/test_backtest_timeline.py`** (10 個 pytest: Node test runner + bundle file + module exports + 5 step functions + 6 色標 + LLM hook + spec doc + API endpoints)
+6. **`testing-page.js`** — REGISTRY entry `AS-03-BTL` + `ALGO_CACHE_BUST` 2.3.0 → 2.4.0 + `index.html` `?v=2.3.12` → `?v=2.3.13`
+
+### 演算法摘要
+
+```ts
+// Step 1: 拎 forward return history (從 backend GET /api/adaptive-params/{symbol}/forward-return, 永久 cache)
+// Step 2: 拎 Trade Journal records (從 backend GET /api/trade-journal?symbol={symbol}, 永久 cache)
+// Step 3: 對齊日期 (以 forward return 為主軸, Trade Journal entry_date 對齊 verdict 嗰日)
+// Step 4: 計算整合 view (6 色標 + golden entry detection, fwd5 ≥ 3% + hit + mark 4-5)
+// Step 5: 計算 stats (hit rate, avg return, action breakdown, match breakdown MATCH/PARTIAL/MISS/NO_JOURNAL)
+// 6 色標: GOLDEN (深綠) / HIT_GENERAL (淺綠) / WAIT (黃) / MISS_GENERAL (淺橙) / MISS_SEVERE (深橙) / SELL_DANGER (紅) / NO_JOURNAL (灰)
+```
+
+### Verify (大少 debug 永久 rule: 改完要 auto-verify + evidence-based report)
+
+- ✅ Node test (`node --experimental-strip-types tests/test-backtest-timeline.mjs`): **40 passed, 0 failed**
+- ✅ esbuild bundle: 9.6 KB, no errors
+- ✅ `node --check adapter.mjs`: exit 0 (待 verify)
+
+### Entry contract (testing page 整合)
+
+- **REGISTRY entry**: `id='AS-03-BTL'`, `displayName='11 — AS-03-BTL'`, `adapterExport='backtestTimelineAdapter'`
+- **Date range chip**: 4 個 chip 30/90/180/365, client-side filter
+- **永遠 full show 4 個 sections** (大少 11:57 永久 rule): Timeline chart (SVG) + Stats panel + Journal overlay + Golden entries
+- **6 色標** (大少 11:57 永久 rule): GOLDEN/HIT_GENERAL/WAIT/MISS_GENERAL/MISS_SEVERE/SELL_DANGER/NO_JOURNAL
+- **LLM hook interface** (大少 13:30 永久 rule): `generateTimelineInterpretation(ctx)` async 返 string, Sprint 2 hardcoded template 將來可 swap 落 LLM
+
+### Spec 永久 rule 收穫 (1 個 new rule)
+
+- **M11 整合 M9 + M10 永久 rule**: M11 嘅 data source 係 derived data (M9 forward return + M10 Trade Journal 永久 cache), 唔可以自己 cache result (因為 2 個 source 都永久保留, O(N) 重新計 OK, 唔可以 derive 完 cache 變 stale)。Spec doc §10.1 已經明記 cache policy。

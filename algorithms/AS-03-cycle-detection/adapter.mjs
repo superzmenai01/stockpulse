@@ -8259,3 +8259,186 @@ export const backTestAdapter = {
     return html;
   },
 };
+
+// ---------- backtestTimelineAdapter export (M11 v0.1.0 — Stage 2 第三次 focus 2026-08-10 00:13) ----------
+//   大少 2026-08-10 00:04 — 4 個 design decision confirm 全 A
+//   整合 M9 forward return (永久 cache) + M10 Trade Journal (永久 cache) 嘅 timeline 視覺化
+//   4 個永遠 full show sections: ⏰ header / 📊 Stats / 📓 Journal overlay / ⭐ Golden entries
+//   6 色標 (大少 11:57 永久 rule) + LLM hook (大少 13:30 永久 rule)
+export const backtestTimelineAdapter = {
+  id: 'AS-03-BTL',
+  name: '時光機時序圖 (第十一模組)',
+  version: '0.1.0',
+  description: '將過去嘅判決 (M9 forward return) 同一齊對齊 Trade Journal 嘅啱錯記錄, 變成一張時間線, 等你一眼睇到邊一日係最佳時機',
+  inputs: [
+    { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
+    { key: 'dateRange', label: '睇幾多日 (時間範圍)', type: 'chip', default: 90, options: [30, 90, 180, 365] },
+  ],
+  analyze: async (klines, options = {}) => {
+    const symbol = options.symbol || options.code || 'unknown';
+    const dateRange = options.dateRange || 90;
+
+    // 1. Import backtest-timeline bundle (browser-compatible ESM)
+    const bt = await import('./build/backtest-timeline.bundle.js');
+    const { analyzeBacktestTimeline, fetchForwardReturnHistory, fetchTradeJournal } = bt;
+
+    // 2. Fetch forward return history + trade journal (永久 cache)
+    const [forwardReturnHistory, tradeJournalEntries] = await Promise.all([
+      fetchForwardReturnHistory(symbol, 200),
+      fetchTradeJournal(symbol, 200),
+    ]);
+
+    // 3. Run pure algorithm
+    const result = analyzeBacktestTimeline({
+      symbol,
+      dateRange,
+      forwardReturnHistory,
+      tradeJournalEntries,
+    });
+
+    return {
+      symbol,
+      dateRange,
+      result,                  // 包含 dataPoints + stats + meta
+      timestamp: Date.now(),
+    };
+  },
+  renderResult: (result) => {
+    if (!result || !result.result) {
+      return '<p>❌ 冇 M11 timeline result</p>';
+    }
+    const { result: r, symbol, dateRange = 90 } = result;
+    const { dataPoints = [], stats, meta = {} } = r;
+
+    // 6 色標 helper (大少 11:57 永久 rule, 跟 M9 colorByScore 等 pattern)
+    const hitEmoji = (hit) => hit === true ? '🟢' : hit === false ? '🔴' : '⚫';
+    const markEmoji = (mark) => mark === null || mark === undefined ? '⚪' : mark >= 4 ? '🟢' : mark >= 2 ? '🟡' : '🔴';
+
+    let html = '';
+
+    // ===== Section 1: 大標題 + 簡述 =====
+    html += `<div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 16px 20px; border-radius: 12px; margin-bottom: 16px;">`;
+    html += `<h3 style="margin: 0 0 8px 0; font-size: 18px;">⏰ 時光機時序圖 (第十一模組 v0.1.0)</h3>`;
+    html += `<p style="margin: 0; opacity: 0.95;">將過去嘅判決同一齊對齊 Trade Journal 啱錯記錄, 一眼睇到邊一日係最佳時機</p>`;
+    html += `<p style="margin: 4px 0 0 0; opacity: 0.85; font-size: 13px;">📊 ${symbol} · 過去 ${dateRange} 日 · ${dataPoints.length} 個 verdict · ${stats?.totalJournalEntries || 0} 個 trade 記錄</p>`;
+    html += `</div>`;
+
+    // ===== Section 2: Date range filter chip (D4 揀 B) =====
+    html += `<div style="display: flex; gap: 8px; margin-bottom: 16px; align-items: center;">`;
+    html += `<span style="font-size: 13px; color: #666; margin-right: 4px;">📅 時間範圍:</span>`;
+    [30, 90, 180, 365].forEach(days => {
+      const isActive = days === dateRange;
+      html += `<button onclick="window.__setTimelineDateRange && window.__setTimelineDateRange(${days})" style="background: ${isActive ? '#4facfe' : '#f0f0f0'}; color: ${isActive ? 'white' : '#333'}; border: none; padding: 6px 14px; border-radius: 16px; cursor: pointer; font-size: 13px; font-weight: ${isActive ? 'bold' : 'normal'};">${days} 日${isActive ? ' ✓' : ''}</button>`;
+    });
+    html += `</div>`;
+
+    // ===== Section 3: Stats panel (永遠 full show, 大少 11:57 永久 rule) =====
+    if (stats) {
+      html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📊 整體表現 (永遠 full show)</h4>`;
+      const hitRateColor = stats.hitRate5d === null ? '#999' : stats.hitRate5d >= 0.6 ? '#26BA75' : stats.hitRate5d >= 0.4 ? '#F39C12' : '#EE5151';
+      const hitRatePct = stats.hitRate5d === null ? 'N/A' : (stats.hitRate5d * 100).toFixed(0) + '%';
+      html += `<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">`;
+      html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"><div style="font-size: 24px; font-weight: bold; color: ${hitRateColor};">${hitRatePct}</div><div style="font-size: 12px; color: #666;">5 日命中率</div></div>`;
+      html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"><div style="font-size: 24px; font-weight: bold; color: #1890ff;">${stats.avgFwd5 === null ? 'N/A' : (stats.avgFwd5 > 0 ? '+' : '') + stats.avgFwd5.toFixed(2) + '%'}</div><div style="font-size: 12px; color: #666;">5 日平均回報</div></div>`;
+      html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"><div style="font-size: 24px; font-weight: bold; color: #f39c12;">${stats.goldenEntries}</div><div style="font-size: 12px; color: #666;">黃金買點</div></div>`;
+      html += `</div>`;
+
+      // 4 個關鍵指標第 2 行
+      html += `<div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; font-size: 12px;">`;
+      html += `<div style="text-align: center; padding: 8px; background: #f9f9f9; border-radius: 6px;"><b>${stats.totalVerdicts}</b><br><span style="color: #666;">總 verdict</span></div>`;
+      html += `<div style="text-align: center; padding: 8px; background: #f9f9f9; border-radius: 6px;"><b>${stats.totalJournalEntries}</b><br><span style="color: #666;">Trade Journal 記錄</span></div>`;
+      const matchCount = (stats.matchBreakdown?.MATCH || 0);
+      const matchRate = stats.totalJournalEntries > 0 ? (matchCount / stats.totalJournalEntries * 100).toFixed(0) : 0;
+      html += `<div style="text-align: center; padding: 8px; background: #f9f9f9; border-radius: 6px;"><b>${matchRate}%</b><br><span style="color: #666;">Match Rate</span></div>`;
+      html += `<div style="text-align: center; padding: 8px; background: #f9f9f9; border-radius: 6px;"><b>${(stats.avgFwd10 === null ? 'N/A' : (stats.avgFwd10 > 0 ? '+' : '') + stats.avgFwd10.toFixed(2) + '%')}</b><br><span style="color: #666;">10 日平均</span></div>`;
+      html += `</div>`;
+
+      // Action breakdown (8 個 finalAction)
+      if (stats.actionBreakdown && Object.keys(stats.actionBreakdown).length > 0) {
+        html += `<details style="margin-bottom: 12px;"><summary style="cursor: pointer; color: #666; font-size: 13px;">📋 點開睇 8 個 finalAction 分佈</summary>`;
+        html += `<div style="background: #f9f9f9; padding: 12px; border-radius: 8px; margin-top: 8px; font-size: 12px;">`;
+        for (const [action, count] of Object.entries(stats.actionBreakdown).sort((a, b) => b[1] - a[1])) {
+          const pct = stats.totalVerdicts > 0 ? (count / stats.totalVerdicts * 100).toFixed(0) : 0;
+          html += `<div style="display: flex; justify-content: space-between; padding: 2px 0;"><span>${action}</span><span><b>${count}</b> (${pct}%)</span></div>`;
+        }
+        html += `</div></details>`;
+      }
+    }
+
+    // ===== Section 4: Timeline chart (SVG 永遠 full show) =====
+    if (dataPoints.length > 0) {
+      html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📈 過去 ${dateRange} 日嘅時序圖</h4>`;
+      const chartW = 600;
+      const chartH = 160;
+      html += `<svg width="100%" height="${chartH}" viewBox="0 0 ${chartW} ${chartH}" style="background: white; border-radius: 8px; padding: 8px; border: 1px solid #eee;">`;
+      // X 軸 baseline
+      html += `<line x1="0" y1="${chartH / 2}" x2="${chartW}" y2="${chartH / 2}" stroke="#ddd" stroke-dasharray="3,3" />`;
+      // 每個 data point 一個方塊
+      const pointW = Math.max(2, Math.min(20, (chartW - 20) / dataPoints.length));
+      dataPoints.forEach((dp, i) => {
+        const x = 10 + i * pointW;
+        // 高度 = fwd5 絕對值 (cap 5%)
+        const fwd5 = dp.fwd5 ?? 0;
+        const h = Math.min(60, Math.abs(fwd5) * 12);
+        const y = fwd5 >= 0 ? (chartH / 2) - h : (chartH / 2);
+        html += `<rect x="${x}" y="${y}" width="${pointW - 1}" height="${h}" fill="${dp.color}" rx="2" opacity="0.85" />`;
+        // Golden entry 加星號
+        if (dp.isGoldenEntry) {
+          html += `<text x="${x + pointW / 2}" y="12" text-anchor="middle" font-size="10" fill="#FFD700">★</text>`;
+        }
+      });
+      // Y 軸標
+      html += `<text x="5" y="14" font-size="9" fill="#999">+5%</text>`;
+      html += `<text x="5" y="${chartH / 2 + 3}" font-size="9" fill="#999">0%</text>`;
+      html += `<text x="5" y="${chartH - 3}" font-size="9" fill="#999">-5%</text>`;
+      // 圖例 (6 色標)
+      html += `<text x="${chartW - 100}" y="14" font-size="9" fill="#666">6 色: 🟢🟡🟠🔴⚪</text>`;
+      html += `</svg>`;
+
+      // 詳細表 (always show 詳細)
+      html += `<details open style="margin-top: 12px;"><summary style="cursor: pointer; color: #333; font-weight: bold;">📋 詳細表 (${dataPoints.length} 條, 點開收起)</summary>`;
+      html += `<div style="max-height: 300px; overflow-y: auto; margin-top: 8px;">`;
+      html += `<table style="width:100%; border-collapse: collapse; background: white; border-radius: 8px; font-size: 12px;">`;
+      html += `<tr style="background: #f5f5f5;"><th style="padding: 6px; text-align: left;">日期</th><th style="padding: 6px; text-align: left;">行動</th><th style="padding: 6px; text-align: right;">5 日</th><th style="padding: 6px; text-align: center;">算法</th><th style="padding: 6px; text-align: center;">大少</th><th style="padding: 6px; text-align: center;">Match</th></tr>`;
+      for (const dp of dataPoints) {
+        const fwd5Str = dp.fwd5 === null ? '—' : `${hitEmoji(dp.hit)} ${dp.fwd5 > 0 ? '+' : ''}${dp.fwd5.toFixed(2)}%`;
+        const algMark = hitEmoji(dp.hit);
+        const userMark = markEmoji(dp.markCorrect !== null ? dp.markCorrect : dp.markWrong);
+        const matchColor = dp.predictionVsActual === 'MATCH' ? '#26BA75' : dp.predictionVsActual === 'MISS' ? '#EE5151' : '#999';
+        const matchText = dp.predictionVsActual === 'NO_JOURNAL' ? '—' : dp.predictionVsActual;
+        html += `<tr style="border-bottom: 1px solid #f0f0f0;">`;
+        html += `<td style="padding: 6px;">${dp.date}${dp.isGoldenEntry ? ' ⭐' : ''}</td>`;
+        html += `<td style="padding: 6px;"><span style="display: inline-block; width: 8px; height: 8px; background: ${dp.color}; border-radius: 2px; margin-right: 4px;"></span>${dp.action}</td>`;
+        html += `<td style="padding: 6px; text-align: right; font-family: monospace;">${fwd5Str}</td>`;
+        html += `<td style="padding: 6px; text-align: center;">${algMark}</td>`;
+        html += `<td style="padding: 6px; text-align: center;">${userMark}</td>`;
+        html += `<td style="padding: 6px; text-align: center; color: ${matchColor}; font-weight: bold;">${matchText}</td>`;
+        html += `</tr>`;
+      }
+      html += `</table></div></details>`;
+    } else {
+      html += `<div style="background: #f9f9f9; padding: 20px; border-radius: 12px; text-align: center; color: #666;">📭 過去 ${dateRange} 日冇 verdict 記錄, 試吓撳 M9 (回測驗證) 先累積數據。</div>`;
+    }
+
+    // ===== Section 5: Golden entries (永遠 full show) =====
+    const goldenEntries = dataPoints.filter(dp => dp.isGoldenEntry);
+    if (goldenEntries.length > 0) {
+      html += `<h4 style="margin: 16px 0 8px 0; color: #333;">⭐ 黃金買點 (${goldenEntries.length} 個, 永遠 full show)</h4>`;
+      html += `<p style="font-size: 12px; color: #888; margin-bottom: 8px;">定義: 算法 verdict + 5 日後升 ≥ 3% + 大少 mark 4-5 分</p>`;
+      html += `<div style="background: linear-gradient(135deg, #fff8e1 0%, #fff 100%); border: 2px solid #FFD700; padding: 12px; border-radius: 12px;">`;
+      for (const ge of goldenEntries.slice(0, 10)) {  // 最多顯示 10 個
+        html += `<div style="padding: 8px 0; border-bottom: 1px dashed #FFD700;">`;
+        html += `<b>📅 ${ge.date}</b> — <span style="color: ${ge.color}; font-weight: bold;">${ge.action}</span> → 5 日後升 <b style="color: #26BA75;">+${ge.fwd5?.toFixed(2)}%</b>`;
+        if (ge.markCorrect) html += ` · 大少 mark <b>${ge.markCorrect}/5</b>`;
+        if (ge.journalEntry?.notes) html += `<br><span style="font-size: 11px; color: #666;">📝 ${ge.journalEntry.notes}</span>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+    } else if (stats && stats.totalJournalEntries > 0) {
+      html += `<h4 style="margin: 16px 0 8px 0; color: #333;">⭐ 黃金買點</h4>`;
+      html += `<div style="background: #f9f9f9; padding: 12px; border-radius: 8px; color: #666; font-size: 13px;">暫時未搵到黃金買點 (要 fwd5 ≥ 3% + mark 4-5 同時成立)。可以喺 Trade Journal 多 mark 幾條試吓。</div>`;
+    }
+
+    return html;
+  },
+};

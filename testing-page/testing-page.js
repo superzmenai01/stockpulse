@@ -52,7 +52,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-09 21:06 兩線策略 cosmetic fix: ALGO_CACHE_BUST = '2.1.1' (Position Trading Card MA5/MA20 顯示 N/A 而唔係 $0.00)
 // 大少 2026-08-09 21:30 M5 Multi-TF impl: ALGO_CACHE_BUST = '2.2.0' (M5 Multi-TF v1.0.0 入口 + analyzeMultiTF + renderMultiTFResult)
 // 大少 2026-08-09 22:34 M8 SlopeMomentum impl: ALGO_CACHE_BUST = '2.3.0' (舊 M8 v1.0.0 re-elevate 入口 + analyzeSlopeMomentum + renderSlopeMomentumResult)
-const ALGO_CACHE_BUST = '2.3.0';
+// 大少 2026-08-10 00:13 M11 Backtest Timeline impl: ALGO_CACHE_BUST = '2.4.0' (M11 Backtest Timeline v0.1.0 入口 + analyzeBacktestTimeline + renderTimelineResult)
+const ALGO_CACHE_BUST = '2.4.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -156,6 +157,17 @@ const REGISTRY = [
     adapterExport: 'backTestAdapter',
     // 9.5: testing page entry 09 — 揀 stock → 撳跑 → out optimal params + walk-forward CV folds
     // 9.6 (next): HK.00700 pilot only + spec doc final
+  },
+  // ---- M11 Backtest Timeline (11) — Stage 2 第三次 focus (大少 2026-08-10 00:04 4 個 A confirm) ----
+  // 整合 M9 forward return + M10 Trade Journal 嘅 timeline 視覺化
+  // 4 個永遠 full show sections: Timeline chart + Stats + Journal overlay + Golden entries
+  // 6 色標 + LLM hook (大少 13:30 永久 rule)
+  {
+    id: 'AS-03-BTL',
+    displayName: '11 — AS-03-BTL',  // 大少 2026-08-08 10:06: 編號 11 = M11 Backtest Timeline
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'backtestTimelineAdapter',
   },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
