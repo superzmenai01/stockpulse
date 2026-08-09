@@ -1298,10 +1298,13 @@ function formatPrice(price, currency) {
 }
 
 function updatePriceColumn() {
-  // 搵 trading card 嘅「🎯 入場區間」 div,然後攞 parent grid container
-  const entryZoneDiv = Array.from(document.querySelectorAll('div')).find(
-    el => el.textContent && el.textContent.trim() === '🎯 入場區間 (±1.5%)'
-  );
+  // 搵 trading card 嘅「🎯 入場區間」 div, 然後攞 parent grid container
+  // 注意: entryZoneDiv 嘅 textContent 包哂所有 child 嘅 text (e.g. "🎯 入場區間 (±1.5%)$466.83 - $490.77"),
+  //       所以要用 firstChild.textContent 拎第一個 text node (即係 label 本身)
+  const entryZoneDiv = Array.from(document.querySelectorAll('div')).find(el => {
+    if (!el.firstChild || el.firstChild.nodeType !== 3) return false;
+    return el.firstChild.textContent.trim() === '🎯 入場區間 (±1.5%)';
+  });
   if (!entryZoneDiv) return;
   // entryZoneDiv 嘅 parent = trading-card-field (.trading-card-field style)
   // trading-card-field 嘅 parent = grid container
