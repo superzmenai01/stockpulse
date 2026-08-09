@@ -50,7 +50,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-09 13:15 Spec Sync #7: ALGO_CACHE_BUST = '2.0.0' (AS-03-DEC v1.8.0 → v2.0.0 Sprint 2 收官)
 // 大少 2026-08-09 19:06 兩線策略: ALGO_CACHE_BUST = '2.1.0' (AS-03-DEC v2.0.0 → v2.1.0 加 strategyMode + cycle-synthesizer)
 // 大少 2026-08-09 21:06 兩線策略 cosmetic fix: ALGO_CACHE_BUST = '2.1.1' (Position Trading Card MA5/MA20 顯示 N/A 而唔係 $0.00)
-const ALGO_CACHE_BUST = '2.1.1';
+// 大少 2026-08-09 21:30 M5 Multi-TF impl: ALGO_CACHE_BUST = '2.2.0' (M5 Multi-TF v1.0.0 入口 + analyzeMultiTF + renderMultiTFResult)
+const ALGO_CACHE_BUST = '2.2.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

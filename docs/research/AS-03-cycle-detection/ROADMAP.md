@@ -223,7 +223,7 @@
 | 2 | HL Structure | ✅ Stage 1 done | 2026-08-07 | v0.1.0 | 12/12 | [MODULE-02-HL-STRUCTURE.md](./MODULE-02-HL-STRUCTURE.md) |
 | 3 | Trendline | ✅ Stage 1 done | 2026-08-07 | v0.1.0 | 20/20 | [MODULE-03-TRENDLINE.md](./MODULE-03-TRENDLINE.md) |
 | 4 | Indicators (MACD/RSI/Boll) | ✅ Stage 1 done | 2026-08-07 | v1.0.0 | 36/36 | [MODULE-04-MOMENTUM-DIVERGENCE.md](./MODULE-04-MOMENTUM-DIVERGENCE.md) |
-| 5 | **Multi-TF (日/週/月)** | ⏸️ **Stage 2 (大少 14:16 揀 A drop)** | TBD | TBD | TBD | [MODULE-05-MULTI-TIMEFRAME.md](./MODULE-05-MULTI-TIMEFRAME.md) (TBD) |
+| 5 | **Multi-TF (日/週/月)** | 🚧 **Stage 2 第一次 focus (M5 v1.0.0 impl done)** | 2026-08-09 | v1.0.0 | 20/20 (Node) + 8/8 (pytest) | [MODULE-05-MULTI-TIMEFRAME.md](./MODULE-05-MULTI-TIMEFRAME.md) |
 | 5b | Volume OBV (v1) / VolumePrice (v2) | ✅ Stage 1 done | 2026-08-08 | v2.0.0 | 47/47 | [MODULE-05-VOLUME-PRICE-V2.md](./MODULE-05-VOLUME-PRICE-V2.md) |
 | 6 | Volatility (新定義, 取代 Multi-TF) | ✅ Stage 1 done | 2026-08-08 | v1.0.0 | 32/32 | [MODULE-06-VOLATILITY.md](./MODULE-06-VOLATILITY.md) |
 | 7 | Synthesizer (M7) | ✅ Sprint 1 done | 2026-08-08 | — | 64/64 | [MODULE-07-SYNTHESIZER.md](./MODULE-07-SYNTHESIZER.md) |

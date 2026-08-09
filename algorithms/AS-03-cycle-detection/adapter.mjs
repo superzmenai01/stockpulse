@@ -26,8 +26,8 @@
 
 export const id = 'AS-03';
 export const name = '均線系統週期斷法';
-export const version = '0.3.0';
-export const description = '用 10 條 rule-based 算法 (A-J) 識別股票所處嘅周期（上升 / 下跌 / 橫行 / 轉勢）';
+export const version = '2.2.0';
+export const description = '用 10 條 rule-based 算法 (A-J) 識別股票所處嘅周期（上升 / 下跌 / 橫行 / 轉勢）+ M5 Multi-TF 多時間框架綜合 (Stage 2) + 兩線策略 (Position + Swing)';
 
 export const CycleState = Object.freeze({
   UP: 'UP',
@@ -103,6 +103,15 @@ export const inputs = [
     type: 'checkbox',
     default: false,
   },
+  // 大少 2026-08-09 21:33 — M5 Multi-TF 多時間框架綜合 (Stage 2 第一次 focus)
+  //   - 預設 OFF (testing page UI 唔支援 3 timeframe fetch, Stage 2 統一處理)
+  //   - backend caller 可以透過 options.klines1D / klines1W / klines1M 直接 invoke
+  {
+    key: 'enableMultiTF',
+    label: 'M5 多時間框架 (Stage 2, 預設 OFF)',
+    type: 'checkbox',
+    default: false,
+  },
 ];
 
 // ===== Main analyze function =====
@@ -124,7 +133,22 @@ export const inputs = [
 export async function analyze(klines, options = {}) {
   // 大少 #10846 — module toggles
   const enableVolumePrice = options.enableVolumePrice === true;
+  const enableMultiTF = options.enableMultiTF === true;
   // 大少 2026-08-07 23:15 — SlopeMomentum toggle 暫時隱藏 (Stage 1 done 最後先做返)
+
+  // 大少 2026-08-09 21:33 — M5 Multi-TF (Stage 2 第一次 focus)
+  //   IF caller 同時提供 klines1D / klines1W / klines1M 3 個 timeframe 嘅 K-line
+  //   → 直接 return synthesizeMultiTF result (skip expert-rules, 因為 multi-tf 已經 final verdict)
+  //   否則 fall through 行原本 ma-alignment + volume + expert-rules flow
+  if (enableMultiTF && options.klines1D && options.klines1W && options.klines1M) {
+    return await analyzeMultiTF({
+      symbol: options.code || 'unknown',
+      klines1D: options.klines1D,
+      klines1W: options.klines1W,
+      klines1M: options.klines1M,
+      config: options.multiTFConfig,
+    });
+  }
 
   // Always run MA alignment (mandatory)
   const maVerdict = await runMAAlignment(klines, options);
@@ -439,6 +463,314 @@ function expertRulesSynthesize(moduleVerdicts) {
   };
 }
 
+// ===== M5 Multi-TF (大少 2026-08-09 21:33 — Stage 2 第一次 focus) =====
+//
+// Answer: 3 個 timeframe 嘅 cycle 方向一致嗎?
+//   - 一致 (3 個 TF 同一方向) = 高信心
+//   - 半一致 (1 個 TF 唔同) = 中信心 + ⚠️ warning
+//   - 完全分歧 (3 個 TF 唔同) = CONFLICT 唔好入場
+//
+// 加權: 1D 25% / 1W 35% / 1M 40% (大方向權重最高, 大少 21:33 揀 A D2)
+//
+// 入口: caller 提供 klines1D / klines1W / klines1M 3 組 K-line
+//   主 analyze IF `enableMultiTF=true` AND 3 klines 都有 → return 呢個 verdict
+//   唔行 expert-rules aggregator (multi-tf 已經係 final, double-penalty 會錯)
+//
+// 實作: browser 環境用 dynamic script load `build/multi-tf.bundle.js` (window.MultiTF)
+//   Node 環境 (backend pytest) 用 dynamic import 個 multi-tf.ts
+//
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-05-MULTI-TIMEFRAME.md
+
+// Cache: 避免重複 inject <script> tag
+let _multiTFScriptInjected = false;
+
+function _loadMultiTFScriptTag() {
+  if (typeof document === 'undefined') return;  // 非 browser 環境 skip
+  if (_multiTFScriptInjected) return;
+  if (window.MultiTF) { _multiTFScriptInjected = true; return; }  // 已 loaded
+
+  const script = document.createElement('script');
+  script.src = '/algorithms/AS-03-cycle-detection/build/multi-tf.bundle.js';
+  script.async = false;  // 同步 load, 等佢 ready 先繼續
+  document.head.appendChild(script);
+  _multiTFScriptInjected = true;
+}
+
+async function _getMultiTFSynthesizer() {
+  // 1. 已經 loaded (e.g. testing page 已 inject)
+  if (typeof window !== 'undefined' && window.MultiTF && typeof window.MultiTF.synthesizeMultiTF === 'function') {
+    return window.MultiTF.synthesizeMultiTF;
+  }
+  // 2. Browser 環境 — dynamic inject script tag
+  if (typeof document !== 'undefined') {
+    _loadMultiTFScriptTag();
+    // 等 script load 完 (polling window.MultiTF)
+    for (let i = 0; i < 100; i++) {
+      if (window.MultiTF && typeof window.MultiTF.synthesizeMultiTF === 'function') {
+        return window.MultiTF.synthesizeMultiTF;
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    throw new Error('[M5] multi-tf.bundle.js load timeout (5s)');
+  }
+  // 3. Node 環境 (backend pytest) — dynamic import .ts file
+  //    (透過 Node --experimental-strip-types 支援)
+  throw new Error('[M5] Node.js multi-tf module loader 尚未 implement, 請用 browser 環境或 backend 自接');
+}
+
+export async function analyzeMultiTF(input) {
+  const { symbol, klines1D, klines1W, klines1M, config } = input;
+
+  if (!Array.isArray(klines1D) || klines1D.length < 90) {
+    throw new Error(`[M5] 1D K-line 數據不足: need ≥ 90 bars, got ${klines1D?.length ?? 0}`);
+  }
+  if (!Array.isArray(klines1W) || klines1W.length < 26) {
+    throw new Error(`[M5] 1W K-line 數據不足: need ≥ 26 bars, got ${klines1W?.length ?? 0}`);
+  }
+  if (!Array.isArray(klines1M) || klines1M.length < 12) {
+    throw new Error(`[M5] 1M K-line 數據不足: need ≥ 12 bars, got ${klines1M?.length ?? 0}`);
+  }
+
+  const synthesize = await _getMultiTFSynthesizer();
+  const rawVerdict = synthesize({ symbol, klines1D, klines1W, klines1M, config });
+
+  // Map synthesizeMultiTF output → adapter 標準 verdict shape
+  //   - state: UP/DOWN/SIDEWAYS/CONFLICT (CONFLICT map 去 TRANSITION 顯示)
+  //   - moduleId: 'multi-tf' (供 renderResult dispatch)
+  //   - meta.timeframe_verdicts: 3 個 TF 嘅 sub-verdict (render 用)
+  return {
+    moduleId: 'multi-tf',
+    timeframe: '1D+1W+1M',
+    state: rawVerdict.state === 'CONFLICT' ? 'TRANSITION' : rawVerdict.state,
+    confidence: rawVerdict.confidence,
+    interpretation: rawVerdict.warning
+      ? `[M5 Multi-TF] ${rawVerdict.state} (信心 ${(rawVerdict.confidence * 100).toFixed(1)}%) — ${rawVerdict.warning}`
+      : `[M5 Multi-TF] ${rawVerdict.state} (信心 ${(rawVerdict.confidence * 100).toFixed(1)}%) — ${rawVerdict.consensus.description}`,
+    evidence: [],
+    warnings: rawVerdict.warning ? [rawVerdict.warning] : [],
+    meta: {
+      ...rawVerdict.meta,
+      subModule: 'multi-tf',
+      rawState: rawVerdict.state,
+      consensus: rawVerdict.consensus,
+      timeframeVerdicts: rawVerdict.timeframe_verdicts,
+      transitions: rawVerdict.transitions,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+// ===== M5 Multi-TF 渲染 (renderMultiTFResult) =====
+//
+// 永遠 full show 全部 sections (大少 11:57 永久 rule):
+//   1. 綜合判定 (state pill + 信心 + 3 TF 一致性)
+//   2. 3 個 timeframe 各自嘅 sub-verdict card (UP/DOWN/SIDEWAYS + MA5/10/20/60)
+//   3. Consensus 一致性評分 + direction
+//   4. Warning (分歧時顯示)
+//   5. Cycle transition (turn_around / adjustment_complete)
+//   6. 詳細解讀 (plain language)
+//   7. 策略建議
+
+function renderMultiTFResult(verdict) {
+  const stateColors = {
+    UP: '#52c41a',
+    DOWN: '#ff4d4f',
+    SIDEWAYS: '#faad14',
+    TRANSITION: '#722ed1',
+    CONFLICT: '#722ed1',
+  };
+  const stateLabels = {
+    UP: '上升 (3 TF 一致)',
+    DOWN: '下跌 (3 TF 一致)',
+    SIDEWAYS: '橫行 (3 TF 一致)',
+    TRANSITION: '轉折 (CONFLICT 唔好入場)',
+    CONFLICT: '轉折 (CONFLICT 唔好入場)',
+  };
+
+  const rawState = verdict.meta?.rawState || verdict.state;
+  const color = stateColors[verdict.state] || '#666';
+  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 3 TF 一致大方向'
+    : verdict.confidence >= 0.5 ? '中等信心, 部分 TF 分歧'
+    : '低信心, 多個 TF 分歧';
+
+  const consensus = verdict.meta?.consensus || {};
+  const tfVerdicts = verdict.meta?.timeframeVerdicts || {};
+  const transitions = verdict.meta?.transitions || {};
+  const warning = verdict.warnings?.[0] || null;
+
+  // 3 個 timeframe 嘅 sub-verdict card
+  const tfOrder = ['1D', '1W', '1M'];
+  const tfCards = tfOrder.map((tf) => {
+    const tv = tfVerdicts[tf];
+    if (!tv) return '';
+    const tfColor = stateColors[tv.state] || '#666';
+    const tfLabel = stateLabels[tv.state] || tv.state;
+    const tfConf = (tv.confidence * 100).toFixed(0);
+    return `
+      <div class="m5-tf-card" style="border: 2px solid ${tfColor}; border-radius: 8px; padding: 12px; background: #fafafa;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h5 style="margin: 0; color: #333;">📊 ${tf} (${tf === '1D' ? '日線' : tf === '1W' ? '週線' : '月線'})</h5>
+          <span style="background: ${tfColor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">${tfLabel} · ${tfConf}%</span>
+        </div>
+        <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+          <tr><td style="padding: 3px 0; color: #666;">資料日數</td><td style="text-align: right;"><strong>${tv.data_days}</strong> 日</td></tr>
+          <tr><td style="padding: 3px 0; color: #666;">現價</td><td style="text-align: right;"><strong>$${tv.current_price?.toFixed(2) || 'N/A'}</strong></td></tr>
+          <tr><td style="padding: 3px 0; color: #666;">MA5</td><td style="text-align: right;">$${tv.ma5?.toFixed(2) || 'N/A'}</td></tr>
+          <tr><td style="padding: 3px 0; color: #666;">MA10</td><td style="text-align: right;">$${tv.ma10?.toFixed(2) || 'N/A'}</td></tr>
+          <tr><td style="padding: 3px 0; color: #666;">MA20</td><td style="text-align: right;">$${tv.ma20?.toFixed(2) || 'N/A'}</td></tr>
+          <tr><td style="padding: 3px 0; color: #666;">MA60</td><td style="text-align: right;">$${tv.ma60?.toFixed(2) || 'N/A'}</td></tr>
+          <tr><td style="padding: 3px 0; color: #666;">Matched rules</td><td style="text-align: right;">${tv.matched_rules?.join(', ') || '無'}</td></tr>
+        </table>
+      </div>
+    `;
+  }).join('');
+
+  // Plain language 簡單解讀
+  let plainLanguage = '';
+  if (rawState === 'UP') {
+    plainLanguage = `
+      <p>📌 <strong>簡單講</strong>: 3 個 timeframe 嘅 cycle 方向都係 <b>上升</b>, 大方向同短期一致, 上升趨勢確認。</p>
+      <p>📊 <strong>咩意思</strong>: 1D (日線) 確認短線向上, 1W (週線) 確認中線向上, 1M (月線) 確認大方向向上, 三個時間尺度都睇好。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 呢個係 <b>最強訊號</b>, 可以考慮順勢持有 / 逢回調加倉。留意 1D 嘅 MA5 跌破警號 (短線轉弱), 1W/1M 嘅反轉信號。</p>
+    `;
+  } else if (rawState === 'DOWN') {
+    plainLanguage = `
+      <p>📌 <strong>簡單講</strong>: 3 個 timeframe 嘅 cycle 方向都係 <b>下跌</b>, 大方向同短期一致, 下跌趨勢確認。</p>
+      <p>📊 <strong>咩意思</strong>: 1D (日線) 確認短線向下, 1W (週線) 確認中線向下, 1M (月線) 確認大方向向下, 三個時間尺度都看淡。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 呢個係 <b>最弱訊號</b>, 應該避開 / 考慮減倉。留意 1D 嘅 MA5 升穿警號 (短線轉強), 1W/1M 嘅見底信號。</p>
+    `;
+  } else if (rawState === 'SIDEWAYS') {
+    plainLanguage = `
+      <p>📌 <strong>簡單講</strong>: 3 個 timeframe 嘅 cycle 方向都係 <b>橫行</b>, 大方向同短期都冇明確方向, 等突破信號。</p>
+      <p>📊 <strong>咩意思</strong>: 1D/1W/1M 三個時間尺度都係橫行, 結構混亂, 等方向確認。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 橫行結構, <b>唔好入場</b>, 等 MA 突破先做。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機。</p>
+    `;
+  } else if (rawState === 'CONFLICT') {
+    plainLanguage = `
+      <p>📌 <strong>簡單講</strong>: 3 個 timeframe 嘅 cycle 方向 <b>完全唔同</b> (e.g. 1D UP, 1W DOWN, 1M SIDEWAYS), 撈底風險極高。</p>
+      <p>📊 <strong>咩意思</strong>: 短中長期方向矛盾, 唔好入場, 等其中一個 TF 確認方向先。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: <b>完全分歧</b>, 信心已被自動降低 50%, 唔好撈底。配合 Trade Journal 記低原因, 等下次睇返學習。</p>
+    `;
+  } else {
+    // 2 個 TF 一致, 1 個 TF 唔同 (partial)
+    plainLanguage = `
+      <p>📌 <strong>簡單講</strong>: 3 個 timeframe 嘅 cycle 方向 <b>部分一致</b> (2 個 TF 一致, 1 個 TF 唔同), 信心降低 ${((1 - 0.85) * 100).toFixed(0)}%。</p>
+      <p>📊 <strong>咩意思</strong>: 大方向有確認但短 / 中線有矛盾, 信號唔算最強, 小心入場。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: ${warning || '留意分歧嗰個 TF 嘅解讀'}, 入場前要再 confirm 一下。</p>
+    `;
+  }
+
+  // 策略建議
+  let strategyAdvice = '';
+  if (rawState === 'UP' || rawState === 'DOWN') {
+    const action = rawState === 'UP' ? '順勢持有 / 逢回調加倉' : '避開 / 減倉';
+    strategyAdvice = `
+      <div class="strategy-${rawState.toLowerCase()}">
+        <h4>${rawState === 'UP' ? '🟢' : '🔴'} ${rawState === 'UP' ? '大方向向上' : '大方向向下'} (3 TF 一致) · 策略建議</h4>
+        <p><strong>基本動作:</strong>${action}</p>
+        <p><strong>確認強度:</strong>3 TF 一致, 信心 ${confidencePct}%, 屬於高信心信號</p>
+        <p><strong>止損位:</strong>1D 嘅 MA5 × 0.98 (短線警號)</p>
+        <p><strong>進場策略:</strong>等回調到 MA10/MA20 附近再反彈, 低吸</p>
+        ${transitions.turn_around ? '<p><strong>特別注意:</strong>檢測到 <b>turn_around</b> (大方向轉勢), 入場要更穩健</p>' : ''}
+      </div>
+    `;
+  } else if (rawState === 'CONFLICT') {
+    strategyAdvice = `
+      <div class="strategy-conflict">
+        <h4>🟣 3 TF 完全分歧 (CONFLICT) · 策略建議</h4>
+        <p><strong>基本動作:</strong><b>唔好入場</b>, 等方向確認</p>
+        <p><strong>確認強度:</strong>CONFLICT 信心已被自動折半 (× 0.5)</p>
+        <p><strong>風險:</strong>撈底風險極高, 3 個時間尺度互相矛盾</p>
+        <p><strong>觀察重點:</strong>等其中一個 TF 確認方向先再入場</p>
+      </div>
+    `;
+  } else {
+    strategyAdvice = `
+      <div class="strategy-sideways">
+        <h4>🟡 3 TF 橫行 (SIDEWAYS) · 策略建議</h4>
+        <p><strong>基本動作:</strong>等方向, 等 MA 突破</p>
+        <p><strong>確認強度:</strong>3 TF 橫行, 結構混亂</p>
+        <p><strong>進場策略:</strong>唔好喺橫行中間進場, 等 1D 突破 1W MA60 先做</p>
+        <p><strong>觀察重點:</strong>配合 M6 Volatility Squeeze 捕捉突破</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="as03-verdict as03-module-card as03-multi-tf">
+      <div class="module-card-header">
+        <h4>🌐 M5 Multi-TF 多時間框架綜合 (v1.0.0, Stage 2)</h4>
+      </div>
+      <div class="verdict-header">
+        <div class="state-pill" style="background: ${color}">
+          <span class="state-label">${stateLabel}</span>
+          <span class="state-code">${verdict.state}</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-label">信心指數 — ${confidenceExplain}</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span>綜合時間週期:</span> <strong>1D + 1W + 1M</strong></div>
+          <div class="summary-row"><span>Consensus Score:</span> <strong>${(consensus.score ?? 0).toFixed(2)}</strong></div>
+          <div class="summary-row"><span>Consensus Direction:</span> <strong>${consensus.direction ?? 'N/A'}</strong></div>
+        </div>
+      </div>
+
+      ${warning ? `<div class="warning-box" style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 12px; border-radius: 6px; margin: 12px 0;">⚠️ <strong>Warning:</strong> ${warning}</div>` : ''}
+
+      <div class="interpretation">
+        <strong>📌 解讀：</strong>${verdict.interpretation}
+        ${plainLanguage}
+      </div>
+
+      <h4 style="margin-top: 16px; color: #555;">📊 3 個 Timeframe 嘅 Sub-Verdict</h4>
+      <div class="m5-tf-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0;">
+        ${tfCards}
+      </div>
+
+      <div class="consensus-detail">
+        <h4>🎯 Consensus 一致性評分</h4>
+        <p>Score: <strong>${(consensus.score ?? 0).toFixed(2)}</strong> (0-1, 越高越一致)</p>
+        <p>Direction: <strong>${consensus.direction ?? 'N/A'}</strong> (aligned=完全一致 / partial=部分一致 / divergent=完全分歧)</p>
+        <p>Description: ${consensus.description ?? 'N/A'}</p>
+        <p>權重: 1D 25% / 1W 35% / 1M 40% (大方向權重最高, 大少 21:33 揀 A D2)</p>
+      </div>
+
+      ${(transitions.turn_around || transitions.adjustment_complete) ? `
+        <div class="transitions-box" style="background: #e7f3ff; border: 1px solid #91d5ff; padding: 12px; border-radius: 6px; margin: 12px 0;">
+          <h4 style="margin: 0 0 8px 0;">🔄 Cycle Transitions</h4>
+          ${transitions.turn_around ? '<p>✅ <strong>turn_around</strong> — 大方向由 DOWN 轉 UP, 1M + 1D 都 UP, 信心 ≥ 65%</p>' : ''}
+          ${transitions.adjustment_complete ? '<p>✅ <strong>adjustment_complete</strong> — 大方向調整剛完</p>' : ''}
+        </div>
+      ` : ''}
+
+      ${strategyAdvice}
+
+      <div class="usage-guide">
+        <h4>💡 點用呢個結果 (M5 特別版)</h4>
+        <ol>
+          <li><strong>先睇綜合 state 同信心</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=CONFLICT) 同信心百分比</li>
+          <li><strong>睇 3 個 TF 各自嘅 sub-verdict</strong> — 如果有 1 個 TF 唔同, 就係 partial, 信心打折; 3 個 TF 完全唔同就係 CONFLICT</li>
+          <li><strong>睇 MA 值嗰 3 個 box</strong> — 每個 TF 嘅 MA5/10/20/60 數值, 比較當前價同 MA 嘅距離</li>
+          <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
+          <li><strong>CONFLICT 一定要避</strong> — 3 個時間尺度矛盾, 撈底風險極高</li>
+          <li><strong>大方向 (1M) 權重最高 (40%)</strong> — 因為大方向最難改變, 1M UP 就 long-term 看好</li>
+        </ol>
+        <p class="caveat">⚠️ M5 係 Stage 2 第一次 focus, testing page UI 整合 Stage 2 統一處理 (而家 toggle 預設 OFF)</p>
+      </div>
+
+      <details class="meta-details">
+        <summary>🔧 配置 (debug 用)</summary>
+        <pre>${JSON.stringify(verdict.meta?.tf_weights || {}, null, 2)}</pre>
+        <p>數據日數: 1D=${verdict.meta?.data_days_1d ?? 0} / 1W=${verdict.meta?.data_days_1w ?? 0} / 1M=${verdict.meta?.data_days_1m ?? 0}</p>
+      </details>
+    </div>
+  `;
+}
+
 // ===== Helpers =====
 
 function avgClose(klines, endIdx, period) {
@@ -517,6 +849,7 @@ function renderSynthesizedResult(verdict) {
   const moduleCards = moduleVerdicts.map((mv) => {
     if (mv.moduleId === 'ma-alignment') return renderMAResult(mv);
     if (mv.moduleId === 'volume') return renderVolumeResult(mv);
+    if (mv.moduleId === 'multi-tf') return renderMultiTFResult(mv);
     // 大少 2026-08-07 23:15 — SlopeMomentum render 暫時隱藏 (Stage 1 done 最後先做返)
     return `<pre>${JSON.stringify(mv, null, 2)}</pre>`;
   }).join('');
@@ -525,6 +858,7 @@ function renderSynthesizedResult(verdict) {
   const enabledBadges = moduleVerdicts.map((mv) => {
     const name = mv.moduleId === 'ma-alignment' ? 'MA Alignment'
       : mv.moduleId === 'volume' ? '量價分析 (VolumePrice)'
+      : mv.moduleId === 'multi-tf' ? '多時間框架 (M5 Multi-TF)'
       // 大少 2026-08-07 23:15 — SlopeMomentum badge 暫時隱藏
       : mv.moduleId;
     return `<span class="module-badge">${name}</span>`;
@@ -544,12 +878,15 @@ function renderSynthesizedResult(verdict) {
         ${moduleVerdicts.map((mv) => {
           const modName = mv.moduleId === 'ma-alignment' ? 'MA Alignment'
             : mv.moduleId === 'volume' ? '量价分析 (VolumePrice)'
+            : mv.moduleId === 'multi-tf' ? '多時間框架 (M5)'
             // 大少 2026-08-07 23:15 — SlopeMomentum name 暫時隱藏
             : mv.moduleId;
           const modState = stateLabels[mv.state] || mv.state;
           const modConf = (mv.confidence * 100).toFixed(1);
           const modDetail = mv.moduleId === 'volume'
             ? `信號: ${mv.meta?.signal || 'N/A'}`
+            : mv.moduleId === 'multi-tf'
+            ? `consensus: ${mv.consensus?.direction || 'N/A'} (${mv.state})`
             : `state: ${mv.state}`;
           return `<div class="module-summary-item"><strong>${modName}</strong>: ${modState} (${modConf}%) — ${modDetail}</div>`;
         }).join('')}

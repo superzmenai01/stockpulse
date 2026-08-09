@@ -1981,3 +1981,60 @@ return = (actual_exit_price - entry_price) / entry_price
 
 ### Spec 永久 rule 收穫 (1 個)
 - **大少 14:16 揀 A drop 永久 rule**: Stage 1 收官後要重新 plan 12 modules 嘅隱藏 module (M5 Multi-TF + 舊 M8 SlopeMomentum), 唔可以塞入其他 module 編號。Spec doc + Status table 必須保留獨立 module # 編號 (5 同 8b) 等 Stage 2 重新 elevate。
+
+---
+
+## §15.13 — M5 Multi-TF Implementation Done (大少 21:33 confirm 4 個 A) [2026-08-09]
+
+**大少 2026-08-09 21:33 確認 4 個 design decision 全 A — M5 impl 立即開工 (Stage 2 第一次 focus, workflow 7 步)**。
+
+### 4 個 design decision (大少 21:33 confirm 全 A)
+
+| # | Decision | 大少揀 | 細節 |
+|---|----------|--------|------|
+| D1 | Timeframe 組合 | A | 1D (主) + 1W (confirm) + 1M (大方向) = 3 個 TF |
+| D2 | Weights 分層 | A | 1D 25% / 1W 35% / 1M 40% (大方向權重最高) |
+| D3 | MA pullback 邏輯 | A | 動態 MA10/MA20 (跟股價 update, robust) |
+| D4 | Walk-Forward 比例 | A | 12:1 (Pardo 標準, 較 M9 嚴格) |
+
+### Implementation done (5 個 file)
+
+1. **`modules/multi-tf.ts`** (~430 行, 15.3 KB) — `synthesizeMultiTF()` + 10 條 MA alignment rule + 加權綜合 + conflict penalty
+2. **`tests/test-multi-tf.mjs`** (~330 行, 12.4 KB) — 13 個 scenario (3 TF 全 UP/DOWN/SIDEWAYS/partial/conflict/data 不足/transition/meta)
+3. **`build/multi-tf.bundle.js`** (11.4 KB, esbuild IIFE) — browser 入口 `window.MultiTF`
+4. **`adapter.mjs` v2.1.0 → v2.2.0** — `enableMultiTF` toggle (default OFF) + `analyzeMultiTF()` + `renderMultiTFResult()` + multi-tf dispatch
+5. **`backend/tests/test_multi_tf.py`** (8 個 pytest: Node test runner + bundle file + module exports + spec doc)
+
+### 演算法摘要
+
+```ts
+// 3 個 TF 各自跑 MA alignment (10 條 rule 同 M1)
+// 加權綜合 confidence: 1D 0.25 + 1W 0.35 + 1M 0.40
+// 一致性判定:
+//   - 3 個 TF 同方向 → UP/DOWN/SIDEWAYS (高信心, multiplier 1.0)
+//   - 2 個 TF 同方向 + 1 個 SIDEWAYS → UP/DOWN (中信心, multiplier 1.0)
+//   - 2 個 TF 同方向 + 1 個相反 → UP/DOWN + ⚠️ warning (低信心, multiplier 0.85)
+//   - 3 個 TF 完全唔同 → CONFLICT state (撈底風險, multiplier 0.5)
+// Cycle transitions: turn_around (1D + 1M 都 UP, 1M conf ≥ 0.65)
+// Min data: 1D ≥ 90 / 1W ≥ 26 / 1M ≥ 12
+```
+
+### Verify (大少 debug 永久 rule: 改完要 auto-verify + evidence-based report)
+
+- ✅ Node test: **20 passed, 0 failed (20 total)** — 13 個 scenario + 7 個 sub-assertion
+- ✅ pytest: **8 passed** (test_multi_tf.py 全部)
+- ✅ pytest 整體: **91 passed** (83 舊 + 8 新)
+- ✅ node --check adapter.mjs: exit 0
+- ✅ esbuild bundle: 11.4 KB, no errors
+
+### Entry contract (testing page 整合)
+
+- **Toggle 入口**: `inputs[].key = 'enableMultiTF'` (default false, testing page UI 唔支援 3 timeframe fetch)
+- **Caller 提供**: `options.klines1D` / `options.klines1W` / `options.klines1M` 3 組 K-line
+- **Behavior**: IF `enableMultiTF=true` AND 3 klines 都提供 → return synthesizeMultiTF result (skip expert-rules, 因為 multi-tf 已經 final verdict)
+- **Backend caller**: 可以透過 options 直接 invoke, 唔經 testing page UI
+- **Browser loading**: dynamic inject `<script src="/algorithms/AS-03-cycle-detection/build/multi-tf.bundle.js">` 然後 polling `window.MultiTF.synthesizeMultiTF`
+
+### Spec 永久 rule 收穫 (1 個 new rule)
+
+- **M5 toggle 預設 OFF 永久 rule**: 因為 testing page UI 唔支援 3 timeframe fetch (Stage 2 統一處理), `enableMultiTF` toggle 預設 OFF, 唔可以自動啟用。Backend caller 仍然可以透過 options 直接 invoke, 唔受 toggle 影響。Stage 2 統一處理 testing page 3 timeframe fetch UI 時, 啟用 toggle。
