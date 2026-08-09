@@ -1075,6 +1075,30 @@ function renderMultiTFResult(verdict) {
 
 // ===== Helpers =====
 
+/**
+ * postJSON — fetch POST wrapper with response.ok check (大少 2026-08-10 Bug 1 fix)
+ *
+ * 之前所有 POST 落 /api/adaptive-params 都冇 check response.ok,
+ * 結果即使 server 返 4xx/5xx 都當成功 (silent fail)。
+ * 0 forward return validate samples 就係咁嚟嘅 — fetch 200 但 server 早 reject,
+ * client 唔知, 以為儲咗落 cache, 但其實乜都冇。
+ *
+ * 將來所有 POST 落 backend 都應該用呢個 wrapper。
+ * Throw 嘅 Error.message 包 status + body (前 200 chars), 方便 debug。
+ */
+async function postJSON(url, body) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`POST ${url} failed: HTTP ${resp.status} ${text.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+
 function avgClose(klines, endIdx, period) {
   const startIdx = Math.max(0, endIdx - period + 1);
   const slice = klines.slice(startIdx, endIdx + 1);
@@ -7434,11 +7458,7 @@ export const decisionEngineAdapter = {
       adaptiveParams = calibrateAdaptiveParams(klines || [], sentiment6DHistory);
       // Save 落 cache (background, 唔阻 analyze)
       try {
-        await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(adaptiveParams),
-        });
+        await postJSON(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`, adaptiveParams);
       } catch (e) {
         console.warn('[M8 Decision Engine] Cache save failed:', e);
       }
@@ -7929,6 +7949,16 @@ export const backTestAdapter = {
   analyze: async (klines, options = {}) => {
     const symbol = options.symbol || options.code || 'unknown';
 
+    // 大少 2026-08-10 Bug 1 fix A.3 — debug log 記 K 線 / fold split 狀況
+    // 用嚟診斷「0 validate samples」嘅 root cause (data 太短 / window 太細)
+    const klineCount = (klines || []).length;
+    const klineDateRange = klineCount > 0 ? {
+      start: new Date(klines[0].timestamp).toISOString().substring(0, 10),
+      end: new Date(klines[klineCount - 1].timestamp).toISOString().substring(0, 10),
+      days: Math.round((klines[klineCount - 1].timestamp - klines[0].timestamp) / 86400000),
+    } : null;
+    console.log(`[backTestAdapter] start analyze ${symbol}, klines=${klineCount}, range=${JSON.stringify(klineDateRange)}`);
+
     // 0. Normalize klines: backend 用 'time' (ISO string), back-test.ts 用 'timestamp' (number)
     //    將 'time' 轉做 'timestamp' (ms since epoch)
     const normalizedKlines = klines.map(k => {
@@ -7982,17 +8012,13 @@ export const backTestAdapter = {
     const optimal = walkForwardResult.overall;
     if (optimal.bestParams && optimal.totalValidateSamples > 0) {
       try {
-        await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/back-test`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            kelly: optimal.bestParams.kelly,
-            rsiWeight: optimal.bestParams.rsiWeight,
-            ssiWeights: optimal.bestParams.ssiWeights,
-            validation: { avgValidateScore: optimal.avgValidateScore, stabilityScore: optimal.stabilityScore, totalValidateSamples: optimal.totalValidateSamples },
-            window: { initialDays: 126, finalDays: 252, extendCount: walkForwardResult.folds.length > 0 ? 1 : 0 },
-            foldsCount: walkForwardResult.folds.length,
-          }),
+        await postJSON(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/back-test`, {
+          kelly: optimal.bestParams.kelly,
+          rsiWeight: optimal.bestParams.rsiWeight,
+          ssiWeights: optimal.bestParams.ssiWeights,
+          validation: { avgValidateScore: optimal.avgValidateScore, stabilityScore: optimal.stabilityScore, totalValidateSamples: optimal.totalValidateSamples },
+          window: { initialDays: 126, finalDays: 252, extendCount: walkForwardResult.folds.length > 0 ? 1 : 0 },
+          foldsCount: walkForwardResult.folds.length,
         });
       } catch (e) {
         console.warn('[backTestAdapter] save optimal failed:', e);
@@ -8031,19 +8057,22 @@ export const backTestAdapter = {
           lookbackDays: 60,
           params: { ...fold.bestParams },
         }, decisionFn);
+        // 大少 2026-08-10 Bug 1 fix — 收集 POST 失敗訊息, 喺 UI banner 顯示 (唔再 silent fail)
+        fold.postErrors = [];
         for (const r of summary.results) {
-          await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/forward-return`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+          try {
+            await postJSON(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/forward-return`, {
               date: r.date,
               action: r.action,
               fwd5: r.forwardReturn5d,
               fwd10: r.forwardReturn10d,
               fwd20: r.forwardReturn20d,
               hit: r.hit5d,
-            }),
-          });
+            });
+          } catch (e) {
+            console.warn(`[backTestAdapter] fold ${fold.foldIndex} forward return POST failed:`, e);
+            fold.postErrors.push(e.message);
+          }
         }
       } catch (e) {
         console.warn(`[backTestAdapter] fold ${fold.foldIndex} forward return save failed:`, e);
@@ -8055,6 +8084,8 @@ export const backTestAdapter = {
       walkForwardResult,
       optimal,
       forwardReturnHistory,  // 9.7.3 永遠 full show
+      // 大少 2026-08-10 Bug 1 fix A.2 — collect 所有 fold POST 失敗訊息, 畀 UI banner 用
+      postErrors: walkForwardResult.folds.flatMap(f => f.postErrors || []),
       timestamp: Date.now(),
     };
   },
@@ -8062,7 +8093,7 @@ export const backTestAdapter = {
     if (!result || !result.walkForwardResult) {
       return '<p>❌ 冇 back test result</p>';
     }
-    const { walkForwardResult, optimal, forwardReturnHistory = [], symbol } = result;
+    const { walkForwardResult, optimal, forwardReturnHistory = [], symbol, postErrors = [] } = result;
     const { folds, overall } = walkForwardResult;
 
     // 9.7.4 6 色標 helper (大少 11:57 永久 rule)
@@ -8089,6 +8120,18 @@ export const backTestAdapter = {
     const hitEmoji = (hit) => hit === true ? '🟢' : hit === false ? '🔴' : '⚫';
 
     let html = '';
+
+    // ===== 大少 2026-08-10 Bug 1 fix A.2 — M9 UI error banner (永遠 full show) =====
+    // 之前 silent fail 唔顯示, 用家以為儲咗但其實冇。改用紅色 banner 顯示 POST 失敗數。
+    if (postErrors.length > 0) {
+      html += `<div style="background: #EE5151; color: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">`;
+      html += `<span style="font-size: 18px;">❌</span>`;
+      html += `<div style="flex: 1;">`;
+      html += `<div style="font-weight: bold; font-size: 14px;">儲存失敗: ${postErrors.length} 條 forward return 冇寫入快取</div>`;
+      html += `<div style="font-size: 12px; opacity: 0.95; margin-top: 4px;">過往判決記錄可能會少咗。建議撳下面「🔄 重新校準」再跑一次, 或者檢查 backend 係咪正常運作 (port 18792)。</div>`;
+      html += `<div style="font-size: 11px; opacity: 0.8; margin-top: 4px; font-family: monospace;">首個錯誤: ${postErrors[0]}</div>`;
+      html += `</div></div>`;
+    }
 
     // ===== Section 1: 大標題 + 簡述 =====
     html += `<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 20px; border-radius: 12px; margin-bottom: 16px;">`;
