@@ -7218,12 +7218,12 @@ function renderPositionDecisionEngine(verdict) {
       <div style="background:#fff1f0;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">🛑 動態 stop (${tc.stop_loss_source || 'MA5 * 0.98'})</div>
         <div style="font-size:14px;font-weight:700;color:#EE5151;">$${(tc.stop_loss || 0).toFixed(2)}</div>
-        <div style="font-size:10px;color:#999;">MA5 = $${(meta.ma5 || 0).toFixed(2)}</div>
+        <div style="font-size:10px;color:#999;">MA5 = ${meta.ma5 != null ? `$${meta.ma5.toFixed(2)}` : '(N/A · 數據不足)'}</div>
       </div>
       <div style="background:#f0f5ff;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">📉 Trailing (MA20)</div>
         <div style="font-size:14px;font-weight:700;">$${(tc.trailing_stop || 0).toFixed(2)}</div>
-        <div style="font-size:10px;color:#999;">MA20 = $${(meta.ma20 || 0).toFixed(2)}</div>
+        <div style="font-size:10px;color:#999;">MA20 = ${meta.ma20 != null ? `$${meta.ma20.toFixed(2)}` : '(N/A · 數據不足)'}</div>
       </div>
     </div>
     <div style="margin-top:8px;font-size:12px;color:#888;background:#fffbe6;border-left:3px solid #FAAD14;padding:8px;border-radius:4px;">
