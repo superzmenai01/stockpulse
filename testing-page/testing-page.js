@@ -218,6 +218,8 @@ async function init() {
   } else {
     algoInfo.innerHTML = '<p style="color: red;">⚠️ 全部演算法都載入唔到, 請檢查 setup</p>';
   }
+  // 大少 11:07: 加 Trade Journal section (Stage 1+ MVP)
+  renderTradeJournalSection();
 }
 
 async function onAlgorithmChange() {
@@ -872,6 +874,169 @@ inputsForm.addEventListener('keydown', (e) => {
     runAlgorithm();
   }
 });
+
+// ===== Trade Journal Section (Stage 1+ MVP, 大少 11:07) =====
+//   - Input form: 大少 mark 真實落實倉位 (symbol, entry_date, entry_price, shares, target_price, stop_loss, notes)
+//   - List 已有 entries (newest first, 永遠 full show, 大少 11:57 永久 rule)
+//   - POST /api/trade-journal + GET /api/trade-journal (Stage 1+ 永久保留)
+
+async function loadTradeJournal() {
+  const listEl = document.getElementById('trade-journal-list');
+  if (!listEl) return;
+  try {
+    const resp = await fetch('http://localhost:18792/api/trade-journal?limit=50');
+    if (!resp.ok) {
+      listEl.innerHTML = '<p style="color: #EE5151;">❌ 拎唔到 Trade Journal 記錄</p>';
+      return;
+    }
+    const data = await resp.json();
+    const entries = data.entries || [];
+    if (entries.length === 0) {
+      listEl.innerHTML = '<p style="color: #888;">仲未有 trade journal 記錄, 大少可以用上面 form 新增第一個 entry。</p>';
+      return;
+    }
+    let html = '<table style="width: 100%; border-collapse: collapse; margin-top: 8px;">';
+    html += '<tr style="background: #f5f5f5;">';
+    html += '<th style="padding: 8px; text-align: left;">股票</th>';
+    html += '<th style="padding: 8px; text-align: left;">買入日期</th>';
+    html += '<th style="padding: 8px; text-align: right;">買入價</th>';
+    html += '<th style="padding: 8px; text-align: right;">股數</th>';
+    html += '<th style="padding: 8px; text-align: right;">目標價</th>';
+    html += '<th style="padding: 8px; text-align: right;">止蝕價</th>';
+    html += '<th style="padding: 8px; text-align: left;">備註</th>';
+    html += '</tr>';
+    for (const e of entries) {
+      html += '<tr style="border-bottom: 1px solid #eee;">';
+      html += `<td style="padding: 8px;"><b>${e.symbol}</b></td>`;
+      html += `<td style="padding: 8px;">${e.entry_date}</td>`;
+      html += `<td style="padding: 8px; text-align: right;">$${e.entry_price.toFixed(2)}</td>`;
+      html += `<td style="padding: 8px; text-align: right;">${e.shares}</td>`;
+      html += `<td style="padding: 8px; text-align: right;">${e.target_price ? '$' + e.target_price.toFixed(2) : '—'}</td>`;
+      html += `<td style="padding: 8px; text-align: right;">${e.stop_loss ? '$' + e.stop_loss.toFixed(2) : '—'}</td>`;
+      html += `<td style="padding: 8px; color: #666; font-size: 12px;">${e.notes || ''}</td>`;
+      html += '</tr>';
+    }
+    html += '</table>';
+    html += `<p style="font-size: 12px; color: #888; margin-top: 8px;">總共 ${data.count} 條 entry (永久保留, 大少 22:28 永久 rule)</p>`;
+    listEl.innerHTML = html;
+  } catch (e) {
+    console.error('[Trade Journal] load error:', e);
+    listEl.innerHTML = '<p style="color: #EE5151;">❌ 錯誤: ' + e.message + '</p>';
+  }
+}
+
+async function addTradeJournalEntry() {
+  const statusEl = document.getElementById('trade-journal-form-status');
+  const symbol = document.getElementById('tj-symbol')?.value.trim();
+  const entryDate = document.getElementById('tj-entry-date')?.value;
+  const entryPrice = parseFloat(document.getElementById('tj-entry-price')?.value);
+  const shares = parseFloat(document.getElementById('tj-shares')?.value) || 1;
+  const targetPrice = parseFloat(document.getElementById('tj-target')?.value) || null;
+  const stopLoss = parseFloat(document.getElementById('tj-stop')?.value) || null;
+  const notes = document.getElementById('tj-notes')?.value || '';
+
+  if (!symbol || !entryDate || isNaN(entryPrice) || entryPrice <= 0) {
+    if (statusEl) statusEl.innerHTML = '<span style="color: #EE5151;">❌ 請填寫股票代碼、買入日期、買入價 (必須 > 0)</span>';
+    return;
+  }
+  if (statusEl) statusEl.innerHTML = '<span style="color: #1890ff;">⏳ 加緊...</span>';
+
+  try {
+    const resp = await fetch('http://localhost:18792/api/trade-journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol, entry_date: entryDate, entry_price: entryPrice, shares,
+        target_price: targetPrice, stop_loss: stopLoss, notes,
+      }),
+    });
+    if (resp.ok) {
+      if (statusEl) statusEl.innerHTML = '<span style="color: #26BA75;">✅ 已新增, 之後可以輸入 exit 嗰陣 mark 啱/錯 (Stage 1+)</span>';
+      // 清 form
+      document.getElementById('tj-symbol').value = '';
+      document.getElementById('tj-entry-date').value = '';
+      document.getElementById('tj-entry-price').value = '';
+      document.getElementById('tj-shares').value = '1';
+      document.getElementById('tj-target').value = '';
+      document.getElementById('tj-stop').value = '';
+      document.getElementById('tj-notes').value = '';
+      // 重新 load list
+      await loadTradeJournal();
+    } else if (resp.status === 409) {
+      const errData = await resp.json();
+      if (statusEl) statusEl.innerHTML = `<span style="color: #F39C12;">⚠️ ${errData.detail || '重複 entry'}</span>`;
+    } else {
+      const errData = await resp.json();
+      if (statusEl) statusEl.innerHTML = `<span style="color: #EE5151;">❌ ${errData.detail || '錯誤 ' + resp.status}</span>`;
+    }
+  } catch (e) {
+    console.error('[Trade Journal] add error:', e);
+    if (statusEl) statusEl.innerHTML = '<span style="color: #EE5151;">❌ 錯誤: ' + e.message + '</span>';
+  }
+}
+
+function renderTradeJournalSection() {
+  const existing = document.getElementById('trade-journal-section');
+  if (existing) return; // 已經 render 過
+  const container = document.createElement('div');
+  container.id = 'trade-journal-section';
+  container.className = 'result-section';
+  container.style.cssText = 'margin: 16px 0; padding: 16px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);';
+  container.innerHTML = `
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">📓 Trade Journal (時光機實戰日誌 — Stage 1+ MVP)</h3>
+    <p style="font-size: 12px; color: #888; margin: 0 0 12px 0;">大少真正落實倉位後, 記錄落 Trade Journal, 拎真實 forward return, 之後 tune 5 個 adaptive params</p>
+    <div style="background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+      <h4 style="margin: 0 0 8px 0; font-size: 14px;">📝 新增 entry</h4>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+        <div>
+          <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">股票代碼 *</label>
+          <input id="tj-symbol" type="text" placeholder="HK.00700" style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">買入日期 *</label>
+          <input id="tj-entry-date" type="date" style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">買入價 *</label>
+          <input id="tj-entry-price" type="number" step="0.01" placeholder="493.40" style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">股數 (default 1)</label>
+          <input id="tj-shares" type="number" step="0.01" value="1" style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">目標價 (optional)</label>
+          <input id="tj-target" type="number" step="0.01" placeholder="算法自動" style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">止蝕價 (optional)</label>
+          <input id="tj-stop" type="number" step="0.01" placeholder="算法自動" style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+      </div>
+      <div style="margin-bottom: 8px;">
+        <label style="display: block; font-size: 11px; color: #666; margin-bottom: 2px;">備註 (optional)</label>
+        <input id="tj-notes" type="text" placeholder="例: 騰訊反彈, M9 拎到 high score BUY 訊號" style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;">
+      </div>
+      <button id="tj-add-btn" type="button" style="background: #1890ff; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">➕ 新增</button>
+      <span id="trade-journal-form-status" style="margin-left: 12px; font-size: 13px;"></span>
+    </div>
+    <div id="trade-journal-list" style="margin-top: 12px;">
+      <p style="color: #888;">撈緊...</p>
+    </div>
+  `;
+  // Insert 喺 resultPanel 之後 (或 document body 底部)
+  const resultPanel = document.getElementById('result') || document.body;
+  if (resultPanel.parentNode) {
+    resultPanel.parentNode.insertBefore(container, resultPanel.nextSibling);
+  } else {
+    document.body.appendChild(container);
+  }
+  // Bind button
+  const btn = document.getElementById('tj-add-btn');
+  if (btn) btn.addEventListener('click', addTradeJournalEntry);
+  // 初始 load list
+  loadTradeJournal();
+}
 
 // ===== Start =====
 
