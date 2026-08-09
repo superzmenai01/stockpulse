@@ -550,6 +550,14 @@ async function runAlgorithm() {
     return;
   }
 
+  // 大少 11:49 揀 B 修 Bug 1: 永遠讀 DOM value 直接 sync, 避免 'input' event race condition
+  // (之前 fill 觸發 'input' event 仲未 process 完, click button 已經 fire, currentOptions.code 仲係舊 value)
+  // 大少 12:03 Bug 1 fix 位置錯誤修正: 將 fix 移去 return check 之前, 否則 race condition 真係發生時 fix 永遠到唔到
+  const codeInputEl = document.getElementById('input-code');
+  if (codeInputEl && codeInputEl.value) {
+    currentOptions.code = codeInputEl.value;
+  }
+
   if (!currentOptions.code) {
     runStatus.innerHTML = '❌ 請揀或者輸入股票代碼';
     return;
