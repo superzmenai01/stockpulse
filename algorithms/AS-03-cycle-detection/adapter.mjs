@@ -6690,15 +6690,74 @@ export const synthesizerAdapter = {
 //   Trading card / 短期走勢 / 人話解讀 / adaptive params 將喺 2.2-2.5 commits impl
 export const decisionEngineAdapter = {
   id: 'AS-03-DEC',
-  name: '終極綜合判斷引擎 (第八模組)',
-  version: '2.0.0',  // 大少 2026-08-09 13:00 Bug 3+4 fix → 2026-08-09 13:15 Spec Sync #7: Sprint 2 9/9 sub-tasks done (2.1-2.9), bump 2.0.0 final
-  description: '用第七模組嘅綜合分數再推導出 8 個行動指令 (買入、加注、持有、減注、賣出、再睇、陷阱、轉勢), 每個都用揸車嘅比喻解釋點解, 仲會畀埋交易範圍同目標價',
+  name: '終極綜合判斷引擎 (第八模組 · 兩線策略)',
+  version: '2.1.0',  // 大少 2026-08-09 19:06 — 兩線策略 (position + swing), UI 第一線先, 第二線後
+  description: '兩線策略: 第一線 (position trading, 大少風格) 用 M1+zmen cycle synthesizer + 5 個 MA trigger 推導; 第二線 (swing trading, M8 原本) 用 6 個 module 綜合分數推導 8 個行動指令',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
+    // 大少 2026-08-09 19:06 — 兩線策略切換 dropdown
+    {
+      key: 'strategyMode',
+      label: '交易策略',
+      type: 'select',
+      options: [
+        { value: 'swing', label: '🎯 短炒 (Swing, M8 原本 8 個 finalAction)' },
+        { value: 'position', label: '📈 中長線 (Position, 大少 cycle 風格)' },
+      ],
+      default: 'swing',
+      help: '短炒 = M8 原本 8 個 finalAction (持倉 1-2 星期, 止蝕-3% 目標+5% Kelly 1/4); 中長線 = 大少 position trading (持倉 1-3 個月, 動態 MA5 stop Kelly 1/8)',
+    },
   ],
   analyze: async (klines, options = {}) => {
+    // 0. 大少 2026-08-09 19:06 — 兩線策略分流
+    const strategyMode = options.strategyMode === 'position' ? 'position' : 'swing';
+
     // 1. 跑 6 個 modules → M7 SynthesizerVerdict (reuse analyzeDecisionEngine 上面嘅 implementation)
     const synthResult = await analyzeDecisionEngine(klines, options);
+
+    // 1b. 大少 19:06 — 拎 m1Verdict (新 M1 v2.0) + zmenVerdict (舊 M1 v0.3.0) 畀 cycle synthesizer
+    //   兩者都已經喺 synthResult.module_cycle_verdicts 入面:
+    //     maVerdict  = new M1 v2.0 (analyzeMAAlignmentV2) → 做 m1Verdict
+    //     但舊 M1 v0.3.0 (runMAAlignment) 要另外跑
+    let m1Verdict = null;
+    let zmenVerdict = null;
+    try {
+      // m1 = 新 M1 v2.0 (來自 analyzeDecisionEngine 嘅 maVerdict)
+      const maVerdictRaw = synthResult.module_cycle_verdicts?.maVerdict;
+      if (maVerdictRaw) {
+        m1Verdict = {
+          state: maVerdictRaw.state,
+          confidence: maVerdictRaw.confidence,
+          interpretation: maVerdictRaw.interpretation,
+          meta: {
+            matchedRules: maVerdictRaw.meta?.matchedRules || [],
+            ruleLabels: maVerdictRaw.meta?.ruleLabels || [],
+            dataDays: maVerdictRaw.meta?.dataDays,
+            source: 'AS-03-MA v2.0',
+          },
+          timestamp: maVerdictRaw.timestamp || Date.now(),
+        };
+      }
+      // zmen = 舊 M1 v0.3.0 (runMAAlignment)
+      const zmenRaw = await runMAAlignment(klines || [], options);
+      zmenVerdict = {
+        state: zmenRaw.state,
+        confidence: zmenRaw.confidence,
+        interpretation: zmenRaw.interpretation,
+        meta: {
+          matchedRules: zmenRaw.meta?.matchedRules || [],
+          ruleLabels: zmenRaw.meta?.ruleLabels || [],
+          dataDays: zmenRaw.meta?.dataDays,
+          source: 'zmen均算法 v0.3.0',
+        },
+        timestamp: zmenRaw.timestamp || Date.now(),
+      };
+    } catch (e) {
+      console.warn('[decisionEngineAdapter] m1/zmen verdict 拎取失敗, position mode 會 fallback:', e);
+    }
+
+    // klineCloses (cycle synthesizer trigger 計算用)
+    const klineCloses = (klines || []).map(k => k.close).reverse();  // 變 [0]=今日, [n-1]=最舊
 
     // 2. 動態 import 從 .bundle.js (esbuild 已 build, browser-compatible)
     //   大少 2026-08-08 18:40 fix: testing page 喺瀏覽器跑 fetch 唔到 .ts file,
@@ -6755,16 +6814,35 @@ export const decisionEngineAdapter = {
       maTrendlineTransition: detectMATLTransition(klines),          // 2.5 從 M1 + M3 衍生
     };
 
-    // 7. 跑 M8 → DecisionVerdict
+    // 7. 大少 19:06 — 兩線策略分流
+    //   'position' → eng.decidePosition() 第一線 (cycle synth + 5 個 trigger)
+    //   'swing'    → eng.decide()        第二線 (原本 8 個 finalAction, backward compat)
     const eng = new DecisionEngine();
-    const decisionVerdict = await eng.decide({
-      synthesizerVerdict: synthResultWithParams,
-      marketData,
-    });
+    let decisionVerdict;
+    if (strategyMode === 'position' && m1Verdict && zmenVerdict && klineCloses.length >= 20) {
+      decisionVerdict = await eng.decidePosition({
+        synthesizerVerdict: synthResultWithParams,
+        moduleVerdicts: synthResultWithParams.module_verdicts,
+        marketData,
+        strategyMode: 'position',
+        m1Verdict,
+        zmenVerdict,
+        klineCloses,
+      });
+    } else {
+      decisionVerdict = await eng.decide({
+        synthesizerVerdict: synthResultWithParams,
+        marketData,
+        strategyMode: 'swing',
+      });
+    }
 
-    // 8. 合併 synth + decision + adaptive params (保留所有 trace + 供 render 用)
+    // 8. 合併 synth + decision + adaptive params + 兩線 input (保留所有 trace + 供 render 用)
     return {
       ...decisionVerdict,
+      strategy_mode: strategyMode,
+      m1_verdict: m1Verdict,
+      zmen_verdict: zmenVerdict,
       module_cycle_verdicts: synthResultWithParams.module_cycle_verdicts,
       adaptive_params: adaptiveParams,
       cache_info: cacheInfo,
@@ -6773,224 +6851,419 @@ export const decisionEngineAdapter = {
   renderResult: (verdict) => {
     if (!verdict) return '<div class="result-error">無 verdict</div>';
 
-    const {
-      final_action, final_action_reason,
-      trading_card,
-      short_term_forecast,
-      interpretation,
-      module_verdicts,
-      module_cycle_verdicts,
-      synthesizer_verdict,
-      cache_info,
-      adaptive_params,
-    } = verdict;
+    // 大少 2026-08-09 19:06 — 兩線策略 wrapper
+    //   strategyMode='position' → 第一線 (position, cycle synth + 5 個 trigger) + 第二線 (swing, 原本 M8)
+    //   strategyMode='swing'    → 只顯示第二線 (backward compat)
+    const strategyMode = verdict.strategy_mode || 'swing';
+    const swingContent = renderSwingDecisionEngine(verdict);
 
-    // Grade / SSI / Alignment / Kelly 全部喺 synthesizer_verdict 入面
-    const { grade, grade_score, grade_reason, ssi_score, ssi_breakdown, tcm_matrix, alignment_score, kelly_fraction, kelly_position } = synthesizer_verdict || {};
-
-    const actionColor = finalActionColor(final_action);
-    const actionLabel = finalActionLabel(final_action);
-    const gradeColor = decisionEngineGradeColor(grade);
-    const kellyLabel = decisionEngineKellyLabel(kelly_fraction);
-
-    // 6 個 module 嘅 breakdown
-    const moduleRows = (module_verdicts || []).map(mv => {
-      const color = decisionEngineModuleStateColor(mv.state);
-      return `
-        <tr>
-          <td>${mv.module_id}</td>
-          <td><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
-          <td>${(mv.confidence * 100).toFixed(0)}%</td>
-          <td>${(mv.base_weight * 100).toFixed(0)}%</td>
-          <td>${(mv.expected_return * 100).toFixed(2)}%</td>
-          <td>${(mv.max_drawdown_estimate * 100).toFixed(1)}%</td>
-          <td>${(mv.sentiment_6d.rsi * 100).toFixed(0)}</td>
-        </tr>
-      `;
-    }).join('');
-
-    // TCM 3 對 pair
-    const tcmRows = (tcm_matrix || []).map(p => {
-      const alignColor = p.alignment > 0 ? '#26BA75' : p.alignment < 0 ? '#EE5151' : '#F39C12';
-      return `
-        <tr>
-          <td>${p.pair[0]} ↔ ${p.pair[1]}</td>
-          <td><span style="color:${alignColor}">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
-          <td>${(p.trap_penalty * 100).toFixed(0)}%</td>
-        </tr>
-      `;
-    }).join('');
-
-    // Trading card 2.2 adaptive (跟 synthesizerVerdict.kelly_fraction + max_drawdown_estimate)
-    const tc = trading_card || { entry_zone: [0, 0], stop_loss: 0, take_profit: 0, trailing_stop: 0 };
-    // 判斷 volatility bucket 顯示
-    const synthKf = kelly_fraction;
-    let volBucketLabel = '';
-    if (synthKf === 'octo') volBucketLabel = '🔴 高波動 (octo) — 入場闊±2.5% / 止蝕-5% / 目標+8%';
-    else if (synthKf === 'quarter') volBucketLabel = '🟡 中波動 (quarter) — 入場±1.5% / 止蝕-3% / 目標+5%';
-    else if (synthKf === 'half') volBucketLabel = '🟢 低波動 (half) — 入場窄±1.0% / 止蝕-2% / 目標+4%';
-    const tradingCardHTML = `
-      <h4 style="margin-top:24px;margin-bottom:4px;">💰 交易卡 (Trading Card — 2.2 adaptive)</h4>
-      <div style="font-size:12px;color:#666;margin-bottom:8px;">${volBucketLabel}</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-          <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
-          <div style="font-size:14px;font-weight:700;">$${tc.entry_zone[0].toFixed(2)} - $${tc.entry_zone[1].toFixed(2)}</div>
-        </div>
-        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-          <div style="font-size:12px;color:#666;">🛑 止蝕 (-3%)</div>
-          <div style="font-size:14px;font-weight:700;color:#EE5151;">$${tc.stop_loss.toFixed(2)}</div>
-        </div>
-        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-          <div style="font-size:12px;color:#666;">🎯 目標 (+5%)</div>
-          <div style="font-size:14px;font-weight:700;color:#26BA75;">$${tc.take_profit.toFixed(2)}</div>
-        </div>
-        <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-          <div style="font-size:12px;color:#666;">📉 移動止蝕 (5%)</div>
-          <div style="font-size:14px;font-weight:700;">$${tc.trailing_stop.toFixed(2)}</div>
-        </div>
-      </div>
-    `;
-
-    return `
-      <div class="decision-engine-result" style="font-family: system-ui, sans-serif;">
-        <!-- 頂部 M8 finalAction 標籤 (新加, 揸車比喻) -->
-        <div class="m8-final-action-card" style="background:linear-gradient(135deg, ${actionColor}33, ${actionColor}0a);border:3px solid ${actionColor};border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;">
-          <div style="font-size:14px;color:#666;margin-bottom:4px;">🚦 M8 最終行動指令 (8 個 FinalAction)</div>
-          <div style="font-size:36px;font-weight:700;color:${actionColor};line-height:1.2;">${actionLabel}</div>
-          <div style="font-size:16px;font-weight:600;color:${actionColor};margin-top:4px;">${finalActionShortLabel(final_action)}</div>
-          <div style="font-size:14px;color:#444;margin-top:12px;line-height:1.6;">${final_action_reason}</div>
-        </div>
-
-        <!-- 原有 M7 verdict card (Grade + SSI + Alignment + Kelly) -->
-        <div class="verdict-card" style="background:linear-gradient(135deg, ${gradeColor}22, ${gradeColor}08);border:2px solid ${gradeColor};border-radius:12px;padding:20px;margin-bottom:20px;text-align:center;">
-          <div style="font-size:14px;color:#666;margin-bottom:8px;">📊 M7 Synthesizer 評級 (Grade)</div>
-          <div style="font-size:48px;font-weight:700;color:${gradeColor};line-height:1;">${grade}</div>
-          <div style="font-size:18px;color:#666;margin-top:8px;">分數 ${grade_score.toFixed(1)} / 100</div>
-          <div style="font-size:14px;color:#999;margin-top:4px;">${grade_reason}</div>
-          <div style="display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:14px;">
-            <div>🟢 <strong>SSI</strong>: ${ssi_score.toFixed(1)} / 100</div>
-            <div>📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%</div>
-            <div>💰 <strong>Kelly</strong>: ${kellyLabel}</div>
-          </div>
-        </div>
-
-        ${tradingCardHTML}
-
-        <!-- 2.8 — 4 個 SVG charts (永遠全 Show, 大少 11:57 永久 rule) -->
-        <h4 style="margin-top:24px;margin-bottom:4px;">📊 4 個 SVG Charts (2.8 — Sentiment Radar + Kelly Donut + Alignment Bar + Module State)</h4>
-        <div style="font-size:12px;color:#666;margin-bottom:12px;">🟢 強勢 / 🟡 中性 / 🔴 弱勢 / 🟣 矛盾/陷阱 (6 顏色永久 rule)</div>
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px;">
-          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
-            ${renderSentimentRadar(verdict.module_verdicts && verdict.module_verdicts[0] ? verdict.module_verdicts[0].sentiment_6d : null, '1️⃣ Sentiment Radar (6 維情緒雷達)', finalActionColor(final_action))}
-          </div>
-          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
-            ${renderKellyDonut(verdict.synthesizer_verdict.kelly_fraction)}
-          </div>
-          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
-            ${renderAlignmentBar(verdict.synthesizer_verdict.alignment_score)}
-          </div>
-          <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
-            ${renderModuleStateBar(verdict.module_verdicts)}
-          </div>
-        </div>
-
-        <!-- 短期走勢預測 (2.3 — 9 個 scenarios) -->
-        <h4 style="margin-top:24px;margin-bottom:4px;">📊 短期走勢預測 (2.3 — 9 個 scenarios: 3 × 3 timeframes)</h4>
-        <div style="font-size:12px;color:#666;margin-bottom:8px;">⚠️ 重要: 呢個係 conditional scenarios 唔係 prediction, 真實決定睇 finalAction trigger</div>
-        ${renderForecastTable(short_term_forecast)}
-
-        <!-- 人話詳細解讀 (2.4 — LLM hook + hardcoded template, 大少 13:30 永久 rule) -->
-        <h4 style="margin-top:24px;margin-bottom:4px;">📖 大少話你知 (2.4 — 人話詳細解讀, LLM hook 預留)</h4>
-        <div style="font-size:12px;color:#666;margin-bottom:8px;">🪝 將來可 swap 落 LLM call (OpenAI / MiniMax / Kimi), 而家用 hardcoded template</div>
-        ${renderInterpretation(interpretation, final_action)}
-
-        <!-- 5 個 Adaptive Params (2.5 + 2.6 L2 cache) -->
-        ${renderAdaptiveParams(adaptive_params, cache_info)}
-
-        <!-- 6 個 Metric Mini-Cards -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
-          <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-            <div style="font-size:12px;color:#666;">SSI 一致性</div>
-            <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.consistency * 100).toFixed(0)}%</div>
-          </div>
-          <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-            <div style="font-size:12px;color:#666;">SSI 平均信心</div>
-            <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.confidence_avg * 100).toFixed(0)}%</div>
-          </div>
-          <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-            <div style="font-size:12px;color:#666;">SSI 規則覆蓋</div>
-            <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.rules_coverage * 100).toFixed(0)}%</div>
-          </div>
-        </div>
-
-        <!-- 6 個 modules 嘅 breakdown -->
-        <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個 Modules 嘅 Standard Verdict</h4>
-        <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead>
-            <tr style="background:#f0f0f0;">
-              <th style="text-align:left;padding:8px;">Module</th>
-              <th style="text-align:left;padding:8px;">State</th>
-              <th style="text-align:right;padding:8px;">Conf</th>
-              <th style="text-align:right;padding:8px;">Weight</th>
-              <th style="text-align:right;padding:8px;">Exp.Ret</th>
-              <th style="text-align:right;padding:8px;">MaxDD</th>
-              <th style="text-align:right;padding:8px;">RSI</th>
-            </tr>
-          </thead>
-          <tbody>${moduleRows}</tbody>
-        </table>
-
-        <!-- TCM 3 對 pair -->
-        <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對 Pair)</h4>
-        <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead>
-            <tr style="background:#f0f0f0;">
-              <th style="text-align:left;padding:8px;">Pair</th>
-              <th style="text-align:right;padding:8px;">Alignment</th>
-              <th style="text-align:right;padding:8px;">Trap Penalty</th>
-            </tr>
-          </thead>
-          <tbody>${tcmRows}</tbody>
-        </table>
-
-        <!-- Sprint 2 進度提示 (下個 commits 將加) -->
-        <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-          <strong>✅ Sprint 2 sub-task 2.1-2.8 done:</strong> 8 個 finalAction + 揸車比喻 + 交易卡 adaptive + 短期走勢 9 scenarios + 人話詳細解讀 (LLM hook) + 5 個 adaptive params + L2 cache + 10 隻 demo tests + 4 個 SVG charts<br>
-          <strong>🚧 Sprint 2 仍待做:</strong>
-          <ol style="margin-top:4px;">
-            <li>2.9 Sprint 2 spec doc final (ARCHITECTURE.md / README.md / PROJECT_SPEC.md / ROADMAP.md 4 份 spec doc 同步) + commit + push</li>
-          </ol>
-        </div>
-      </div>
-    `;
+    if (strategyMode === 'position' && verdict.cycle_synthesizer) {
+      const positionContent = renderPositionDecisionEngine(verdict);
+      return positionContent + swingContent;
+    }
+    return swingContent;
   },
   getHelp: () => `
-    <h3>🚦 終極綜合判斷引擎 (Decision Engine v2.0.0 — M8)</h3>
-    <p>用第七模組嘅綜合分數再推導出 8 個行動指令, 每個都用揸車嘅比喻解釋</p>
-    <h4>8 個行動指令 + 揸車比喻:</h4>
+    <h3>🚦 終極綜合判斷引擎 (Decision Engine v2.1.0 — M8 兩線策略)</h3>
+    <p>兩線策略: 第一線 (position, 大少 cycle 風格) + 第二線 (swing, M8 原本 8 個 finalAction)</p>
+    <h4>兩線策略切換:</h4>
     <ul>
-      <li>🟢 <strong>買入</strong> — 油門俾到底 (上升 + 方向一致 ≥ 0.6 + 評級 ≥ B + 預期回報 > 3% + 最大回撤 < 10% + RSI > 50)</li>
-      <li>🟢 <strong>加注</strong> — 油門再踩深啲 (上升 + 評級 ≥ A + 方向一致 ≥ 0.7 + RSI > 70 + 連漲 ≥ 3 日)</li>
-      <li>🟡 <strong>持有</strong> — 保持現速 (上升 + 評級 B/C+ + 最大回撤 < 8%)</li>
-      <li>🟡 <strong>再睇</strong> — 等綠燈 (橫行 + 評級 C + 方向一致 < 0.6)</li>
-      <li>🟠 <strong>減注</strong> — 收返少少油 (轉勢 + 方向一致 < 0.5)</li>
-      <li>🔴 <strong>賣出</strong> — 急煞車 (下跌 + 評級 ≤ C + 最大回撤 > 10%)</li>
-      <li>🟣 <strong>陷阱</strong> — 唔好信導航 (波動收縮 + 假突破)</li>
-      <li>🟣 <strong>轉勢</strong> — 收油準備轉彎 (均線 + 趨勢線同步轉勢)</li>
+      <li>📈 <strong>中長線 (position)</strong>: 用 M1+zmen cycle synthesizer 加權綜合 + 5 個 MA trigger 推導, 持倉 1-3 個月, 動態 MA5 stop Kelly 1/8, 唔好追高</li>
+      <li>🎯 <strong>短炒 (swing)</strong>: 用 6 個 module 綜合分數推導 8 個 finalAction, 持倉 1-2 星期, 止蝕-3% 目標+5% Kelly 1/4</li>
     </ul>
-    <h4>規則優先順序:</h4>
+    <h4>第一線 (position) 8 個 finalAction 規則優先順序:</h4>
     <p>陷阱 → 轉勢 → 賣出 → 減注 → 再睇 → 持有 → 加注 → 買入</p>
-    <h4>已經全部加咗:</h4>
+    <h4>第二線 (swing) 8 個 finalAction 規則優先順序:</h4>
+    <p>陷阱 → 轉勢 → 賣出 → 減注 → 再睇 → 持有 → 加注 → 買入</p>
+    <h4>5 個 MA trigger (大少 position trading 風格):</h4>
     <ul>
-      <li>交易範圍 (跟波動率自動調整)</li>
-      <li>短期走勢預測 (3 個情境 × 5/10/20 日)</li>
-      <li>白話詳細解讀 (預咗將來用大語言模型)</li>
-      <li>5 個自適應參數 (每隻股票自動校準)</li>
-      <li>本機快取 (7 日過期, 永久保留回測記錄)</li>
+      <li>🔴 <strong>MA5 -2% 跌破</strong> — 動態 stop, 每日 update, 急煞車</li>
+      <li>🟡 <strong>MA5 穿 1 日</strong> — 收緊啲, REDUCE</li>
+      <li>🔴 <strong>MA5 穿 2 日</strong> — 急煞車, SELL</li>
+      <li>🔴 <strong>MA20 跌破</strong> — 中長期轉弱, SELL</li>
+      <li>🟢 <strong>MA5 re-test 成功</strong> — 跌完再上, ADD 加倉</li>
     </ul>
   `,
 };
+
+// =============================================================
+// 大少 2026-08-09 19:06 — 兩線策略 render helpers
+//   - renderSwingDecisionEngine: 第二線 (swing, M8 原本 8 個 finalAction, backward compat)
+//   - renderPositionDecisionEngine: 第一線 (position, cycle synth + 5 個 trigger, 大少風格)
+//   - 兩個都喺 decisionEngineAdapter.renderResult 串連 (position mode 先 position 後 swing)
+// =============================================================
+
+/** 第二線: Swing Trading 嘅 M8 原本 render (大少 19:06 backward compat)
+ *  抽自原 decisionEngineAdapter.renderResult, 等 position mode 可以重用
+ */
+function renderSwingDecisionEngine(verdict) {
+  const {
+    final_action, final_action_reason,
+    trading_card,
+    short_term_forecast,
+    interpretation,
+    module_verdicts,
+    module_cycle_verdicts,
+    synthesizer_verdict,
+    cache_info,
+    adaptive_params,
+  } = verdict;
+
+  // Grade / SSI / Alignment / Kelly 全部喺 synthesizer_verdict 入面
+  const { grade, grade_score, grade_reason, ssi_score, ssi_breakdown, tcm_matrix, alignment_score, kelly_fraction, kelly_position } = synthesizer_verdict || {};
+
+  const actionColor = finalActionColor(final_action);
+  const actionLabel = finalActionLabel(final_action);
+  const gradeColor = decisionEngineGradeColor(grade);
+  const kellyLabel = decisionEngineKellyLabel(kelly_fraction);
+
+  // 6 個 module 嘅 breakdown
+  const moduleRows = (module_verdicts || []).map(mv => {
+    const color = decisionEngineModuleStateColor(mv.state);
+    return `
+      <tr>
+        <td>${mv.module_id}</td>
+        <td><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
+        <td>${(mv.confidence * 100).toFixed(0)}%</td>
+        <td>${(mv.base_weight * 100).toFixed(0)}%</td>
+        <td>${(mv.expected_return * 100).toFixed(2)}%</td>
+        <td>${(mv.max_drawdown_estimate * 100).toFixed(1)}%</td>
+        <td>${(mv.sentiment_6d.rsi * 100).toFixed(0)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // TCM 3 對 pair
+  const tcmRows = (tcm_matrix || []).map(p => {
+    const alignColor = p.alignment > 0 ? '#26BA75' : p.alignment < 0 ? '#EE5151' : '#F39C12';
+    return `
+      <tr>
+        <td>${p.pair[0]} ↔ ${p.pair[1]}</td>
+        <td><span style="color:${alignColor}">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
+        <td>${(p.trap_penalty * 100).toFixed(0)}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Trading card 2.2 adaptive (跟 synthesizerVerdict.kelly_fraction + max_drawdown_estimate)
+  const tc = trading_card || { entry_zone: [0, 0], stop_loss: 0, take_profit: 0, trailing_stop: 0 };
+  // 判斷 volatility bucket 顯示
+  const synthKf = kelly_fraction;
+  let volBucketLabel = '';
+  if (synthKf === 'octo') volBucketLabel = '🔴 高波動 (octo) — 入場闊±2.5% / 止蝕-5% / 目標+8%';
+  else if (synthKf === 'quarter') volBucketLabel = '🟡 中波動 (quarter) — 入場±1.5% / 止蝕-3% / 目標+5%';
+  else if (synthKf === 'half') volBucketLabel = '🟢 低波動 (half) — 入場窄±1.0% / 止蝕-2% / 目標+4%';
+  const tradingCardHTML = `
+    <h4 style="margin-top:24px;margin-bottom:4px;">💰 交易卡 (Trading Card — 2.2 adaptive)</h4>
+    <div style="font-size:12px;color:#666;margin-bottom:8px;">${volBucketLabel}</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
+        <div style="font-size:14px;font-weight:700;">$${tc.entry_zone[0].toFixed(2)} - $${tc.entry_zone[1].toFixed(2)}</div>
+      </div>
+      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">🛑 止蝕 (-3%)</div>
+        <div style="font-size:14px;font-weight:700;color:#EE5151;">$${tc.stop_loss.toFixed(2)}</div>
+      </div>
+      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">🎯 目標 (+5%)</div>
+        <div style="font-size:14px;font-weight:700;color:#26BA75;">$${tc.take_profit.toFixed(2)}</div>
+      </div>
+      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">📉 移動止蝕 (5%)</div>
+        <div style="font-size:14px;font-weight:700;">$${tc.trailing_stop.toFixed(2)}</div>
+      </div>
+    </div>
+  `;
+
+  return `
+    <div class="decision-engine-result swing-line" style="font-family: system-ui, sans-serif;margin-top:24px;padding-top:24px;border-top:3px dashed #1890ff;">
+      <div style="text-align:center;margin-bottom:16px;">
+        <span style="background:#1890ff;color:white;padding:6px 16px;border-radius:20px;font-size:14px;font-weight:700;">🎯 第二線 · Swing Trading (M8 原本 8 個 finalAction)</span>
+      </div>
+      <!-- 頂部 M8 finalAction 標籤 (新加, 揸車比喻) -->
+      <div class="m8-final-action-card" style="background:linear-gradient(135deg, ${actionColor}33, ${actionColor}0a);border:3px solid ${actionColor};border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;">
+        <div style="font-size:14px;color:#666;margin-bottom:4px;">🚦 M8 最終行動指令 (8 個 FinalAction)</div>
+        <div style="font-size:36px;font-weight:700;color:${actionColor};line-height:1.2;">${actionLabel}</div>
+        <div style="font-size:16px;font-weight:600;color:${actionColor};margin-top:4px;">${finalActionShortLabel(final_action)}</div>
+        <div style="font-size:14px;color:#444;margin-top:12px;line-height:1.6;">${final_action_reason}</div>
+      </div>
+
+      <!-- 原有 M7 verdict card (Grade + SSI + Alignment + Kelly) -->
+      <div class="verdict-card" style="background:linear-gradient(135deg, ${gradeColor}22, ${gradeColor}08);border:2px solid ${gradeColor};border-radius:12px;padding:20px;margin-bottom:20px;text-align:center;">
+        <div style="font-size:14px;color:#666;margin-bottom:8px;">📊 M7 Synthesizer 評級 (Grade)</div>
+        <div style="font-size:48px;font-weight:700;color:${gradeColor};line-height:1;">${grade}</div>
+        <div style="font-size:18px;color:#666;margin-top:8px;">分數 ${grade_score.toFixed(1)} / 100</div>
+        <div style="font-size:14px;color:#999;margin-top:4px;">${grade_reason}</div>
+        <div style="display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:14px;">
+          <div>🟢 <strong>SSI</strong>: ${ssi_score.toFixed(1)} / 100</div>
+          <div>📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%</div>
+          <div>💰 <strong>Kelly</strong>: ${kellyLabel}</div>
+        </div>
+      </div>
+
+      ${tradingCardHTML}
+
+      <!-- 2.8 — 4 個 SVG charts (永遠全 Show, 大少 11:57 永久 rule) -->
+      <h4 style="margin-top:24px;margin-bottom:4px;">📊 4 個 SVG Charts (2.8 — Sentiment Radar + Kelly Donut + Alignment Bar + Module State)</h4>
+      <div style="font-size:12px;color:#666;margin-bottom:12px;">🟢 強勢 / 🟡 中性 / 🔴 弱勢 / 🟣 矛盾/陷阱 (6 顏色永久 rule)</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px;">
+        <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+          ${renderSentimentRadar(verdict.module_verdicts && verdict.module_verdicts[0] ? verdict.module_verdicts[0].sentiment_6d : null, '1️⃣ Sentiment Radar (6 維情緒雷達)', finalActionColor(final_action))}
+        </div>
+        <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+          ${renderKellyDonut(verdict.synthesizer_verdict.kelly_fraction)}
+        </div>
+        <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+          ${renderAlignmentBar(verdict.synthesizer_verdict.alignment_score)}
+        </div>
+        <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
+          ${renderModuleStateBar(verdict.module_verdicts)}
+        </div>
+      </div>
+
+      <!-- 短期走勢預測 (2.3 — 9 個 scenarios) -->
+      <h4 style="margin-top:24px;margin-bottom:4px;">📊 短期走勢預測 (2.3 — 9 個 scenarios: 3 × 3 timeframes)</h4>
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">⚠️ 重要: 呢個係 conditional scenarios 唔係 prediction, 真實決定睇 finalAction trigger</div>
+      ${renderForecastTable(short_term_forecast)}
+
+      <!-- 人話詳細解讀 (2.4 — LLM hook + hardcoded template, 大少 13:30 永久 rule) -->
+      <h4 style="margin-top:24px;margin-bottom:4px;">📖 大少話你知 (2.4 — 人話詳細解讀, LLM hook 預留)</h4>
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">🪝 將來可 swap 落 LLM call (OpenAI / MiniMax / Kimi), 而家用 hardcoded template</div>
+      ${renderInterpretation(interpretation, final_action)}
+
+      <!-- 5 個 Adaptive Params (2.5 + 2.6 L2 cache) -->
+      ${renderAdaptiveParams(adaptive_params, cache_info)}
+
+      <!-- 6 個 Metric Mini-Cards -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">SSI 一致性</div>
+          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.consistency * 100).toFixed(0)}%</div>
+        </div>
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">SSI 平均信心</div>
+          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.confidence_avg * 100).toFixed(0)}%</div>
+        </div>
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+          <div style="font-size:12px;color:#666;">SSI 規則覆蓋</div>
+          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.rules_coverage * 100).toFixed(0)}%</div>
+        </div>
+      </div>
+
+      <!-- 6 個 modules 嘅 breakdown -->
+      <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個 Modules 嘅 Standard Verdict</h4>
+      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f0f0f0;">
+            <th style="text-align:left;padding:8px;">Module</th>
+            <th style="text-align:left;padding:8px;">State</th>
+            <th style="text-align:right;padding:8px;">Conf</th>
+            <th style="text-align:right;padding:8px;">Weight</th>
+            <th style="text-align:right;padding:8px;">Exp.Ret</th>
+            <th style="text-align:right;padding:8px;">MaxDD</th>
+            <th style="text-align:right;padding:8px;">RSI</th>
+          </tr>
+        </thead>
+        <tbody>${moduleRows}</tbody>
+      </table>
+
+      <!-- TCM 3 對 pair -->
+      <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對 Pair)</h4>
+      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f0f0f0;">
+            <th style="text-align:left;padding:8px;">Pair</th>
+            <th style="text-align:right;padding:8px;">Alignment</th>
+            <th style="text-align:right;padding:8px;">Trap Penalty</th>
+          </tr>
+        </thead>
+        <tbody>${tcmRows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+/** 第一線: Position Trading 嘅 cycle synth 結果 render (大少 19:06)
+ *  顯示 3 個結果 (M1 / zmen / 加權綜合) + 5 個 MA trigger + 動態 MA5/MA20 stop trading card
+ *  UI order: 第一線先 (大少 19:06 永久 rule)
+ */
+function renderPositionDecisionEngine(verdict) {
+  const {
+    final_action, final_action_reason,
+    cycle_synthesizer,
+    position_trading_card,
+    interpretation,
+    m1_verdict,
+    zmen_verdict,
+  } = verdict;
+
+  if (!cycle_synthesizer) return '';
+
+  const { state, confidence, conflict, warning, m1State, zmenState, weights, transitions, triggers, meta } = cycle_synthesizer;
+  const tc = position_trading_card || {};
+
+  // 狀態顏色
+  const stateColors = {
+    UP: '#26BA75',
+    DOWN: '#EE5151',
+    SIDEWAYS: '#F39C12',
+    CONFLICT: '#722ed1',
+  };
+  const stateLabels = {
+    UP: '上升',
+    DOWN: '下跌',
+    SIDEWAYS: '橫行',
+    CONFLICT: '⚠️ 訊號分歧',
+  };
+
+  // final action 顏色
+  const actionColor = finalActionColor(final_action);
+  const actionLabel = finalActionLabel(final_action);
+
+  // 第一個結果: M1 (新 M1 v2.0) 嘅 cycle verdict
+  const m1ResultHTML = m1_verdict ? `
+    <div class="cycle-synth-result" style="background:#f0f8ff;border:2px solid #1890ff;border-radius:8px;padding:12px;">
+      <div style="font-size:13px;font-weight:700;color:#1890ff;margin-bottom:6px;">① M1 (新 AS-03-MA v2.0)</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="state-pill" style="background:${stateColors[m1_verdict.state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
+          ${stateLabels[m1_verdict.state] || m1_verdict.state}
+        </span>
+        <span style="font-size:14px;font-weight:600;">${(m1_verdict.confidence * 100).toFixed(0)}% 信心</span>
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:4px;">${m1_verdict.meta?.source || 'AS-03-MA v2.0'}</div>
+    </div>
+  ` : '<div class="cycle-synth-result">無 m1 verdict</div>';
+
+  // 第二個結果: zmen 嘅 cycle verdict
+  const zmenResultHTML = zmen_verdict ? `
+    <div class="cycle-synth-result" style="background:#fff7e6;border:2px solid #fa8c16;border-radius:8px;padding:12px;">
+      <div style="font-size:13px;font-weight:700;color:#fa8c16;margin-bottom:6px;">② zmen (舊 M1 v0.3.0)</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="state-pill" style="background:${stateColors[zmen_verdict.state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
+          ${stateLabels[zmen_verdict.state] || zmen_verdict.state}
+        </span>
+        <span style="font-size:14px;font-weight:600;">${(zmen_verdict.confidence * 100).toFixed(0)}% 信心</span>
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:4px;">${zmen_verdict.meta?.source || 'zmen均算法 v0.3.0'}</div>
+    </div>
+  ` : '<div class="cycle-synth-result">無 zmen verdict</div>';
+
+  // 第三個結果: 加權綜合 (M1 60% + zmen 40%)
+  const synthStateColor = stateColors[state] || '#666';
+  const synthStateLabel = stateLabels[state] || state;
+  const synthResultHTML = `
+    <div class="cycle-synth-result" style="background:linear-gradient(135deg, ${synthStateColor}22, ${synthStateColor}08);border:3px solid ${synthStateColor};border-radius:8px;padding:12px;">
+      <div style="font-size:13px;font-weight:700;color:${synthStateColor};margin-bottom:6px;">③ 加權綜合 (M1 ${(weights.m1 * 100).toFixed(0)}% + zmen ${(weights.zmen * 100).toFixed(0)}%)</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="state-pill" style="background:${synthStateColor};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
+          ${synthStateLabel}
+        </span>
+        <span style="font-size:16px;font-weight:700;">${(confidence * 100).toFixed(0)}% 信心</span>
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:4px;">${conflict ? `⚠️ ${warning || '訊號分歧'}` : '✅ 兩個 module 一致'}</div>
+    </div>
+  `;
+
+  // 5 個 MA trigger
+  const triggerHTML = `
+    <h4 style="margin-top:20px;margin-bottom:8px;">🚦 5 個 MA Trigger (大少 position trading 風格)</h4>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;font-size:12px;">
+      <div style="background:${triggers.ma5StopTriggered ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma5StopTriggered ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">MA5 -2%</div>
+        <div style="font-size:18px;margin-top:4px;">${triggers.ma5StopTriggered ? '🔴 觸發' : '⚪ 冇'}</div>
+      </div>
+      <div style="background:${triggers.ma5BreakDay1 ? '#fffbe6' : '#fafafa'};border:1px solid ${triggers.ma5BreakDay1 ? '#FAAD14' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">穿 1 日</div>
+        <div style="font-size:18px;margin-top:4px;">${triggers.ma5BreakDay1 ? '🟡 觸發' : '⚪ 冇'}</div>
+      </div>
+      <div style="background:${triggers.ma5BreakDay2 ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma5BreakDay2 ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">穿 2 日</div>
+        <div style="font-size:18px;margin-top:4px;">${triggers.ma5BreakDay2 ? '🔴 觸發' : '⚪ 冇'}</div>
+      </div>
+      <div style="background:${triggers.ma20Break ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma20Break ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">MA20 跌破</div>
+        <div style="font-size:18px;margin-top:4px;">${triggers.ma20Break ? '🔴 觸發' : '⚪ 冇'}</div>
+      </div>
+      <div style="background:${triggers.ma5RetestSuccess ? '#f6ffed' : '#fafafa'};border:1px solid ${triggers.ma5RetestSuccess ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">re-test</div>
+        <div style="font-size:18px;margin-top:4px;">${triggers.ma5RetestSuccess ? '🟢 成功' : '⚪ 冇'}</div>
+      </div>
+    </div>
+  `;
+
+  // Cycle transition
+  const transitionHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px;font-size:12px;">
+      <div style="background:${transitions.turnAroundDetected ? '#f6ffed' : '#fafafa'};border:1px solid ${transitions.turnAroundDetected ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;">
+        <div style="font-weight:700;">turn-around</div>
+        <div style="color:#666;">${transitions.turnAroundDetected ? '✅ 兩個 module 同步由弱轉強' : '⚪ 未確認'}</div>
+      </div>
+      <div style="background:${transitions.adjustmentComplete ? '#f6ffed' : '#fafafa'};border:1px solid ${transitions.adjustmentComplete ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;">
+        <div style="font-weight:700;">adjustment-complete</div>
+        <div style="color:#666;">${transitions.adjustmentComplete ? '✅ 5 日線 re-test 成功' : '⚪ 未完成'}</div>
+      </div>
+    </div>
+  `;
+
+  // Position trading card (動態 MA5/MA20 stop)
+  const positionTradingCardHTML = `
+    <h4 style="margin-top:20px;margin-bottom:8px;">💰 Position Trading Card (動態 MA5/MA20 stop · Kelly 1/8)</h4>
+    <div style="font-size:12px;color:#666;margin-bottom:8px;">📌 持倉 ${tc.holding_period || '1-3 個月'} · Kelly ${tc.kelly_fraction || 'octo'} (1/8) · 唔好追高, 訊號清晰先入場</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
+        <div style="font-size:14px;font-weight:700;">$${(tc.entry_zone?.[0] || 0).toFixed(2)} - $${(tc.entry_zone?.[1] || 0).toFixed(2)}</div>
+      </div>
+      <div style="background:#fff1f0;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">🛑 動態 stop (${tc.stop_loss_source || 'MA5 * 0.98'})</div>
+        <div style="font-size:14px;font-weight:700;color:#EE5151;">$${(tc.stop_loss || 0).toFixed(2)}</div>
+        <div style="font-size:10px;color:#999;">MA5 = $${(meta.ma5 || 0).toFixed(2)}</div>
+      </div>
+      <div style="background:#f0f5ff;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">📉 Trailing (MA20)</div>
+        <div style="font-size:14px;font-weight:700;">$${(tc.trailing_stop || 0).toFixed(2)}</div>
+        <div style="font-size:10px;color:#999;">MA20 = $${(meta.ma20 || 0).toFixed(2)}</div>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#888;background:#fffbe6;border-left:3px solid #FAAD14;padding:8px;border-radius:4px;">
+      💡 Position trading 唔設 fixed take_profit, 等中長期走勢自然行, 動態 stop 觸發就走
+    </div>
+  `;
+
+  return `
+    <div class="decision-engine-result position-line" style="font-family: system-ui, sans-serif;margin-bottom:24px;">
+      <div style="text-align:center;margin-bottom:16px;">
+        <span style="background:#26BA75;color:white;padding:6px 16px;border-radius:20px;font-size:14px;font-weight:700;">📈 第一線 · Position Trading (大少 cycle 風格)</span>
+      </div>
+
+      <!-- 頂部 final action (揸車比喻) -->
+      <div class="position-final-action-card" style="background:linear-gradient(135deg, ${actionColor}33, ${actionColor}0a);border:3px solid ${actionColor};border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;">
+        <div style="font-size:14px;color:#666;margin-bottom:4px;">🚦 Position Trading 最終行動指令</div>
+        <div style="font-size:36px;font-weight:700;color:${actionColor};line-height:1.2;">${actionLabel}</div>
+        <div style="font-size:16px;font-weight:600;color:${actionColor};margin-top:4px;">${finalActionShortLabel(final_action)}</div>
+        <div style="font-size:14px;color:#444;margin-top:12px;line-height:1.6;">${final_action_reason}</div>
+      </div>
+
+      <!-- 3 個 cycle synth 結果: M1 + zmen + 加權綜合 -->
+      <h4 style="margin-top:20px;margin-bottom:8px;">🔬 Cycle Synthesizer 3 個結果 (大少 19:06 設計)</h4>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;">
+        ${m1ResultHTML}
+        ${zmenResultHTML}
+        ${synthResultHTML}
+      </div>
+
+      ${triggerHTML}
+      ${transitionHTML}
+      ${positionTradingCardHTML}
+
+      <!-- 人話詳細解讀 (LLM hook) -->
+      <h4 style="margin-top:20px;margin-bottom:8px;">📖 大少話你知 (Position Trading 詳細解讀, LLM hook 預留)</h4>
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">🪝 將來可 swap 落 LLM call (OpenAI / MiniMax / Kimi), 而家用 hardcoded template</div>
+      <div style="background:#fafafa;border-radius:8px;padding:16px;white-space:pre-line;font-size:13px;line-height:1.8;">${interpretation || ''}</div>
+    </div>
+  `;
+}
 
 // ---------- backTestAdapter export (M9 v0.6.0 — Sprint 3 sub-task 9.7 UI 升級 done) ----------
 //   大少 2026-08-08 22:28 — 9.5 Testing page entry 09 — AS-03-BT

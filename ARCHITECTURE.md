@@ -1845,3 +1845,70 @@ return = (actual_exit_price - entry_price) / entry_price
 7. `ARCHITECTURE.md` — 本 §15.10 section
 8. `README.md` — 近期重要更新 row
 9. `PROJECT_SPEC.md` — Stage 1+ Stock Price section
+
+---
+
+## §15.11 — 兩線策略 (大少 19:06 confirm, Position + Swing) [2026-08-09]
+
+**大少 2026-08-09 19:06 確認兩線策略 design:**
+- 兩線策略: 第一線 (position, 大少 cycle 風格) + 第二線 (swing, M8 原本 8 個 finalAction)
+- 第一線 design 3 個 result 嘅 cycle synth:
+  - 第一路: AS-03-MA v2.0 (M1) — 60% weight
+  - 第二路: zmen均算法 v0.3.0 (zmen, 舊 M1 抽出) — 40% weight
+  - 第三路: 加權綜合 (M1 0.6 + zmen 0.4) — 顯示最終判斷
+- 綜合方法: 加權平均 (M1 60% + zmen 40%) 因為 M1 v2.0.0 較 mature
+- 一致/分歧/SIDEWAYS 處理: 一致=high confidence / 分歧=low confidence + ⚠️ warning / 都 SIDEWAYS=唔入場
+- confidence threshold: ≥0.65 入場 / 0.50-0.65 小心 / <0.50 唔入場
+
+**Position trading 8 個 finalAction priority chain (大少 19:06 confirm):**
+- TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY
+- Entry condition: synthesized.state='UP' + confidence >= 0.65 + (turnAroundDetected OR adjustmentComplete)
+- Stop triggers: ma5StopTriggered OR ma5BreakDay2 OR ma20Break → SELL
+- Add trigger: ma5RetestSuccess → ADD (re-test 成功再加倉)
+- Reduce trigger: ma5BreakDay1 → REDUCE (穿 1 日, 收緊啲)
+- Wait: state=SIDEWAYS OR confidence < 0.50
+- Hold: state=UP + 0.50 ≤ confidence < 0.65 OR cycle transition 未確認
+- Transition: 兩個都 UP, re-test 仲未成功 (adjustment complete 之前)
+
+**Position trading card 設計 (大少 19:06 揀):**
+- entry_zone: currentPrice ± 1.5%
+- stop_loss: **MA5 × 0.98** (動態, 每日 update, 唔係 -3% static)
+- take_profit: **無** (大少 position trading 唔設 fixed target, 等中長期走)
+- trailing_stop: **MA20** (中長期支持)
+- holding_period: 1-3 個月
+- kelly_fraction: **octo (1/8)** (比 swing 嘅 quarter 細, 因為持倉時間長風險大)
+
+**5 個 MA trigger (大少 position trading 風格):**
+1. **MA5 -2% 跌破** (`ma5StopTriggered`): close < MA5 × 0.98, 動態 stop, 急煞車
+2. **MA5 穿第 1 日** (`ma5BreakDay1`): close < MA5 但 ≥ MA5 × 0.98, 收緊啲 (REDUCE)
+3. **MA5 穿第 2 日** (`ma5BreakDay2`): 連續 2 日 close < MA5, 急煞車 (SELL)
+4. **MA20 跌破** (`ma20Break`): close < MA20, 中長期轉弱, 急煞車 (SELL)
+5. **MA5 re-test 成功** (`ma5RetestSuccess`): 過去 5 日內曾穿, 今日回升過 MA5, ADD 加倉
+
+**2 個 cycle transition (大少 19:06 confirm):**
+- `turnAroundDetected`: 兩個 module 都 UP + confidence ≥ 0.65 (新嘅上升 trigger, 唔好追高)
+- `adjustmentComplete`: 5 日線 re-test 成功 (trigger 5) + 兩個都 UP (上升調整剛完, 大少 buy-back trigger)
+
+**Files 改動 (本 commit):**
+1. `algorithms/AS-03-cycle-detection/modules/cycle-synthesizer.ts` (新, 8583 bytes) — `synthesizeCycle(input)` + 5 個 trigger + 2 個 transition
+2. `algorithms/AS-03-cycle-detection/modules/decision-engine.ts` — 加 `StrategyMode` type + `PositionTradingCard` interface + `decidePosition()` method + `decidePositionTrading()` + `computePositionTradingCard()` + `generatePositionInterpretation()` (8 個 finalAction 揸車比喻)
+3. `algorithms/AS-03-cycle-detection/build/decision-engine.bundle.js` (rebuild, 41.3kb)
+4. `algorithms/AS-03-cycle-detection/adapter.mjs` (v2.0.0 → v2.1.0) — `inputs` 加 `strategyMode` select, `analyze` 拎 m1Verdict + zmenVerdict + 兩線分流, `renderResult` 兩線 wrapper
+5. `algorithms/AS-03-cycle-detection/tests/test-cycle-synth.mjs` (新, 14 個 Node.js assertion, 8 個 scenario)
+6. `backend/tests/test_two_line_strategy.py` (新, 10 個 pytest) — invoke Node.js test script
+7. `testing-page/testing-page.js` — `ALGO_CACHE_BUST` 2.0.0 → 2.1.0
+8. `testing-page/index.html` — `?v=2.3.8` → `?v=2.3.9` (HTML cache bust sync 永久 rule)
+9. `ARCHITECTURE.md` — 本 §15.11 section
+10. `README.md` + `PROJECT_SPEC.md` — 近期重要更新
+
+**永久 rule 收穫 (1 個):**
+- **`computeMA(closes, period)` convention 永久 rule**: 假設 `closes[0] = 今日` (newest), `closes[n-1] = 最舊`, `ma[i] = avg(closes[i..i+period-1])`。 i + period - 1 >= closes.length 嗰陣 push NaN。Spec doc `CycleSynthesizerInput.klineCloses` 寫明 `[0] = 今日`。 Fix 來自 pytest 8 個 trigger test case 全部 fail (原本 standard SMA 假設 `[0] = 最舊` 寫錯, 改成 `[0] = 今日` 嘅 convention)。
+
+**Use case (大少 workflow):**
+1. 大少喺 testing page 揀 AS-03-DEC (M8) algorithm
+2. 揀「交易策略」dropdown: 📈 中長線 (position) 或 🎯 短炒 (swing, default)
+3. 撳「跑算法」→ 揀 position mode 嘅話, adapter 拎 m1Verdict (新 M1 v2.0) + zmenVerdict (舊 M1 v0.3.0) + klineCloses
+4. Cycle synthesizer 加權綜合 (M1 0.6 + zmen 0.4) → 5 個 trigger 計算
+5. decidePosition 推 8 個 finalAction (priority chain) + Position Trading Card (動態 MA5 stop)
+6. Render 第一線 (position) + 第二線 (swing) 兩線都顯示, 第一線先, 第二線後
+7. UI 永遠 full show: 3 個 cycle synth 結果 + 5 個 trigger badge + 2 個 transition + position trading card + 大少話你知

@@ -373,6 +373,45 @@ open http://localhost:8765/testing-page/
 
 ---
 
+## 14. 兩線策略 (Position + Swing) — 大少 2026-08-09 19:06 確認
+
+M8 由呢個版本開始,支援**兩線策略**,畀大少用唔同 trading 風格:
+
+| 線 | 風格 | 用途 | 前置邏輯 |
+|---|------|------|---------|
+| **第一線 (position)** | 大少 position trading | 中長線持貨,動態 stop,cycle 驗證 | Cycle Synthesizer(見下) |
+| **第二線 (swing)** | M8 原本 8 個 finalAction 決策樹 | 短線 swing | 原本 M7 output → 8 finalAction |
+
+**DecideInput 新加 fields**:
+```typescript
+{
+  strategyMode: 'position' | 'swing',   // default 'swing' (backward compat)
+  m1Verdict?: CycleVerdict,             // 第一線用
+  zmenVerdict?: CycleVerdict,           // 第一線用
+  klineCloses?: number[],                // 第一線用,trigger 計算要 MA5/MA20
+  cycleSynthesizerResult?: CycleSynthesizerResult,  // optional
+}
+```
+
+**DecisionVerdict 新加 fields**:
+```typescript
+{
+  strategy_mode: 'position' | 'swing',
+  cycle_synthesizer?: CycleSynthesizerResult,    // 第一線用
+  position_trading_card?: PositionTradingCard,   // 第一線用,動態 MA5/MA20 stop
+}
+```
+
+**UI 顯示 order**: 第一線 (position) 先, 第二線 (swing) 後。
+
+**完整 sub-section spec**: 見 [./MODULE-08-CYCLE-SYNTHESIZER.md](./MODULE-08-CYCLE-SYNTHESIZER.md) — 5 個 trigger / 加權綜合 / cycle transition / 大少 5 個 default 全寫晒。
+
+**揸車比喻總結**:
+- 第一線 = 兩個 GPS 對答案,然後用 GPS 結果做 trigger 落決定
+- 第二線 = 原本嘅決策樹,根據評卷老師 (M7) 嘅 grade 直接落決定
+
+---
+
 ## 12. Changelog
 
 ## 13. 10 隻 Demo 股票 Test Cases (Sprint 2 sub-task 2.7)

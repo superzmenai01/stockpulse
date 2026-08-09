@@ -1,4 +1,114 @@
-// modules/decision-engine.ts
+// algorithms/AS-03-cycle-detection/modules/cycle-synthesizer.ts
+function computeMA(closes, period) {
+  const ma = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period - 1) {
+      ma.push(NaN);
+      continue;
+    }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      sum += closes[j];
+    }
+    ma.push(sum / period);
+  }
+  return ma;
+}
+function synthesizeCycle(input) {
+  const { m1Verdict, zmenVerdict, klineCloses } = input;
+  const weights = input.weights ?? { m1: 0.6, zmen: 0.4 };
+  const baseConfidence = m1Verdict.confidence * weights.m1 + zmenVerdict.confidence * weights.zmen;
+  const m1State = m1Verdict.state;
+  const zmenState = zmenVerdict.state;
+  let state;
+  let confidence;
+  let conflict = false;
+  let warning = null;
+  let consensus;
+  if (m1State === zmenState) {
+    state = m1State;
+    confidence = baseConfidence;
+    consensus = "aligned";
+    if (state === "SIDEWAYS") {
+      consensus = "sideways";
+    }
+  } else {
+    conflict = true;
+    state = "CONFLICT";
+    confidence = baseConfidence * 0.5;
+    consensus = "conflict";
+    warning = `\u26A0\uFE0F \u5169\u500B module \u8A0A\u865F\u5206\u6B67 (M1=${m1State} / zmen=${zmenState}), \u5C0F\u5FC3\u5165\u5834, confidence \u6298\u534A`;
+  }
+  const triggers = computeTriggers(klineCloses);
+  const transitions = computeTransitions(m1State, zmenState, triggers, m1Verdict, zmenVerdict);
+  const maArr = computeMA(klineCloses, 5);
+  const ma20Arr = computeMA(klineCloses, 20);
+  const meta = {
+    currentPrice: klineCloses[0] ?? null,
+    ma5: isNaN(maArr[0]) ? null : maArr[0],
+    ma20: isNaN(ma20Arr[0]) ? null : ma20Arr[0],
+    consensus
+  };
+  return {
+    state,
+    confidence,
+    conflict,
+    warning,
+    m1State,
+    zmenState,
+    weights,
+    transitions,
+    triggers,
+    meta
+  };
+}
+function computeTriggers(closes) {
+  if (closes.length < 20) {
+    return {
+      ma5StopTriggered: false,
+      ma5BreakDay1: false,
+      ma5BreakDay2: false,
+      ma20Break: false,
+      ma5RetestSuccess: false
+    };
+  }
+  const ma5Arr = computeMA(closes, 5);
+  const ma20Arr = computeMA(closes, 20);
+  const todayClose = closes[0];
+  const yesterdayClose = closes[1] ?? todayClose;
+  const ma5Today = ma5Arr[0];
+  const ma5Yesterday = ma5Arr[1] ?? ma5Today;
+  const ma20Today = ma20Arr[0];
+  const ma5StopTriggered = !isNaN(ma5Today) && todayClose < ma5Today * 0.98;
+  const ma5BreakDay1 = !isNaN(ma5Today) && todayClose < ma5Today && todayClose >= ma5Today * 0.98;
+  const ma5BreakDay2 = !isNaN(ma5Today) && !isNaN(ma5Yesterday) && todayClose < ma5Today && yesterdayClose < ma5Yesterday;
+  const ma20Break = !isNaN(ma20Today) && todayClose < ma20Today;
+  let ma5RetestSuccess = false;
+  for (let i = 1; i <= Math.min(5, closes.length - 1); i++) {
+    if (!isNaN(ma5Arr[i]) && closes[i] < ma5Arr[i]) {
+      ma5RetestSuccess = !isNaN(ma5Today) && todayClose >= ma5Today;
+      break;
+    }
+  }
+  return {
+    ma5StopTriggered,
+    ma5BreakDay1,
+    ma5BreakDay2,
+    ma20Break,
+    ma5RetestSuccess
+  };
+}
+function computeTransitions(m1State, zmenState, triggers, m1Verdict, zmenVerdict) {
+  const bothUp = m1State === "UP" && zmenState === "UP";
+  const turnAroundDetected = bothUp && m1Verdict.confidence >= 0.65 && zmenVerdict.confidence >= 0.65;
+  const adjustmentComplete = bothUp && triggers.ma5RetestSuccess;
+  return {
+    turnAroundDetected,
+    adjustmentComplete
+  };
+}
+
+// algorithms/AS-03-cycle-detection/modules/decision-engine.ts
 var GRADE_ORDER = ["F", "D", "C", "C+", "B", "B+", "A", "A+"];
 var KELLY_NUMERIC_MAP = {
   half: 0.5,
@@ -161,6 +271,117 @@ function hardcodedInterpretation(ctx) {
     default:
       return `\u26AB \u672A\u77E5 action (${final_action}), \u8ACB\u6AA2\u67E5 implementation`;
   }
+}
+function decidePositionTrading(synth) {
+  const { state, confidence, conflict, warning, m1State, zmenState, transitions, triggers } = synth;
+  if (conflict && confidence < 0.3) {
+    return {
+      action: "TRAP",
+      reason: `M1 \u5224 ${m1State} / zmen \u5224 ${zmenState}, \u5169\u500B module \u56B4\u91CD\u5206\u6B67, confidence \u8DCC\u5230 ${(confidence * 100).toFixed(0)}%, \u5514\u597D\u4FE1\u5C0E\u822A, \u865B\u6F32\u9677\u9631`
+    };
+  }
+  if (m1State === "UP" && zmenState === "UP" && !transitions.adjustmentComplete && confidence >= 0.5) {
+    return {
+      action: "TRANSITION",
+      reason: `M1+zmen \u90FD\u8F49 UP \u4F46 5 \u65E5\u7DDA re-test \u4EF2\u672A\u6210\u529F, \u8ABF\u6574\u4E2D, \u7B49 adjustment complete \u518D\u5165\u5834`
+    };
+  }
+  if (triggers.ma5StopTriggered) {
+    return {
+      action: "SELL",
+      reason: `5 \u65E5\u7DDA -2% \u8DCC\u7834 (\u52D5\u614B stop \u89F8\u767C), \u6025\u715E\u8ECA\u96E2\u5834`
+    };
+  }
+  if (triggers.ma20Break) {
+    return {
+      action: "SELL",
+      reason: `20 \u65E5\u7DDA\u8DCC\u7834, \u4E2D\u9577\u671F\u8DA8\u52E2\u8F49\u5F31, \u6025\u715E\u8ECA\u96E2\u5834`
+    };
+  }
+  if (triggers.ma5BreakDay2) {
+    return {
+      action: "SELL",
+      reason: `5 \u65E5\u7DDA\u9023\u7A7F 2 \u65E5, \u4E0A\u5347\u52D5\u529B\u5187\u5497, \u6025\u715E\u8ECA\u96E2\u5834`
+    };
+  }
+  if (triggers.ma5BreakDay1) {
+    return {
+      action: "REDUCE",
+      reason: `5 \u65E5\u7DDA\u7A7F\u7B2C 1 \u65E5, \u6536\u7DCA\u5572\u5009\u4F4D\u7B49\u78BA\u8A8D, \u8DCC\u7A7F MA5 \xD7 0.98 \u5373\u8D70`
+    };
+  }
+  if (state === "SIDEWAYS") {
+    return {
+      action: "WAIT",
+      reason: `M1+zmen \u90FD SIDEWAYS (\u6A6B\u884C), \u5187\u660E\u78BA\u65B9\u5411, \u7B49\u7DA0\u71C8`
+    };
+  }
+  if (state === "CONFLICT") {
+    return {
+      action: "WAIT",
+      reason: `M1 (${m1State}) / zmen (${zmenState}) \u8A0A\u865F\u5206\u6B67, ${warning || "\u5C0F\u5FC3\u5165\u5834"}, \u7B49\u8A0A\u865F\u4E00\u81F4\u5148\u5165\u5834`
+    };
+  }
+  if (confidence < 0.5) {
+    return {
+      action: "WAIT",
+      reason: `\u7D9C\u5408\u4FE1\u5FC3 ${(confidence * 100).toFixed(0)}% < 50%, \u8A0A\u865F\u5514\u6E05\u6670, \u7B49\u7DA0\u71C8`
+    };
+  }
+  if (state === "UP" && confidence < 0.65) {
+    return {
+      action: "HOLD",
+      reason: `M1+zmen \u90FD UP \u4F46 confidence \u53EA\u6709 ${(confidence * 100).toFixed(0)}% (50-65% \u4E2D\u9593\u5340), \u8A0A\u865F\u672A\u5920\u6E05\u6670, \u6301\u6709\u73FE\u91D1\u7B49\u52A0\u5F37`
+    };
+  }
+  if (state === "UP" && confidence >= 0.65 && triggers.ma5RetestSuccess) {
+    return {
+      action: "ADD",
+      reason: `M1+zmen \u90FD UP, confidence ${(confidence * 100).toFixed(0)}% \u2265 65%, 5 \u65E5\u7DDA re-test \u6210\u529F (\u66FE\u7A7F\u5F8C\u56DE\u5347), \u6CB9\u9580\u518D\u8E29\u6DF1\u5572`
+    };
+  }
+  if (state === "UP" && confidence >= 0.65) {
+    if (transitions.turnAroundDetected) {
+      return {
+        action: "BUY",
+        reason: `M1+zmen \u90FD UP, confidence ${(confidence * 100).toFixed(0)}% \u2265 65%, turn-around \u78BA\u8A8D (\u5169\u500B module \u540C\u6B65\u7531\u5F31\u8F49\u5F37), \u6CB9\u9580\u4FFE\u5230\u5E95`
+      };
+    }
+    if (transitions.adjustmentComplete) {
+      return {
+        action: "BUY",
+        reason: `M1+zmen \u90FD UP, confidence ${(confidence * 100).toFixed(0)}% \u2265 65%, adjustment complete (5 \u65E5\u7DDA re-test \u6210\u529F, \u4E0A\u5347\u8ABF\u6574\u525B\u5B8C), \u6CB9\u9580\u4FFE\u5230\u5E95`
+      };
+    }
+    return {
+      action: "HOLD",
+      reason: `M1+zmen \u90FD UP, confidence ${(confidence * 100).toFixed(0)}% \u2265 65%, \u4F46 cycle transition \u672A\u78BA\u8A8D (\u7B49 turn-around / adjustment complete), \u6301\u6709\u89C0\u5BDF`
+    };
+  }
+  if (state === "DOWN") {
+    return {
+      action: "SELL",
+      reason: `M1+zmen \u90FD DOWN, \u4E0B\u8DCC\u78BA\u8A8D, \u6025\u715E\u8ECA`
+    };
+  }
+  return {
+    action: "WAIT",
+    reason: `\u672A\u80FD\u5339\u914D\u660E\u78BA trigger (state=${state}, confidence=${(confidence * 100).toFixed(0)}%), \u9810\u8A2D\u7B49\u5F85\u89C0\u5BDF`
+  };
+}
+function computePositionTradingCard(currentPrice, ma5, ma20) {
+  const entryWidth = 0.015;
+  const stopLoss = (ma5 ?? currentPrice * 0.98) * 0.98;
+  const trailingStop = ma20 ?? currentPrice * 0.95;
+  return {
+    entry_zone: [currentPrice * (1 - entryWidth), currentPrice * (1 + entryWidth)],
+    stop_loss: stopLoss,
+    stop_loss_source: "MA5 * 0.98",
+    take_profit: null,
+    trailing_stop: trailingStop,
+    holding_period: "1-3 months",
+    kelly_fraction: "octo"
+  };
 }
 var DEFAULT_ADAPTIVE_PARAMS = {
   ssiWeights: { ma: 0.3, hl: 0.3, trendline: 0.4 },
@@ -395,6 +616,7 @@ var DecisionEngine = class {
     const sv = input.synthesizerVerdict;
     const verdicts = input.moduleVerdicts ?? sv.module_verdicts ?? [];
     const md = input.marketData ?? {};
+    const strategyMode = input.strategyMode ?? "swing";
     const majorityState = getMajorityState(verdicts);
     const alignment = sv.alignment_score;
     const { grade, grade_score } = sv;
@@ -457,10 +679,161 @@ var DecisionEngine = class {
       interpretation,
       module_verdicts: verdicts,
       synthesizer_verdict: sv,
+      // 大少 2026-08-09 19:06 — 兩線策略 output
+      strategy_mode: strategyMode,
+      timestamp: Date.now()
+    };
+  }
+  /** 大少 2026-08-09 19:06 — Position Trading 決策 (兩線策略第一線)
+   *  用 cycle-synthesizer (M1+zmen 加權綜合) + 5 個 trigger 推導 final action
+   *  跟 swing 唔同嘅地方:
+   *    - 8 個 finalAction 統一 priority chain: TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY
+   *    - Entry condition 要 confidence >= 0.65 + turn-around / adjustment complete trigger
+   *    - Trading card 動態 MA5/MA20 stop, Kelly 'octo' (1/8)
+   *    - 持倉 1-3 個月, 唔好追高
+   *
+   *  @param input DecideInput (必須包含 m1Verdict + zmenVerdict + klineCloses)
+   *  @returns DecisionVerdict (strategy_mode='position' + cycle_synthesizer + position_trading_card)
+   */
+  async decidePosition(input) {
+    const sv = input.synthesizerVerdict;
+    const verdicts = input.moduleVerdicts ?? sv.module_verdicts ?? [];
+    const md = input.marketData ?? {};
+    const currentPrice = md.currentPrice ?? 0;
+    let synth;
+    if (input.cycleSynthesizerResult) {
+      synth = input.cycleSynthesizerResult;
+    } else if (input.m1Verdict && input.zmenVerdict && input.klineCloses) {
+      synth = synthesizeCycle({
+        m1Verdict: input.m1Verdict,
+        zmenVerdict: input.zmenVerdict,
+        klineCloses: input.klineCloses
+      });
+    } else {
+      synth = {
+        state: sv.module_verdicts[0]?.state === "UP" || sv.module_verdicts[0]?.state === "DOWN" ? sv.module_verdicts[0].state : "SIDEWAYS",
+        confidence: sv.ssi_score / 100,
+        conflict: false,
+        warning: "\u26A0\uFE0F decidePosition \u7F3A\u5C11 m1Verdict/zmenVerdict/klineCloses, \u7528 synthesizer verdict fallback",
+        m1State: "SIDEWAYS",
+        zmenState: "SIDEWAYS",
+        weights: { m1: 0.6, zmen: 0.4 },
+        transitions: { turnAroundDetected: false, adjustmentComplete: false },
+        triggers: {
+          ma5StopTriggered: false,
+          ma5BreakDay1: false,
+          ma5BreakDay2: false,
+          ma20Break: false,
+          ma5RetestSuccess: false
+        },
+        meta: { currentPrice, ma5: null, ma20: null, consensus: "sideways" }
+      };
+    }
+    const { action: final_action, reason: final_action_reason } = decidePositionTrading(synth);
+    const position_trading_card = computePositionTradingCard(
+      currentPrice,
+      synth.meta.ma5,
+      synth.meta.ma20
+    );
+    const trading_card = {
+      entry_zone: position_trading_card.entry_zone,
+      stop_loss: position_trading_card.stop_loss,
+      take_profit: 0,
+      // 0 = 無 fixed take_profit (swing 唔識 render null, fallback 0)
+      trailing_stop: position_trading_card.trailing_stop
+    };
+    const expectedReturn = 0.05;
+    const maxDrawdown = 0.08;
+    const short_term_forecast = computeShortTermForecast(expectedReturn, maxDrawdown);
+    const interpretation = await generatePositionInterpretation({
+      final_action,
+      cycle_synthesizer: synth,
+      position_trading_card
+    });
+    return {
+      final_action,
+      final_action_reason,
+      trading_card,
+      short_term_forecast,
+      interpretation,
+      module_verdicts: verdicts,
+      synthesizer_verdict: sv,
+      strategy_mode: "position",
+      cycle_synthesizer: synth,
+      position_trading_card,
       timestamp: Date.now()
     };
   }
 };
+async function generatePositionInterpretation(ctx) {
+  return hardcodedPositionInterpretation(ctx);
+}
+function hardcodedPositionInterpretation(ctx) {
+  const { final_action, cycle_synthesizer, position_trading_card } = ctx;
+  const { state, confidence, conflict, warning, m1State, zmenState, transitions, triggers, meta } = cycle_synthesizer;
+  const confPct = (confidence * 100).toFixed(0);
+  const ma5Str = meta.ma5 != null ? meta.ma5.toFixed(2) : "N/A";
+  const ma20Str = meta.ma20 != null ? meta.ma20.toFixed(2) : "N/A";
+  const stopStr = position_trading_card.stop_loss.toFixed(2);
+  const trailingStr = position_trading_card.trailing_stop.toFixed(2);
+  const synthStateLabel = state === "CONFLICT" ? "\u26A0\uFE0F \u8A0A\u865F\u5206\u6B67" : state === "UP" ? "\u4E0A\u5347" : state === "DOWN" ? "\u4E0B\u8DCC" : "\u6A6B\u884C";
+  const triggerBadges = [
+    triggers.ma5StopTriggered ? "\u{1F534} MA5-2%" : "\u26AA MA5-2%",
+    triggers.ma5BreakDay1 ? "\u{1F7E1} MA5\u7A7F1\u65E5" : "\u26AA MA5\u7A7F1\u65E5",
+    triggers.ma5BreakDay2 ? "\u{1F534} MA5\u7A7F2\u65E5" : "\u26AA MA5\u7A7F2\u65E5",
+    triggers.ma20Break ? "\u{1F534} MA20\u8DCC\u7834" : "\u26AA MA20\u8DCC\u7834",
+    triggers.ma5RetestSuccess ? "\u{1F7E2} MA5-re-test" : "\u26AA MA5-re-test"
+  ].join(" ");
+  const header = `\u{1F4C8} **Position Trading \u5224\u5B9A\uFF1A${synthStateLabel}\uFF08${state}\uFF09**, \u7D9C\u5408\u4FE1\u5FC3 ${confPct}%
+\u{1F9EE} M1=${m1State} / zmen=${zmenState} (60/40 \u52A0\u6B0A) ${conflict ? warning || "\u26A0\uFE0F \u8A0A\u865F\u5206\u6B67" : "\u2705 \u4E00\u81F4"}
+\u{1F4CA} 5 \u500B trigger: ${triggerBadges}
+\u{1F3AF} Cycle transition: turn-around=${transitions.turnAroundDetected ? "\u2705" : "\u26AA"} / adjustment-complete=${transitions.adjustmentComplete ? "\u2705" : "\u26AA"}
+\u{1F4B0} Trading card: \u52D5\u614B stop=$${stopStr} (MA5=$${ma5Str} \xD7 0.98) / trailing=$${trailingStr} (MA20=$${ma20Str}) / Kelly=1/8 / \u6301\u5009 1-3 \u500B\u6708 / \u7121 fixed take_profit
+
+`;
+  switch (final_action) {
+    case "BUY":
+      return header + `\u{1F7E2} **\u61C9\u8A72\u8CB7\u5165**\u3002M1+zmen \u90FD UP, \u4FE1\u5FC3 ${confPct}% \u2265 65%, \u800C\u4E14 cycle transition \u78BA\u8A8D:
+   - ${transitions.turnAroundDetected ? "turn-around: \u5169\u500B module \u540C\u6B65\u7531\u5F31\u8F49\u5F37" : "adjustment complete: 5 \u65E5\u7DDA re-test \u6210\u529F, \u4E0A\u5347\u8ABF\u6574\u525B\u5B8C"}
+\u{1F4A1} **\u9EDE\u89E3\u8981\u8CB7**: \u5927\u5C11 position trading \u98A8\u683C, \u5514\u8FFD\u9AD8, \u7B49 cycle \u78BA\u8A8D\u5148\u5165\u5834\u3002\u6301\u5009 1-3 \u500B\u6708, \u4E2D\u9577\u671F\u98DF\u4E0A\u5347\u8DA8\u52E2
+\u{1F6D1} **\u98A8\u63A7**: \u52D5\u614B stop $${stopStr} (MA5 \xD7 0.98, \u6BCF\u65E5 update), \u5514\u597D\u7747\u6B7B
+\u{1F4C8} **\u52A0\u5009\u8A0A\u865F**: 5 \u65E5\u7DDA re-test \u6210\u529F \u2192 ADD (\u8DCC\u5B8C\u518D\u4E0A\u52A0\u591A\u6CE8)
+\u{1F4C9} **\u64A4\u9000\u8A0A\u865F**: \u7A7F 1 \u65E5 (REDUCE) / \u7A7F 2 \u65E5 (SELL) / 5 \u65E5\u7DDA -2% \u8DCC\u7834 (SELL) / 20 \u65E5\u7DDA\u8DCC\u7834 (SELL)`;
+    case "ADD":
+      return header + `\u{1F7E2} **\u52A0\u5009\u8A0A\u865F**! 5 \u65E5\u7DDA re-test \u6210\u529F, \u6CB9\u9580\u518D\u8E29\u6DF1\u5572
+\u{1F4A1} **\u9EDE\u89E3\u52A0\u5009**: position trading \u98A8\u683C, \u5347\u52E2\u78BA\u8A8D + re-test \u6210\u529F = \u5065\u5EB7\u4E0A\u5347, \u52A0\u6CE8\u98DF\u591A\u5572\u8DA8\u52E2
+\u26A0\uFE0F **\u6CE8\u610F**: \u52D5\u614B stop \u4ECD\u7136\u55BA $${stopStr} (MA5 \xD7 0.98), \u52A0\u5009\u5F8C\u8981\u5BC6\u5207 monitor
+\u{1F4B0} **\u5009\u4F4D**: 1/8 (octo), \u52A0\u5009\u5F8C\u7E3D\u5009\u4F4D\u53EF\u80FD > 100%, \u6CE8\u610F risk management`;
+    case "HOLD":
+      return header + `\u{1F7E1} **\u6301\u6709\u73FE\u91D1\u7B49\u52A0\u5F37**\u3002M1+zmen \u90FD UP \u4F46\u4FE1\u5FC3\u672A\u5920\u5165\u5834 (50-65% \u4E2D\u9593\u5340, \u6216 cycle transition \u672A\u78BA\u8A8D)
+\u{1F4A1} **\u9EDE\u89E3 hold**: ${confidence < 0.65 ? `\u4FE1\u5FC3 ${confPct}% \u55BA 50-65% \u4E2D\u9593\u5340, \u7B49\u52A0\u5F37\u5230 65% \u5148\u5165\u5834` : "cycle transition \u672A\u78BA\u8A8D, \u7B49 turn-around / adjustment complete trigger"}
+\u{1F4CC} **Monitor**: \u4E00\u65E6 confidence \u2265 65% + transition \u78BA\u8A8D \u2192 BUY trigger; \u8DCC\u7A7F MA5 \xD7 0.98 \u2192 SELL trigger`;
+    case "WAIT":
+      return header + `\u{1F7E1} **\u7B49\u7DA0\u71C8**\u3002${state === "SIDEWAYS" ? "M1+zmen \u90FD SIDEWAYS (\u6A6B\u884C), \u5187\u660E\u78BA\u65B9\u5411" : state === "CONFLICT" ? `M1=${m1State} / zmen=${zmenState} \u8A0A\u865F\u5206\u6B67, ${warning || "\u5C0F\u5FC3\u5165\u5834"}` : `\u4FE1\u5FC3 ${confPct}% < 50% \u5514\u5920\u5165\u5834`}
+\u{1F4A1} **\u9EDE\u89E3 wait**: position trading \u5514\u8FFD\u9AD8, \u8A0A\u865F\u8981\u6E05\u6670\u5148\u5165\u5834, \u5F37\u884C\u5165\u5834\u98A8\u96AA\u9AD8
+\u{1F4CC} **Monitor**: \u4E00\u65E6 SIDEWAYS \u8B8A UP (confidence \u2265 65% + transition \u78BA\u8A8D) \u2192 BUY trigger; \u8B8A DOWN \u2192 SELL trigger`;
+    case "REDUCE":
+      return header + `\u{1F7E0} **\u6536\u7DCA\u5572\u5009\u4F4D**! 5 \u65E5\u7DDA\u7A7F\u7B2C 1 \u65E5, \u8DCC\u7A7F MA5 \xD7 0.98 \u5373\u8D70
+\u{1F4A1} **\u9EDE\u89E3 reduce**: \u7A7F 1 \u65E5\u4EF2\u672A\u7B97\u8F49\u52E2, \u4F46\u6536\u7DCA\u6B62\u640D\u7B49\u78BA\u8A8D\u3002\u5982\u679C\u56DE\u5347\u5C31 hold \u4F4F, \u8DCC\u7A7F\u5C31 SELL
+\u{1F4CC} **Monitor**: \u7A7F 2 \u65E5 \u2192 SELL; \u8DCC\u7A7F MA5 \xD7 0.98 \u2192 SELL; \u56DE\u5347\u904E MA5 \u2192 HOLD`;
+    case "SELL":
+      return header + `\u{1F534} **\u6025\u715E\u8ECA\u96E2\u5834**! ${triggers.ma5StopTriggered ? "5 \u65E5\u7DDA -2% \u8DCC\u7834 (\u52D5\u614B stop \u89F8\u767C)" : triggers.ma5BreakDay2 ? "5 \u65E5\u7DDA\u9023\u7A7F 2 \u65E5" : triggers.ma20Break ? "20 \u65E5\u7DDA\u8DCC\u7834, \u4E2D\u9577\u671F\u8F49\u5F31" : state === "DOWN" ? "M1+zmen \u90FD DOWN, \u4E0B\u8DCC\u78BA\u8A8D" : "Stop trigger \u89F8\u767C"}
+\u{1F4A1} **\u9EDE\u89E3\u8CE3**: position trading \u98A8\u683C, \u52D5\u614B stop \u89F8\u767C\u5C31\u8981\u8D70, \u5514\u597D\u7336\u8C6B
+\u{1F4CC} **\u4E4B\u5F8C\u9EDE**: \u7B49\u4E0B\u4E00\u500B cycle \u78BA\u8A8D (BUY \u689D\u4EF6) \u5148\u518D\u5165\u5834, \u5514\u597D\u6488\u5E95`;
+    case "TRAP":
+      return header + `\u{1F7E3} **\u5514\u597D\u4FE1\u5C0E\u822A**! M1+zmen \u56B4\u91CD\u5206\u6B67, confidence \u8DCC\u5230 ${confPct}%
+\u{1F4A1} **\u9EDE\u89E3 TRAP**: \u96D6\u7136\u7747\u843D\u4F3C\u4E0A\u5347, \u4F46\u5169\u500B module \u56B4\u91CD\u5206\u6B67 = \u8A0A\u865F\u5514\u53EF\u4FE1, \u5514\u597D\u88AB\u8AA4\u5C0E
+\u{1F4CC} **Monitor**: \u7B49 M1+zmen \u9054\u6210\u5171\u8B58 (consensus='aligned') \u5148\u5165\u5834
+\u{1F4B0} **\u5009\u4F4D**: \u6E05\u5009\u6216\u6975\u4F4E\u5009, \u5B8C\u5168\u5514\u597D\u52A0\u5009`;
+    case "TRANSITION":
+      return header + `\u{1F7E3} **\u8ABF\u6574\u4E2D, \u7B49 adjustment complete**! M1+zmen \u90FD\u8F49 UP \u4F46 5 \u65E5\u7DDA re-test \u4EF2\u672A\u6210\u529F
+\u{1F4A1} **\u9EDE\u89E3 TRANSITION**: \u4E0A\u5347\u52D5\u529B\u51FA\u73FE\u5497, \u4F46 adjustment \u4EF2\u9032\u884C\u7DCA, \u5514\u597D\u8FFD\u5165, \u7B49\u5B8C\u6210
+\u{1F4CC} **Monitor**: 5 \u65E5\u7DDA re-test \u6210\u529F \u2192 adjustment complete \u2192 BUY trigger; \u53CD\u8F49 \u2192 SELL trigger
+\u{1F4B0} **\u5009\u4F4D**: \u6301\u6709\u73FE\u91D1\u6216\u6975\u4F4E\u5009, \u7B49\u8ABF\u6574\u5B8C`;
+    default:
+      return header + `\u26AB \u672A\u77E5 action (${final_action}), \u8ACB\u6AA2\u67E5 implementation`;
+  }
+}
 var decision_engine_default = DecisionEngine;
 export {
   DEFAULT_ADAPTIVE_PARAMS,
@@ -468,5 +841,6 @@ export {
   applyAdaptiveParamsToSynthesizer,
   calibrateAdaptiveParams,
   decision_engine_default as default,
-  generateInterpretation
+  generateInterpretation,
+  generatePositionInterpretation
 };

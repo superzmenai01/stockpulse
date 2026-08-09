@@ -25,6 +25,20 @@ import type {
   CycleModuleId, CycleState, Grade, ModuleStandardVerdict, Sentiment6D, SynthesizerVerdict,
 } from '../types.ts';
 
+import type {
+  CycleSynthesizerResult, CycleVerdict as CycleSynthVerdict,
+} from './cycle-synthesizer.ts';
+import { synthesizeCycle } from './cycle-synthesizer.ts';
+
+// =============================================================
+// 大少 2026-08-09 19:06 — 兩線策略 (Position + Swing)
+//   - strategyMode='position': 大少 position trading (5 個 trigger + cycle synthesizer)
+//   - strategyMode='swing':    M8 原本 8 個 finalAction 決策樹 (保留)
+//   UI order: 第一線 (position) 先, 第二線 (swing) 後
+// =============================================================
+
+export type StrategyMode = 'position' | 'swing';
+
 // =============================================================
 // 8 個 finalAction — 大少 2026-08-08 13:30 確認
 // 揸車比喻貫穿: BUY=油門俾到底, ADD=再踩深, HOLD=保持現速, WAIT=等綠燈,
@@ -61,6 +75,25 @@ export interface TradingCard {
 }
 
 // =============================================================
+// Position trading card — 大少 2026-08-09 19:06 確認
+//   第一線 (position) 嘅 trading card 跟 swing 完全唔同:
+//     - stop_loss 係動態 MA5 × 0.98 (唔係 -3% static)
+//     - take_profit 無 (大少 position trading 唔設 fixed target, 等中長期走)
+//     - trailing_stop = MA20 (中長期支持, 大少風格)
+//     - Kelly = 'octo' (1/8, 比 swing 嘅 quarter 1/4 細, 因為持倉時間長風險大)
+// =============================================================
+
+export interface PositionTradingCard {
+  entry_zone: [number, number];      // [low, high] — currentPrice ± 1.5%
+  stop_loss: number;                 // MA5 × 0.98 (動態)
+  stop_loss_source: 'MA5 * 0.98';    // 標明 stop 點嚟
+  take_profit: null;                 // 無 fixed target
+  trailing_stop: number;             // MA20 (中長期支持)
+  holding_period: '1-3 months';      // 大少 position 持倉
+  kelly_fraction: 'octo';            // 1/8 倉位
+}
+
+// =============================================================
 // Market data — Sprint 2 sub-task 2.5 將加實際 derivation
 // 2.1 接受 optional input, 預設 fallback; 2.5 將從 M1/M3/M5/M6 raw data derive
 // =============================================================
@@ -77,6 +110,15 @@ export interface DecideInput {
   synthesizerVerdict: SynthesizerVerdict;
   moduleVerdicts?: ModuleStandardVerdict[];   // optional override (default 從 sv.module_verdicts)
   marketData?: Partial<MarketData>;           // optional (2.1 暫時 optional, 2.5 將 required)
+  // 大少 2026-08-09 19:06 — 兩線策略 input
+  strategyMode?: StrategyMode;                // default 'swing' (backward compat)
+  /** 第一線 M1 + zmen 兩個 cycle detector verdict (position trading 用) */
+  m1Verdict?: CycleSynthVerdict;
+  zmenVerdict?: CycleSynthVerdict;
+  /** 最近 K 線 close prices (trigger 計算用), [0] = 今日, [n-1] = 最舊 */
+  klineCloses?: number[];
+  /** 預先計算好嘅 cycle synthesizer 結果 (optional, 否則內部 auto-derive) */
+  cycleSynthesizerResult?: CycleSynthesizerResult;
 }
 
 // =============================================================
@@ -91,6 +133,10 @@ export interface DecisionVerdict {
   interpretation: string;                     // 2.4 將 impl LLM hook
   module_verdicts: ModuleStandardVerdict[];   // trace (6 個 input)
   synthesizer_verdict: SynthesizerVerdict;    // trace (M7 output)
+  // 大少 2026-08-09 19:06 — 兩線策略
+  strategy_mode: StrategyMode;                // 'position' | 'swing'
+  cycle_synthesizer?: CycleSynthesizerResult; // 第一線 (position) 用, 第二線 (swing) 唔帶
+  position_trading_card?: PositionTradingCard;// 第一線 (position) 嘅 trading card, 動態 MA5/MA20 stop
   timestamp: number;
 }
 
@@ -406,6 +452,184 @@ function hardcodedInterpretation(ctx: InterpretationContext): string {
     default:
       return `⚫ 未知 action (${final_action}), 請檢查 implementation`;
   }
+}
+
+// =============================================================
+// 大少 2026-08-09 19:06 — Position Trading 決策樹 (兩線策略第一線)
+// =============================================================
+// 8 個 finalAction 統一 priority chain: TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY
+//
+// Entry condition (BUY):
+//   - synthesized.state === 'UP' (M1+zmen 一致上升)
+//   - confidence >= 0.65 (大少 5 個 default 之 threshold 3)
+//   - turnAroundDetected OR adjustmentComplete (新嘅上升 trigger, 唔好追高)
+//
+// Add condition (ADD):
+//   - ma5RetestSuccess 成功 (5 日線 re-test 成功, position 風格加倉)
+//
+// Stop conditions:
+//   - SELL: ma5StopTriggered OR ma5BreakDay2 OR ma20Break
+//   - REDUCE: ma5BreakDay1 (穿 1 日, 收緊啲)
+//
+// Wait conditions:
+//   - WAIT: synthesized.state === 'SIDEWAYS' OR confidence < 0.50
+//
+// Other:
+//   - TRAP: synthesized.conflict === true AND confidence < 0.30 (兩個 module 嚴重分歧)
+//   - TRANSITION: synthesized.transitions.adjustmentComplete 之前嘅 cycle 轉變 (M1+zmen 由 SIDEWAYS 轉 UP 嘅中繼狀態)
+//   - HOLD: synthesized.state === 'UP' AND 0.50 <= confidence < 0.65 (上升但未夠入場, 持有觀察)
+//
+// 設計: position trading 風格, 持倉 1-3 個月, 唔好追高, 訊號要清晰先入場
+// =============================================================
+
+/** Position trading 嘅 final action 推導 (大少 8 個 finalAction priority chain)
+ *  @param synth cycle synthesizer 嘅綜合結果
+ *  @returns {action, reason}
+ */
+function decidePositionTrading(synth: CycleSynthesizerResult): { action: FinalAction; reason: string } {
+  const { state, confidence, conflict, warning, m1State, zmenState, transitions, triggers } = synth;
+
+  // 1. TRAP — 兩個 module 嚴重分歧 (confidence 極低) — 最危險
+  if (conflict && confidence < 0.30) {
+    return {
+      action: 'TRAP',
+      reason: `M1 判 ${m1State} / zmen 判 ${zmenState}, 兩個 module 嚴重分歧, confidence 跌到 ${(confidence * 100).toFixed(0)}%, 唔好信導航, 虛漲陷阱`,
+    };
+  }
+
+  // 2. TRANSITION — cycle 調整中 (adjustmentComplete 之前嘅狀態, M1/zmen 由 SIDEWAYS 轉 UP 中繼)
+  //    heuristic: 兩個都 UP, 但 re-test 仲未成功 (即將 adjustment complete)
+  if (m1State === 'UP' && zmenState === 'UP' && !transitions.adjustmentComplete && confidence >= 0.50) {
+    return {
+      action: 'TRANSITION',
+      reason: `M1+zmen 都轉 UP 但 5 日線 re-test 仲未成功, 調整中, 等 adjustment complete 再入場`,
+    };
+  }
+
+  // 3. SELL — 5 個 trigger 中嘅 stop trigger
+  if (triggers.ma5StopTriggered) {
+    return {
+      action: 'SELL',
+      reason: `5 日線 -2% 跌破 (動態 stop 觸發), 急煞車離場`,
+    };
+  }
+  if (triggers.ma20Break) {
+    return {
+      action: 'SELL',
+      reason: `20 日線跌破, 中長期趨勢轉弱, 急煞車離場`,
+    };
+  }
+  if (triggers.ma5BreakDay2) {
+    return {
+      action: 'SELL',
+      reason: `5 日線連穿 2 日, 上升動力冇咗, 急煞車離場`,
+    };
+  }
+
+  // 4. REDUCE — 穿 1 日 (收緊啲, 唔好走)
+  if (triggers.ma5BreakDay1) {
+    return {
+      action: 'REDUCE',
+      reason: `5 日線穿第 1 日, 收緊啲倉位等確認, 跌穿 MA5 × 0.98 即走`,
+    };
+  }
+
+  // 5. WAIT — SIDEWAYS 或信心不足
+  if (state === 'SIDEWAYS') {
+    return {
+      action: 'WAIT',
+      reason: `M1+zmen 都 SIDEWAYS (橫行), 冇明確方向, 等綠燈`,
+    };
+  }
+  if (state === 'CONFLICT') {
+    return {
+      action: 'WAIT',
+      reason: `M1 (${m1State}) / zmen (${zmenState}) 訊號分歧, ${warning || '小心入場'}, 等訊號一致先入場`,
+    };
+  }
+  if (confidence < 0.50) {
+    return {
+      action: 'WAIT',
+      reason: `綜合信心 ${(confidence * 100).toFixed(0)}% < 50%, 訊號唔清晰, 等綠燈`,
+    };
+  }
+
+  // 6. HOLD — 上升但未夠入場 (0.50-0.65, 持有現金等確認)
+  if (state === 'UP' && confidence < 0.65) {
+    return {
+      action: 'HOLD',
+      reason: `M1+zmen 都 UP 但 confidence 只有 ${(confidence * 100).toFixed(0)}% (50-65% 中間區), 訊號未夠清晰, 持有現金等加強`,
+    };
+  }
+
+  // 7. ADD — 5 日線 re-test 成功 (re-test 跌完再上, position 加倉訊號)
+  if (state === 'UP' && confidence >= 0.65 && triggers.ma5RetestSuccess) {
+    return {
+      action: 'ADD',
+      reason: `M1+zmen 都 UP, confidence ${(confidence * 100).toFixed(0)}% ≥ 65%, 5 日線 re-test 成功 (曾穿後回升), 油門再踩深啲`,
+    };
+  }
+
+  // 8. BUY — 上升 + 夠信心 + 有 cycle transition (turn-around / adjustment complete)
+  if (state === 'UP' && confidence >= 0.65) {
+    if (transitions.turnAroundDetected) {
+      return {
+        action: 'BUY',
+        reason: `M1+zmen 都 UP, confidence ${(confidence * 100).toFixed(0)}% ≥ 65%, turn-around 確認 (兩個 module 同步由弱轉強), 油門俾到底`,
+      };
+    }
+    if (transitions.adjustmentComplete) {
+      return {
+        action: 'BUY',
+        reason: `M1+zmen 都 UP, confidence ${(confidence * 100).toFixed(0)}% ≥ 65%, adjustment complete (5 日線 re-test 成功, 上升調整剛完), 油門俾到底`,
+      };
+    }
+    // state UP + confidence >= 0.65 但冇 transition trigger → 保持 HOLD
+    return {
+      action: 'HOLD',
+      reason: `M1+zmen 都 UP, confidence ${(confidence * 100).toFixed(0)}% ≥ 65%, 但 cycle transition 未確認 (等 turn-around / adjustment complete), 持有觀察`,
+    };
+  }
+
+  // 9. DOWN — 下跌確認 (synthesizer 都有 DOWN state)
+  if (state === 'DOWN') {
+    return {
+      action: 'SELL',
+      reason: `M1+zmen 都 DOWN, 下跌確認, 急煞車`,
+    };
+  }
+
+  // 10. Fallback: WAIT
+  return {
+    action: 'WAIT',
+    reason: `未能匹配明確 trigger (state=${state}, confidence=${(confidence * 100).toFixed(0)}%), 預設等待觀察`,
+  };
+}
+
+/** Position trading card — 動態 MA5/MA20 stop
+ *  @param currentPrice 現價
+ *  @param ma5 MA5 數值 (5 日線)
+ *  @param ma20 MA20 數值 (20 日線)
+ *  @returns PositionTradingCard
+ */
+function computePositionTradingCard(
+  currentPrice: number,
+  ma5: number | null,
+  ma20: number | null,
+): PositionTradingCard {
+  const entryWidth = 0.015;  // ±1.5%
+  const stopLoss = (ma5 ?? currentPrice * 0.98) * 0.98;  // MA5 × 0.98, fallback static 0.98
+  const trailingStop = ma20 ?? currentPrice * 0.95;       // MA20, fallback static 0.95
+
+  return {
+    entry_zone: [currentPrice * (1 - entryWidth), currentPrice * (1 + entryWidth)],
+    stop_loss: stopLoss,
+    stop_loss_source: 'MA5 * 0.98',
+    take_profit: null,
+    trailing_stop: trailingStop,
+    holding_period: '1-3 months',
+    kelly_fraction: 'octo',
+  };
 }
 
 // =============================================================
@@ -815,6 +1039,11 @@ export class DecisionEngine {
     const verdicts = input.moduleVerdicts ?? sv.module_verdicts ?? [];
     const md = input.marketData ?? {};
 
+    // 大少 2026-08-09 19:06 — 兩線策略分流
+    //   strategyMode='position' → 第一線 (cycle synthesizer + 5 個 trigger)
+    //   strategyMode='swing'    → 第二線 (原本 8 個 finalAction 決策樹, backward compat)
+    const strategyMode: StrategyMode = input.strategyMode ?? 'swing';
+
     // Step 1: majority state
     const majorityState = getMajorityState(verdicts);
 
@@ -920,8 +1149,210 @@ export class DecisionEngine {
       interpretation,
       module_verdicts: verdicts,
       synthesizer_verdict: sv,
+      // 大少 2026-08-09 19:06 — 兩線策略 output
+      strategy_mode: strategyMode,
       timestamp: Date.now(),
     };
+  }
+
+  /** 大少 2026-08-09 19:06 — Position Trading 決策 (兩線策略第一線)
+   *  用 cycle-synthesizer (M1+zmen 加權綜合) + 5 個 trigger 推導 final action
+   *  跟 swing 唔同嘅地方:
+   *    - 8 個 finalAction 統一 priority chain: TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY
+   *    - Entry condition 要 confidence >= 0.65 + turn-around / adjustment complete trigger
+   *    - Trading card 動態 MA5/MA20 stop, Kelly 'octo' (1/8)
+   *    - 持倉 1-3 個月, 唔好追高
+   *
+   *  @param input DecideInput (必須包含 m1Verdict + zmenVerdict + klineCloses)
+   *  @returns DecisionVerdict (strategy_mode='position' + cycle_synthesizer + position_trading_card)
+   */
+  async decidePosition(input: DecideInput): Promise<DecisionVerdict> {
+    const sv = input.synthesizerVerdict;
+    const verdicts = input.moduleVerdicts ?? sv.module_verdicts ?? [];
+    const md = input.marketData ?? {};
+    const currentPrice = md.currentPrice ?? 0;
+
+    // 1. 拎 / 計 cycle synthesizer 結果
+    let synth: CycleSynthesizerResult;
+    if (input.cycleSynthesizerResult) {
+      synth = input.cycleSynthesizerResult;
+    } else if (input.m1Verdict && input.zmenVerdict && input.klineCloses) {
+      synth = synthesizeCycle({
+        m1Verdict: input.m1Verdict,
+        zmenVerdict: input.zmenVerdict,
+        klineCloses: input.klineCloses,
+      });
+    } else {
+      // 冇足夠 input, fallback 用 synthesizer verdict 嘅 state 推一個 minimal synth
+      synth = {
+        state: sv.module_verdicts[0]?.state === 'UP' || sv.module_verdicts[0]?.state === 'DOWN'
+          ? sv.module_verdicts[0].state
+          : 'SIDEWAYS',
+        confidence: sv.ssi_score / 100,
+        conflict: false,
+        warning: '⚠️ decidePosition 缺少 m1Verdict/zmenVerdict/klineCloses, 用 synthesizer verdict fallback',
+        m1State: 'SIDEWAYS',
+        zmenState: 'SIDEWAYS',
+        weights: { m1: 0.6, zmen: 0.4 },
+        transitions: { turnAroundDetected: false, adjustmentComplete: false },
+        triggers: {
+          ma5StopTriggered: false,
+          ma5BreakDay1: false,
+          ma5BreakDay2: false,
+          ma20Break: false,
+          ma5RetestSuccess: false,
+        },
+        meta: { currentPrice, ma5: null, ma20: null, consensus: 'sideways' },
+      };
+    }
+
+    // 2. 推 final action
+    const { action: final_action, reason: final_action_reason } = decidePositionTrading(synth);
+
+    // 3. 計 position trading card (動態 MA5/MA20 stop)
+    const position_trading_card = computePositionTradingCard(
+      currentPrice,
+      synth.meta.ma5,
+      synth.meta.ma20,
+    );
+
+    // 4. Swing trading card fallback (因為 DecisionVerdict 嘅 trading_card field 必填)
+    //    當用 position mode, 呢個 field 會被 position_trading_card 取代, 但保留 backward compat
+    const trading_card: TradingCard = {
+      entry_zone: position_trading_card.entry_zone,
+      stop_loss: position_trading_card.stop_loss,
+      take_profit: 0,  // 0 = 無 fixed take_profit (swing 唔識 render null, fallback 0)
+      trailing_stop: position_trading_card.trailing_stop,
+    };
+
+    // 5. Short term forecast — position 持倉 1-3 個月, 預期 60 日
+    //    而家 reuse 原本 computeShortTermForecast (5/10/20 日), position 主要靠 final_action 唔靠 forecast
+    const expectedReturn = 0.05;  // position trading 預期 5% (中長期, 唔似 swing 短炒)
+    const maxDrawdown = 0.08;    // 8% (跟 stop_loss MA5 × 0.98 一致)
+    const short_term_forecast = computeShortTermForecast(expectedReturn, maxDrawdown);
+
+    // 6. Interpretation (LLM hook)
+    const interpretation = await generatePositionInterpretation({
+      final_action,
+      cycle_synthesizer: synth,
+      position_trading_card,
+    });
+
+    return {
+      final_action,
+      final_action_reason,
+      trading_card,
+      short_term_forecast,
+      interpretation,
+      module_verdicts: verdicts,
+      synthesizer_verdict: sv,
+      strategy_mode: 'position',
+      cycle_synthesizer: synth,
+      position_trading_card,
+      timestamp: Date.now(),
+    };
+  }
+}
+
+// =============================================================
+// Position Trading 嘅 Interpretation (大少 2026-08-09 19:06)
+// =============================================================
+
+export interface PositionInterpretationContext {
+  final_action: FinalAction;
+  cycle_synthesizer: CycleSynthesizerResult;
+  position_trading_card: PositionTradingCard;
+}
+
+export async function generatePositionInterpretation(ctx: PositionInterpretationContext): Promise<string> {
+  return hardcodedPositionInterpretation(ctx);
+}
+
+function hardcodedPositionInterpretation(ctx: PositionInterpretationContext): string {
+  const { final_action, cycle_synthesizer, position_trading_card } = ctx;
+  const { state, confidence, conflict, warning, m1State, zmenState, transitions, triggers, meta } = cycle_synthesizer;
+
+  const confPct = (confidence * 100).toFixed(0);
+  const ma5Str = meta.ma5 != null ? meta.ma5.toFixed(2) : 'N/A';
+  const ma20Str = meta.ma20 != null ? meta.ma20.toFixed(2) : 'N/A';
+  const stopStr = position_trading_card.stop_loss.toFixed(2);
+  const trailingStr = position_trading_card.trailing_stop.toFixed(2);
+
+  const synthStateLabel = state === 'CONFLICT' ? '⚠️ 訊號分歧' : state === 'UP' ? '上升' : state === 'DOWN' ? '下跌' : '橫行';
+
+  // 5 個 trigger 嘅 status badge
+  const triggerBadges = [
+    triggers.ma5StopTriggered ? '🔴 MA5-2%' : '⚪ MA5-2%',
+    triggers.ma5BreakDay1 ? '🟡 MA5穿1日' : '⚪ MA5穿1日',
+    triggers.ma5BreakDay2 ? '🔴 MA5穿2日' : '⚪ MA5穿2日',
+    triggers.ma20Break ? '🔴 MA20跌破' : '⚪ MA20跌破',
+    triggers.ma5RetestSuccess ? '🟢 MA5-re-test' : '⚪ MA5-re-test',
+  ].join(' ');
+
+  const header = `📈 **Position Trading 判定：${synthStateLabel}（${state}）**, 綜合信心 ${confPct}%\n` +
+    `🧮 M1=${m1State} / zmen=${zmenState} (60/40 加權) ${conflict ? warning || '⚠️ 訊號分歧' : '✅ 一致'}\n` +
+    `📊 5 個 trigger: ${triggerBadges}\n` +
+    `🎯 Cycle transition: turn-around=${transitions.turnAroundDetected ? '✅' : '⚪'} / adjustment-complete=${transitions.adjustmentComplete ? '✅' : '⚪'}\n` +
+    `💰 Trading card: 動態 stop=$${stopStr} (MA5=$${ma5Str} × 0.98) / trailing=$${trailingStr} (MA20=$${ma20Str}) / Kelly=1/8 / 持倉 1-3 個月 / 無 fixed take_profit\n\n`;
+
+  // 8 個 finalAction 各自嘅 hardcoded template
+  switch (final_action) {
+    case 'BUY':
+      return header +
+        `🟢 **應該買入**。M1+zmen 都 UP, 信心 ${confPct}% ≥ 65%, 而且 cycle transition 確認:\n` +
+        `   - ${transitions.turnAroundDetected ? 'turn-around: 兩個 module 同步由弱轉強' : 'adjustment complete: 5 日線 re-test 成功, 上升調整剛完'}\n` +
+        `💡 **點解要買**: 大少 position trading 風格, 唔追高, 等 cycle 確認先入場。持倉 1-3 個月, 中長期食上升趨勢\n` +
+        `🛑 **風控**: 動態 stop $${stopStr} (MA5 × 0.98, 每日 update), 唔好睇死\n` +
+        `📈 **加倉訊號**: 5 日線 re-test 成功 → ADD (跌完再上加多注)\n` +
+        `📉 **撤退訊號**: 穿 1 日 (REDUCE) / 穿 2 日 (SELL) / 5 日線 -2% 跌破 (SELL) / 20 日線跌破 (SELL)`;
+
+    case 'ADD':
+      return header +
+        `🟢 **加倉訊號**! 5 日線 re-test 成功, 油門再踩深啲\n` +
+        `💡 **點解加倉**: position trading 風格, 升勢確認 + re-test 成功 = 健康上升, 加注食多啲趨勢\n` +
+        `⚠️ **注意**: 動態 stop 仍然喺 $${stopStr} (MA5 × 0.98), 加倉後要密切 monitor\n` +
+        `💰 **倉位**: 1/8 (octo), 加倉後總倉位可能 > 100%, 注意 risk management`;
+
+    case 'HOLD':
+      return header +
+        `🟡 **持有現金等加強**。M1+zmen 都 UP 但信心未夠入場 (50-65% 中間區, 或 cycle transition 未確認)\n` +
+        `💡 **點解 hold**: ${confidence < 0.65 ? `信心 ${confPct}% 喺 50-65% 中間區, 等加強到 65% 先入場` : 'cycle transition 未確認, 等 turn-around / adjustment complete trigger'}\n` +
+        `📌 **Monitor**: 一旦 confidence ≥ 65% + transition 確認 → BUY trigger; 跌穿 MA5 × 0.98 → SELL trigger`;
+
+    case 'WAIT':
+      return header +
+        `🟡 **等綠燈**。${state === 'SIDEWAYS' ? 'M1+zmen 都 SIDEWAYS (橫行), 冇明確方向' : state === 'CONFLICT' ? `M1=${m1State} / zmen=${zmenState} 訊號分歧, ${warning || '小心入場'}` : `信心 ${confPct}% < 50% 唔夠入場`}\n` +
+        `💡 **點解 wait**: position trading 唔追高, 訊號要清晰先入場, 強行入場風險高\n` +
+        `📌 **Monitor**: 一旦 SIDEWAYS 變 UP (confidence ≥ 65% + transition 確認) → BUY trigger; 變 DOWN → SELL trigger`;
+
+    case 'REDUCE':
+      return header +
+        `🟠 **收緊啲倉位**! 5 日線穿第 1 日, 跌穿 MA5 × 0.98 即走\n` +
+        `💡 **點解 reduce**: 穿 1 日仲未算轉勢, 但收緊止損等確認。如果回升就 hold 住, 跌穿就 SELL\n` +
+        `📌 **Monitor**: 穿 2 日 → SELL; 跌穿 MA5 × 0.98 → SELL; 回升過 MA5 → HOLD`;
+
+    case 'SELL':
+      return header +
+        `🔴 **急煞車離場**! ${triggers.ma5StopTriggered ? '5 日線 -2% 跌破 (動態 stop 觸發)' : triggers.ma5BreakDay2 ? '5 日線連穿 2 日' : triggers.ma20Break ? '20 日線跌破, 中長期轉弱' : state === 'DOWN' ? 'M1+zmen 都 DOWN, 下跌確認' : 'Stop trigger 觸發'}\n` +
+        `💡 **點解賣**: position trading 風格, 動態 stop 觸發就要走, 唔好猶豫\n` +
+        `📌 **之後點**: 等下一個 cycle 確認 (BUY 條件) 先再入場, 唔好撈底`;
+
+    case 'TRAP':
+      return header +
+        `🟣 **唔好信導航**! M1+zmen 嚴重分歧, confidence 跌到 ${confPct}%\n` +
+        `💡 **點解 TRAP**: 雖然睇落似上升, 但兩個 module 嚴重分歧 = 訊號唔可信, 唔好被誤導\n` +
+        `📌 **Monitor**: 等 M1+zmen 達成共識 (consensus='aligned') 先入場\n` +
+        `💰 **倉位**: 清倉或極低倉, 完全唔好加倉`;
+
+    case 'TRANSITION':
+      return header +
+        `🟣 **調整中, 等 adjustment complete**! M1+zmen 都轉 UP 但 5 日線 re-test 仲未成功\n` +
+        `💡 **點解 TRANSITION**: 上升動力出現咗, 但 adjustment 仲進行緊, 唔好追入, 等完成\n` +
+        `📌 **Monitor**: 5 日線 re-test 成功 → adjustment complete → BUY trigger; 反轉 → SELL trigger\n` +
+        `💰 **倉位**: 持有現金或極低倉, 等調整完`;
+
+    default:
+      return header + `⚫ 未知 action (${final_action}), 請檢查 implementation`;
   }
 }
 

@@ -634,6 +634,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 - [x] 取消訂閱冷卻提示
 - [x] 設計文檔（PROJECT_SPEC.md）
 - [x] **Trade Journal (Stage 1+ MVP + Followup, 2026-08-09 15:04 揀 Full scope)**: 6 個 endpoint (POST/GET/GET-stats/GET-id/PUT/DELETE) + 4 個新 column (actual_exit_date / actual_exit_price / is_correct / updated_at, idempotent migration) + 6 個 metrics (total / correct_count / hit_rate / avg_return_5d / avg_return_20d / best_worst_trade) + 3 forward return bucket 邏輯 (≤5日 / 5-20日 / >20日) + 5 個 pytest + testing page 4 個 button (啱/錯/改/刪) + 統計 panel (6 色, 永遠 full show) + 4 份 spec doc 同步
+- [x] **兩線策略 (Position + Swing, 2026-08-09 19:06 揀 A 開工)**: `decision-engine.ts` 加 `StrategyMode` + `PositionTradingCard` + `decidePosition()` 8 個 finalAction priority chain (TRAP > TRANSITION > SELL > REDUCE > WAIT > HOLD > ADD > BUY) + `cycle-synthesizer.ts` 新 module (M1 60% + zmen 40% 加權綜合 + 5 個 MA trigger: MA5-2%/穿1日/穿2日/MA20跌破/re-test 成功 + 2 個 cycle transition: turnAround/adjustmentComplete) + adapter.mjs 兩線 wrapper (第一線 position 先, 第二線 swing 後, UI 永遠 full show 3 個 cycle synth 結果 + 5 trigger + 2 transition + position trading card) + Position Trading Card 動態 MA5 × 0.98 stop + MA20 trailing + Kelly octo 1/8 + 持倉 1-3 個月 + 唔好追高 + testing page 「交易策略」dropdown (📈 中長線 / 🎯 短炒) + 10 pytest (14 個 Node.js assertion) + 4 份 spec doc 同步 (ARCHITECTURE §15.11) + 永久 rule 收穫: `computeMA(closes, period)` convention 改 `[0] = 今日` (原本寫錯 `[0] = 最舊`)
 
 ### ⏳ 待實現
 - [ ] 數據庫建設
