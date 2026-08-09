@@ -398,6 +398,8 @@ Health check endpoint.
 
 **Response 200:** Updated cache object + `expires_at`
 
+**Note (大少 2026-08-09 12:30 Bug 2 fix, commit `639e6d70`):** 之前 M8 嘅 `applyAdaptiveParamsToSynthesizer()` 唔 apply `params.kellyFraction` 落 `sv.kelly_fraction` (永遠用 M8 內部 default `decisionEngineComputeKelly(standardVerdicts)` base on `max_drawdown_estimate`)。今次 fix 加 `KELLY_NUMERIC_MAP` const + 3 行 override 落 `kelly_fraction` / `kelly_numeric` / `kelly_position`, 即 M9 → M8 apply workflow 真正 work 落 trading card + Kelly chart (4 個 Kelly 顯示位: M7 verdict card + Trading card vol bucket + Kelly Donut chart + Adaptive params box, 全部 override 落 M9 嘅 kellyFraction)。
+
 ---
 
 #### `DELETE /api/adaptive-params/{symbol}`
