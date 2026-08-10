@@ -138,11 +138,11 @@ ROADMAP §1 Stage 排程原本寫 Stage 4 (Entry Timing + Backtest Timeline), �
 
 **Data retention**: 永久保留 (M9 永久 rule)
 
-### 4.2 Trade Journal Records (來源: M10 Trade Journal + Followup)
+### 4.2 Trade Journal Records (來源: J Trade Journal + Followup)
 
 **API endpoint**: `GET /api/trade-journal?symbol=HK.00700&limit=200`
 
-**Response (M10 done)**:
+**Response (J done)**:
 ```json
 {
   "entries": [
@@ -504,7 +504,7 @@ async function generateTimelineInterpretation(
 | Data | 來源 | Retention | 永久 rule source |
 |------|------|-----------|------------------|
 | Forward return history | M9 Back Test | **永久保留** (180 日半衰期 weighted stats) | M9 spec §11, 大少 22:28 |
-| Trade Journal entries | M10 Trade Journal + Followup | **永久保留** (Stage 1+ 永久 rule) | M10 spec §2, 大少 15:04 |
+| Trade Journal entries | J Trade Journal + Followup | **永久保留** (Stage 1+ 永久 rule) | J spec §2, 大少 15:04 |
 | M11 Timeline result | M11 計算 (client-side) | **唔 cache** (每次 caller request 重新計) | Stage 2 v0.1.0 簡化 |
 
 **理由**: M11 result 係 derived data, 兩 source (forward return + trade journal) 都永久保留, 重新計係 O(N) 唔貴。
@@ -530,7 +530,7 @@ async function generateTimelineInterpretation(
 ### 10.4 對接其他 module
 
 - **M9 Back Test**: 數據 source, 永久 cache
-- **M10 Trade Journal**: 數據 source, 大少 mark 啱錯
+- **J Trade Journal**: 數據 source, 大少 mark 啱錯
 - **M8 Decision Engine**: 同 M9 嘅 verdict source, M11 純 read-only display
 - **M12 Risk-Reward** (Stage 2 第四次 focus): M12 可以用 M11 timeline 嘅 stats (hit rate, avg return) 計 risk-reward ratio
 - **Stage 1+ Bayesian tune** (30+ 樣本後): M11 嘅 hit rate 走勢係 tune threshold 嘅 input
@@ -546,7 +546,7 @@ async function generateTimelineInterpretation(
 | **對應 code** | pending (Step 2 寫) |
 | **Workflow** | 大少 7 步永久 rule (spec → code → test → verify → testing page → doc → commit) |
 | **Stage** | Stage 2 第三次 focus (大少 2026-08-09 21:24 重新 plan) |
-| **Depends on** | M9 Back Test (done 2026-08-08) + M10 Trade Journal (done 2026-08-09) |
+| **Depends on** | M9 Back Test (done 2026-08-08) + J Trade Journal (done 2026-08-09) |
 | **Blocks** | M12 Risk-Reward 嘅 risk-reward 計算 (Stage 2 第四次 focus) |
 | **Author** | MiniMax Code + 大少 確認 (4 design decision 00:04 confirm) |
 | **Created** | 2026-08-10 00:08 |
