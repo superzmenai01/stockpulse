@@ -7119,8 +7119,9 @@ function renderModuleStateBar(moduleVerdicts) {
   };
   const items = moduleVerdicts.map((v) => {
     const color = stateColor[v.state] || '#666';
+    const modNameZh = MODULE_NAME_ZH[v.module_id] || v.module_id;
     return `<div style="display:inline-block;margin:2px 4px 2px 0;padding:4px 8px;background:${color}22;color:${color};border:1px solid ${color};border-radius:4px;font-size:11px;">
-      <strong>${v.module_id}</strong>: ${v.state} (${(v.confidence * 100).toFixed(0)}%)
+      <strong>${modNameZh}</strong>: ${v.state} (${(v.confidence * 100).toFixed(0)}%)
     </div>`;
   }).join('');
   return `
@@ -7209,35 +7210,79 @@ function decisionEngineModuleStateColor(state) {
   return '#F39C12';  // SIDEWAYS / TRANSITION / unknown
 }
 
+// 2026-08-10 大少 4 個 fix + RSI 改 raw display — M7 顯示優化
+//   Fix 1: 0% 改中文解說 (Conf 0% → 「未確認」, Exp.Ret 0% → 「持平」)
+//   Fix 2: 全普通話 (module 短版中文名 + column header)
+//   Fix 3: Module 表格對齊 (table-layout: fixed + column width)
+//   Fix 4: TCM 加白話解讀
+//   Fix 5: RSI 改 raw display (denormalize 0~1 → 0~100 + 情緒標籤)
+
+const MODULE_NAME_ZH = {
+  'ma-alignment': '均線',
+  'hl-structure': '峰谷',
+  'trendline': '趨勢線',
+  'indicators': '動能',
+  'volume': '量價',
+  'volatility': '波動',
+};
+
+function fmtPct(value, type) {
+  if (Math.abs(value) < 0.0001) {
+    if (type === 'conf') return '未確認';
+    if (type === 'expRet') return '持平';
+    return '0%';
+  }
+  return `${(value * 100).toFixed(type === 'expRet' ? 2 : 0)}%`;
+}
+
+function rsiDenormalize(normalizedRsi) {
+  // std-verdict.ts computeSentiment6D: normalized = (raw - 50) / 50
+  // 所以 raw = normalized * 50 + 50
+  const raw = normalizedRsi * 50 + 50;
+  const clamped = Math.max(0, Math.min(100, raw));
+  const label = clamped > 70 ? '超買' : clamped < 30 ? '超賣' : '中性';
+  return { value: clamped.toFixed(0), label };
+}
+
+function tcmAlignColor(alignment) {
+  if (alignment > 0) return '#26BA75';
+  if (alignment < 0) return '#EE5151';
+  return '#F39C12';
+}
+
 export function renderDecisionEngineResult(verdict) {
   if (!verdict) return '<div class="result-error">無 verdict</div>';
 
   const { ssi_score, ssi_breakdown, tcm_matrix, alignment_score, grade, grade_score, grade_reason, kelly_fraction, kelly_position, module_verdicts } = verdict;
 
-  // 6 個 module 嘅 breakdown
+  // 6 個 module 嘅 breakdown (大少 2026-08-10 4 個 fix: 中文名 + 0% 改中文 + table 對齊 + RSI raw display)
   const moduleRows = (module_verdicts || []).map(mv => {
     const color = decisionEngineModuleStateColor(mv.state);
+    const modNameZh = MODULE_NAME_ZH[mv.module_id] || mv.module_id;
+    const rsi = rsiDenormalize(mv.sentiment_6d?.rsi || 0);
     return `
       <tr>
-        <td>${mv.module_id}</td>
-        <td><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
-        <td>${(mv.confidence * 100).toFixed(0)}%</td>
-        <td>${(mv.base_weight * 100).toFixed(0)}%</td>
-        <td>${(mv.expected_return * 100).toFixed(2)}%</td>
-        <td>${(mv.max_drawdown_estimate * 100).toFixed(1)}%</td>
-        <td>${(mv.sentiment_6d.rsi * 100).toFixed(0)}</td>
+        <td style="text-align:left;padding:6px 8px;">${modNameZh}</td>
+        <td style="text-align:center;padding:6px 8px;"><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
+        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.confidence, 'conf')}</td>
+        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.base_weight, 'weight')}</td>
+        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.expected_return, 'expRet')}</td>
+        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.max_drawdown_estimate, 'maxDD')}</td>
+        <td style="text-align:right;padding:6px 8px;">${rsi.value} <span style="color:#888;font-size:11px;">(${rsi.label})</span></td>
       </tr>
     `;
   }).join('');
 
-  // TCM 3 對 pair
+  // TCM 3 對 pair (大少 2026-08-10 4 個 fix: 中文 module 名 + table 對齊)
   const tcmRows = (tcm_matrix || []).map(p => {
-    const alignColor = p.alignment > 0 ? '#26BA75' : p.alignment < 0 ? '#EE5151' : '#F39C12';
+    const alignColor = tcmAlignColor(p.alignment);
+    const pair0Zh = MODULE_NAME_ZH[p.pair[0]] || p.pair[0];
+    const pair1Zh = MODULE_NAME_ZH[p.pair[1]] || p.pair[1];
     return `
       <tr>
-        <td>${p.pair[0]} ↔ ${p.pair[1]}</td>
-        <td><span style="color:${alignColor}">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
-        <td>${(p.trap_penalty * 100).toFixed(0)}%</td>
+        <td style="text-align:left;padding:6px 8px;">${pair0Zh} ↔ ${pair1Zh}</td>
+        <td style="text-align:right;padding:6px 8px;"><span style="color:${alignColor};font-weight:600;">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
+        <td style="text-align:right;padding:6px 8px;">${(p.trap_penalty * 100).toFixed(0)}%</td>
       </tr>
     `;
   }).join('');
@@ -7276,40 +7321,49 @@ export function renderDecisionEngineResult(verdict) {
         </div>
       </div>
 
-      <!-- 6 個 modules 嘅 breakdown -->
-      <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個 Modules 嘅 Standard Verdict</h4>
-      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+      <!-- 6 個 modules 嘅 breakdown (大少 2026-08-10 4 個 fix: 中文 header + table 對齊) -->
+      <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個模組嘅標準判決</h4>
+      <table class="data-summary m7-verdict-table" style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th style="text-align:left;padding:8px;">Module</th>
-            <th style="text-align:left;padding:8px;">State</th>
-            <th style="text-align:right;padding:8px;">Conf</th>
-            <th style="text-align:right;padding:8px;">Weight</th>
-            <th style="text-align:right;padding:8px;">Exp.Ret</th>
-            <th style="text-align:right;padding:8px;">MaxDD</th>
-            <th style="text-align:right;padding:8px;">RSI</th>
+            <th style="text-align:left;padding:8px;width:18%;">模組</th>
+            <th style="text-align:center;padding:8px;width:15%;">方向</th>
+            <th style="text-align:right;padding:8px;width:12%;">信心</th>
+            <th style="text-align:right;padding:8px;width:11%;">比重</th>
+            <th style="text-align:right;padding:8px;width:16%;">預期回報</th>
+            <th style="text-align:right;padding:8px;width:13%;">最大回撤</th>
+            <th style="text-align:right;padding:8px;width:15%;">情緒指數</th>
           </tr>
         </thead>
         <tbody>${moduleRows}</tbody>
       </table>
 
-      <!-- TCM 3 對 pair -->
-      <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對 Pair)</h4>
-      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+      <!-- TCM 3 對 pair (大少 2026-08-10 4 個 fix: 加白話解讀 + 中文 header) -->
+      <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對配對)</h4>
+      <div class="tcm-explanation" style="background:#f9f9f9;padding:12px;border-radius:6px;margin-bottom:12px;font-size:13px;color:#333;line-height:1.6;">
+        <strong>📖 點樣睇 TCM:</strong>
+        <ul style="margin:8px 0 0 0;padding-left:20px;">
+          <li><strong style="color:#26BA75;">共識度 +1.0</strong> = 兩個老師睇法完全一致</li>
+          <li><strong style="color:#F39C12;">共識度 0.0</strong> = 冇共識,各睇各的</li>
+          <li><strong style="color:#EE5151;">共識度 -1.0</strong> = 完全相反,矛盾訊號</li>
+          <li><strong>矛盾扣分</strong> = 兩個老師矛盾時要扣幾多 % 信心(越高越要小心)</li>
+        </ul>
+      </div>
+      <table class="data-summary m7-tcm-table" style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th style="text-align:left;padding:8px;">Pair</th>
-            <th style="text-align:right;padding:8px;">Alignment</th>
-            <th style="text-align:right;padding:8px;">Trap Penalty</th>
+            <th style="text-align:left;padding:8px;width:50%;">配對</th>
+            <th style="text-align:right;padding:8px;width:25%;">共識度</th>
+            <th style="text-align:right;padding:8px;width:25%;">矛盾扣分</th>
           </tr>
         </thead>
         <tbody>${tcmRows}</tbody>
       </table>
 
-      <!-- Sprint 1 提示: M8 finalAction + trading card 留俾 Sprint 2 -->
+      <!-- Sprint 1 提示: M8 finalAction + trading card 留俾 Sprint 2 (大少 2026-08-10 4 個 fix: Sprint 1/2 → 第一階段/第二階段) -->
       <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-        <strong>📍 Sprint 1 範圍:</strong> 終極綜合判斷引擎 (M7 Synthesizer) 已上線<br>
-        <strong>🚧 Sprint 2 範圍:</strong> M8 Decision Engine 嘅 finalAction 8 個 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + trading card + 5 個 adaptive params runtime auto-calibrate + L2 JSON cache
+        <strong>📍 第一階段範圍:</strong> 終極綜合判斷引擎 (M7 Synthesizer) 已上線<br>
+        <strong>🚧 第二階段範圍:</strong> M8 決策引擎嘅最終動作 8 個 (買入/加注/持有/減注/賣出/再睇/陷阱/轉勢) + 交易範圍 + 5 個自適應參數自動校準 + 本機快取
       </div>
     </div>
   `;
