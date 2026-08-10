@@ -7280,7 +7280,7 @@ function expRetColor(value) {
 
 // 全部字詞嘅 hover 解讀對照表(大少 trigger「越多越好」,所以加到盡)
 const TOOLTIPS = {
-  module: '6 個老師之一,各自睇股票唔同方面:均線=平均價線 / 峰谷=高低波型 / 趨勢線=撐位壓位 / 動能=升跌力度 / 量價=錢跟股價 / 波動=跳幾勁',
+  module: '6 個演算法之一,各自睇股票唔同方面:均線=平均價線 / 峰谷=高低波型 / 趨勢線=撐位壓位 / 動能=升跌力度 / 量價=錢跟股價 / 波動=跳幾勁',
   state: '個股價大方向(揸車比喻:🟢 上升=油門 / 🟡 橫行=塞車 / 🔴 下跌=落斜 / 🟣 轉勢=要轉彎)',
   state_up: '🟢 個股價大方向向上(揸車比喻=油門踩緊,一望無際)',
   state_down: '🔴 個股價大方向向下(揸車比喻=落斜路踩迫力)',
@@ -7288,7 +7288,7 @@ const TOOLTIPS = {
   state_transition: '🟣 7 日內由升轉跌 或 由跌轉升(揸車比喻=前面要轉彎,收油準備)',
   state_trap: '🟣 假突破陷阱,虛漲訊號,唔好信',
   conf: '0~100% 信心指數(0=冇 evidence / 70+=強可參考 / 50-70=中 / <50=弱唔好信)',
-  weight: '校長分俾呢個老師嘅重要性(6 個加埋=100%,過往準=高,唔係 1/6 平均)',
+  weight: 'Synthesizer分俾呢個演算法嘅重要性(6 個加埋=100%,過往準=高,唔係 1/6 平均)',
   expRet: '預期 hold 1 個月平均賺/蝕幾多%(正=賺/0=持平/負=蝕,唔等於一定,係平均估計)',
   maxDD: '最壞情況 1 個月內預期跌幾多%(5%=穩定大股/10%=中等/20%=高波動,用嚟 set 止蝕位)',
   rsi: 'RSI 0-100 情緒指標(>70 超買見頂/30-70 中性/<30 超賣見底)',
@@ -7298,17 +7298,17 @@ const TOOLTIPS = {
   unconfirmed: '0 個 evidence 確認(默認橫行)。唔等於「100% 唔會」,係「冇 data」',
   flat: 'SIDEWAYS 預期 0% return(唔賺唔蝕)',
   grade: '學校評分制 8 級(A+ = 頂級 / A = 優 / B+ = 良 / B = 可 / C+ = 普通 / C = 弱 / D = 差 / F = 失敗)',
-  ssi_label: 'Strategic Strength Index 戰略強度指數(0-100,3 個戰略老師共識強度)',
-  ssi_consistency: '戰略組 3 個老師(均線+峰谷+趨勢線)睇法有幾一致(100%=3 個都話一樣,0%=3 個各講各的)',
-  ssi_confidence: '戰略組 3 個老師平均信心(0-100%,高=3 個都肯定,低=3 個都唔太肯定)',
+  ssi_label: 'Strategic Strength Index 戰略強度指數(0-100,3 個戰略演算法共識強度)',
+  ssi_consistency: '戰略組 3 個演算法(均線+峰谷+趨勢線)睇法有幾一致(100%=3 個都話一樣,0%=3 個各講各的)',
+  ssi_confidence: '戰略組 3 個演算法平均信心(0-100%,高=3 個都肯定,低=3 個都唔太肯定)',
   ssi_coverage: '戰略組規則覆蓋率(0-100%,高=大部分規則都觸發,低=大部分規則冇觸發)',
   alignment: '戰略組(大方向)同戰術組(短線)嘅共識程度(1.0=完全對齊/0.0=冇共識/矛盾=唔對齊)',
   kelly: '凱利公式計「呢隻股票應該出幾多%資金」(半注50%/四分一25%/八分一12.5%,波動大=細注)',
-  tcm: 'Tactical Confirmation Matrix 戰術交叉驗證:睇 3 對老師之間嘅共識程度',
-  tcm_pair: '2 個老師嘅配對(共識度計算對象):均線↔趨勢線 / 峰谷↔量價 / 動能↔波動',
-  alignment_score: '2 個老師共識度(-1.0 到 +1.0,+1.0=完全一致/0=冇共識/-1.0=完全相反)',
-  trap_penalty: '2 個老師矛盾時要扣幾多 % 信心(0-100%,越高越要小心)',
-  verdict_title: 'M7 Synthesizer 嘅最終評分 = 6 個老師加埋,出一個 Grade + Kelly 倉位',
+  tcm: 'Tactical Confirmation Matrix 戰術交叉驗證:睇 3 對演算法之間嘅共識程度',
+  tcm_pair: '2 個演算法嘅配對(共識度計算對象):均線↔趨勢線 / 峰谷↔量價 / 動能↔波動',
+  alignment_score: '2 個演算法共識度(-1.0 到 +1.0,+1.0=完全一致/0=冇共識/-1.0=完全相反)',
+  trap_penalty: '2 個演算法矛盾時要扣幾多 % 信心(0-100%,越高越要小心)',
+  verdict_title: 'M7 Synthesizer 嘅最終評分 = 6 個演算法加埋,出一個 Grade + Kelly 倉位',
   sprint1_scope: '第一階段已上線範圍:終極綜合判斷(M7 Synthesizer)',
   sprint2_scope: '第二階段範圍:M8 決策引擎嘅最終動作 8 個 + 交易範圍 + 自適應參數 + 本機快取',
   run_button: '撳呢個掣就會用選定嘅算法 + 參數跑一次',
@@ -7456,10 +7456,10 @@ export function renderDecisionEngineResult(verdict) {
       <div class="tcm-explanation" style="background:#f9f9f9;padding:24px 28px;border-radius:10px;margin-bottom:20px;font-size:16px;color:#222;line-height:1.8;border-left:5px solid #1890ff;">
         <strong style="font-size:17px;">📖 點樣睇 TCM:</strong>
         <ul style="margin:8px 0 0 0;padding-left:20px;">
-          <li><strong style="color:#26BA75;">共識度 +1.0</strong> = 兩個老師睇法完全一致</li>
+          <li><strong style="color:#26BA75;">共識度 +1.0</strong> = 兩個演算法睇法完全一致</li>
           <li><strong style="color:#F39C12;">共識度 0.0</strong> = 冇共識,各睇各的</li>
           <li><strong style="color:#EE5151;">共識度 -1.0</strong> = 完全相反,矛盾訊號</li>
-          <li><strong>矛盾扣分</strong> = 兩個老師矛盾時要扣幾多 % 信心(越高越要小心)</li>
+          <li><strong>矛盾扣分</strong> = 兩個演算法矛盾時要扣幾多 % 信心(越高越要小心)</li>
         </ul>
       </div>
       <table class="data-summary m7-tcm-table" style="width:100%;border-collapse:collapse;font-size:14px;table-layout:auto;word-break:keep-all;">

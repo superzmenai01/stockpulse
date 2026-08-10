@@ -61,7 +61,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 21:35 M7 UI 顯示優化 v3: ALGO_CACHE_BUST = '3.0.0' (自訂 CSS tooltip 即時顯示 + 大字 14px + responsive auto layout)
 // 大少 2026-08-10 22:00 M7 UI 顯示優化 v5: ALGO_CACHE_BUST = '3.2.0' (6 模組 table 對齊 + TCM 解讀 box 1.5x 大 + TCM 配對 table column 加闊)
 // 大少 2026-08-10 22:15 M7 UI 顯示優化 v6: ALGO_CACHE_BUST = '3.3.0' (TCM 配對 table column 平 min-width 150/150/150 1:1:1 對齊)
-const ALGO_CACHE_BUST = '3.3.0';
+// 大少 2026-08-10 22:50 M7 稱呼改: ALGO_CACHE_BUST = '3.4.0' (「校長/老師」→ 「演算法/Synthesizer」更專業)
+const ALGO_CACHE_BUST = '3.4.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

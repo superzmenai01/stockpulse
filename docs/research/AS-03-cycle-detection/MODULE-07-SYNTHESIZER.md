@@ -25,7 +25,7 @@
 - M1 均線 / M2 峰谷結構 / M3 趨勢線 → **大方向 (戰略層)**
 - M4 動能背馳 / M5 量价 / M6 波動率 → **短線操作 (戰術層)**
 
-呢個 module = **M7 評卷老師** (校長):
+呢個 module = **M7 綜合演算法 (Synthesizer)**:
 - **M7 (Synthesizer, 本 doc)**: 將 6 個 module 嘅 verdict 翻譯做 A+~F 評級 + 數學最優倉位 (凱利公式)
 - **M8 (Decision Engine, `MODULE-08-DECISION-ENGINE.md`)**: 喺 M7 評級之上加決策紀律 — 何時加倉/減倉/食胡、信號新舊、市場波動大嘅守則 + 交易指令卡
 
