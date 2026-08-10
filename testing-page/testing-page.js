@@ -62,7 +62,9 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 22:00 M7 UI 顯示優化 v5: ALGO_CACHE_BUST = '3.2.0' (6 模組 table 對齊 + TCM 解讀 box 1.5x 大 + TCM 配對 table column 加闊)
 // 大少 2026-08-10 22:15 M7 UI 顯示優化 v6: ALGO_CACHE_BUST = '3.3.0' (TCM 配對 table column 平 min-width 150/150/150 1:1:1 對齊)
 // 大少 2026-08-10 22:50 M7 稱呼改: ALGO_CACHE_BUST = '3.4.0' (「校長/老師」→ 「演算法/Synthesizer」更專業)
-const ALGO_CACHE_BUST = '3.4.0';
+// 大少 2026-08-10 23:00 M8 v2 中文化: ALGO_CACHE_BUST = '3.5.0' (Standard Verdict 中文化 + TCM 中文 + 短期走勢對齊 + trading card 加現價 + popup tooltip)
+// 大少 2026-08-10 23:10 M8 v2 fix: ALGO_CACHE_BUST = '3.5.1' (skip testing-page.js latest-price-column, 避免 trading card 6 fields 重複)
+const ALGO_CACHE_BUST = '3.5.1';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1323,9 +1325,11 @@ function formatPrice(price, currency) {
 }
 
 function updatePriceColumn() {
-  // 搵 trading card 嘅「🎯 入場區間」 div, 然後攞 parent grid container
-  // 注意: entryZoneDiv 嘅 textContent 包哂所有 child 嘅 text (e.g. "🎯 入場區間 (±1.5%)$466.83 - $490.77"),
-  //       所以要用 firstChild.textContent 拎第一個 text node (即係 label 本身)
+  // 大少 2026-08-10 v2: M8 verdict card trading card 已經有「現價」field (entry_zone mid 即使休市都 show)
+  //   latest-price-column (⏱️ real-time) 暫時 skip 避免重複
+  //   將來如果用得着 real-time kline polling, 可以再 uncomment 下面邏輯
+  return;
+  /* 大少 2026-08-10 v2 disabled — 改用 M8 verdict card 內建現價 field
   const entryZoneDiv = Array.from(document.querySelectorAll('div')).find(el => {
     if (!el.firstChild || el.firstChild.nodeType !== 3) return false;
     return el.firstChild.textContent.trim() === '🎯 入場區間 (±1.5%)';
@@ -1367,6 +1371,7 @@ function updatePriceColumn() {
   if (marketStatusEl) {
     marketStatusEl.textContent = realTimePriceState.isStale ? ' (休市)' : '';
   }
+  */
 }
 
 // ===== Start =====

@@ -6905,40 +6905,54 @@ function finalActionShortLabel(action) {
  */
 function renderForecastTable(forecasts) {
   if (!forecasts || forecasts.length === 0) {
-    return '<div style="padding:12px;background:#fff3cd;border-radius:6px;color:#856404;">9 個 scenarios 仲未計算</div>';
+    return '<div style="padding:12px;background:#fff3cd;border-radius:6px;color:#856404;">9 個情境仲未計算</div>';
   }
 
+  // 大少 2026-08-10 v2: 加 popup tooltip + 加大 padding + min-width 對齊 column header center
+  const FC_TOOLTIPS = {
+    row_label: '時段: 5/10/20 日, 線性 scaling 預期回報跟最大回撤',
+    optimistic: '🟢 樂觀情境 (25% 概率): 預期回報 × 1.5 × (日數/5),最大回撤 × 0.5',
+    baseline: '🟡 基準情境 (50% 概率): 預期回報 × 1.0 × (日數/5),最大回撤 × 0.7',
+    pessimistic: '🔴 悲觀情境 (25% 概率): -最大回撤 × 0.5 × (日數/5),最大回撤 × 1.0',
+    ret_pct: '預期回報: 正=賺/負=蝕 (顏色跟 sign), 唔係預測,只係可能範圍',
+    md_pct: '最大回撤 (MD): 最壞情況預期跌幾多 %,用嚟 set 止蝕位',
+  };
   const scenarios = [
     { key: 'optimistic', label: '🟢 樂觀', color: '#26BA75', prob: '25%' },
     { key: 'baseline', label: '🟡 基準', color: '#F39C12', prob: '50%' },
     { key: 'pessimistic', label: '🔴 悲觀', color: '#EE5151', prob: '25%' },
   ];
+  const scenarioTooltip = {
+    optimistic: FC_TOOLTIPS.optimistic,
+    baseline: FC_TOOLTIPS.baseline,
+    pessimistic: FC_TOOLTIPS.pessimistic,
+  };
   const timeframes = [5, 10, 20];
 
-  let html = '<table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">';
-  // Header: Timeframe | Optimistic | Baseline | Pessimistic
+  let html = '<table class="data-summary" style="width:100%;border-collapse:collapse;font-size:14px;table-layout:auto;word-break:keep-all;">';
+  // Header: 日數/時段 | 樂觀 | 基準 | 悲觀
   html += '<thead><tr style="background:#f0f0f0;">';
-  html += '<th style="text-align:left;padding:8px;">日數 / 情境</th>';
+  html += `<th class="m8-verdict-tooltip" data-help="${FC_TOOLTIPS.row_label}" style="text-align:left;padding:10px 14px;min-width:90px;white-space:nowrap;vertical-align:middle;">日數 / 情境</th>`;
   for (const sc of scenarios) {
-    html += `<th style="text-align:right;padding:8px;">${sc.label} <span style="color:#999;font-weight:400;">(${sc.prob})</span></th>`;
+    html += `<th class="m8-verdict-tooltip" data-help="${scenarioTooltip[sc.key]}" style="text-align:right;padding:10px 14px;min-width:140px;white-space:nowrap;vertical-align:middle;">${sc.label} <span style="color:#999;font-weight:400;">(${sc.prob})</span></th>`;
   }
   html += '</tr></thead><tbody>';
 
   for (const days of timeframes) {
-    html += '<tr>';
-    html += `<td style="padding:8px;font-weight:600;">${days} 日</td>`;
+    html += '<tr style="vertical-align:middle;">';
+    html += `<td class="m8-verdict-tooltip" data-help="${FC_TOOLTIPS.row_label}" style="padding:10px 14px;font-weight:600;white-space:nowrap;min-width:90px;">${days} 日</td>`;
     for (const sc of scenarios) {
       const f = forecasts.find(x => x.timeframe_days === days && x.scenario === sc.key);
       if (f) {
         const retColor = f.expected_return >= 0 ? '#26BA75' : '#EE5151';
         const retSign = f.expected_return >= 0 ? '+' : '';
         const mdPct = (f.max_drawdown * 100).toFixed(1);
-        html += `<td style="text-align:right;padding:8px;">
-          <div style="color:${retColor};font-weight:600;">${retSign}${(f.expected_return * 100).toFixed(2)}%</div>
-          <div style="color:#999;font-size:11px;">MD ${mdPct}%</div>
+        html += `<td style="text-align:right;padding:10px 14px;min-width:140px;vertical-align:middle;">
+          <div class="m8-verdict-tooltip" data-help="${FC_TOOLTIPS.ret_pct}" style="color:${retColor};font-weight:700;font-size:15px;">${retSign}${(f.expected_return * 100).toFixed(2)}%</div>
+          <div class="m8-verdict-tooltip" data-help="${FC_TOOLTIPS.md_pct}" style="color:#999;font-size:11px;margin-top:2px;">MD ${mdPct}%</div>
         </td>`;
       } else {
-        html += '<td style="text-align:right;padding:8px;color:#999;">—</td>';
+        html += '<td style="text-align:right;padding:10px 14px;color:#999;min-width:140px;">—</td>';
       }
     }
     html += '</tr>';
@@ -7145,6 +7159,15 @@ function renderAdaptiveParams(params, cacheInfo = null) {
     return '<div style="padding:12px;background:#fff3cd;border-radius:6px;color:#856404;">Adaptive params 仲未 calibrate</div>';
   }
   const { ssiWeights, rsiWeight, kellyFraction, markowitzCorr, hurstThresholds } = params;
+  // 大少 2026-08-10 v2: popup tooltip + 中文化 Hurst + 馬可維茨
+  const AP_TOOLTIPS = {
+    ssi_weights: 'SSI 戰略層權重: 用 R² 算邊條線最近期數據貼得最貼, 愈貼畀多啲權重。MA = 均線/HL = 峰谷/TL = 趨勢線',
+    rsi_weight: 'RSI 情緒權重: 6 維情緒平均 (RSI / %B / 乖離率 / 波動偏度 / 換手率 / 連漲跌加速度)',
+    kelly: 'Kelly 倉位分數: 跟 ATR% 自動切 (<2% = half 半倉, 2-5% = quarter 四分一, ≥5% = octo 八分一)',
+    hurst: 'Hurst 指數閾值: Persistent (持續) = >0.6 強趨勢, Reverting (反轉) = <0.4 強反轉, 中間就 walk 隨機',
+    markowitz: '馬可維茨相關係數: 3 個時段 (日/週/月) Pearson 相關性, 衡量分散風險, 愈接近 0 愈分散',
+    ap_title: '5 個 Adaptive Params: 跟股票特性 auto-calibrate 嘅參數, 純 math (R² / ATR / Pearson / Hurst), 唔用 AI / LLM',
+  };
   // 2.6: cache status (last_calibrated + age + valid)
   const cacheStatus = cacheInfo
     ? `<div style="font-size:12px;color:#666;margin-bottom:8px;">
@@ -7154,35 +7177,38 @@ function renderAdaptiveParams(params, cacheInfo = null) {
         <button id="recalibrate-btn" onclick="window.__recalibrateAdaptiveParams && window.__recalibrateAdaptiveParams()" style="background:#1890ff;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;">🔄 重新校準</button>
       </div>`
     : '<div style="font-size:12px;color:#666;margin-bottom:8px;">🧮 R² / ATR / Pearson / Hurst — 唔用 AI, 唔用 LLM</div>';
+  // Hurst 顏色: 持續 >0.6 綠, 反轉 <0.4 紅
+  const hurstPColor = hurstThresholds.persistent >= 0.6 ? '#26BA75' : hurstThresholds.persistent <= 0.4 ? '#EE5151' : '#F39C12';
+  const hurstRColor = hurstThresholds.reverting <= 0.4 ? '#26BA75' : hurstThresholds.reverting >= 0.6 ? '#EE5151' : '#F39C12';
   return `
-    <h4 style="margin-top:24px;margin-bottom:4px;">⚙️ 5 個 Adaptive Params (2.5 — 自動校準, 純 math)</h4>
+    <h4 class="m8-verdict-tooltip" data-help="${AP_TOOLTIPS.ap_title}" style="margin-top:24px;margin-bottom:4px;">⚙️ 5 個 Adaptive Params (2.5 — 自動校準, 純 math)</h4>
     ${cacheStatus}
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
-      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+      <div class="adaptive-param-card m8-verdict-tooltip" data-help="${AP_TOOLTIPS.ssi_weights}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">📐 SSI 戰略層權重 (R² normalized)</div>
         <div style="font-size:13px;margin-top:4px;">
-          MA: <strong>${(ssiWeights.ma * 100).toFixed(1)}%</strong> &nbsp;|&nbsp;
-          HL: <strong>${(ssiWeights.hl * 100).toFixed(1)}%</strong> &nbsp;|&nbsp;
-          TL: <strong>${(ssiWeights.trendline * 100).toFixed(1)}%</strong>
+          均線 MA: <strong>${(ssiWeights.ma * 100).toFixed(1)}%</strong> &nbsp;|&nbsp;
+          峰谷 HL: <strong>${(ssiWeights.hl * 100).toFixed(1)}%</strong> &nbsp;|&nbsp;
+          趨勢線 TL: <strong>${(ssiWeights.trendline * 100).toFixed(1)}%</strong>
         </div>
       </div>
-      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-        <div style="font-size:12px;color:#666;">💭 RSI 情緒權重 (sentiment 6D)</div>
+      <div class="adaptive-param-card m8-verdict-tooltip" data-help="${AP_TOOLTIPS.rsi_weight}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">💭 RSI 情緒權重 (6 維情緒平均)</div>
         <div style="font-size:18px;font-weight:700;margin-top:2px;">${(rsiWeight * 100).toFixed(0)}%</div>
       </div>
-      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+      <div class="adaptive-param-card m8-verdict-tooltip" data-help="${AP_TOOLTIPS.kelly}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">💰 Kelly 倉位分數 (跟 ATR%)</div>
         <div style="font-size:18px;font-weight:700;margin-top:2px;">${kellyFraction}</div>
       </div>
-      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-        <div style="font-size:12px;color:#666;">📊 Hurst Thresholds</div>
+      <div class="adaptive-param-card m8-verdict-tooltip" data-help="${AP_TOOLTIPS.hurst}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">📈 Hurst 持續/反轉閾值</div>
         <div style="font-size:13px;margin-top:4px;">
-          Persistent: <strong>${hurstThresholds.persistent.toFixed(2)}</strong> &nbsp;|&nbsp;
-          Reverting: <strong>${hurstThresholds.reverting.toFixed(2)}</strong>
+          持續 Persistent: <strong style="color:${hurstPColor};">${hurstThresholds.persistent.toFixed(2)}</strong> &nbsp;|&nbsp;
+          反轉 Reverting: <strong style="color:${hurstRColor};">${hurstThresholds.reverting.toFixed(2)}</strong>
         </div>
       </div>
-      <div class="adaptive-param-card" style="background:#f9f9f9;border-radius:8px;padding:12px;grid-column:span 2;">
-        <div style="font-size:12px;color:#666;">🔗 馬可維茨相關係數 (Pearson correlation 3 對)</div>
+      <div class="adaptive-param-card m8-verdict-tooltip" data-help="${AP_TOOLTIPS.markowitz}" style="background:#f9f9f9;border-radius:8px;padding:12px;grid-column:span 2;">
+        <div style="font-size:12px;color:#666;">🔗 馬可維茨相關係數 (3 個時段 Pearson 相關性)</div>
         <div style="font-size:13px;margin-top:4px;">
           日-週: <strong>${markowitzCorr.dailyWeekly.toFixed(2)}</strong> &nbsp;|&nbsp;
           日-月: <strong>${markowitzCorr.dailyMonthly.toFixed(2)}</strong> &nbsp;|&nbsp;
@@ -7748,35 +7774,73 @@ function renderSwingDecisionEngine(verdict) {
   const gradeColor = decisionEngineGradeColor(grade);
   const kellyLabel = decisionEngineKellyLabel(kelly_fraction);
 
-  // 6 個 module 嘅 breakdown
+  // 6 個 module 嘅 breakdown (大少 2026-08-10 v2: 中文化 + popup tooltip + 顏色 + 對齊 + RSI raw display)
+  const M8_TOOLTIPS = {
+    module: '6 個演算法模組之一,各自睇股票唔同方面:均線/峰谷/趨勢線/動能/量價/波動',
+    state: '個股價大方向(揸車比喻:🟢 上升=油門 / 🟡 橫行=塞車 / 🔴 下跌=落斜 / 🟣 轉勢=要轉彎)',
+    conf: '0~100% 信心指數(0=冇 evidence / 70+=強可參考 / 50-70=中 / <50=弱唔好信)',
+    weight: 'Synthesizer 分俾呢個演算法嘅權重(6 個加埋=100%,過往準=高,唔係 1/6 平均)',
+    expRet: '預期 hold 1 個月平均賺/蝕幾多%(正=賺/0=持平/負=蝕,唔等於一定,係平均估計)',
+    maxDD: '最壞情況 1 個月內預期跌幾多%(5%=穩定大股/10%=中等/20%=高波動,用嚟 set 止蝕位)',
+    rsi: 'RSI 0-100 情緒指標(>70 超買見頂/30-70 中性/<30 超賣見底)',
+    tcm: 'Tactical Confirmation Matrix 戰術交叉驗證:睇 3 對演算法之間嘅共識程度',
+    tcm_pair: '2 個演算法嘅配對(共識度計算對象):均線↔趨勢線 / 峰谷↔量價 / 動能↔波動',
+    alignment_score: '2 個演算法共識度(-1.0 到 +1.0,+1.0=完全一致/0=冇共識/-1.0=完全相反)',
+    trap_penalty: '2 個演算法矛盾時要扣幾多 % 信心(0-100%,越高越要小心)',
+    module_table_title: 'M8 verdict card 嘅模組判決 = M7 嘅 6 個演算法結果(同 M7 對齊格式)',
+  };
+  const M8_stateTooltipMap = {
+    UP: '🟢 個股價大方向向上(揸車比喻=油門踩緊,一望無際)',
+    DOWN: '🔴 個股價大方向向下(揸車比喻=落斜,踩緊迫力)',
+    SIDEWAYS: '🟡 個股價大方向橫行(揸車比喻=塞車,等綠燈)',
+    TRANSITION: '🟣 個股價大方向轉勢中(揸車比喻=要轉彎,收油準備)',
+    TRAP: '🟣 假突破陷阱,虛漲訊號,唔好信',
+  };
+  const M8_expRetColor = (v) => v > 0 ? '#26BA75' : v < 0 ? '#EE5151' : '#999';
+  const M8_confColor = (v) => v >= 0.7 ? '#26BA75' : v >= 0.5 ? '#F39C12' : '#EE5151';
+  const M8_rsiInfo = (r) => {
+    // r = sentiment_6d.rsi (normalized 0-1, M8 入面) → raw 0-100
+    const raw = Math.max(0, Math.min(100, Math.round((r + 1) * 50)));
+    if (raw >= 70) return { value: raw, label: '超買', color: '#EE5151' };
+    if (raw <= 30) return { value: raw, label: '超賣', color: '#26BA75' };
+    return { value: raw, label: '中性', color: '#F39C12' };
+  };
+
   const moduleRows = (module_verdicts || []).map(mv => {
     const color = decisionEngineModuleStateColor(mv.state);
+    const modNameZh = MODULE_NAME_ZH[mv.module_id] || mv.module_id;
+    const rsi = M8_rsiInfo(mv.sentiment_6d?.rsi || 0);
+    const expColor = M8_expRetColor(mv.expected_return);
+    const confColor = M8_confColor(mv.confidence);
     return `
-      <tr>
-        <td>${mv.module_id}</td>
-        <td><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
-        <td>${(mv.confidence * 100).toFixed(0)}%</td>
-        <td>${(mv.base_weight * 100).toFixed(0)}%</td>
-        <td>${(mv.expected_return * 100).toFixed(2)}%</td>
-        <td>${(mv.max_drawdown_estimate * 100).toFixed(1)}%</td>
-        <td>${(mv.sentiment_6d.rsi * 100).toFixed(0)}</td>
+      <tr style="vertical-align:middle;">
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.module}" style="text-align:left;padding:10px 12px;white-space:nowrap;min-width:80px;font-weight:500;">${modNameZh}</td>
+        <td class="m8-verdict-tooltip" data-help="${M8_stateTooltipMap[mv.state] || M8_TOOLTIPS.state}" style="text-align:center;padding:10px 12px;white-space:nowrap;min-width:80px;vertical-align:middle;"><span class="state-pill" style="display:inline-block;min-width:64px;text-align:center;background:${color}22;color:${color};border:1px solid ${color};border-radius:5px;padding:5px 10px;font-weight:600;">${decisionEngineStateLabel(mv.state)}</span></td>
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.conf}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:70px;color:${confColor};font-weight:600;">${(mv.confidence * 100).toFixed(0)}%</td>
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.weight}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:70px;">${(mv.base_weight * 100).toFixed(0)}%</td>
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.expRet}" style="text-align:right;padding:10px 12px;color:${expColor};font-weight:600;white-space:nowrap;min-width:90px;">${(mv.expected_return * 100).toFixed(2)}%</td>
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.maxDD}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:80px;">${(mv.max_drawdown_estimate * 100).toFixed(1)}%</td>
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.rsi}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:110px;">${rsi.value} <span style="color:${rsi.color};font-size:13px;font-weight:600;">(${rsi.label})</span></td>
       </tr>
     `;
   }).join('');
 
-  // TCM 3 對 pair
+  // TCM 3 對 pair (大少 2026-08-10 v2: 中文 pair 名 + popup tooltip + 顏色 + 對齊 1:1:1)
   const tcmRows = (tcm_matrix || []).map(p => {
     const alignColor = p.alignment > 0 ? '#26BA75' : p.alignment < 0 ? '#EE5151' : '#F39C12';
+    const pair0Zh = MODULE_NAME_ZH[p.pair[0]] || p.pair[0];
+    const pair1Zh = MODULE_NAME_ZH[p.pair[1]] || p.pair[1];
     return `
-      <tr>
-        <td>${p.pair[0]} ↔ ${p.pair[1]}</td>
-        <td><span style="color:${alignColor}">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
-        <td>${(p.trap_penalty * 100).toFixed(0)}%</td>
+      <tr style="vertical-align:middle;">
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.tcm_pair}" style="text-align:left;padding:10px 14px;white-space:nowrap;min-width:150px;font-weight:500;">${pair0Zh} ↔ ${pair1Zh}</td>
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.alignment_score}" style="text-align:right;padding:10px 14px;white-space:nowrap;min-width:150px;"><span style="color:${alignColor};font-weight:700;font-size:15px;">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
+        <td class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.trap_penalty}" style="text-align:right;padding:10px 14px;white-space:nowrap;min-width:150px;font-weight:600;font-size:15px;">${(p.trap_penalty * 100).toFixed(0)}%</td>
       </tr>
     `;
   }).join('');
 
   // Trading card 2.2 adaptive (跟 synthesizerVerdict.kelly_fraction + max_drawdown_estimate)
+  // 大少 2026-08-10 v2: 5 個 fields (加現價 field 即使休市都 show) + popup tooltip
   const tc = trading_card || { entry_zone: [0, 0], stop_loss: 0, take_profit: 0, trailing_stop: 0 };
   // 判斷 volatility bucket 顯示
   const synthKf = kelly_fraction;
@@ -7784,23 +7848,38 @@ function renderSwingDecisionEngine(verdict) {
   if (synthKf === 'octo') volBucketLabel = '🔴 高波動 (octo) — 入場闊±2.5% / 止蝕-5% / 目標+8%';
   else if (synthKf === 'quarter') volBucketLabel = '🟡 中波動 (quarter) — 入場±1.5% / 止蝕-3% / 目標+5%';
   else if (synthKf === 'half') volBucketLabel = '🟢 低波動 (half) — 入場窄±1.0% / 止蝕-2% / 目標+4%';
+  // 現價: 從 entry_zone mid 拎 (fallback if 0)
+  const lastPrice = (tc.entry_zone[0] + tc.entry_zone[1]) / 2;
+  const hasPrice = lastPrice > 0;
+  const M8_TC_TOOLTIPS = {
+    current_price: '現價: 從 entry_zone 中間值計,即使休市都會顯示最後 close 價',
+    entry_zone: '🎯 入場區間: 現價 ±1.5% (中波動) / ±2.5% (高波動) / ±1.0% (低波動)',
+    stop_loss: '🛑 止蝕: 跌破即 cut loss (中波動 -3% / 高 -5% / 低 -2%)',
+    take_profit: '🏆 目標: 升到即食糊 (中波動 +5% / 高 +8% / 低 +4%)',
+    trailing_stop: '📉 移動止蝕: 跟住個價行,跌穿即走 (中 -5% / 高 -7% / 低 -3%)',
+    vol_bucket: '波動度分級 (高/中/低), 決定 trading card 闊窄, 跟 Kelly 倉位 + max_drawdown_estimate 自動切',
+  };
   const tradingCardHTML = `
-    <h4 style="margin-top:24px;margin-bottom:4px;">💰 交易卡 (Trading Card — 2.2 adaptive)</h4>
-    <div style="font-size:12px;color:#666;margin-bottom:8px;">${volBucketLabel}</div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+    <h4 class="m8-verdict-tooltip" data-help="交易卡: 4 個價位 (現價/入場/止蝕/目標/移止) + 波動度分級, 跟 Kelly + maxDD bucket 自動切闊窄" style="margin-top:24px;margin-bottom:4px;">💰 交易卡 (Trading Card — 2.2 adaptive)</h4>
+    <div class="m8-verdict-tooltip" data-help="${M8_TC_TOOLTIPS.vol_bucket}" style="font-size:12px;color:#666;margin-bottom:8px;">${volBucketLabel}</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;">
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${M8_TC_TOOLTIPS.current_price}" style="background:${hasPrice ? '#fffbe6' : '#f9f9f9'};border:1px solid ${hasPrice ? '#FAAD14' : '#ddd'};border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">⏸️ 現價 ${hasPrice ? '(休市)' : ''}</div>
+        <div style="font-size:14px;font-weight:700;color:${hasPrice ? '#FAAD14' : '#999'};">${hasPrice ? '$' + lastPrice.toFixed(2) : '—'}</div>
+      </div>
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${M8_TC_TOOLTIPS.entry_zone}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
         <div style="font-size:14px;font-weight:700;">$${tc.entry_zone[0].toFixed(2)} - $${tc.entry_zone[1].toFixed(2)}</div>
       </div>
-      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${M8_TC_TOOLTIPS.stop_loss}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">🛑 止蝕 (-3%)</div>
         <div style="font-size:14px;font-weight:700;color:#EE5151;">$${tc.stop_loss.toFixed(2)}</div>
       </div>
-      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
-        <div style="font-size:12px;color:#666;">🎯 目標 (+5%)</div>
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${M8_TC_TOOLTIPS.take_profit}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">🏆 目標 (+5%)</div>
         <div style="font-size:14px;font-weight:700;color:#26BA75;">$${tc.take_profit.toFixed(2)}</div>
       </div>
-      <div class="trading-card-field" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${M8_TC_TOOLTIPS.trailing_stop}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">📉 移動止蝕 (5%)</div>
         <div style="font-size:14px;font-weight:700;">$${tc.trailing_stop.toFixed(2)}</div>
       </div>
@@ -7809,6 +7888,42 @@ function renderSwingDecisionEngine(verdict) {
 
   return `
     <div class="decision-engine-result swing-line" style="font-family: system-ui, sans-serif;margin-top:24px;padding-top:24px;border-top:3px dashed #1890ff;">
+      <!-- 自訂 CSS tooltip (大少 2026-08-10 v2 enhancement: 即時顯示 0.1s + 大字 14px + 箭嘴, 跟 M7 一樣) -->
+      <style>
+        .m8-verdict-tooltip { position: relative; cursor: help; }
+        .m8-verdict-tooltip:hover::after {
+          content: attr(data-help);
+          position: absolute;
+          bottom: calc(100% + 8px);
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0, 0, 0, 0.92);
+          color: #fff;
+          padding: 10px 14px;
+          border-radius: 8px;
+          font-size: 14px;
+          line-height: 1.6;
+          white-space: normal;
+          width: max-content;
+          max-width: 380px;
+          z-index: 9999;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          pointer-events: none;
+          animation: m8TooltipFadeIn 0.1s ease-in;
+        }
+        .m8-verdict-tooltip:hover::before {
+          content: '';
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          border: 6px solid transparent;
+          border-top-color: rgba(0, 0, 0, 0.92);
+          z-index: 10000;
+          pointer-events: none;
+        }
+        @keyframes m8TooltipFadeIn { from { opacity: 0; } to { opacity: 1; } }
+      </style>
       <div style="text-align:center;margin-bottom:16px;">
         <span style="background:#1890ff;color:white;padding:6px 16px;border-radius:20px;font-size:14px;font-weight:700;">🎯 第二線 · Swing Trading (M8 原本 8 個 finalAction)</span>
       </div>
@@ -7853,9 +7968,9 @@ function renderSwingDecisionEngine(verdict) {
         </div>
       </div>
 
-      <!-- 短期走勢預測 (2.3 — 9 個 scenarios) -->
-      <h4 style="margin-top:24px;margin-bottom:4px;">📊 短期走勢預測 (2.3 — 9 個 scenarios: 3 × 3 timeframes)</h4>
-      <div style="font-size:12px;color:#666;margin-bottom:8px;">⚠️ 重要: 呢個係 conditional scenarios 唔係 prediction, 真實決定睇 finalAction trigger</div>
+      <!-- 短期走勢預測 (大少 2026-08-10 v2: 中文化 + 對齊 + popup tooltip) -->
+      <h4 class="m8-verdict-tooltip" data-help="短期走勢預測: 3 種可能走勢(樂觀 25%/基準 50%/悲觀 25%) × 3 個時段(5/10/20 日) = 9 個情境" style="margin-top:24px;margin-bottom:4px;">📊 短期走勢預測 (9 個情境: 3 × 3 時段)</h4>
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">⚠️ 重要: 呢個係 3 種可能走勢(conditional scenarios), 唔係預測(prediction), 真實決定睇 finalAction trigger</div>
       ${renderForecastTable(short_term_forecast)}
 
       <!-- 人話詳細解讀 (2.4 — LLM hook + hardcoded template, 大少 13:30 永久 rule) -->
@@ -7882,31 +7997,31 @@ function renderSwingDecisionEngine(verdict) {
         </div>
       </div>
 
-      <!-- 6 個 modules 嘅 breakdown -->
-      <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個 Modules 嘅 Standard Verdict</h4>
-      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+      <!-- 6 個 modules 嘅 breakdown (大少 2026-08-10 v2: 中文化 column header + popup tooltip + 對齊) -->
+      <h4 class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.module_table_title}" style="margin-top:24px;margin-bottom:10px;font-size:16px;">📦 6 個模組嘅標準判決</h4>
+      <table class="data-summary m8-verdict-table" style="width:100%;border-collapse:collapse;font-size:14px;table-layout:auto;word-break:keep-all;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th style="text-align:left;padding:8px;">Module</th>
-            <th style="text-align:left;padding:8px;">State</th>
-            <th style="text-align:right;padding:8px;">Conf</th>
-            <th style="text-align:right;padding:8px;">Weight</th>
-            <th style="text-align:right;padding:8px;">Exp.Ret</th>
-            <th style="text-align:right;padding:8px;">MaxDD</th>
-            <th style="text-align:right;padding:8px;">RSI</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.module}" style="text-align:left;padding:10px 12px;min-width:80px;white-space:nowrap;vertical-align:middle;">模組</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.state}" style="text-align:center;padding:10px 12px;min-width:80px;white-space:nowrap;vertical-align:middle;">方向</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.conf}" style="text-align:right;padding:10px 12px;min-width:70px;white-space:nowrap;vertical-align:middle;">信心</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.weight}" style="text-align:right;padding:10px 12px;min-width:70px;white-space:nowrap;vertical-align:middle;">比重</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.expRet}" style="text-align:right;padding:10px 12px;min-width:90px;white-space:nowrap;vertical-align:middle;">預期回報</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.maxDD}" style="text-align:right;padding:10px 12px;min-width:80px;white-space:nowrap;vertical-align:middle;">最大回撤</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.rsi}" style="text-align:right;padding:10px 12px;min-width:110px;white-space:nowrap;vertical-align:middle;">情緒指數</th>
           </tr>
         </thead>
         <tbody>${moduleRows}</tbody>
       </table>
 
-      <!-- TCM 3 對 pair -->
-      <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對 Pair)</h4>
-      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:13px;">
+      <!-- TCM 3 對 pair (大少 2026-08-10 v2: 中文化 + popup tooltip + 對齊 1:1:1) -->
+      <h4 class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.tcm}" style="margin-top:28px;margin-bottom:10px;font-size:16px;">🔀 TCM 戰術交叉驗證 (3 對配對)</h4>
+      <table class="data-summary" style="width:100%;border-collapse:collapse;font-size:14px;table-layout:auto;word-break:keep-all;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th style="text-align:left;padding:8px;">Pair</th>
-            <th style="text-align:right;padding:8px;">Alignment</th>
-            <th style="text-align:right;padding:8px;">Trap Penalty</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.tcm_pair}" style="text-align:left;padding:10px 14px;min-width:150px;white-space:nowrap;vertical-align:middle;">配對</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.alignment_score}" style="text-align:right;padding:10px 14px;min-width:150px;white-space:nowrap;vertical-align:middle;">共識度</th>
+            <th class="m8-verdict-tooltip" data-help="${M8_TOOLTIPS.trap_penalty}" style="text-align:right;padding:10px 14px;min-width:150px;white-space:nowrap;vertical-align:middle;">矛盾扣分</th>
           </tr>
         </thead>
         <tbody>${tcmRows}</tbody>
