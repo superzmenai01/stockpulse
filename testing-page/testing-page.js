@@ -58,8 +58,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 07:35 fix: ALGO_CACHE_BUST = '2.6.1' (debug log 擺去 normalizedKlines 之後, 避免 raw timestamp 係 string/undefined 嘅 crash)
 // 大少 2026-08-10 08:10 fix: ALGO_CACHE_BUST = '2.6.2' (back-test.ts runReplay 唔再 sub-set lookbackDays, 用累積 K 線避免 HLStructure ≥99 bars gate 失敗)
 // 大少 2026-08-10 08:45 fix: ALGO_CACHE_BUST = '2.6.6' (dataWindowDays 252 → 1260 + UI label 動態 folds.length)
-// 大少 2026-08-10 21:15 M7 UI 顯示優化 v2: ALGO_CACHE_BUST = '2.9.0' (顏色:SSI/Exp.Ret/RSI + 全部字詞加 title popup 解讀)
-const ALGO_CACHE_BUST = '2.9.0';
+// 大少 2026-08-10 21:35 M7 UI 顯示優化 v3: ALGO_CACHE_BUST = '3.0.0' (自訂 CSS tooltip 即時顯示 + 大字 14px + responsive auto layout)
+const ALGO_CACHE_BUST = '3.0.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
