@@ -7235,13 +7235,29 @@ function fmtPct(value, type) {
   return `${(value * 100).toFixed(type === 'expRet' ? 2 : 0)}%`;
 }
 
-function rsiDenormalize(normalizedRsi) {
+// 2026-08-10 大少 fix 2 (顏色 + 全部字詞 title 解讀 enhancement)
+//   - SSI 3 個 metric 加顏色(高 70+ 綠 / 中 40-70 橙 / 低 40- 紅)
+//   - Exp.Ret 加顏色(正綠 / 負紅 / 持平灰)
+//   - RSI 加顏色(超買紅 / 中性橙 / 超賣綠) + 3 情緒解讀
+//   - 全部字詞加 title attribute(hover 顯示解讀)
+//   - 大少 trigger 答:「越多越好,反正不影響UI排版」
+
+function rsiInfo(normalizedRsi) {
   // std-verdict.ts computeSentiment6D: normalized = (raw - 50) / 50
   // 所以 raw = normalized * 50 + 50
-  const raw = normalizedRsi * 50 + 50;
-  const clamped = Math.max(0, Math.min(100, raw));
-  const label = clamped > 70 ? '超買' : clamped < 30 ? '超賣' : '中性';
-  return { value: clamped.toFixed(0), label };
+  const raw = Math.max(0, Math.min(100, normalizedRsi * 50 + 50));
+  let color, label, tooltip;
+  if (raw >= 70) {
+    color = '#EE5151'; label = '超買';
+    tooltip = '個股價短期升太多(>70),可能見頂回調,小心';
+  } else if (raw <= 30) {
+    color = '#26BA75'; label = '超賣';
+    tooltip = '個股價短期跌太多(<30),可能見底反彈,留意撈底機會';
+  } else {
+    color = '#F39C12'; label = '中性';
+    tooltip = '普通狀態(30-70),冇超買超賣,正常';
+  }
+  return { value: raw.toFixed(0), color, label, tooltip };
 }
 
 function tcmAlignColor(alignment) {
@@ -7250,25 +7266,84 @@ function tcmAlignColor(alignment) {
   return '#F39C12';
 }
 
+function ssiColor(value) {
+  if (value >= 0.7) return '#26BA75';  // 高
+  if (value >= 0.4) return '#F39C12';  // 中
+  return '#EE5151';  // 低
+}
+
+function expRetColor(value) {
+  if (Math.abs(value) < 0.0001) return '#888';  // 持平(灰)
+  if (value > 0) return '#26BA75';  // 賺(綠)
+  return '#EE5151';  // 蝕(紅)
+}
+
+// 全部字詞嘅 hover 解讀對照表(大少 trigger「越多越好」,所以加到盡)
+const TOOLTIPS = {
+  module: '6 個老師之一,各自睇股票唔同方面:均線=平均價線 / 峰谷=高低波型 / 趨勢線=撐位壓位 / 動能=升跌力度 / 量價=錢跟股價 / 波動=跳幾勁',
+  state: '個股價大方向(揸車比喻:🟢 上升=油門 / 🟡 橫行=塞車 / 🔴 下跌=落斜 / 🟣 轉勢=要轉彎)',
+  state_up: '🟢 個股價大方向向上(揸車比喻=油門踩緊,一望無際)',
+  state_down: '🔴 個股價大方向向下(揸車比喻=落斜路踩迫力)',
+  state_sideways: '🟡 個股價喺範圍內上落,冇明確方向(揸車比喻=塞車等紅綠燈)',
+  state_transition: '🟣 7 日內由升轉跌 或 由跌轉升(揸車比喻=前面要轉彎,收油準備)',
+  state_trap: '🟣 假突破陷阱,虛漲訊號,唔好信',
+  conf: '0~100% 信心指數(0=冇 evidence / 70+=強可參考 / 50-70=中 / <50=弱唔好信)',
+  weight: '校長分俾呢個老師嘅重要性(6 個加埋=100%,過往準=高,唔係 1/6 平均)',
+  expRet: '預期 hold 1 個月平均賺/蝕幾多%(正=賺/0=持平/負=蝕,唔等於一定,係平均估計)',
+  maxDD: '最壞情況 1 個月內預期跌幾多%(5%=穩定大股/10%=中等/20%=高波動,用嚟 set 止蝕位)',
+  rsi: 'RSI 0-100 情緒指標(>70 超買見頂/30-70 中性/<30 超賣見底)',
+  rsi_overbought: '個股價短期升太多(>70),可能見頂回調,小心',
+  rsi_oversold: '個股價短期跌太多(<30),可能見底反彈,留意撈底機會',
+  rsi_neutral: '普通狀態(30-70),冇超買超賣,正常',
+  unconfirmed: '0 個 evidence 確認(默認橫行)。唔等於「100% 唔會」,係「冇 data」',
+  flat: 'SIDEWAYS 預期 0% return(唔賺唔蝕)',
+  grade: '學校評分制 8 級(A+ = 頂級 / A = 優 / B+ = 良 / B = 可 / C+ = 普通 / C = 弱 / D = 差 / F = 失敗)',
+  ssi_label: 'Strategic Strength Index 戰略強度指數(0-100,3 個戰略老師共識強度)',
+  ssi_consistency: '戰略組 3 個老師(均線+峰谷+趨勢線)睇法有幾一致(100%=3 個都話一樣,0%=3 個各講各的)',
+  ssi_confidence: '戰略組 3 個老師平均信心(0-100%,高=3 個都肯定,低=3 個都唔太肯定)',
+  ssi_coverage: '戰略組規則覆蓋率(0-100%,高=大部分規則都觸發,低=大部分規則冇觸發)',
+  alignment: '戰略組(大方向)同戰術組(短線)嘅共識程度(1.0=完全對齊/0.0=冇共識/矛盾=唔對齊)',
+  kelly: '凱利公式計「呢隻股票應該出幾多%資金」(半注50%/四分一25%/八分一12.5%,波動大=細注)',
+  tcm: 'Tactical Confirmation Matrix 戰術交叉驗證:睇 3 對老師之間嘅共識程度',
+  tcm_pair: '2 個老師嘅配對(共識度計算對象):均線↔趨勢線 / 峰谷↔量價 / 動能↔波動',
+  alignment_score: '2 個老師共識度(-1.0 到 +1.0,+1.0=完全一致/0=冇共識/-1.0=完全相反)',
+  trap_penalty: '2 個老師矛盾時要扣幾多 % 信心(0-100%,越高越要小心)',
+  verdict_title: 'M7 Synthesizer 嘅最終評分 = 6 個老師加埋,出一個 Grade + Kelly 倉位',
+  sprint1_scope: '第一階段已上線範圍:終極綜合判斷(M7 Synthesizer)',
+  sprint2_scope: '第二階段範圍:M8 決策引擎嘅最終動作 8 個 + 交易範圍 + 自適應參數 + 本機快取',
+  run_button: '撳呢個掣就會用選定嘅算法 + 參數跑一次',
+  code_input: '輸入股票代碼(例:HK.00700 騰訊 / US.AAPL 蘋果)',
+  data_days: '取幾多日歷史 K 線數據(越多越準,但越慢)',
+  timeframe: '時間週期(1d=日線,1w=週線)',
+};
+
 export function renderDecisionEngineResult(verdict) {
   if (!verdict) return '<div class="result-error">無 verdict</div>';
 
   const { ssi_score, ssi_breakdown, tcm_matrix, alignment_score, grade, grade_score, grade_reason, kelly_fraction, kelly_position, module_verdicts } = verdict;
 
-  // 6 個 module 嘅 breakdown (大少 2026-08-10 4 個 fix: 中文名 + 0% 改中文 + table 對齊 + RSI raw display)
+  // 6 個 module 嘅 breakdown (大少 2026-08-10 enhancement: 顏色 + 全部字詞 title 解讀)
+  const stateTooltipMap = {
+    UP: TOOLTIPS.state_up,
+    DOWN: TOOLTIPS.state_down,
+    SIDEWAYS: TOOLTIPS.state_sideways,
+    TRANSITION: TOOLTIPS.state_transition,
+    TRAP: TOOLTIPS.state_trap,
+  };
   const moduleRows = (module_verdicts || []).map(mv => {
     const color = decisionEngineModuleStateColor(mv.state);
     const modNameZh = MODULE_NAME_ZH[mv.module_id] || mv.module_id;
-    const rsi = rsiDenormalize(mv.sentiment_6d?.rsi || 0);
+    const rsi = rsiInfo(mv.sentiment_6d?.rsi || 0);
+    const expColor = expRetColor(mv.expected_return);
     return `
       <tr>
-        <td style="text-align:left;padding:6px 8px;">${modNameZh}</td>
-        <td style="text-align:center;padding:6px 8px;"><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
-        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.confidence, 'conf')}</td>
-        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.base_weight, 'weight')}</td>
-        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.expected_return, 'expRet')}</td>
-        <td style="text-align:right;padding:6px 8px;">${fmtPct(mv.max_drawdown_estimate, 'maxDD')}</td>
-        <td style="text-align:right;padding:6px 8px;">${rsi.value} <span style="color:#888;font-size:11px;">(${rsi.label})</span></td>
+        <td style="text-align:left;padding:6px 8px;" title="${TOOLTIPS.module}">${modNameZh}</td>
+        <td style="text-align:center;padding:6px 8px;" title="${stateTooltipMap[mv.state] || TOOLTIPS.state}"><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
+        <td style="text-align:right;padding:6px 8px;" title="${TOOLTIPS.conf}">${fmtPct(mv.confidence, 'conf')}</td>
+        <td style="text-align:right;padding:6px 8px;" title="${TOOLTIPS.weight}">${fmtPct(mv.base_weight, 'weight')}</td>
+        <td style="text-align:right;padding:6px 8px;color:${expColor};font-weight:600;" title="${TOOLTIPS.expRet}">${fmtPct(mv.expected_return, 'expRet')}</td>
+        <td style="text-align:right;padding:6px 8px;" title="${TOOLTIPS.maxDD}">${fmtPct(mv.max_drawdown_estimate, 'maxDD')}</td>
+        <td style="text-align:right;padding:6px 8px;" title="${rsi.tooltip}">${rsi.value} <span style="color:${rsi.color};font-size:11px;font-weight:600;">(${rsi.label})</span></td>
       </tr>
     `;
   }).join('');
@@ -7292,54 +7367,54 @@ export function renderDecisionEngineResult(verdict) {
 
   return `
     <div class="decision-engine-result" style="font-family: system-ui, sans-serif;">
-      <!-- 頂部 verdict card -->
-      <div class="verdict-card" style="background:linear-gradient(135deg, ${gradeColor}22, ${gradeColor}08);border:2px solid ${gradeColor};border-radius:12px;padding:20px;margin-bottom:20px;text-align:center;">
+      <!-- 頂部 verdict card (大少 2026-08-10 enhancement: 全部 title) -->
+      <div class="verdict-card" style="background:linear-gradient(135deg, ${gradeColor}22, ${gradeColor}08);border:2px solid ${gradeColor};border-radius:12px;padding:20px;margin-bottom:20px;text-align:center;" title="${TOOLTIPS.verdict_title}">
         <div style="font-size:14px;color:#666;margin-bottom:8px;">📊 終極綜合判斷 (M7 Synthesizer)</div>
-        <div style="font-size:48px;font-weight:700;color:${gradeColor};line-height:1;">${grade}</div>
+        <div style="font-size:48px;font-weight:700;color:${gradeColor};line-height:1;" title="${TOOLTIPS.grade}">${grade}</div>
         <div style="font-size:18px;color:#666;margin-top:8px;">分數 ${grade_score.toFixed(1)} / 100</div>
         <div style="font-size:14px;color:#999;margin-top:4px;">${grade_reason}</div>
         <div style="display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:14px;">
-          <div>🟢 <strong>SSI</strong>: ${ssi_score.toFixed(1)} / 100</div>
-          <div>📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%</div>
-          <div>💰 <strong>Kelly</strong>: ${kellyLabel}</div>
+          <div title="${TOOLTIPS.ssi_label}">🟢 <strong>SSI</strong>: ${ssi_score.toFixed(1)} / 100</div>
+          <div title="${TOOLTIPS.alignment}">📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%</div>
+          <div title="${TOOLTIPS.kelly}">💰 <strong>Kelly</strong>: ${kellyLabel}</div>
         </div>
       </div>
 
-      <!-- 6 個 Metric Mini-Cards -->
+      <!-- 6 個 Metric Mini-Cards (大少 2026-08-10 enhancement: 顏色 + title) -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
-        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;" title="${TOOLTIPS.ssi_consistency}">
           <div style="font-size:12px;color:#666;">SSI 一致性</div>
-          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.consistency * 100).toFixed(0)}%</div>
+          <div style="font-size:24px;font-weight:700;color:${ssiColor(ssi_breakdown.consistency)};">${(ssi_breakdown.consistency * 100).toFixed(0)}%</div>
         </div>
-        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;" title="${TOOLTIPS.ssi_confidence}">
           <div style="font-size:12px;color:#666;">SSI 平均信心</div>
-          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.confidence_avg * 100).toFixed(0)}%</div>
+          <div style="font-size:24px;font-weight:700;color:${ssiColor(ssi_breakdown.confidence_avg)};">${(ssi_breakdown.confidence_avg * 100).toFixed(0)}%</div>
         </div>
-        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+        <div class="metric-card" style="background:#f9f9f9;border-radius:8px;padding:12px;" title="${TOOLTIPS.ssi_coverage}">
           <div style="font-size:12px;color:#666;">SSI 規則覆蓋</div>
-          <div style="font-size:24px;font-weight:700;">${(ssi_breakdown.rules_coverage * 100).toFixed(0)}%</div>
+          <div style="font-size:24px;font-weight:700;color:${ssiColor(ssi_breakdown.rules_coverage)};">${(ssi_breakdown.rules_coverage * 100).toFixed(0)}%</div>
         </div>
       </div>
 
-      <!-- 6 個 modules 嘅 breakdown (大少 2026-08-10 4 個 fix: 中文 header + table 對齊) -->
-      <h4 style="margin-top:24px;margin-bottom:8px;">📦 6 個模組嘅標準判決</h4>
+      <!-- 6 個 modules 嘅 breakdown (大少 2026-08-10 enhancement: 改 width + 全部 column header title) -->
+      <h4 style="margin-top:24px;margin-bottom:8px;" title="${TOOLTIPS.verdict_title}">📦 6 個模組嘅標準判決</h4>
       <table class="data-summary m7-verdict-table" style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th style="text-align:left;padding:8px;width:18%;">模組</th>
-            <th style="text-align:center;padding:8px;width:15%;">方向</th>
-            <th style="text-align:right;padding:8px;width:12%;">信心</th>
-            <th style="text-align:right;padding:8px;width:11%;">比重</th>
-            <th style="text-align:right;padding:8px;width:16%;">預期回報</th>
-            <th style="text-align:right;padding:8px;width:13%;">最大回撤</th>
-            <th style="text-align:right;padding:8px;width:15%;">情緒指數</th>
+            <th style="text-align:left;padding:8px;width:20%;" title="${TOOLTIPS.module}">模組</th>
+            <th style="text-align:center;padding:8px;width:14%;" title="${TOOLTIPS.state}">方向</th>
+            <th style="text-align:right;padding:8px;width:11%;" title="${TOOLTIPS.conf}">信心</th>
+            <th style="text-align:right;padding:8px;width:11%;" title="${TOOLTIPS.weight}">比重</th>
+            <th style="text-align:right;padding:8px;width:14%;" title="${TOOLTIPS.expRet}">預期回報</th>
+            <th style="text-align:right;padding:8px;width:12%;" title="${TOOLTIPS.maxDD}">最大回撤</th>
+            <th style="text-align:right;padding:8px;width:18%;" title="${TOOLTIPS.rsi}">情緒指數</th>
           </tr>
         </thead>
         <tbody>${moduleRows}</tbody>
       </table>
 
-      <!-- TCM 3 對 pair (大少 2026-08-10 4 個 fix: 加白話解讀 + 中文 header) -->
-      <h4 style="margin-top:24px;margin-bottom:8px;">🔀 TCM 戰術交叉驗證 (3 對配對)</h4>
+      <!-- TCM 3 對 pair (大少 2026-08-10 enhancement: 全部 title + 白話解讀) -->
+      <h4 style="margin-top:24px;margin-bottom:8px;" title="${TOOLTIPS.tcm}">🔀 TCM 戰術交叉驗證 (3 對配對)</h4>
       <div class="tcm-explanation" style="background:#f9f9f9;padding:12px;border-radius:6px;margin-bottom:12px;font-size:13px;color:#333;line-height:1.6;">
         <strong>📖 點樣睇 TCM:</strong>
         <ul style="margin:8px 0 0 0;padding-left:20px;">
@@ -7352,18 +7427,18 @@ export function renderDecisionEngineResult(verdict) {
       <table class="data-summary m7-tcm-table" style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th style="text-align:left;padding:8px;width:50%;">配對</th>
-            <th style="text-align:right;padding:8px;width:25%;">共識度</th>
-            <th style="text-align:right;padding:8px;width:25%;">矛盾扣分</th>
+            <th style="text-align:left;padding:8px;width:50%;" title="${TOOLTIPS.tcm_pair}">配對</th>
+            <th style="text-align:right;padding:8px;width:25%;" title="${TOOLTIPS.alignment_score}">共識度</th>
+            <th style="text-align:right;padding:8px;width:25%;" title="${TOOLTIPS.trap_penalty}">矛盾扣分</th>
           </tr>
         </thead>
         <tbody>${tcmRows}</tbody>
       </table>
 
-      <!-- Sprint 1 提示: M8 finalAction + trading card 留俾 Sprint 2 (大少 2026-08-10 4 個 fix: Sprint 1/2 → 第一階段/第二階段) -->
+      <!-- Sprint 1 提示: M8 finalAction + trading card 留俾 Sprint 2 (大少 2026-08-10 enhancement: 加 title) -->
       <div class="sprint2-notice" style="margin-top:24px;padding:16px;background:#f0f8ff;border-left:4px solid #1890ff;border-radius:6px;font-size:13px;color:#333;">
-        <strong>📍 第一階段範圍:</strong> 終極綜合判斷引擎 (M7 Synthesizer) 已上線<br>
-        <strong>🚧 第二階段範圍:</strong> M8 決策引擎嘅最終動作 8 個 (買入/加注/持有/減注/賣出/再睇/陷阱/轉勢) + 交易範圍 + 5 個自適應參數自動校準 + 本機快取
+        <strong title="${TOOLTIPS.sprint1_scope}">📍 第一階段範圍:</strong> 終極綜合判斷引擎 (M7 Synthesizer) 已上線<br>
+        <strong title="${TOOLTIPS.sprint2_scope}">🚧 第二階段範圍:</strong> M8 決策引擎嘅最終動作 8 個 (買入/加注/持有/減注/賣出/再睇/陷阱/轉勢) + 交易範圍 + 5 個自適應參數自動校準 + 本機快取
       </div>
     </div>
   `;
