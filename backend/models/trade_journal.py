@@ -140,20 +140,23 @@ def add_entry(
     target_price: Optional[float] = None,
     stop_loss: Optional[float] = None,
     notes: Optional[str] = "",
+    source: Optional[str] = None,  # Sprint 2 paper trading sim 加 (大少 2026-08-10 Option A fix): None = 默認 'manual'
     db_path: Path = DEFAULT_DB_PATH,
 ) -> dict[str, Any]:
     """[POST] 加 1 條 Trade Journal entry.
 
     Raises sqlite3.IntegrityError if (symbol, entry_date) 重複.
+
+    Sprint 2 paper trading sim 加 source param (default None = 默認 'manual')
     """
     with get_connection(db_path) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
             """
-            INSERT INTO trade_journal (symbol, entry_date, entry_price, shares, target_price, stop_loss, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO trade_journal (symbol, entry_date, entry_price, shares, target_price, stop_loss, notes, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'manual'))
             """,
-            (symbol, entry_date, entry_price, shares, target_price, stop_loss, notes or ""),
+            (symbol, entry_date, entry_price, shares, target_price, stop_loss, notes or "", source),
         )
         conn.commit()
         entry_id = cursor.lastrowid

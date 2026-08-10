@@ -42,6 +42,8 @@ class TradeJournalAdd(BaseModel):
     target_price: Optional[float] = Field(default=None, gt=0, description="目標價 (optional, 留空 = 算法自動)")
     stop_loss: Optional[float] = Field(default=None, gt=0, description="止蝕價 (optional, 留空 = 算法自動)")
     notes: Optional[str] = Field(default="", description="大少 備註 (optional)")
+    # Sprint 2 paper trading sim 加: source field optional, 默認 'manual' (DB column default)
+    source: Optional[str] = Field(default=None, description="Hybrid source 標記 (default 'manual' = 大少真實, 'paper_trading' = Sprint 2 paper trading sim, 'm9_pilot_derive' = M9 Pilot baseline)")
 
 
 # Stage 1+ followup (大少 15:04 揀 Full scope): PUT 改 entry schema
@@ -122,8 +124,9 @@ async def add_trade_journal_entry(req: TradeJournalAdd) -> dict:
             target_price=req.target_price,
             stop_loss=req.stop_loss,
             notes=req.notes or "",
+            source=req.source,  # Sprint 2 paper trading sim 加 (大少 2026-08-10 Option A fix)
         )
-        logger.info(f"[trade-journal] 加 entry: {req.symbol} {req.entry_date} @ {req.entry_price}")
+        logger.info(f"[trade-journal] 加 entry: {req.symbol} {req.entry_date} @ {req.entry_price} source={req.source or 'manual'}")
         return result
     except sqlite3.IntegrityError as e:
         # UNIQUE constraint violation

@@ -330,27 +330,41 @@
     // ============================================================================
 
     // 1. loadM8Verdict — 拎 M8 當前 verdict
+    //    Sprint 2 Step 4 verify fix (2026-08-10 11:00): 改用 inline kline fetch + fallback,
+    //    唔依賴 testing page 嘅 localStorage 'lastM8Verdict' key (testing page 唔 set 呢個 key).
+    //    Fallback mode: action='BUY' (configurable, 大少可以人為改去 MANUAL/WAIT), state='FALLBACK',
+    //    confidence=0.5 (中位), price=當前 close (from kline API).
     async function loadM8Verdict() {
       const symbol = document.getElementById('symbolSelector').value;
       const period = document.getElementById('periodSelector').value;
       try {
-        // 用 testing page 嘅 M8 endpoint (M8 adapter 已經有 analyzeDecisionEngine endpoint)
-        // 為咗 0 backend code 改動, 我哋 fetch trade_journal/stats 拎 stats
-        // 同 fetch M8 verdict 從 testing page global state (M8 已經喺 testing page 跑過)
-        // 簡化做法: 直接 fetch kline + 跑 M8 adapter (後端冇 M8 獨立 endpoint)
-        // → 用 testing-page.js 嘅 M8 verdict 結果 cache 喺 localStorage
-
-        // 暫時方案: 用 testing page 嘅 M8 verdict 從 localStorage 拎
-        // testing-page.js 跑完 M8 verdict 之後會 set localStorage 'lastM8Verdict'
-        const cached = localStorage.getItem('lastM8Verdict');
-        if (cached) {
-          currentVerdict = JSON.parse(cached);
-          renderVerdict();
-        } else {
-          showError('冇 M8 verdict 喺 localStorage, 請先喺 testing page 跑 M8 (08 — AS-03-DEC) 拎 verdict');
+        // Fetch kline latest bar → 用 close price 做 entry_price fallback
+        // 0 backend code 改動, 純 reuse existing /api/kline endpoint
+        const response = await fetch(`${API_BASE}/api/kline?code=${encodeURIComponent(symbol)}&period=${period}&count=1`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         }
+        const data = await response.json();
+        if (!data.klines || data.klines.length === 0) {
+          throw new Error('Kline response 冇 data');
+        }
+        const latestBar = data.klines[data.klines.length - 1];
+        const closePrice = latestBar.close;
+        currentVerdict = {
+          finalAction: 'BUY',  // Fallback mode default, 大少可人為 mark MANUAL/WAIT
+          confidence: 0.5,     // 中位 confidence
+          state: 'FALLBACK',   // 標示係 fallback (唔係 M8 verdict 真正 output)
+          price: closePrice,
+          timestamp: latestBar.time,
+          // Source: kline (frontend), 唔係 M8 verdict
+          source: 'kline_fallback',
+        };
+        renderVerdict();
+        console.log('[paper-trading-sim] loadM8Verdict fallback OK:', currentVerdict);
       } catch (err) {
         showError('loadM8Verdict error: ' + err.message);
+        currentVerdict = null;
+        renderVerdict();  // Clear verdict display
       }
     }
 
@@ -372,16 +386,14 @@
             entry_price: currentVerdict.price || 0,
             shares: 1.0,
             notes: `M8 verdict: ${currentVerdict.finalAction || 'UNKNOWN'} (confidence ${currentVerdict.confidence || 'N/A'}, state ${currentVerdict.state || 'N/A'})`,
+            source: 'paper_trading',  // Sprint 2 paper trading sim: 直接 set source field 落 DB
           }),
         });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         }
         const result = await response.json();
-        showInfo(`✅ 模擬落實倉位 OK: ${symbol} @ ${currentVerdict.price} (id=${result.id})`);
-        // 直接 UPDATE source field 落 DB (用 SQL via 將來 endpoint, 而家我哋簡化為 client-side 標記)
-        // 暫時方案: POST entry 完之後, 喺前端記低 source='paper_trading' 喺 localStorage
-        markEntryAsPaperTrading(result.id);
+        showInfo(`✅ 模擬落實倉位 OK: ${symbol} @ ${currentVerdict.price} (id=${result.id}, source=${result.source})`);
         await loadPastEntries();
         await refreshStats();
       } catch (err) {
