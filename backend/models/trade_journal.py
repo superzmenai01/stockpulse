@@ -163,36 +163,58 @@ def add_entry(
 
 def list_entries(
     symbol: Optional[str] = None,
+    source: Optional[str] = None,  # Sprint 2 paper trading sim: filter by source field (大少 2026-08-10 Option A 1 line 改動)
     limit: int = 50,
     offset: int = 0,
     db_path: Path = DEFAULT_DB_PATH,
 ) -> list[dict[str, Any]]:
-    """[GET] 列出 entries (newest first by entry_date DESC, id DESC)"""
+    """[GET] 列出 entries (newest first by entry_date DESC, id DESC)
+
+    Args:
+        symbol: Filter by stock code (e.g. 'HK.00700') — optional
+        source: Filter by source field (e.g. 'paper_trading', 'm9_pilot_derive', 'manual') — Sprint 2 paper trading sim 加
+        limit: Max entries (default 50)
+        offset: Pagination offset (default 0)
+
+    跟 AGENTS.md '3-Section 永久 Rule' 應用: 0 改 logic, 純加 optional filter param
+    """
     with get_connection(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        # 構建 WHERE clause (Sprint 2 paper trading sim 改動: 支持 symbol + source 任意組合 filter)
+        where_clauses: list[str] = []
+        params: list[Any] = []
         if symbol:
-            rows = conn.execute(
-                "SELECT * FROM trade_journal WHERE symbol = ? ORDER BY entry_date DESC, id DESC LIMIT ? OFFSET ?",
-                (symbol, limit, offset),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM trade_journal ORDER BY entry_date DESC, id DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            ).fetchall()
+            where_clauses.append("symbol = ?")
+            params.append(symbol)
+        if source:
+            where_clauses.append("source = ?")
+            params.append(source)
+        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        sql = f"SELECT * FROM trade_journal{where_sql} ORDER BY entry_date DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = conn.execute(sql, params).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
 def count_entries(
     symbol: Optional[str] = None,
+    source: Optional[str] = None,  # Sprint 2 paper trading sim: 同步加 source filter
     db_path: Path = DEFAULT_DB_PATH,
 ) -> int:
     """[GET] 計算 total entries (for pagination)"""
     with get_connection(db_path) as conn:
+        # 構建 WHERE clause (跟 list_entries 同步)
+        where_clauses: list[str] = []
+        params: list[Any] = []
         if symbol:
-            row = conn.execute("SELECT COUNT(*) AS c FROM trade_journal WHERE symbol = ?", (symbol,)).fetchone()
-        else:
-            row = conn.execute("SELECT COUNT(*) AS c FROM trade_journal").fetchone()
+            where_clauses.append("symbol = ?")
+            params.append(symbol)
+        if source:
+            where_clauses.append("source = ?")
+            params.append(source)
+        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        sql = f"SELECT COUNT(*) AS c FROM trade_journal{where_sql}"
+        row = conn.execute(sql, params).fetchone()
     return row[0] if row else 0
 
 

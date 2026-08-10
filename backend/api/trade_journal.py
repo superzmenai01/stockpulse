@@ -71,6 +71,8 @@ class TradeJournalEntry(BaseModel):
     actual_exit_price: Optional[float] = None
     is_correct: Optional[int] = None  # 0/1/NULL
     updated_at: Optional[str] = None
+    # Sprint 2 paper trading sim: source field 加落 response (Stage 1+ Hybrid Step 1 commit 34969ed8 已加 DB column)
+    source: Optional[str] = "manual"  # 'manual' (default) / 'paper_trading' / 'm9_pilot_derive'
 
 
 class TradeJournalListResponse(BaseModel):
@@ -134,16 +136,18 @@ async def add_trade_journal_entry(req: TradeJournalAdd) -> dict:
 @router.get("", response_model=TradeJournalListResponse)
 async def list_trade_journal_entries(
     symbol: Optional[str] = Query(default=None, description="Filter by stock code"),
+    source: Optional[str] = Query(default=None, description="Filter by source field (e.g. 'paper_trading', 'm9_pilot_derive')"),  # Sprint 2 paper trading sim 加
     limit: int = Query(default=50, ge=1, le=500, description="Max entries (1-500)"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
 ) -> dict:
     """列出 Trade Journal entries (newest first by entry_date DESC).
 
     Optional filter by symbol (大少 11:57 永久 rule: 永遠 full show 全部 sections).
+    Sprint 2 paper trading sim 加 source filter (跟 spec 永久 rule §3 stream 區分).
     """
     try:
-        entries = model.list_entries(symbol=symbol, limit=limit, offset=offset)
-        count = model.count_entries(symbol=symbol)
+        entries = model.list_entries(symbol=symbol, source=source, limit=limit, offset=offset)
+        count = model.count_entries(symbol=symbol, source=source)
         return {"entries": entries, "count": count}
     except Exception as e:
         logger.error(f"[trade-journal] list_entries error: {e}")
