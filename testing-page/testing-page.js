@@ -57,8 +57,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 07:20 Bug 1 fix: ALGO_CACHE_BUST = '2.6.0' (postJSON helper + 3 個 POST check response.ok + UI error banner + K 線 debug log)
 // 大少 2026-08-10 07:35 fix: ALGO_CACHE_BUST = '2.6.1' (debug log 擺去 normalizedKlines 之後, 避免 raw timestamp 係 string/undefined 嘅 crash)
 // 大少 2026-08-10 08:10 fix: ALGO_CACHE_BUST = '2.6.2' (back-test.ts runReplay 唔再 sub-set lookbackDays, 用累積 K 線避免 HLStructure ≥99 bars gate 失敗)
-// 大少 2026-08-10 08:35 fix Y1: ALGO_CACHE_BUST = '2.6.5' (numFolds 3 → 1, revert V2 combinedKlines 失敗 fix, 保留 V1 sub-set → 累積)
-const ALGO_CACHE_BUST = '2.6.5';
+// 大少 2026-08-10 08:45 fix: ALGO_CACHE_BUST = '2.6.6' (dataWindowDays 252 → 1260 + UI label 動態 folds.length)
+const ALGO_CACHE_BUST = '2.6.6';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

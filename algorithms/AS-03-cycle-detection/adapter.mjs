@@ -7943,7 +7943,7 @@ export const backTestAdapter = {
   description: '用歷史 K 線重播之前嘅判決, 對比之後 5 / 10 / 20 日真實升咗幾多, 等你知道個演算法之前嘅判斷啱唔啱, 仲會自動搵出呢隻股票嘅最佳設定',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
-    { key: 'dataWindowDays', label: '回顧天數 (睇過去幾多日數)', type: 'number', default: 252, min: 90, max: 1260 },
+    { key: 'dataWindowDays', label: '回顧天數 (睇過去幾多日數)', type: 'number', default: 1260, min: 90, max: 1260 },
     { key: 'stepDays', label: '跑判決步長 (每隔幾日跑一次)', type: 'number', default: 5, min: 1, max: 30 },
   ],
   analyze: async (klines, options = {}) => {
@@ -7973,8 +7973,8 @@ export const backTestAdapter = {
     console.log(`[backTestAdapter] start analyze ${symbol}, klines=${klineCount}, range=${JSON.stringify(klineDateRange)}`);
 
     // 1. Import back-test bundle (browser-compatible ESM)
-    // 大少 2026-08-10 08:35 fix Y1: 加 ?v=2.6.5 cache bust (numFolds 3 → 1, revert combinedKlines V2)
-    const backTest = await import('./build/back-test.bundle.js?v=2.6.5');
+    // 大少 2026-08-10 08:45 fix: 加 ?v=2.6.6 cache bust (dataWindowDays 252 → 1260)
+    const backTest = await import('./build/back-test.bundle.js?v=2.6.6');
     const { runWalkForwardCV, runAdaptiveWindow, runCoarseGrid, runFineTune, runReplay, scoreResult } = backTest;
 
     // 2. 用 decisionEngineAdapter 做 decisionFn (內部 chain M1-M8)
@@ -8168,7 +8168,8 @@ export const backTestAdapter = {
     html += `</div></div>`;
 
     // ===== Section 3: 整體表現 (帶 Walk-Forward bar chart 9.7.2) =====
-    html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📊 整體表現 (3 段滾動交叉驗證)</h4>`;
+    // 大少 2026-08-10 08:45 fix: 動態化 folds.length (之前 hard-coded "3 段滾動交叉驗證" 但 numFolds 已改 1)
+    html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📊 整體表現 (${folds.length} 段滾動交叉驗證)</h4>`;
     const scoreColor = colorByScore(overall.avgValidateScore);
     const stabColor = colorByStability(overall.stabilityScore);
     html += `<div style="background: #f9f9f9; padding: 16px; border-radius: 12px; margin-bottom: 12px;">`;
@@ -8181,7 +8182,7 @@ export const backTestAdapter = {
     html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: #333;">${folds.length}</div><div style="font-size: 12px; color: #666;">完成驗證段數</div></div>`;
     html += `</div>`;
 
-    // ===== Section 4: Walk-Forward 3 段 bar chart (SVG 9.7.2) =====
+    // ===== Section 4: Walk-Forward bar chart (SVG 9.7.2, 動態段數) =====
     if (folds.length > 0) {
       html += `<h5 style="margin: 16px 0 8px 0; color: #555;">🔀 每段驗證嘅表現 (藍 = 校準, 橙 = 真實)</h5>`;
       const maxScore = Math.max(...folds.flatMap(f => [f.tuneScore, f.validateScore]), 100);
