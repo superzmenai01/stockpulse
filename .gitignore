@@ -4,6 +4,10 @@ web/node_modules/
 # Logs
 logs/
 *.log
+trigger.log*
+
+# Scratch test scripts (root, debug use only)
+test-*.mjs
 
 # Environment
 .env
