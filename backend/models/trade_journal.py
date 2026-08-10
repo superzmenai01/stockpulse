@@ -24,6 +24,10 @@ DB schema (Stage 1+ followup 2026-08-09, 揀 Full scope):
 - actual_exit_price: optional 真實賣出價 (Stage 1+ followup 加)
 - is_correct: 0/1/NULL — 大少 mark 啱/錯 (Stage 1+ followup 加, NULL = 未 mark)
 - updated_at: 最後改時間 (Stage 1+ followup 加)
+- source: TEXT NOT NULL DEFAULT 'manual' (Hybrid source field, 2026-08-10 09:33 大少 confirm Option 3)
+  - 'manual': 大少真實 trade (default)
+  - 'paper_trading': 獨立 page paper trading sim (sprint 2 設計, source = paper trading)
+  - 'm9_pilot_derive': M9 Pilot 過去 records derive (Stage 1+ baseline, source = M9 derived)
 - UNIQUE(symbol, entry_date) — 防止重複 add
 
 永久保留 (大少 22:28 永久 rule: forward return cache 永久)
@@ -53,16 +57,27 @@ FOLLOWUP_COLUMNS = [
     ("updated_at", "TEXT"),
 ]
 
+# Hybrid source column (大少 2026-08-10 09:33 confirm Option 3 — 3 條 stream 並行)
+# 唔入 FOLLOWUP_COLUMNS list 因為 source field 唔屬於 15:04 followup scope
+# 3 個 values: 'manual' (大少真實) / 'paper_trading' (sprint 2 sim) / 'm9_pilot_derive' (Stage 1+ baseline)
+SOURCE_COLUMN = ("source", "TEXT NOT NULL DEFAULT 'manual'")
+
 
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     """Idempotent migration: 加 Stage 1+ followup column 落 existing table.
 
     大少 15:04 揀 Full scope default decision #1: standard naming.
+    大少 2026-08-10 09:33 confirm Option 3 Hybrid: source column 區分 3 條 stream.
     """
     existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(trade_journal)").fetchall()}
+    # Stage 1+ followup 4 columns (大少 15:04 揀 Full scope)
     for col_name, col_type in FOLLOWUP_COLUMNS:
         if col_name not in existing_cols:
             conn.execute(f"ALTER TABLE trade_journal ADD COLUMN {col_name} {col_type}")
+    # Hybrid source column (大少 2026-08-10 09:33 Option 3)
+    src_name, src_type = SOURCE_COLUMN
+    if src_name not in existing_cols:
+        conn.execute(f"ALTER TABLE trade_journal ADD COLUMN {src_name} {src_type}")
 
 
 def init_trade_journal_table(db_path: Path = DEFAULT_DB_PATH) -> None:
@@ -111,6 +126,9 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "actual_exit_price": row["actual_exit_price"],
         "is_correct": row["is_correct"],
         "updated_at": row["updated_at"],
+        # Hybrid source column (大少 2026-08-10 09:33 Option 3)
+        # 0 pollution: 純加 column + dict field, 唔改 logic
+        "source": row["source"] if "source" in row.keys() else "manual",
     }
 
 
