@@ -1661,6 +1661,10 @@ bdbdb120 feat(as03-m9-pilot): M9 Pilot v4 — Re-run v2 3 隻用 1w
 - **Bayesian tuning** — 30+ 真實 samples 後 tune 5 個 adaptive params (per AS-03 M7-M9 spec)
 - **Trade Journal UI** — 大少 mark 啱/錯, 永久 record
 - **Stage 2+ Module 10-12** (Probability / Backtest Timeline / R:R)
+- **Stage 1+ Hybrid (2026-08-10 09:33 Option 3 大少 confirm)** — 3 條 stream 並行 (詳見 §15.9.1):
+  - 即時 derive M9 Pilot 過去 records 累積 baseline (M9 已有 81 records 48.1% hit rate)
+  - Sprint 2 獨立 page paper trading sim 累積多樣性 samples
+  - 大少真實 trade 慢慢累積,手動 mark 啱錯, ground truth
 - **重新做舊 M5 Multi-TF + M8 SlopeMomentum** — ⏸️ **Deferred (大少 2026-08-09 14:16 揀 A drop 呢個 task, Stage 2+ 重新 plan)**
 - **Module 6 input special** 統一處理 (testing page 唔支援 3 timeframe) — Stage 2
 - **4 個 followup bugs** (Section 15.4) — ✅ **ALL FIXED (大少 13:15 Spec Sync #7)**
@@ -1791,7 +1795,31 @@ return = (actual_exit_price - entry_price) / entry_price
 9. `README.md` — Trade Journal row 加 PUT/DELETE/stats
 10. `PROJECT_SPEC.md` — Stage 1+ Trade Journal section 加 PUT/DELETE/stats
 
----
+### 15.9.1 Stage 1+ Hybrid (2026-08-10 09:33 大少 confirm Option 3)
+
+大少 reject 原本等真實 trade 累積 30+ 樣本嘅 plan (2-3 個月, 投資風險),改揀 **Hybrid 3 條 stream 並行**:
+
+| Stream | 做法 | 累積速度 | Code 影響 |
+|--------|------|----------|-----------|
+| **A. 即時 derive M9 Pilot baseline** | `scripts/stage1p_aggregate_l2_cache.py` 讀 L2 cache (~/.stockpulse/adaptive_params/<symbol>.json) 拎 forward_return_history,`hit` field 已 auto-populated by M9 個 runReplay engine | 即時 (HK.00700 81 records 48.1% hit rate) | 0 backend pollution, 純獨立 script |
+| **B. Sprint 2 paper trading sim** | 獨立 page `/paper-trading-sim` 大少人手操控落實倉位 + mark 啱錯 (來源: Stage 1+ 獨立 page 設計,大少「不想污染了原本嘅 Code Base」原則) | 1-2 週 30+ samples (0 投資風險) | 全新獨立 page, 唔影響 existing code |
+| **C. 大少真實 trade** | 大少落實倉位,加落 Trade Journal 標記 `source='manual'`,手動 mark 啱錯 | 2-3 個月, ground truth | Schema 已經 ready (source field default 'manual') |
+
+**Spec Sync #9 (2026-08-10 09:44)** 對應 commit `34969ed8` (4 files, 422 insertions):
+- `backend/models/trade_journal.py` — `source` field 永久 rule (3 values: `manual` / `paper_trading` / `m9_pilot_derive`)
+- `scripts/stage1p_aggregate_l2_cache.py` — L2 cache aggregate 寫 `stage1p_tuning_results.json` 暫存
+- `backend/tests/test_stage1p_aggregate.py` — 5 pytest (5/5 pass, 用 mock L2 cache fixture 避開 test_adaptive_params_cache 嘅 clear_all() 影響)
+- `.gitignore` — 加 `*.bak-*` + `scripts/stage1p_tuning_results.json`
+
+**永久 rule (新增)**:
+- `trade_journal.source` 3 個 values,所有 entry 必須標記 source (default `'manual'`)
+- Stage 1+ Bayesian tune 必須基於 ≥ 30 樣本 (per spec M7-M9)
+- 對應 spec doc: PROJECT_SPEC.md line 530 + README.md line 348/383 + MODULE-J-TRADE-JOURNAL.md §2 + §5 + §7
+
+**Catch 永久 rule (Step 1 過程中發現,留返 sprint 2 修)**:
+- `backend/services/adaptive_params_cache.py::clear_all()` 違反 forward_return_history 永久保留 rule (line 9 講「永遠唔 delete」, 但 `clear_all()` 會 unlink 所有 L2 cache file 包括 forward_return_history)
+- Workaround: 我哋 `test_stage1p_aggregate.py` 用 mock L2 cache fixture 自己管理 state,避免被 `test_adaptive_params_cache.py` 嘅 `clean_cache` fixture 影響
+- Permanent fix 留返 sprint 2: 改 `clear_all()` 只清 `params` (7 日 expiry) + `optimal` (30 日 expiry),唔清 `forward_return_history` (永久保留)
 
 ### 15.10 Stock Price 即時股價 (Stage 1+, 大少 15:45 揀)
 

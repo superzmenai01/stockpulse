@@ -532,6 +532,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 | `actual_exit_price` | REAL | YES | 真實賣出價 (Stage 1+ followup) |
 | `is_correct` | INTEGER | YES (0/1/NULL) | 啱(True)/錯(False)/未 mark(NULL) (Stage 1+ followup) |
 | `updated_at` | TEXT | YES | 最後改時間 (Stage 1+ followup) |
+| `source` | TEXT | YES (default `'manual'`) | **Hybrid 來源標記 (2026-08-10 09:33 大少 confirm Option 3)** — 3 個 values: `'manual'` (大少真實 trade) / `'paper_trading'` (Sprint 2 獨立 page sim) / `'m9_pilot_derive'` (M9 Pilot 過去 records 累積 baseline) |
 
 ### 6 個 Metrics (大少 15:04 揀 default)
 

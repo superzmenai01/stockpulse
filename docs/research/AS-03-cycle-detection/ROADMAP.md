@@ -61,6 +61,15 @@
 
 > **大少 2026-08-10 更新 (Spec Sync #8, 5 fix commits)**: M9 bug fixes 收官 — `788ccab7` Bug 1: M9 forward return POST silent fail fix + UI 紅色 error banner 顯示錯誤訊息 (大少 Bug 1 報 8 月 10 號 0:30 確認 silent fail 唔 work + 0 validate samples) + `ea75ebd1` Bug 2: debug log 移去 `normalizedKlines` 之後避免 raw timestamp crash + `ffaa7593` Spec 編號: Trade Journal 編號 M10 → J 跟 ROADMAP 新 5 modules table + `01aed775` Bug 3: Walk-Forward tune gate fix — `numFolds 3 → 1` + `tuneRatio 0.67 → 0.6` (1260 條 / 1 fold = tune 756 + validate 504,兩段都過 HLStructure ≥ 99 bar gate,1 fold 兩段都過 gate 即解決 0 validate samples 真正 root cause) + `6bd4e2d3` UX 升級: UI label 動態化 (跟 `folds.length` 顯示「N 段滾動交叉驗證」) + testing page `dataWindowDays` default 252 → 1260 (解決 80% 問題: 1 → 81 真實樣本). Browser verify: HK.00700 「81 個真實樣本」+ dynamic label 「1 段滾動交叉驗證」+ forward return 5 個 POST 全部 200 OK. pytest 112/112 + node 30/30 (17+13) pass. 對應 spec doc: ARCHITECTURE.md §11 line 1418/1458 + PROJECT_SPEC.md line 434/468 + README.md line 293/310 + MODULE-11-BACKTEST-TIMELINE.md (5 個 M10→J cross-ref catch).
 
+> **大少 2026-08-10 09:33 更新 (Stage 1+ Hybrid Option 3 confirm)**: 大少 reject 原本等真實 trade 累積 30+ 樣本嘅 plan(2-3 個月) → 揀 Option 3 Hybrid (3 條 stream 並行):
+> 1. **即時 derive M9 Pilot baseline** — `scripts/stage1p_aggregate_l2_cache.py` 讀 L2 cache (~/.stockpulse/adaptive_params/<symbol>.json) 拎 forward_return_history,`hit` field 已 auto-populated by M9 個 runReplay engine. HK.00700 81 records 48.1% hit rate baseline 即時 trigger
+> 2. **Sprint 2 paper trading sim** — 獨立 page `/paper-trading-sim` 大少人手操控落實倉位 + mark 啱錯,0 投資風險,累積 30+ BUY diversity samples
+> 3. **大少真實 trade** — 慢慢累積,手動 mark,ground truth
+> 
+> 大少「不想污染了原本嘅 Code Base」原則: 0 backend code logic 改動,只 schema migration (`source` field) + 獨立 aggregate script + 5 pytest. 對應 commit: `34969ed8` (4 files, 422 insertions). 對應 spec doc: ARCHITECTURE.md §15.7 + §15.9.1 + PROJECT_SPEC.md line 530 + README.md line 348/383 + MODULE-J-TRADE-JOURNAL.md §5 永久 Rules.
+
+> **大少 2026-08-10 09:44 更新 (Spec Sync #9)**: Stage 1+ Hybrid Step 1 spec doc sync (4 份 spec doc + 1 份 MODULE-J spec). 對應 commit: 啱啱 push 嘅 `34969ed8` 嘅 spec doc update (4-5 files). OpenClaw 維護 STOCKPULSE_REFERENCE.md + Daily Log (skip, 協議).
+
 | 編號 | Module | 狀態 (2026-08-08 23:55) | 點解先做 |
 |------|--------|------|----------|
 | ⏸️ Hidden | ~~Module 6: Multi-TF~~ | ⏸️ Hidden 等 Stage 1 done | Entry Timing 嘅基礎 — 但 testing page 唔支援 multi-timeframe, 大少 2026-08-07 23:15 指示 Stage 1 done 先做返 |

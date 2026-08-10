@@ -35,7 +35,16 @@ CREATE TABLE trade_journal (
   stop_loss REAL,                             -- 止蝕價 (optional, 留空 = 算法自動)
   notes TEXT,                                 -- 大少 備註 (optional, 留空 = '')
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  -- MVP 唔做 exit_date / exit_price / mark 啱/錯 (Stage 1+ 之後加)
+  -- Stage 1+ followup 4 個新 column (大少 15:04 揀 Full scope)
+  actual_exit_date TEXT,                      -- 真實賣出日期 (optional)
+  actual_exit_price REAL,                     -- 真實賣出價 (optional)
+  is_correct INTEGER,                         -- 啱(1) / 錯(0) / 未 mark(NULL)
+  updated_at TEXT,                            -- 最後改時間
+  -- Stage 1+ Hybrid source field (2026-08-10 09:33 大少 confirm Option 3)
+  source TEXT NOT NULL DEFAULT 'manual',      -- Hybrid 來源標記
+                                              -- 'manual' = 大少真實 trade (default)
+                                              -- 'paper_trading' = Sprint 2 獨立 page sim
+                                              -- 'm9_pilot_derive' = M9 Pilot 過去 records derive
   UNIQUE(symbol, entry_date)                  -- 防止重複 add
 );
 CREATE INDEX idx_trade_journal_symbol ON trade_journal(symbol);
@@ -133,6 +142,8 @@ testing page 加 1 個新 section (永久顯示, 跟其他 sections 一齊):
 - **冇 sanitization** — 純 numeric + symbol validation, 唔 render HTML
 - **冇 auth** — 內網 only, 大少 #9700 permanent rule
 - **Cache expiry 唔適用** — Trade Journal 永久, 唔可以 auto-calibrate 後刪
+- **`source` field 永久保留** (2026-08-10 09:33 大少 confirm Option 3) — 3 個 values 區分 3 條 stream (`'manual'` / `'paper_trading'` / `'m9_pilot_derive'`),所有 entry 必須標記 source 方便 Stage 1+ Bayesian tune 對齊 baseline
+- **forward_return_history 永久保留 (跨 L2 cache)** — `~/.stockpulse/adaptive_params/<symbol>.json` 嘅 `forward_return_history` 永遠唔刪 (大少 22:28 confirm),`services/adaptive_params_cache.py::clear_all()` 違反此 rule,permanent fix 留返 sprint 2
 
 ## 6. MVP 落地清單 (30 min)
 
@@ -151,6 +162,16 @@ testing page 加 1 個新 section (永久顯示, 跟其他 sections 一齊):
 - 統計頁 — total trades / hit rate / avg return / sharpe
 - Bayesian tune — 30+ 樣本後 tune 5 個 adaptive params
 - Trade Journal UI 改善 — filter, sort, export CSV
+
+### 7.1 Stage 1+ Hybrid (2026-08-10 09:33 大少 confirm Option 3) — DONE Step 1
+
+大少 reject 原本等真實 trade 累積 30+ 樣本嘅 plan (2-3 個月,投資風險),改揀 Hybrid 3 條 stream 並行:
+
+- **Stream A: 即時 derive M9 Pilot baseline** — `scripts/stage1p_aggregate_l2_cache.py` 讀 L2 cache forward_return_history,`hit` field 已 auto-populated by M9 個 runReplay engine. HK.00700 81 records 48.1% hit rate baseline 即時 trigger
+- **Stream B: Sprint 2 paper trading sim** — 獨立 page `/paper-trading-sim` 大少人手操控, 0 投資風險, 累積 30+ BUY diversity samples
+- **Stream C: 大少真實 trade** — 大少落實倉位,手動 mark 啱錯, ground truth
+
+對應 commit `34969ed8` (4 files, 422 insertions). 詳見 ARCHITECTURE §15.9.1.
 
 ## 8. 大少 永久 Rules 應用
 
