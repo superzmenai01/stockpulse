@@ -182,9 +182,15 @@ export async function runReplay(
   for (let stepIdx = startIdx; stepIdx <= endIdx; stepIdx += stepDays) {
     const stepKline = klines[stepIdx];
 
-    // Historical K 線: lookbackDays 之前到 stepIdx
-    const lookbackStartIdx = Math.max(0, stepIdx - lookbackDays);
-    const historicalKlines = klines.slice(lookbackStartIdx, stepIdx + 1);
+    // Historical K 線: 累積由 0 到 stepIdx (用 step 之前嘅全部 K 線)
+    // 大少 2026-08-10 08:08 fix (方案 C): 唔再 sub-set lookbackDays
+    // 因為 tune/validate 已經喺 caller (runWalkForwardCV) split 過 passed-in klines
+    // 再 sub-set 60 日會令 HLStructure 嘅 ≥99 bars gate 細到 throw Insufficient data
+    // 例如 walk-forward validate 拎 420 條 → runReplay stepIdx=300 嘅時候
+    // slice(300-60, 301) = 60 條 < 99 → HLStructure throw → 全部 replay 失敗
+    // 累積由 0 到 stepIdx 係 standard walk-forward 行為, 唔會 leak future data
+    // (因為 passed-in klines 已經係 tune/validate sub-set, 唔包 future)
+    const historicalKlines = klines.slice(0, stepIdx + 1);
 
     // 太短就 skip (decision engine 一般要 ≥ 60 bars, 留 buffer)
     if (historicalKlines.length < 30) {
@@ -700,7 +706,7 @@ export async function runWalkForwardCV(options: WalkForwardCVOptions): Promise<W
       klines: validateKlines,
       holdDays: [5, 10, 20],
       stepDays: 5,
-      lookbackDays: 60,
+      lookbackDays: 0,  // 累積 (V1 fix)
       ...options.baseReplayConfig,
       params: { ...(options.baseReplayConfig?.params ?? {}), ...fineTune.best.params },
     };

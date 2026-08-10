@@ -7973,7 +7973,8 @@ export const backTestAdapter = {
     console.log(`[backTestAdapter] start analyze ${symbol}, klines=${klineCount}, range=${JSON.stringify(klineDateRange)}`);
 
     // 1. Import back-test bundle (browser-compatible ESM)
-    const backTest = await import('./build/back-test.bundle.js');
+    // 大少 2026-08-10 08:35 fix Y1: 加 ?v=2.6.5 cache bust (numFolds 3 → 1, revert combinedKlines V2)
+    const backTest = await import('./build/back-test.bundle.js?v=2.6.5');
     const { runWalkForwardCV, runAdaptiveWindow, runCoarseGrid, runFineTune, runReplay, scoreResult } = backTest;
 
     // 2. 用 decisionEngineAdapter 做 decisionFn (內部 chain M1-M8)
@@ -8000,8 +8001,11 @@ export const backTestAdapter = {
         klines: normalizedKlines,
         decisionFn,
         baseSymbol: symbol,
-        numFolds: 3,
-        tuneRatio: 0.67,
+        // 大少 2026-08-10 08:37 numFolds 1 + tuneRatio 0.6 fix:
+        // 3 folds × (tune 67 + validate 33) tune verdict 67 < HLStructure 99 bar gate
+        // 1 fold × tuneRatio 0.6: 252 條 → tune 151 (>99 ✅) + validate 101 (>99 ✅)
+        numFolds: 1,
+        tuneRatio: 0.6,
         baseReplayConfig: { stepDays: options.stepDays ?? 5, lookbackDays: 60, holdDays: [5, 10, 20] },
       });
     } catch (e) {
@@ -8055,7 +8059,7 @@ export const backTestAdapter = {
           klines: normValidateKlines,
           holdDays: [5, 10, 20],
           stepDays: 5,
-          lookbackDays: 60,
+          lookbackDays: 0,  // 累積 (V1 fix)
           params: { ...fold.bestParams },
         }, decisionFn);
         // 大少 2026-08-10 Bug 1 fix — 收集 POST 失敗訊息, 喺 UI banner 顯示 (唔再 silent fail)

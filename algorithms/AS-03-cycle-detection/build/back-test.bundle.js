@@ -1,4 +1,4 @@
-// algorithms/AS-03-cycle-detection/modules/back-test.ts
+// modules/back-test.ts
 function getKlineDate(kline) {
   return new Date(kline.timestamp).toISOString().substring(0, 10);
 }
@@ -64,8 +64,7 @@ async function runReplay(klines, config, decisionFn) {
   const results = [];
   for (let stepIdx = startIdx; stepIdx <= endIdx; stepIdx += stepDays) {
     const stepKline = klines[stepIdx];
-    const lookbackStartIdx = Math.max(0, stepIdx - lookbackDays);
-    const historicalKlines = klines.slice(lookbackStartIdx, stepIdx + 1);
+    const historicalKlines = klines.slice(0, stepIdx + 1);
     if (historicalKlines.length < 30) {
       continue;
     }
@@ -341,7 +340,8 @@ async function runWalkForwardCV(options) {
       klines: validateKlines,
       holdDays: [5, 10, 20],
       stepDays: 5,
-      lookbackDays: 60,
+      lookbackDays: 0,
+      // 累積 (V1 fix)
       ...options.baseReplayConfig,
       params: { ...options.baseReplayConfig?.params ?? {}, ...fineTune.best.params }
     };
