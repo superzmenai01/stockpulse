@@ -7322,7 +7322,7 @@ export function renderDecisionEngineResult(verdict) {
 
   const { ssi_score, ssi_breakdown, tcm_matrix, alignment_score, grade, grade_score, grade_reason, kelly_fraction, kelly_position, module_verdicts } = verdict;
 
-  // 6 個 module 嘅 breakdown (大少 2026-08-10 v2: 自訂 CSS tooltip + 大字 14px + nowrap)
+  // 6 個 module 嘅 breakdown (大少 2026-08-10 v4: 對齊 v3 + state-pill 統一 min-width + padding 8px)
   const stateTooltipMap = {
     UP: TOOLTIPS.state_up,
     DOWN: TOOLTIPS.state_down,
@@ -7336,19 +7336,19 @@ export function renderDecisionEngineResult(verdict) {
     const rsi = rsiInfo(mv.sentiment_6d?.rsi || 0);
     const expColor = expRetColor(mv.expected_return);
     return `
-      <tr>
-        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.module}" style="text-align:left;padding:5px 6px;white-space:nowrap;">${modNameZh}</td>
-        <td class="m7-verdict-tooltip" data-help="${stateTooltipMap[mv.state] || TOOLTIPS.state}" style="text-align:center;padding:5px 6px;white-space:nowrap;"><span class="state-pill" style="background:${color}22;color:${color};border:1px solid ${color}">${decisionEngineStateLabel(mv.state)}</span></td>
-        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.conf}" style="text-align:right;padding:5px 6px;white-space:nowrap;">${fmtPct(mv.confidence, 'conf')}</td>
-        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.weight}" style="text-align:right;padding:5px 6px;white-space:nowrap;">${fmtPct(mv.base_weight, 'weight')}</td>
-        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.expRet}" style="text-align:right;padding:5px 6px;color:${expColor};font-weight:600;white-space:nowrap;">${fmtPct(mv.expected_return, 'expRet')}</td>
-        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.maxDD}" style="text-align:right;padding:5px 6px;white-space:nowrap;">${fmtPct(mv.max_drawdown_estimate, 'maxDD')}</td>
-        <td class="m7-verdict-tooltip" data-help="${rsi.tooltip}" style="text-align:right;padding:5px 6px;white-space:nowrap;">${rsi.value} <span style="color:${rsi.color};font-size:12px;font-weight:600;">(${rsi.label})</span></td>
+      <tr style="vertical-align:middle;">
+        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.module}" style="text-align:left;padding:10px 12px;white-space:nowrap;min-width:80px;">${modNameZh}</td>
+        <td class="m7-verdict-tooltip" data-help="${stateTooltipMap[mv.state] || TOOLTIPS.state}" style="text-align:center;padding:10px 12px;white-space:nowrap;min-width:80px;vertical-align:middle;"><span class="state-pill" style="display:inline-block;min-width:64px;text-align:center;background:${color}22;color:${color};border:1px solid ${color};border-radius:5px;padding:5px 10px;font-weight:600;">${decisionEngineStateLabel(mv.state)}</span></td>
+        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.conf}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:70px;">${fmtPct(mv.confidence, 'conf')}</td>
+        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.weight}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:70px;">${fmtPct(mv.base_weight, 'weight')}</td>
+        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.expRet}" style="text-align:right;padding:10px 12px;color:${expColor};font-weight:600;white-space:nowrap;min-width:90px;">${fmtPct(mv.expected_return, 'expRet')}</td>
+        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.maxDD}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:80px;">${fmtPct(mv.max_drawdown_estimate, 'maxDD')}</td>
+        <td class="m7-verdict-tooltip" data-help="${rsi.tooltip}" style="text-align:right;padding:10px 12px;white-space:nowrap;min-width:110px;">${rsi.value} <span style="color:${rsi.color};font-size:13px;font-weight:600;">(${rsi.label})</span></td>
       </tr>
     `;
   }).join('');
 
-  // TCM 3 對 pair (大少 2026-08-10 v2: 自訂 CSS tooltip + 大字 14px + nowrap + 即時當前值)
+  // TCM 3 對 pair (大少 2026-08-10 v4: padding 8px + 加大 min-width)
   const tcmRows = (tcm_matrix || []).map(p => {
     const alignColor = tcmAlignColor(p.alignment);
     const pair0Zh = MODULE_NAME_ZH[p.pair[0]] || p.pair[0];
@@ -7356,10 +7356,10 @@ export function renderDecisionEngineResult(verdict) {
     const alignHelp = `${TOOLTIPS.alignment_score} 當前值:${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}`;
     const trapHelp = `${TOOLTIPS.trap_penalty} 當前值:${(p.trap_penalty * 100).toFixed(0)}%`;
     return `
-      <tr>
-        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.tcm_pair}" style="text-align:left;padding:5px 6px;white-space:nowrap;">${pair0Zh} ↔ ${pair1Zh}</td>
-        <td class="m7-verdict-tooltip" data-help="${alignHelp}" style="text-align:right;padding:5px 6px;white-space:nowrap;"><span style="color:${alignColor};font-weight:600;">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
-        <td class="m7-verdict-tooltip" data-help="${trapHelp}" style="text-align:right;padding:5px 6px;white-space:nowrap;">${(p.trap_penalty * 100).toFixed(0)}%</td>
+      <tr style="vertical-align:middle;">
+        <td class="m7-verdict-tooltip" data-help="${TOOLTIPS.tcm_pair}" style="text-align:left;padding:10px 14px;white-space:nowrap;min-width:150px;font-weight:500;">${pair0Zh} ↔ ${pair1Zh}</td>
+        <td class="m7-verdict-tooltip" data-help="${alignHelp}" style="text-align:right;padding:10px 14px;white-space:nowrap;min-width:150px;"><span style="color:${alignColor};font-weight:700;font-size:15px;">${p.alignment > 0 ? '+' : ''}${p.alignment.toFixed(1)}</span></td>
+        <td class="m7-verdict-tooltip" data-help="${trapHelp}" style="text-align:right;padding:10px 14px;white-space:nowrap;min-width:150px;font-weight:600;font-size:15px;">${(p.trap_penalty * 100).toFixed(0)}%</td>
       </tr>
     `;
   }).join('');
@@ -7434,27 +7434,27 @@ export function renderDecisionEngineResult(verdict) {
         </div>
       </div>
 
-      <!-- 6 個 modules 嘅 breakdown (大少 2026-08-10 v2: responsive auto layout + 大字 14px + 自訂 CSS tooltip) -->
-      <h4 class="m7-verdict-tooltip" data-help="${TOOLTIPS.verdict_title}" style="margin-top:24px;margin-bottom:8px;font-size:16px;">📦 6 個模組嘅標準判決</h4>
+      <!-- 6 個 modules 嘅 breakdown (大少 2026-08-10 v5: 對齊 v4 + 統一 padding 10x12 + min-width 加大 + vertical-align middle) -->
+      <h4 class="m7-verdict-tooltip" data-help="${TOOLTIPS.verdict_title}" style="margin-top:24px;margin-bottom:10px;font-size:16px;">📦 6 個模組嘅標準判決</h4>
       <table class="data-summary m7-verdict-table" style="width:100%;border-collapse:collapse;font-size:14px;table-layout:auto;word-break:keep-all;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.module}" style="text-align:left;padding:6px 8px;min-width:60px;white-space:nowrap;">模組</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.state}" style="text-align:center;padding:6px 8px;min-width:50px;white-space:nowrap;">方向</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.conf}" style="text-align:right;padding:6px 8px;min-width:40px;white-space:nowrap;">信心</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.weight}" style="text-align:right;padding:6px 8px;min-width:40px;white-space:nowrap;">比重</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.expRet}" style="text-align:right;padding:6px 8px;min-width:60px;white-space:nowrap;">預期回報</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.maxDD}" style="text-align:right;padding:6px 8px;min-width:55px;white-space:nowrap;">最大回撤</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.rsi}" style="text-align:right;padding:6px 8px;min-width:65px;white-space:nowrap;">情緒指數</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.module}" style="text-align:left;padding:10px 12px;min-width:80px;white-space:nowrap;vertical-align:middle;">模組</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.state}" style="text-align:center;padding:10px 12px;min-width:80px;white-space:nowrap;vertical-align:middle;">方向</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.conf}" style="text-align:right;padding:10px 12px;min-width:70px;white-space:nowrap;vertical-align:middle;">信心</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.weight}" style="text-align:right;padding:10px 12px;min-width:70px;white-space:nowrap;vertical-align:middle;">比重</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.expRet}" style="text-align:right;padding:10px 12px;min-width:90px;white-space:nowrap;vertical-align:middle;">預期回報</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.maxDD}" style="text-align:right;padding:10px 12px;min-width:80px;white-space:nowrap;vertical-align:middle;">最大回撤</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.rsi}" style="text-align:right;padding:10px 12px;min-width:110px;white-space:nowrap;vertical-align:middle;">情緒指數</th>
           </tr>
         </thead>
         <tbody>${moduleRows}</tbody>
       </table>
 
-      <!-- TCM 3 對 pair (大少 2026-08-10 v2: 自訂 CSS tooltip + 大字 14px + nowrap) -->
-      <h4 class="m7-verdict-tooltip" data-help="${TOOLTIPS.tcm}" style="margin-top:24px;margin-bottom:8px;font-size:16px;">🔀 TCM 戰術交叉驗證 (3 對配對)</h4>
-      <div class="tcm-explanation" style="background:#f9f9f9;padding:12px;border-radius:6px;margin-bottom:12px;font-size:14px;color:#333;line-height:1.6;">
-        <strong>📖 點樣睇 TCM:</strong>
+      <!-- TCM 3 對 pair (大少 2026-08-10 v5: 解讀 box 再大 1.5x (font 16/padding 24/line 1.8) + 配對 table column 加闊 110) -->
+      <h4 class="m7-verdict-tooltip" data-help="${TOOLTIPS.tcm}" style="margin-top:28px;margin-bottom:10px;font-size:16px;">🔀 TCM 戰術交叉驗證 (3 對配對)</h4>
+      <div class="tcm-explanation" style="background:#f9f9f9;padding:24px 28px;border-radius:10px;margin-bottom:20px;font-size:16px;color:#222;line-height:1.8;border-left:5px solid #1890ff;">
+        <strong style="font-size:17px;">📖 點樣睇 TCM:</strong>
         <ul style="margin:8px 0 0 0;padding-left:20px;">
           <li><strong style="color:#26BA75;">共識度 +1.0</strong> = 兩個老師睇法完全一致</li>
           <li><strong style="color:#F39C12;">共識度 0.0</strong> = 冇共識,各睇各的</li>
@@ -7465,9 +7465,9 @@ export function renderDecisionEngineResult(verdict) {
       <table class="data-summary m7-tcm-table" style="width:100%;border-collapse:collapse;font-size:14px;table-layout:auto;word-break:keep-all;">
         <thead>
           <tr style="background:#f0f0f0;">
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.tcm_pair}" style="text-align:left;padding:6px 8px;min-width:120px;white-space:nowrap;">配對</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.alignment_score}" style="text-align:right;padding:6px 8px;min-width:60px;white-space:nowrap;">共識度</th>
-            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.trap_penalty}" style="text-align:right;padding:6px 8px;min-width:60px;white-space:nowrap;">矛盾扣分</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.tcm_pair}" style="text-align:left;padding:10px 14px;min-width:150px;white-space:nowrap;vertical-align:middle;">配對</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.alignment_score}" style="text-align:right;padding:10px 14px;min-width:150px;white-space:nowrap;vertical-align:middle;">共識度</th>
+            <th class="m7-verdict-tooltip" data-help="${TOOLTIPS.trap_penalty}" style="text-align:right;padding:10px 14px;min-width:150px;white-space:nowrap;vertical-align:middle;">矛盾扣分</th>
           </tr>
         </thead>
         <tbody>${tcmRows}</tbody>
