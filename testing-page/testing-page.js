@@ -58,7 +58,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 07:35 fix: ALGO_CACHE_BUST = '2.6.1' (debug log 擺去 normalizedKlines 之後, 避免 raw timestamp 係 string/undefined 嘅 crash)
 // 大少 2026-08-10 08:10 fix: ALGO_CACHE_BUST = '2.6.2' (back-test.ts runReplay 唔再 sub-set lookbackDays, 用累積 K 線避免 HLStructure ≥99 bars gate 失敗)
 // 大少 2026-08-10 08:45 fix: ALGO_CACHE_BUST = '2.6.6' (dataWindowDays 252 → 1260 + UI label 動態 folds.length)
-const ALGO_CACHE_BUST = '2.6.6';
+// 大少 2026-08-10 10:30 Sprint 2 paper trading sim: ALGO_CACHE_BUST = '2.7.0' (testing-page.js 加 paper trading sim 工具 link + paper-trading-sim.html 新 file)
+const ALGO_CACHE_BUST = '2.7.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

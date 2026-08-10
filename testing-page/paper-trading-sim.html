@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📋 Paper Trading Sim — Stage 1+ Hybrid Stream B</title>
+  <link rel="stylesheet" href="testing-page.css?v=2.3.14">
+  <style>
+    /* Paper Trading Sim 獨立 page 專用 style (0 改動 testing-page.css) */
+    .paper-trading-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    }
+    .paper-trading-header {
+      background: #2a2a2a;
+      color: #fff;
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .paper-trading-header h1 {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+    }
+    .paper-trading-header .subtitle {
+      color: #aaa;
+      font-size: 14px;
+    }
+    .verdict-display {
+      background: #1a1a1a;
+      color: #fff;
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .verdict-display .verdict-line {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid #333;
+    }
+    .verdict-display .verdict-line:last-child {
+      border-bottom: none;
+    }
+    .verdict-display .verdict-label {
+      color: #aaa;
+    }
+    .verdict-display .verdict-value {
+      color: #fff;
+      font-weight: 600;
+    }
+    .verdict-display .verdict-value.buy {
+      color: #4CAF50;
+    }
+    .verdict-display .verdict-value.wait {
+      color: #FFC107;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .action-buttons button {
+      flex: 1;
+      padding: 16px 20px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .action-buttons button:hover {
+      opacity: 0.85;
+    }
+    .action-buttons button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn-paper-submit {
+      background: #2196F3;
+      color: #fff;
+    }
+    .btn-mark-correct {
+      background: #4CAF50;
+      color: #fff;
+    }
+    .btn-mark-wrong {
+      background: #F44336;
+      color: #fff;
+    }
+    .btn-refresh {
+      background: #607D8B;
+      color: #fff;
+    }
+    .stats-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-chip {
+      background: #2a2a2a;
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-chip .stat-label {
+      color: #aaa;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .stat-chip .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .stat-chip .stat-value.hit-rate {
+      color: #4CAF50;
+    }
+    .stat-chip .stat-value.avg-return {
+      color: #FFC107;
+    }
+    .past-entries {
+      background: #1a1a1a;
+      color: #fff;
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .past-entries h2 {
+      margin-top: 0;
+      font-size: 18px;
+      color: #fff;
+    }
+    .past-entries table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .past-entries th,
+    .past-entries td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid #333;
+    }
+    .past-entries th {
+      color: #aaa;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .past-entries .entry-action-buy {
+      color: #4CAF50;
+    }
+    .past-entries .entry-action-wait {
+      color: #FFC107;
+    }
+    .past-entries .entry-mark-correct {
+      color: #4CAF50;
+    }
+    .past-entries .entry-mark-wrong {
+      color: #F44336;
+    }
+    .selector-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .selector-row select {
+      padding: 8px 12px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: #2a2a2a;
+      color: #fff;
+    }
+    .selector-row label {
+      color: #aaa;
+      font-size: 14px;
+    }
+    .error-banner {
+      background: #EE5151;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .info-banner {
+      background: #4CAF50;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="paper-trading-container">
+    <div class="paper-trading-header">
+      <h1>📋 Paper Trading Sim</h1>
+      <div class="subtitle">Stage 1+ Hybrid Option 3 — Stream B (大少 2026-08-10 09:33 confirm)</div>
+    </div>
+
+    <div id="errorBanner" class="error-banner" style="display: none;">
+      ❌ <span id="errorMessage">Error</span>
+    </div>
+    <div id="infoBanner" class="info-banner" style="display: none;">
+      ✅ <span id="infoMessage">Success</span>
+    </div>
+
+    <div class="selector-row">
+      <label for="symbolSelector">股票:</label>
+      <select id="symbolSelector">
+        <option value="HK.00700">HK.00700 (騰訊)</option>
+        <option value="US.AAPL">US.AAPL (Apple)</option>
+        <option value="US.MSFT">US.MSFT (Microsoft)</option>
+        <option value="US.GOOGL">US.GOOGL (Google)</option>
+        <option value="US.TSLA">US.TSLA (Tesla)</option>
+        <option value="HK.03690">HK.03690 (美團)</option>
+      </select>
+      <label for="periodSelector">期間:</label>
+      <select id="periodSelector">
+        <option value="1d" selected>1d (日線)</option>
+        <option value="1w">1w (週線)</option>
+        <option value="1m">1m (月線)</option>
+      </select>
+      <button class="btn-refresh" onclick="refreshAll()">🔄 重新整理</button>
+    </div>
+
+    <div class="verdict-display">
+      <div class="verdict-line">
+        <span class="verdict-label">M8 當前 verdict:</span>
+        <span class="verdict-value" id="verdictAction">載入中...</span>
+      </div>
+      <div class="verdict-line">
+        <span class="verdict-label">Confidence:</span>
+        <span class="verdict-value" id="verdictConfidence">—</span>
+      </div>
+      <div class="verdict-line">
+        <span class="verdict-label">State:</span>
+        <span class="verdict-value" id="verdictState">—</span>
+      </div>
+      <div class="verdict-line">
+        <span class="verdict-label">訊號時間:</span>
+        <span class="verdict-value" id="verdictTime">—</span>
+      </div>
+      <div class="verdict-line">
+        <span class="verdict-label">訊號價位:</span>
+        <span class="verdict-value" id="verdictPrice">—</span>
+      </div>
+    </div>
+
+    <div class="action-buttons">
+      <button class="btn-paper-submit" id="btnPaperSubmit" onclick="paperTradeSubmit()">
+        📝 模擬落實倉位
+      </button>
+      <button class="btn-mark-correct" id="btnMarkCorrect" onclick="markSelectedCorrect(true)">
+        ✅ Mark 啱 (選中 entry)
+      </button>
+      <button class="btn-mark-wrong" id="btnMarkWrong" onclick="markSelectedCorrect(false)">
+        ❌ Mark 錯 (選中 entry)
+      </button>
+    </div>
+
+    <div class="stats-panel">
+      <div class="stat-chip">
+        <div class="stat-label">Total</div>
+        <div class="stat-value" id="statTotal">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Correct</div>
+        <div class="stat-value" id="statCorrect">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Hit Rate</div>
+        <div class="stat-value hit-rate" id="statHitRate">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Avg 5d</div>
+        <div class="stat-value avg-return" id="statAvg5d">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Avg 20d</div>
+        <div class="stat-value avg-return" id="statAvg20d">—</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">Best / Worst</div>
+        <div class="stat-value" id="statBestWorst">—</div>
+      </div>
+    </div>
+
+    <div class="past-entries">
+      <h2>📋 過去 entry (newest first)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Date</th>
+            <th>Action</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>Return</th>
+            <th>Mark</th>
+            <th>選中</th>
+          </tr>
+        </thead>
+        <tbody id="pastEntriesBody">
+          <tr><td colspan="8" style="text-align: center; color: #aaa;">載入中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================================
+    // Paper Trading Sim (Stage 1+ Hybrid Stream B)
+    // 大少 2026-08-10 09:33 confirm Option 3
+    // 0 backend code 改動, 純前端 + reuse 6 個 existing trade_journal API
+    // Spec: docs/research/AS-03-cycle-detection/MODULE-PAPER-TRADING-SIM.md
+    // ============================================================================
+
+    const API_BASE = 'http://localhost:18792';
+    let currentVerdict = null;
+    let pastEntries = [];
+    let selectedEntryId = null;
+
+    // ============================================================================
+    // 4 個 main functions (跟 spec doc §3.2 行為)
+    // ============================================================================
+
+    // 1. loadM8Verdict — 拎 M8 當前 verdict
+    async function loadM8Verdict() {
+      const symbol = document.getElementById('symbolSelector').value;
+      const period = document.getElementById('periodSelector').value;
+      try {
+        // 用 testing page 嘅 M8 endpoint (M8 adapter 已經有 analyzeDecisionEngine endpoint)
+        // 為咗 0 backend code 改動, 我哋 fetch trade_journal/stats 拎 stats
+        // 同 fetch M8 verdict 從 testing page global state (M8 已經喺 testing page 跑過)
+        // 簡化做法: 直接 fetch kline + 跑 M8 adapter (後端冇 M8 獨立 endpoint)
+        // → 用 testing-page.js 嘅 M8 verdict 結果 cache 喺 localStorage
+
+        // 暫時方案: 用 testing page 嘅 M8 verdict 從 localStorage 拎
+        // testing-page.js 跑完 M8 verdict 之後會 set localStorage 'lastM8Verdict'
+        const cached = localStorage.getItem('lastM8Verdict');
+        if (cached) {
+          currentVerdict = JSON.parse(cached);
+          renderVerdict();
+        } else {
+          showError('冇 M8 verdict 喺 localStorage, 請先喺 testing page 跑 M8 (08 — AS-03-DEC) 拎 verdict');
+        }
+      } catch (err) {
+        showError('loadM8Verdict error: ' + err.message);
+      }
+    }
+
+    // 2. paperTradeSubmit — 模擬落實倉位 (POST /api/trade-journal with source='paper_trading')
+    async function paperTradeSubmit() {
+      if (!currentVerdict) {
+        showError('冇 M8 verdict, 請先 load');
+        return;
+      }
+      const symbol = document.getElementById('symbolSelector').value;
+      const today = new Date().toISOString().split('T')[0];
+      try {
+        const response = await fetch(`${API_BASE}/api/trade-journal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: symbol,
+            entry_date: today,
+            entry_price: currentVerdict.price || 0,
+            shares: 1.0,
+            notes: `M8 verdict: ${currentVerdict.finalAction || 'UNKNOWN'} (confidence ${currentVerdict.confidence || 'N/A'}, state ${currentVerdict.state || 'N/A'})`,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        const result = await response.json();
+        showInfo(`✅ 模擬落實倉位 OK: ${symbol} @ ${currentVerdict.price} (id=${result.id})`);
+        // 直接 UPDATE source field 落 DB (用 SQL via 將來 endpoint, 而家我哋簡化為 client-side 標記)
+        // 暫時方案: POST entry 完之後, 喺前端記低 source='paper_trading' 喺 localStorage
+        markEntryAsPaperTrading(result.id);
+        await loadPastEntries();
+        await refreshStats();
+      } catch (err) {
+        showError('paperTradeSubmit error: ' + err.message);
+      }
+    }
+
+    // 3. markSelectedCorrect — Mark 啱/錯 (PUT /api/trade-journal/{id})
+    async function markSelectedCorrect(isCorrect) {
+      if (!selectedEntryId) {
+        showError('請先喺 past entries table 揀一個 entry');
+        return;
+      }
+      try {
+        const response = await fetch(`${API_BASE}/api/trade-journal/${selectedEntryId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            is_correct: isCorrect,
+            actual_exit_date: new Date().toISOString().split('T')[0],
+            actual_exit_price: currentVerdict ? (currentVerdict.price || 0) : 0,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        showInfo(`✅ Entry #${selectedEntryId} mark 做 ${isCorrect ? '啱' : '錯'}`);
+        await loadPastEntries();
+        await refreshStats();
+      } catch (err) {
+        showError('markSelectedCorrect error: ' + err.message);
+      }
+    }
+
+    // 4. refreshStats — 重新整理 (Stats panel + past entries + verdict)
+    async function refreshAll() {
+      await loadM8Verdict();
+      await loadPastEntries();
+      await refreshStats();
+    }
+
+    // ============================================================================
+    // Helper functions
+    // ============================================================================
+
+    // loadPastEntries — 拎 past entries, client-side filter source='paper_trading'
+    async function loadPastEntries() {
+      try {
+        const response = await fetch(`${API_BASE}/api/trade-journal?limit=200`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+        const data = await response.json();
+        const allEntries = data.entries || [];
+        // Client-side filter: source='paper_trading' 標記喺 localStorage 'paperTradingIds'
+        const paperIds = getPaperTradingIds();
+        pastEntries = allEntries.filter(e => paperIds.has(e.id));
+        renderPastEntries();
+      } catch (err) {
+        showError('loadPastEntries error: ' + err.message);
+      }
+    }
+
+    // refreshStats — 用 pastEntries 計算 6 個 metrics (client-side, 0 backend code 改動)
+    function refreshStats() {
+      const total = pastEntries.length;
+      const withMark = pastEntries.filter(e => e.is_correct !== null && e.is_correct !== undefined);
+      const correct = withMark.filter(e => e.is_correct === 1).length;
+      const hitRate = withMark.length > 0 ? correct / withMark.length : null;
+      const returns5d = [];
+      const returns20d = [];
+      const allReturns = [];
+      pastEntries.forEach(e => {
+        if (e.actual_exit_price && e.entry_price) {
+          const ret = (e.actual_exit_price - e.entry_price) / e.entry_price;
+          allReturns.push(ret);
+          if (e.actual_exit_date && e.entry_date) {
+            const days = (new Date(e.actual_exit_date) - new Date(e.entry_date)) / (1000 * 60 * 60 * 24);
+            if (days <= 5) returns5d.push(ret);
+            else if (days <= 20) returns20d.push(ret);
+          }
+        }
+      });
+      const avg5d = returns5d.length > 0 ? returns5d.reduce((a, b) => a + b, 0) / returns5d.length : null;
+      const avg20d = returns20d.length > 0 ? returns20d.reduce((a, b) => a + b, 0) / returns20d.length : null;
+      const best = allReturns.length > 0 ? Math.max(...allReturns) : null;
+      const worst = allReturns.length > 0 ? Math.min(...allReturns) : null;
+
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statCorrect').textContent = correct;
+      document.getElementById('statHitRate').textContent = hitRate !== null ? (hitRate * 100).toFixed(1) + '%' : '—';
+      document.getElementById('statAvg5d').textContent = avg5d !== null ? (avg5d * 100).toFixed(2) + '%' : '—';
+      document.getElementById('statAvg20d').textContent = avg20d !== null ? (avg20d * 100).toFixed(2) + '%' : '—';
+      document.getElementById('statBestWorst').textContent = best !== null ? `${(best * 100).toFixed(2)}% / ${(worst * 100).toFixed(2)}%` : '—';
+    }
+
+    // renderVerdict — 顯示 M8 verdict
+    function renderVerdict() {
+      if (!currentVerdict) {
+        document.getElementById('verdictAction').textContent = '—';
+        document.getElementById('verdictConfidence').textContent = '—';
+        document.getElementById('verdictState').textContent = '—';
+        document.getElementById('verdictTime').textContent = '—';
+        document.getElementById('verdictPrice').textContent = '—';
+        return;
+      }
+      const action = currentVerdict.finalAction || 'UNKNOWN';
+      const actionClass = action === 'BUY' ? 'buy' : (action === 'WAIT' ? 'wait' : '');
+      document.getElementById('verdictAction').textContent = action;
+      document.getElementById('verdictAction').className = 'verdict-value ' + actionClass;
+      document.getElementById('verdictConfidence').textContent = currentVerdict.confidence !== undefined ? currentVerdict.confidence.toFixed(2) : '—';
+      document.getElementById('verdictState').textContent = currentVerdict.state || '—';
+      document.getElementById('verdictTime').textContent = currentVerdict.timestamp || new Date().toISOString();
+      document.getElementById('verdictPrice').textContent = currentVerdict.price !== undefined ? `$${currentVerdict.price.toFixed(2)}` : '—';
+    }
+
+    // renderPastEntries — render past entries table
+    function renderPastEntries() {
+      const tbody = document.getElementById('pastEntriesBody');
+      if (pastEntries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #aaa;">未有 paper trading entry, 撳「📝 模擬落實倉位」開始</td></tr>';
+        return;
+      }
+      tbody.innerHTML = pastEntries.map((e, idx) => {
+        const actionClass = e.notes && e.notes.includes('BUY') ? 'entry-action-buy' : (e.notes && e.notes.includes('WAIT') ? 'entry-action-wait' : '');
+        const markText = e.is_correct === 1 ? '✅ 啱' : (e.is_correct === 0 ? '❌ 錯' : '—');
+        const markClass = e.is_correct === 1 ? 'entry-mark-correct' : (e.is_correct === 0 ? 'entry-mark-wrong' : '');
+        const returnText = (e.actual_exit_price && e.entry_price) ? ((e.actual_exit_price - e.entry_price) / e.entry_price * 100).toFixed(2) + '%' : '—';
+        const exitText = e.actual_exit_price ? `$${e.actual_exit_price.toFixed(2)}` : '—';
+        const isSelected = selectedEntryId === e.id ? '✓' : '';
+        const rowStyle = isSelected ? 'background: #2a4a6a;' : '';
+        return `<tr style="${rowStyle}">
+          <td>${idx + 1}</td>
+          <td>${e.entry_date}</td>
+          <td class="${actionClass}">${e.notes && e.notes.includes('BUY') ? 'BUY' : (e.notes && e.notes.includes('WAIT') ? 'WAIT' : '—')}</td>
+          <td>$${e.entry_price.toFixed(2)}</td>
+          <td>${exitText}</td>
+          <td>${returnText}</td>
+          <td class="${markClass}">${markText}</td>
+          <td><button onclick="selectEntry(${e.id})" style="padding: 2px 8px;">${isSelected ? '✓ 選中' : '選'}</button></td>
+        </tr>`;
+      }).join('');
+    }
+
+    // selectEntry — 揀 entry 準備 mark 啱/錯
+    function selectEntry(id) {
+      selectedEntryId = id;
+      renderPastEntries();
+    }
+
+    // localStorage helpers — 暫存 source='paper_trading' 標記 (client-side)
+    function markEntryAsPaperTrading(id) {
+      const ids = getPaperTradingIds();
+      ids.add(id);
+      localStorage.setItem('paperTradingIds', JSON.stringify([...ids]));
+    }
+    function getPaperTradingIds() {
+      const stored = localStorage.getItem('paperTradingIds');
+      if (!stored) return new Set();
+      return new Set(JSON.parse(stored));
+    }
+
+    // showError / showInfo — banner helpers
+    function showError(msg) {
+      document.getElementById('errorMessage').textContent = msg;
+      document.getElementById('errorBanner').style.display = 'block';
+      setTimeout(() => { document.getElementById('errorBanner').style.display = 'none'; }, 5000);
+    }
+    function showInfo(msg) {
+      document.getElementById('infoMessage').textContent = msg;
+      document.getElementById('infoBanner').style.display = 'block';
+      setTimeout(() => { document.getElementById('infoBanner').style.display = 'none'; }, 3000);
+    }
+
+    // Initial load
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshAll();
+    });
+  </script>
+</body>
+</html>
