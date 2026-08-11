@@ -63,8 +63,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 22:15 M7 UI 顯示優化 v6: ALGO_CACHE_BUST = '3.3.0' (TCM 配對 table column 平 min-width 150/150/150 1:1:1 對齊)
 // 大少 2026-08-10 22:50 M7 稱呼改: ALGO_CACHE_BUST = '3.4.0' (「校長/老師」→ 「演算法/Synthesizer」更專業)
 // 大少 2026-08-10 23:00 M8 v2 中文化: ALGO_CACHE_BUST = '3.5.0' (Standard Verdict 中文化 + TCM 中文 + 短期走勢對齊 + trading card 加現價 + popup tooltip)
-// 大少 2026-08-11 M8 v3.7 fix: ALGO_CACHE_BUST = '3.7.0' (M8 v3.6.1 → v3.7.0 改動: M1/zmen ① ② label 中文化 + 4 個 SVG chart 加 popup + renderModuleStateBar 內 state 用中文 label 加 popup + 「無 m1 verdict」改「無 m1 演算法結果」)
-const ALGO_CACHE_BUST = '3.7.0';
+// 大少 2026-08-11 M8 v3.8 fix: ALGO_CACHE_BUST = '3.8.0' (M8 v3.7 → v3.8.0 改動: 中長線交易卡加返「現價」 field, 跟短炒一樣 (黃色背景 + 休市標記 + popup), grid 3→4 columns, 用 meta.currentPrice 拎)
+const ALGO_CACHE_BUST = '3.8.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

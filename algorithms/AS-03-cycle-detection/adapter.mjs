@@ -8167,8 +8167,12 @@ function renderPositionDecisionEngine(verdict) {
   `;
 
   // Position trading card (動態 5 日線/20 日線 stop)
+  // 現價: 跟短炒一樣, 從 cycle synth 嘅 meta.currentPrice 拎 (fallback if null)
+  const posCurrentPrice = meta?.currentPrice;
+  const hasPosPrice = posCurrentPrice != null && posCurrentPrice > 0;
   const POS_TC_TOOLTIPS = {
-    header: '中長線交易卡: 3 個關鍵價位 (入場/動態止蝕/移動止蝕), 跟 5 日線 + 20 日線 動態調整, 唔設固定目標價',
+    header: '中長線交易卡: 4 個關鍵價位 (現價/入場/動態止蝕/移動止蝕), 跟 5 日線 + 20 日線 動態調整, 唔設固定目標價',
+    current_price: '⏸️ 現價: 從 cycle synthesizer 嘅 meta.currentPrice 拎, 今日 close 價。即使休市都會顯示最後收盤價',
     holding: '持倉時間: 1-3 個月, 中長線 trading 唔急食糊, 等中長期趨勢自然行',
     kelly: '凱利倉位: 八分一倉 (1/8) 預設, 波動大自動收細, 跌穿動態止蝕就走',
     entry_zone_pos: '🎯 入場區間: 現價 ±1.5% (跟中波動預設, 高波動 ±2.5%, 低波動 ±1.0%)',
@@ -8183,17 +8187,21 @@ function renderPositionDecisionEngine(verdict) {
       <span class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.kelly}">凱利 ${tc.kelly_fraction || '八分一倉'} (1/8)</span> ·
       唔好追高, 訊號清晰先入場
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-      <div class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.entry_zone_pos}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.current_price}" style="background:${hasPosPrice ? '#fffbe6' : '#f9f9f9'};border:1px solid ${hasPosPrice ? '#FAAD14' : '#ddd'};border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">⏸️ 現價 ${hasPosPrice ? '(休市)' : ''}</div>
+        <div style="font-size:14px;font-weight:700;color:${hasPosPrice ? '#FAAD14' : '#999'};">${hasPosPrice ? '$' + posCurrentPrice.toFixed(2) : '—'}</div>
+      </div>
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.entry_zone_pos}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
         <div style="font-size:14px;font-weight:700;">$${(tc.entry_zone?.[0] || 0).toFixed(2)} - $${(tc.entry_zone?.[1] || 0).toFixed(2)}</div>
       </div>
-      <div class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.dynamic_stop}" style="background:#fff1f0;border-radius:8px;padding:12px;">
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.dynamic_stop}" style="background:#fff1f0;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">🛑 動態止蝕 (5 日線 × 0.98)</div>
         <div style="font-size:14px;font-weight:700;color:#EE5151;">$${(tc.stop_loss || 0).toFixed(2)}</div>
         <div style="font-size:10px;color:#999;">5 日線 = ${meta.ma5 != null ? `$${meta.ma5.toFixed(2)}` : '(數據不足)'}</div>
       </div>
-      <div class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.trailing_stop}" style="background:#f0f5ff;border-radius:8px;padding:12px;">
+      <div class="trading-card-field m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.trailing_stop}" style="background:#f0f5ff;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">📉 移動止蝕 (20 日線)</div>
         <div style="font-size:14px;font-weight:700;">$${(tc.trailing_stop || 0).toFixed(2)}</div>
         <div style="font-size:10px;color:#999;">20 日線 = ${meta.ma20 != null ? `$${meta.ma20.toFixed(2)}` : '(數據不足)'}</div>
