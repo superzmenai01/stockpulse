@@ -7034,7 +7034,7 @@ function renderSentimentRadar(sentiment, title, colorHex = '#1890ff') {
   }).join('');
 
   return `
-    <div class="svg-chart" style="text-align:center;">
+    <div class="svg-chart m8-verdict-tooltip" data-help="6 維情緒雷達: 6 個演算法嘅情緒指標 (RSI 相對強弱指數 / %B 布林帶位置 / 乖離 乖離率 / 波動 波動偏度 / 換手 換手率 / 動能 連漲跌加速度), 數值範圍 -1 到 +1 (正=強/負=弱/0=中性), 6 邊形愈大代表情緒愈強" style="text-align:center;">
       <div style="font-size:12px;color:#666;margin-bottom:4px;">${title}</div>
       <svg width="200" height="200" viewBox="0 0 200 200" style="display:inline-block;">
         <!-- 6 個 concentric rings (0.25 / 0.5 / 0.75 / 1.0) -->
@@ -7082,8 +7082,8 @@ function renderKellyDonut(kellyFraction) {
   const circumference = 2 * Math.PI * radius;
   const dashLength = k.value * circumference;
   return `
-    <div class="svg-chart" style="text-align:center;">
-      <div style="font-size:12px;color:#666;margin-bottom:4px;">💰 Kelly 倉位分數</div>
+    <div class="svg-chart m8-verdict-tooltip" data-help="凱利倉位分數 donut: 跟平均真實波幅率 (ATR%) 自動切嘅倉位大小。半倉 (50%) = 低波動 / 四分一倉 (25%) = 中波動 / 八分一倉 (12.5%) = 高波動。波動愈大倉位愈細, 自動風控" style="text-align:center;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">💰 凱利倉位分數</div>
       <svg width="140" height="140" viewBox="0 0 140 140" style="display:inline-block;">
         <circle cx="70" cy="70" r="${radius}" fill="none" stroke="#eee" stroke-width="14" />
         <circle cx="70" cy="70" r="${radius}" fill="none" stroke="${k.color}" stroke-width="14"
@@ -7104,8 +7104,8 @@ function renderAlignmentBar(alignment) {
   const color = alignment < 0.4 ? '#EE5151' : alignment < 0.7 ? '#F39C12' : '#26BA75';
   const label = alignment < 0.4 ? '矛盾' : alignment < 0.7 ? '部分一致' : '高度一致';
   return `
-    <div class="svg-chart" style="text-align:center;">
-      <div style="font-size:12px;color:#666;margin-bottom:4px;">📐 Alignment 戰略戰術匹配度</div>
+    <div class="svg-chart m8-verdict-tooltip" data-help="對齊度條 (Alignment 戰略戰術匹配度): 6 個演算法之間嘅同向程度 (0-100%)。<40% 紅色 = 矛盾 (小心入場) / 40-70% 黃色 = 部分一致 (中等) / >70% 綠色 = 高度一致 (信心高)。顏色對應 M7 Synthesizer 嘅 alignment_score" style="text-align:center;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">📐 對齊度 (戰略戰術匹配度)</div>
       <svg width="200" height="60" viewBox="0 0 200 60" style="display:inline-block;">
         <rect x="0" y="20" width="200" height="20" fill="#eee" rx="4" />
         <rect x="0" y="20" width="${alignment * 200}" height="20" fill="${color}" rx="4" />
@@ -7134,13 +7134,14 @@ function renderModuleStateBar(moduleVerdicts) {
   const items = moduleVerdicts.map((v) => {
     const color = stateColor[v.state] || '#666';
     const modNameZh = MODULE_NAME_ZH[v.module_id] || v.module_id;
-    return `<div style="display:inline-block;margin:2px 4px 2px 0;padding:4px 8px;background:${color}22;color:${color};border:1px solid ${color};border-radius:4px;font-size:11px;">
-      <strong>${modNameZh}</strong>: ${v.state} (${(v.confidence * 100).toFixed(0)}%)
+    const stateLabel = decisionEngineStateLabel(v.state);
+    return `<div class="m8-verdict-tooltip" data-help="${modNameZh}: ${stateLabel} (信心 ${(v.confidence * 100).toFixed(0)}%) — 6 個演算法之一嘅方向同信心" style="display:inline-block;margin:2px 4px 2px 0;padding:4px 8px;background:${color}22;color:${color};border:1px solid ${color};border-radius:4px;font-size:11px;">
+      <strong>${modNameZh}</strong>: ${stateLabel} (${(v.confidence * 100).toFixed(0)}%)
     </div>`;
   }).join('');
   return `
-    <div class="svg-chart" style="text-align:left;">
-      <div style="font-size:12px;color:#666;margin-bottom:6px;">📦 6 個 Modules State 全部顯示 (永遠全 Show)</div>
+    <div class="svg-chart m8-verdict-tooltip" data-help="6 個演算法嘅狀態 chip 全部顯示 (永遠全 Show 永久 rule): 每個演算法 (均線/峰谷/趨勢線/動能/量價/波動) 嘅大方向同信心, 6 個加埋等於 M7 嘅綜合判定" style="text-align:left;">
+      <div style="font-size:12px;color:#666;margin-bottom:6px;">📦 6 個演算法狀態全部顯示 (永遠全 Show)</div>
       ${items}
     </div>
   `;
@@ -8068,33 +8069,33 @@ function renderPositionDecisionEngine(verdict) {
   const actionColor = finalActionColor(final_action);
   const actionLabel = finalActionLabel(final_action);
 
-  // 第一個結果: M1 (新 M1 v2.0) 嘅 cycle verdict
+  // 第一個結果: M1 (新版均線演算法 v2.0) 嘅 cycle verdict
   const m1ResultHTML = m1_verdict ? `
-    <div class="cycle-synth-result" style="background:#f0f8ff;border:2px solid #1890ff;border-radius:8px;padding:12px;">
-      <div style="font-size:13px;font-weight:700;color:#1890ff;margin-bottom:6px;">① M1 (新 AS-03-MA v2.0)</div>
+    <div class="cycle-synth-result m8-verdict-tooltip" data-help="M1: 新版均線演算法 v2.0 (AS-03-MA v2.0, 用 5 日線/10 日線/20 日線配合 13 條 rule 判斷大方向, 較新, 用嚟做中長線 trading 嘅主力)" style="background:#f0f8ff;border:2px solid #1890ff;border-radius:8px;padding:12px;">
+      <div style="font-size:13px;font-weight:700;color:#1890ff;margin-bottom:6px;">① M1 (新版均線演算法 v2.0)</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="state-pill" style="background:${stateColors[m1_verdict.state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
           ${stateLabels[m1_verdict.state] || m1_verdict.state}
         </span>
         <span style="font-size:14px;font-weight:600;">${(m1_verdict.confidence * 100).toFixed(0)}% 信心</span>
       </div>
-      <div style="font-size:11px;color:#666;margin-top:4px;">${m1_verdict.meta?.source || 'AS-03-MA v2.0'}</div>
+      <div style="font-size:11px;color:#666;margin-top:4px;">${m1_verdict.meta?.source || '新版均線演算法 v2.0'}</div>
     </div>
-  ` : '<div class="cycle-synth-result">無 m1 verdict</div>';
+  ` : '<div class="cycle-synth-result">無 m1 演算法結果</div>';
 
-  // 第二個結果: zmen 嘅 cycle verdict
+  // 第二個結果: zmen (舊版均線演算法 v0.3.0) 嘅 cycle verdict
   const zmenResultHTML = zmen_verdict ? `
-    <div class="cycle-synth-result" style="background:#fff7e6;border:2px solid #fa8c16;border-radius:8px;padding:12px;">
-      <div style="font-size:13px;font-weight:700;color:#fa8c16;margin-bottom:6px;">② zmen (舊 M1 v0.3.0)</div>
+    <div class="cycle-synth-result m8-verdict-tooltip" data-help="zmen 均算法: 舊版均線演算法 v0.3.0 (zmen 風格, 較舊但穩定, 用嚟做 cross-check 同 M1 對比共識, 60/40 加權)" style="background:#fff7e6;border:2px solid #fa8c16;border-radius:8px;padding:12px;">
+      <div style="font-size:13px;font-weight:700;color:#fa8c16;margin-bottom:6px;">② zmen (舊版均線演算法 v0.3.0)</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="state-pill" style="background:${stateColors[zmen_verdict.state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
           ${stateLabels[zmen_verdict.state] || zmen_verdict.state}
         </span>
         <span style="font-size:14px;font-weight:600;">${(zmen_verdict.confidence * 100).toFixed(0)}% 信心</span>
       </div>
-      <div style="font-size:11px;color:#666;margin-top:4px;">${zmen_verdict.meta?.source || 'zmen均算法 v0.3.0'}</div>
+      <div style="font-size:11px;color:#666;margin-top:4px;">${zmen_verdict.meta?.source || '舊版均線演算法 v0.3.0'}</div>
     </div>
-  ` : '<div class="cycle-synth-result">無 zmen verdict</div>';
+  ` : '<div class="cycle-synth-result">無 zmen 演算法結果</div>';
 
   // 第三個結果: 加權綜合 (M1 60% + zmen 40%)
   const synthStateColor = stateColors[state] || '#666';
