@@ -6132,6 +6132,14 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
       interpretation: `[MAAlignmentV2] 數據不足: need >= ${requiredLength} bars, got ${klines.length}`,
       evidence: [],
       warnings: [`數據不足 (${klines.length}/${requiredLength})`],
+      _warnings: [makeWarning('critical', 'M1', 'INSUFFICIENT_DATA',
+        '數據不足以跑 M1 v2.0 MA Alignment',
+        {
+          issue: `klines count ${klines.length} < ${requiredLength} required`,
+          impact: '10 條 rule (A-J) 全部無法 compute, M1 verdict 唔可信',
+          fix: '增加 dataWindowDays 設定 (e.g. count=200)',
+          context: { kline_count: klines.length, min_required: requiredLength },
+        })],
       meta: {
         dataDays: klines.length,
         requiredLength,
@@ -6338,6 +6346,33 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
   };
 
   const stateMap = { uptrend: 'UP', downtrend: 'DOWN', sideways: 'SIDEWAYS' };
+  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c fix) — M1 v2.0 MA Alignment
+  const m1v2Warnings = [];
+  // Check cycle state = SIDEWAYS (matchedRules 0 個 fallback)
+  if (candidate === 'sideways' && adjustmentLog.length === 0) {
+    m1v2Warnings.push(makeWarning('warning', 'M1', 'FALLBACK_USED',
+      'M1 v2.0 cycle = sideways 默認',
+      {
+        issue: 'M1 v2.0 cycle 推導結果 = sideways (無明確 rule match)',
+        impact: 'M1 verdict 默認 SIDEWAYS, 對 M7 综合判定有偏差',
+        fix: '正常橫行市況; 如果市況明顯趨勢但 verdict SIDEWAYS, 檢查 kline data',
+        context: { candidate: 'sideways', period: '1d' },
+      }
+    ));
+  }
+  // Confidence 過低 (< 0.4)
+  if (confidence != null && confidence < 0.4) {
+    m1v2Warnings.push(makeWarning('warning', 'M1', 'THRESHOLD_BREACH',
+      `M1 v2.0 信心過低 (${(confidence * 100).toFixed(0)}%)`,
+      {
+        issue: `confidence = ${confidence.toFixed(4)} < 0.4`,
+        impact: 'M1 verdict 不可信',
+        fix: '橫行市況, 屬於正常',
+        context: { confidence },
+      }
+    ));
+  }
+
   return {
     moduleId: 'ma-alignment-v2',
     timeframe: '1d',
@@ -6345,7 +6380,8 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     confidence,
     interpretation: reasonText,
     evidence: adjustmentLog.map(log => ({ type: 'adjustment', label: log, value: log, passed: true })),
-    warnings: [],
+    warnings: m1v2Warnings,
+    _warnings: m1v2Warnings,  // 大少 2026-08-11 v1.0.0
     meta,
     timestamp: Date.now(),
   };
