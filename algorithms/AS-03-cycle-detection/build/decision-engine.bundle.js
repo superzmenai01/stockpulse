@@ -1,14 +1,19 @@
 // algorithms/AS-03-cycle-detection/modules/cycle-synthesizer.ts
+// 大少 #FIX-MA-TRIGGER (2026-08-11) — esbuild bundle 原本 backward-looking (ma[0..period-2]=NaN)
+//   同 cycle-synthesizer.ts forward-looking (ma[0]=today N-day MA) 唔一致
+//   trigger 計算用 ma[0] 永遠 NaN, 5 個 trigger 全部 false
+//   改返 forward-looking 跟 .ts 一致
 function computeMA(closes, period) {
   const ma = [];
-  for (let i = 0; i < closes.length; i++) {
-    if (i < period - 1) {
+  const n = closes.length;
+  for (let i = 0; i < n; i++) {
+    if (i + period - 1 >= n) {
       ma.push(NaN);
       continue;
     }
     let sum = 0;
-    for (let j = i - period + 1; j <= i; j++) {
-      sum += closes[j];
+    for (let j = 0; j < period; j++) {
+      sum += closes[i + j];
     }
     ma.push(sum / period);
   }

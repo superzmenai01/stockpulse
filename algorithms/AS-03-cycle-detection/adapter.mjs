@@ -27,7 +27,7 @@
 export const id = 'AS-03';
 export const name = '均線系統週期斷法';
 export const version = '2.3.0';
-export const description = '用 10 條 rule-based 算法 (A-J) 識別股票所處嘅周期（上升 / 下跌 / 橫行 / 轉勢）+ M5 Multi-TF 多時間框架綜合 (Stage 2) + M8 SlopeMomentum 斜率動能 (Stage 2) + 兩線策略 (Position + Swing)';
+export const description = '用 10 條 rule-based 算法 (A-J) 識別股票所處嘅周期（上升 / 下跌 / 橫行 / 轉勢）+ M5 Multi-TF 多時間框架綜合 (Stage 2) + M8 SlopeMomentum 斜率動能 (Stage 2) + 中長線/短炒 雙策略 (Position + Swing)';
 
 export const CycleState = Object.freeze({
   UP: 'UP',
@@ -6879,18 +6879,18 @@ function finalActionLabel(action) {
   }
 }
 
-/** 8 個 finalAction → 純 label (冇 emoji, 用喺表格)
+/** 8 個最終動作 → 純短 label (中文化, 用喺表格, 大少 2026-08-11)
  */
 function finalActionShortLabel(action) {
   switch (action) {
-    case 'BUY': return 'BUY';
-    case 'ADD': return 'ADD';
-    case 'HOLD': return 'HOLD';
-    case 'WAIT': return 'WAIT';
-    case 'REDUCE': return 'REDUCE';
-    case 'SELL': return 'SELL';
-    case 'TRAP': return 'TRAP';
-    case 'TRANSITION': return 'TRANSITION';
+    case 'BUY': return '買入';
+    case 'ADD': return '加注';
+    case 'HOLD': return '持有';
+    case 'WAIT': return '等待';
+    case 'REDUCE': return '減注';
+    case 'SELL': return '賣出';
+    case 'TRAP': return '陷阱';
+    case 'TRANSITION': return '轉勢';
     default: return '未知';
   }
 }
@@ -7551,27 +7551,27 @@ export const synthesizerAdapter = {
 //   Trading card / 短期走勢 / 人話解讀 / adaptive params 將喺 2.2-2.5 commits impl
 export const decisionEngineAdapter = {
   id: 'AS-03-DEC',
-  name: '終極綜合判斷引擎 (第八模組 · 兩線策略)',
-  version: '2.1.0',  // 大少 2026-08-09 19:06 — 兩線策略 (position + swing), UI 第一線先, 第二線後
-  description: '兩線策略: 第一線 (position trading, 大少風格) 用 M1+zmen cycle synthesizer + 5 個 MA trigger 推導; 第二線 (swing trading, M8 原本) 用 6 個 module 綜合分數推導 8 個行動指令',
+  name: '終極綜合判斷引擎 (第八模組 · 中長線/短炒 策略)',
+  version: '2.2.0',  // 大少 2026-08-11 — 中長線 (position) / 短炒 (swing) 雙策略, 預設中長線; trigger bug fix
+  description: '中長線 (position trading, 大少 cycle 風格) 用 M1+zmen cycle synthesizer + 5 個 MA trigger 推導; 短炒 (swing trading, M8 原本) 用 6 個 module 綜合分數推導 8 個行動指令',
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
-    // 大少 2026-08-09 19:06 — 兩線策略切換 dropdown
+    // 大少 2026-08-11 — 中長線/短炒 策略切換 dropdown
     {
       key: 'strategyMode',
       label: '交易策略',
       type: 'select',
       options: [
-        { value: 'swing', label: '🎯 短炒 (Swing, M8 原本 8 個 finalAction)' },
-        { value: 'position', label: '📈 中長線 (Position, 大少 cycle 風格)' },
+        { value: 'swing', label: '🎯 短炒 (M8 原本 8 個最終動作)' },
+        { value: 'position', label: '📈 中長線 (大少 cycle 風格, 預設)' },
       ],
-      default: 'swing',
-      help: '短炒 = M8 原本 8 個 finalAction (持倉 1-2 星期, 止蝕-3% 目標+5% Kelly 1/4); 中長線 = 大少 position trading (持倉 1-3 個月, 動態 MA5 stop Kelly 1/8)',
+      default: 'position',  // 大少 2026-08-11 — 預設中長線 (position trading, 大少 cycle 風格)
+      help: '中長線 (position, 預設) = 大少 cycle 風格 (持倉 1-3 個月, 動態 5 日線止蝕, 凱利 1/8); 短炒 (swing) = M8 原本 8 個最終動作 (持倉 1-2 星期, 止蝕-3% 目標+5% 凱利 1/4)',
     },
   ],
   analyze: async (klines, options = {}) => {
-    // 0. 大少 2026-08-09 19:06 — 兩線策略分流
-    const strategyMode = options.strategyMode === 'position' ? 'position' : 'swing';
+    // 0. 大少 2026-08-11 — 中長線/短炒 雙策略分流
+    const strategyMode = options.strategyMode === 'swing' ? 'swing' : 'position';  // 預設中長線
 
     // 1. 跑 6 個 modules → M7 SynthesizerVerdict (reuse analyzeDecisionEngine 上面嘅 implementation)
     const synthResult = await analyzeDecisionEngine(klines, options);
@@ -7671,9 +7671,9 @@ export const decisionEngineAdapter = {
       maTrendlineTransition: detectMATLTransition(klines),          // 2.5 從 M1 + M3 衍生
     };
 
-    // 7. 大少 19:06 — 兩線策略分流
-    //   'position' → eng.decidePosition() 第一線 (cycle synth + 5 個 trigger)
-    //   'swing'    → eng.decide()        第二線 (原本 8 個 finalAction, backward compat)
+    // 7. 大少 19:06 — 中長線/短炒 雙策略分流
+    //   'position' → eng.decidePosition() 中長線 (cycle synth + 5 個 trigger)
+    //   'swing'    → eng.decide()        短炒 (原本 8 個最終動作, backward compat)
     const eng = new DecisionEngine();
     let decisionVerdict;
     if (strategyMode === 'position' && m1Verdict && zmenVerdict && klineCloses.length >= 20) {
@@ -7694,7 +7694,7 @@ export const decisionEngineAdapter = {
       });
     }
 
-    // 8. 合併 synth + decision + adaptive params + 兩線 input (保留所有 trace + 供 render 用)
+    // 8. 合併 synth + decision + adaptive params + 雙策略 input (保留所有 trace + 供 render 用)
     return {
       ...decisionVerdict,
       strategy_mode: strategyMode,
@@ -7708,9 +7708,9 @@ export const decisionEngineAdapter = {
   renderResult: (verdict) => {
     if (!verdict) return '<div class="result-error">無 verdict</div>';
 
-    // 大少 2026-08-09 19:06 — 兩線策略 wrapper
-    //   strategyMode='position' → 第一線 (position, cycle synth + 5 個 trigger) + 第二線 (swing, 原本 M8)
-    //   strategyMode='swing'    → 只顯示第二線 (backward compat)
+    // 大少 2026-08-11 — 中長線/短炒 wrapper
+    //   strategyMode='position' → 中長線 (cycle synth + 5 個 trigger) + 短炒 (原本 M8 8 個最終動作)
+    //   strategyMode='swing'    → 只顯示短炒 (backward compat)
     const strategyMode = verdict.strategy_mode || 'swing';
     const swingContent = renderSwingDecisionEngine(verdict);
 
@@ -7721,18 +7721,18 @@ export const decisionEngineAdapter = {
     return swingContent;
   },
   getHelp: () => `
-    <h3>🚦 終極綜合判斷引擎 (Decision Engine v2.1.0 — M8 兩線策略)</h3>
-    <p>兩線策略: 第一線 (position, 大少 cycle 風格) + 第二線 (swing, M8 原本 8 個 finalAction)</p>
-    <h4>兩線策略切換:</h4>
+    <h3>🚦 終極綜合判斷引擎 (Decision Engine v2.2.0 — M8 中長線/短炒 雙策略)</h3>
+    <p>中長線/短炒 雙策略: 中長線 (position, 大少 cycle 風格, 預設) + 短炒 (swing, M8 原本 8 個最終動作)</p>
+    <h4>策略切換:</h4>
     <ul>
-      <li>📈 <strong>中長線 (position)</strong>: 用 M1+zmen cycle synthesizer 加權綜合 + 5 個 MA trigger 推導, 持倉 1-3 個月, 動態 MA5 stop Kelly 1/8, 唔好追高</li>
-      <li>🎯 <strong>短炒 (swing)</strong>: 用 6 個 module 綜合分數推導 8 個 finalAction, 持倉 1-2 星期, 止蝕-3% 目標+5% Kelly 1/4</li>
+      <li>📈 <strong>中長線 (position, 預設)</strong>: 用 M1+zmen cycle synthesizer 加權綜合 + 5 個均線觸發器推導, 持倉 1-3 個月, 動態 5 日線止蝕, 凱利 1/8, 唔好追高</li>
+      <li>🎯 <strong>短炒 (swing)</strong>: 用 6 個模組綜合分數推導 8 個最終動作, 持倉 1-2 星期, 止蝕-3% 目標+5% 凱利 1/4</li>
     </ul>
-    <h4>第一線 (position) 8 個 finalAction 規則優先順序:</h4>
+    <h4>中長線 (position) 8 個最終動作 規則優先順序:</h4>
     <p>陷阱 → 轉勢 → 賣出 → 減注 → 再睇 → 持有 → 加注 → 買入</p>
-    <h4>第二線 (swing) 8 個 finalAction 規則優先順序:</h4>
+    <h4>短炒 (swing) 8 個最終動作 規則優先順序:</h4>
     <p>陷阱 → 轉勢 → 賣出 → 減注 → 再睇 → 持有 → 加注 → 買入</p>
-    <h4>5 個 MA trigger (大少 position trading 風格):</h4>
+    <h4>5 個均線觸發器 (大少 中長線 trading 風格):</h4>
     <ul>
       <li>🔴 <strong>MA5 -2% 跌破</strong> — 動態 stop, 每日 update, 急煞車</li>
       <li>🟡 <strong>MA5 穿 1 日</strong> — 收緊啲, REDUCE</li>
@@ -7744,13 +7744,13 @@ export const decisionEngineAdapter = {
 };
 
 // =============================================================
-// 大少 2026-08-09 19:06 — 兩線策略 render helpers
-//   - renderSwingDecisionEngine: 第二線 (swing, M8 原本 8 個 finalAction, backward compat)
-//   - renderPositionDecisionEngine: 第一線 (position, cycle synth + 5 個 trigger, 大少風格)
-//   - 兩個都喺 decisionEngineAdapter.renderResult 串連 (position mode 先 position 後 swing)
+// 大少 2026-08-11 — 中長線/短炒 render helpers
+//   - renderSwingDecisionEngine: 短炒 (swing, M8 原本 8 個最終動作, backward compat)
+//   - renderPositionDecisionEngine: 中長線 (position, cycle synth + 5 個觸發器, 大少風格)
+//   - 兩個都喺 decisionEngineAdapter.renderResult 串連 (position mode 先中長線後短炒)
 // =============================================================
 
-/** 第二線: Swing Trading 嘅 M8 原本 render (大少 19:06 backward compat)
+/** 短炒: Swing Trading 嘅 M8 原本 render (大少 19:06 backward compat)
  *  抽自原 decisionEngineAdapter.renderResult, 等 position mode 可以重用
  */
 function renderSwingDecisionEngine(verdict) {
@@ -7845,9 +7845,9 @@ function renderSwingDecisionEngine(verdict) {
   // 判斷 volatility bucket 顯示
   const synthKf = kelly_fraction;
   let volBucketLabel = '';
-  if (synthKf === 'octo') volBucketLabel = '🔴 高波動 (octo) — 入場闊±2.5% / 止蝕-5% / 目標+8%';
-  else if (synthKf === 'quarter') volBucketLabel = '🟡 中波動 (quarter) — 入場±1.5% / 止蝕-3% / 目標+5%';
-  else if (synthKf === 'half') volBucketLabel = '🟢 低波動 (half) — 入場窄±1.0% / 止蝕-2% / 目標+4%';
+  if (synthKf === 'octo') volBucketLabel = '🔴 高波動 (凱利 = 八分一倉) — 入場闊 ±2.5% / 止蝕 -5% / 目標 +8%';
+  else if (synthKf === 'quarter') volBucketLabel = '🟡 中波動 (凱利 = 四分一倉) — 入場 ±1.5% / 止蝕 -3% / 目標 +5%';
+  else if (synthKf === 'half') volBucketLabel = '🟢 低波動 (凱利 = 半倉) — 入場窄 ±1.0% / 止蝕 -2% / 目標 +4%';
   // 現價: 從 entry_zone mid 拎 (fallback if 0)
   const lastPrice = (tc.entry_zone[0] + tc.entry_zone[1]) / 2;
   const hasPrice = lastPrice > 0;
@@ -7925,11 +7925,11 @@ function renderSwingDecisionEngine(verdict) {
         @keyframes m8TooltipFadeIn { from { opacity: 0; } to { opacity: 1; } }
       </style>
       <div style="text-align:center;margin-bottom:16px;">
-        <span style="background:#1890ff;color:white;padding:6px 16px;border-radius:20px;font-size:14px;font-weight:700;">🎯 第二線 · Swing Trading (M8 原本 8 個 finalAction)</span>
+        <span style="background:#1890ff;color:white;padding:6px 16px;border-radius:20px;font-size:14px;font-weight:700;">🎯 短炒 · Swing Trading (M8 原本 8 個最終動作)</span>
       </div>
       <!-- 頂部 M8 finalAction 標籤 (新加, 揸車比喻) -->
       <div class="m8-final-action-card" style="background:linear-gradient(135deg, ${actionColor}33, ${actionColor}0a);border:3px solid ${actionColor};border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;">
-        <div style="font-size:14px;color:#666;margin-bottom:4px;">🚦 M8 最終行動指令 (8 個 FinalAction)</div>
+        <div class="m8-verdict-tooltip" data-help="短炒最終行動指令: 8 個最終動作 (買入/加注/持有/等待/減注/賣出/陷阱/轉勢), 跟 6 個模組綜合分數推導, 揸車比喻貫穿 (油門/收油/急煞車/唔好信導航)" style="font-size:14px;color:#666;margin-bottom:4px;">🚦 短炒最終行動指令 (8 個最終動作)</div>
         <div style="font-size:36px;font-weight:700;color:${actionColor};line-height:1.2;">${actionLabel}</div>
         <div style="font-size:16px;font-weight:600;color:${actionColor};margin-top:4px;">${finalActionShortLabel(final_action)}</div>
         <div style="font-size:14px;color:#444;margin-top:12px;line-height:1.6;">${final_action_reason}</div>
@@ -7951,7 +7951,7 @@ function renderSwingDecisionEngine(verdict) {
       ${tradingCardHTML}
 
       <!-- 2.8 — 4 個 SVG charts (永遠全 Show, 大少 11:57 永久 rule) -->
-      <h4 style="margin-top:24px;margin-bottom:4px;">📊 4 個 SVG Charts (2.8 — Sentiment Radar + Kelly Donut + Alignment Bar + Module State)</h4>
+      <h4 class="m8-verdict-tooltip" data-help="4 個 SVG 圖表: 6 維情緒雷達 (個股 6 個維度情緒) + 凱利倉位環 (倉位大小) + 對齊度條 (6 個模組同向程度) + 模組狀態條 (6 個模組個別方向)" style="margin-top:24px;margin-bottom:4px;">📊 4 個 SVG 圖表 (2.8 — 6 維情緒雷達 / 凱利倉位環 / 對齊度條 / 模組狀態條)</h4>
       <div style="font-size:12px;color:#666;margin-bottom:12px;">🟢 強勢 / 🟡 中性 / 🔴 弱勢 / 🟣 矛盾/陷阱 (6 顏色永久 rule)</div>
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px;">
         <div class="chart-cell" style="background:#fafafa;border-radius:8px;padding:12px;">
@@ -8030,9 +8030,9 @@ function renderSwingDecisionEngine(verdict) {
   `;
 }
 
-/** 第一線: Position Trading 嘅 cycle synth 結果 render (大少 19:06)
- *  顯示 3 個結果 (M1 / zmen / 加權綜合) + 5 個 MA trigger + 動態 MA5/MA20 stop trading card
- *  UI order: 第一線先 (大少 19:06 永久 rule)
+/** 中長線: Position Trading 嘅 cycle synth 結果 render (大少 19:06)
+ *  顯示 3 個結果 (M1 / zmen / 加權綜合) + 5 個均線觸發器 + 動態 5 日線/20 日線 stop trading card
+ *  UI order: 中長線先 (大少 19:06 永久 rule)
  */
 function renderPositionDecisionEngine(verdict) {
   const {
@@ -8112,27 +8112,38 @@ function renderPositionDecisionEngine(verdict) {
   `;
 
   // 5 個 MA trigger
+  const TRIGGER_TOOLTIPS = {
+    header: '5 個均線觸發器: 中長線 trading 嘅關鍵 stop 信號, 任何一個觸發都提示要重新評估倉位',
+    t1: '5 日線 -2% 跌破: 今日收盤價低過 5 日線 × 0.98, 即跌超過 2%, 動態止蝕信號, 應考慮減倉或離場',
+    t2: '穿 1 日: 今日收盤價低過 5 日線 (但未到 -2%), 早期穿破信號, 要密切留意',
+    t3: '穿 2 日: 連續 2 日收盤價都低過 5 日線, 確認跌穿, 動能轉弱警號',
+    t4: '20 日線跌破: 今日收盤價低過 20 日線, 中期趨勢可能轉弱, 重要警號',
+    t5: '5 日線 re-test 成功: 過去 5 日內曾跌穿 5 日線, 今日回升收過 5 日線, 確認短期回升, 可以重新加倉',
+    trans_header: '周期轉換: 大少 cycle trading 風格嘅兩個關鍵時機信號',
+    turn_around: '轉勢確認: M1 同 zmen 兩個演算法都同步由弱轉強 (信心 ≥ 0.65), 中長線入場嘅最佳時機之一',
+    adjustment_complete: '調整完成: 兩個演算法都上升 + 5 日線 re-test 成功, 中長線 buy-back 觸發, 訊號最清晰嘅時機',
+  };
   const triggerHTML = `
-    <h4 style="margin-top:20px;margin-bottom:8px;">🚦 5 個 MA Trigger (大少 position trading 風格)</h4>
+    <h4 class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.header}" style="margin-top:20px;margin-bottom:8px;">🚦 5 個均線觸發器 (大少 中長線 trading 風格)</h4>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;font-size:12px;">
-      <div style="background:${triggers.ma5StopTriggered ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma5StopTriggered ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
-        <div style="font-size:11px;color:#666;">MA5 -2%</div>
+      <div class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.t1}" style="background:${triggers.ma5StopTriggered ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma5StopTriggered ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">5 日線 -2%</div>
         <div style="font-size:18px;margin-top:4px;">${triggers.ma5StopTriggered ? '🔴 觸發' : '⚪ 冇'}</div>
       </div>
-      <div style="background:${triggers.ma5BreakDay1 ? '#fffbe6' : '#fafafa'};border:1px solid ${triggers.ma5BreakDay1 ? '#FAAD14' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+      <div class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.t2}" style="background:${triggers.ma5BreakDay1 ? '#fffbe6' : '#fafafa'};border:1px solid ${triggers.ma5BreakDay1 ? '#FAAD14' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
         <div style="font-size:11px;color:#666;">穿 1 日</div>
         <div style="font-size:18px;margin-top:4px;">${triggers.ma5BreakDay1 ? '🟡 觸發' : '⚪ 冇'}</div>
       </div>
-      <div style="background:${triggers.ma5BreakDay2 ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma5BreakDay2 ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+      <div class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.t3}" style="background:${triggers.ma5BreakDay2 ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma5BreakDay2 ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
         <div style="font-size:11px;color:#666;">穿 2 日</div>
         <div style="font-size:18px;margin-top:4px;">${triggers.ma5BreakDay2 ? '🔴 觸發' : '⚪ 冇'}</div>
       </div>
-      <div style="background:${triggers.ma20Break ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma20Break ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
-        <div style="font-size:11px;color:#666;">MA20 跌破</div>
+      <div class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.t4}" style="background:${triggers.ma20Break ? '#fff1f0' : '#fafafa'};border:1px solid ${triggers.ma20Break ? '#EE5151' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">20 日線跌破</div>
         <div style="font-size:18px;margin-top:4px;">${triggers.ma20Break ? '🔴 觸發' : '⚪ 冇'}</div>
       </div>
-      <div style="background:${triggers.ma5RetestSuccess ? '#f6ffed' : '#fafafa'};border:1px solid ${triggers.ma5RetestSuccess ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
-        <div style="font-size:11px;color:#666;">re-test</div>
+      <div class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.t5}" style="background:${triggers.ma5RetestSuccess ? '#f6ffed' : '#fafafa'};border:1px solid ${triggers.ma5RetestSuccess ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;text-align:center;">
+        <div style="font-size:11px;color:#666;">5 日線回測</div>
         <div style="font-size:18px;margin-top:4px;">${triggers.ma5RetestSuccess ? '🟢 成功' : '⚪ 冇'}</div>
       </div>
     </div>
@@ -8140,59 +8151,73 @@ function renderPositionDecisionEngine(verdict) {
 
   // Cycle transition
   const transitionHTML = `
+    <h4 class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.trans_header}" style="margin-top:16px;margin-bottom:8px;font-size:14px;">🔄 周期轉換 (大少 cycle 風格)</h4>
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px;font-size:12px;">
-      <div style="background:${transitions.turnAroundDetected ? '#f6ffed' : '#fafafa'};border:1px solid ${transitions.turnAroundDetected ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;">
-        <div style="font-weight:700;">turn-around</div>
-        <div style="color:#666;">${transitions.turnAroundDetected ? '✅ 兩個 module 同步由弱轉強' : '⚪ 未確認'}</div>
+      <div class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.turn_around}" style="background:${transitions.turnAroundDetected ? '#f6ffed' : '#fafafa'};border:1px solid ${transitions.turnAroundDetected ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;">
+        <div style="font-weight:700;">轉勢確認</div>
+        <div style="color:#666;">${transitions.turnAroundDetected ? '✅ 兩個演算法同步由弱轉強' : '⚪ 未確認'}</div>
       </div>
-      <div style="background:${transitions.adjustmentComplete ? '#f6ffed' : '#fafafa'};border:1px solid ${transitions.adjustmentComplete ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;">
-        <div style="font-weight:700;">adjustment-complete</div>
-        <div style="color:#666;">${transitions.adjustmentComplete ? '✅ 5 日線 re-test 成功' : '⚪ 未完成'}</div>
+      <div class="m8-verdict-tooltip" data-help="${TRIGGER_TOOLTIPS.adjustment_complete}" style="background:${transitions.adjustmentComplete ? '#f6ffed' : '#fafafa'};border:1px solid ${transitions.adjustmentComplete ? '#52C41A' : '#ddd'};border-radius:6px;padding:8px;">
+        <div style="font-weight:700;">調整完成</div>
+        <div style="color:#666;">${transitions.adjustmentComplete ? '✅ 5 日線回測成功' : '⚪ 未完成'}</div>
       </div>
     </div>
   `;
 
-  // Position trading card (動態 MA5/MA20 stop)
+  // Position trading card (動態 5 日線/20 日線 stop)
+  const POS_TC_TOOLTIPS = {
+    header: '中長線交易卡: 3 個關鍵價位 (入場/動態止蝕/移動止蝕), 跟 5 日線 + 20 日線 動態調整, 唔設固定目標價',
+    holding: '持倉時間: 1-3 個月, 中長線 trading 唔急食糊, 等中長期趨勢自然行',
+    kelly: '凱利倉位: 八分一倉 (1/8) 預設, 波動大自動收細, 跌穿動態止蝕就走',
+    entry_zone_pos: '🎯 入場區間: 現價 ±1.5% (跟中波動預設, 高波動 ±2.5%, 低波動 ±1.0%)',
+    dynamic_stop: '🛑 動態止蝕: 跟 5 日線 × 0.98 自動調整, 比固定 -3% 止蝕更貼市, 大少中長線風格',
+    trailing_stop: '📉 移動止蝕: 跟 20 日線, 升穿就上移, 跌穿就走, 鎖定中長期利潤',
+    footer: '中長線 trading 唔設固定目標價 (唔似短炒 +5%), 等中長期走勢自然行, 動態止蝕觸發就走',
+  };
   const positionTradingCardHTML = `
-    <h4 style="margin-top:20px;margin-bottom:8px;">💰 Position Trading Card (動態 MA5/MA20 stop · Kelly 1/8)</h4>
-    <div style="font-size:12px;color:#666;margin-bottom:8px;">📌 持倉 ${tc.holding_period || '1-3 個月'} · Kelly ${tc.kelly_fraction || 'octo'} (1/8) · 唔好追高, 訊號清晰先入場</div>
+    <h4 class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.header}" style="margin-top:20px;margin-bottom:8px;">💰 中長線交易卡 (動態 5 日線/20 日線止蝕 · 凱利 1/8)</h4>
+    <div style="font-size:12px;color:#666;margin-bottom:8px;">
+      <span class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.holding}">📌 持倉 ${tc.holding_period || '1-3 個月'}</span> ·
+      <span class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.kelly}">凱利 ${tc.kelly_fraction || '八分一倉'} (1/8)</span> ·
+      唔好追高, 訊號清晰先入場
+    </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-      <div style="background:#f9f9f9;border-radius:8px;padding:12px;">
+      <div class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.entry_zone_pos}" style="background:#f9f9f9;border-radius:8px;padding:12px;">
         <div style="font-size:12px;color:#666;">🎯 入場區間 (±1.5%)</div>
         <div style="font-size:14px;font-weight:700;">$${(tc.entry_zone?.[0] || 0).toFixed(2)} - $${(tc.entry_zone?.[1] || 0).toFixed(2)}</div>
       </div>
-      <div style="background:#fff1f0;border-radius:8px;padding:12px;">
-        <div style="font-size:12px;color:#666;">🛑 動態 stop (${tc.stop_loss_source || 'MA5 * 0.98'})</div>
+      <div class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.dynamic_stop}" style="background:#fff1f0;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">🛑 動態止蝕 (5 日線 × 0.98)</div>
         <div style="font-size:14px;font-weight:700;color:#EE5151;">$${(tc.stop_loss || 0).toFixed(2)}</div>
-        <div style="font-size:10px;color:#999;">MA5 = ${meta.ma5 != null ? `$${meta.ma5.toFixed(2)}` : '(N/A · 數據不足)'}</div>
+        <div style="font-size:10px;color:#999;">5 日線 = ${meta.ma5 != null ? `$${meta.ma5.toFixed(2)}` : '(數據不足)'}</div>
       </div>
-      <div style="background:#f0f5ff;border-radius:8px;padding:12px;">
-        <div style="font-size:12px;color:#666;">📉 Trailing (MA20)</div>
+      <div class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.trailing_stop}" style="background:#f0f5ff;border-radius:8px;padding:12px;">
+        <div style="font-size:12px;color:#666;">📉 移動止蝕 (20 日線)</div>
         <div style="font-size:14px;font-weight:700;">$${(tc.trailing_stop || 0).toFixed(2)}</div>
-        <div style="font-size:10px;color:#999;">MA20 = ${meta.ma20 != null ? `$${meta.ma20.toFixed(2)}` : '(N/A · 數據不足)'}</div>
+        <div style="font-size:10px;color:#999;">20 日線 = ${meta.ma20 != null ? `$${meta.ma20.toFixed(2)}` : '(數據不足)'}</div>
       </div>
     </div>
-    <div style="margin-top:8px;font-size:12px;color:#888;background:#fffbe6;border-left:3px solid #FAAD14;padding:8px;border-radius:4px;">
-      💡 Position trading 唔設 fixed take_profit, 等中長期走勢自然行, 動態 stop 觸發就走
+    <div class="m8-verdict-tooltip" data-help="${POS_TC_TOOLTIPS.footer}" style="margin-top:8px;font-size:12px;color:#888;background:#fffbe6;border-left:3px solid #FAAD14;padding:8px;border-radius:4px;">
+      💡 中長線 trading 唔設固定目標價, 等中長期走勢自然行, 動態止蝕觸發就走
     </div>
   `;
 
   return `
     <div class="decision-engine-result position-line" style="font-family: system-ui, sans-serif;margin-bottom:24px;">
       <div style="text-align:center;margin-bottom:16px;">
-        <span style="background:#26BA75;color:white;padding:6px 16px;border-radius:20px;font-size:14px;font-weight:700;">📈 第一線 · Position Trading (大少 cycle 風格)</span>
+        <span style="background:#26BA75;color:white;padding:6px 16px;border-radius:20px;font-size:14px;font-weight:700;">📈 中長線 · Position Trading (大少 cycle 風格, 預設)</span>
       </div>
 
       <!-- 頂部 final action (揸車比喻) -->
       <div class="position-final-action-card" style="background:linear-gradient(135deg, ${actionColor}33, ${actionColor}0a);border:3px solid ${actionColor};border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;">
-        <div style="font-size:14px;color:#666;margin-bottom:4px;">🚦 Position Trading 最終行動指令</div>
+        <div class="m8-verdict-tooltip" data-help="中長線最終行動指令: 8 個最終動作 (買入/加注/持有/等待/減注/賣出/陷阱/轉勢), 跟 cycle synth + 5 個均線觸發器綜合判定, 揸車比喻貫穿 (油門/收油/急煞車/唔好信導航)" style="font-size:14px;color:#666;margin-bottom:4px;">🚦 中長線最終行動指令</div>
         <div style="font-size:36px;font-weight:700;color:${actionColor};line-height:1.2;">${actionLabel}</div>
         <div style="font-size:16px;font-weight:600;color:${actionColor};margin-top:4px;">${finalActionShortLabel(final_action)}</div>
         <div style="font-size:14px;color:#444;margin-top:12px;line-height:1.6;">${final_action_reason}</div>
       </div>
 
       <!-- 3 個 cycle synth 結果: M1 + zmen + 加權綜合 -->
-      <h4 style="margin-top:20px;margin-bottom:8px;">🔬 Cycle Synthesizer 3 個結果 (大少 19:06 設計)</h4>
+      <h4 class="m8-verdict-tooltip" data-help="周期合成器 3 個結果: M1 均線演算法 + zmen 舊均算法 + 兩個加權綜合 (大少 19:06 設計), 用嚟比對兩個演算法嘅共識程度, 一致就信心高, 分歧就 conflict" style="margin-top:20px;margin-bottom:8px;">🔬 周期合成器 3 個結果 (M1 + zmen + 加權綜合, 大少 19:06 設計)</h4>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;">
         ${m1ResultHTML}
         ${zmenResultHTML}

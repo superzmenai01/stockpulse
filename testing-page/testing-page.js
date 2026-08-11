@@ -63,8 +63,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 22:15 M7 UI 顯示優化 v6: ALGO_CACHE_BUST = '3.3.0' (TCM 配對 table column 平 min-width 150/150/150 1:1:1 對齊)
 // 大少 2026-08-10 22:50 M7 稱呼改: ALGO_CACHE_BUST = '3.4.0' (「校長/老師」→ 「演算法/Synthesizer」更專業)
 // 大少 2026-08-10 23:00 M8 v2 中文化: ALGO_CACHE_BUST = '3.5.0' (Standard Verdict 中文化 + TCM 中文 + 短期走勢對齊 + trading card 加現價 + popup tooltip)
-// 大少 2026-08-10 23:10 M8 v2 fix: ALGO_CACHE_BUST = '3.5.1' (skip testing-page.js latest-price-column, 避免 trading card 6 fields 重複)
-const ALGO_CACHE_BUST = '3.5.1';
+// 大少 2026-08-11 M8 v3 fix: ALGO_CACHE_BUST = '3.6.0' (M8 v2 → v2.2.0 改動: 中長線/短炒 + 預設中長線 + MA trigger 永久 false fix + 全版中文化 + 補 popup tooltip)
+const ALGO_CACHE_BUST = '3.6.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
