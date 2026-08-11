@@ -74,9 +74,29 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 20:55 A 改善: ALGO_CACHE_BUST = '4.3.0' (testing page 加「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + runFullChain() handler — 凡人話 1 句講晒「撳 1 個掣自動跑晒 3 個 module」, 3 個 step progress 顯示, M9 失敗 fallback 用 default 繼續跑 M8)
 // 大少 2026-08-11 21:16 M9 bug fix: ALGO_CACHE_BUST = '4.3.1' (A 改善 chain test 揭發 M9 自身有 ReferenceError 'postErrors is not defined' — surgical 1 行 fix 加 const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []))
 // 大少 2026-08-11 21:20 C 改善: ALGO_CACHE_BUST = '4.4.0' (runAlgorithm 撳 M8 之前, 自動 check adaptive_params cache 7 日 expiry — 過期提示「⚠️ 強烈建議撳🚀 跑完整鏈條掣」, 唔 auto trigger M9, 只係 hint)
-const ALGO_CACHE_BUST = '4.4.0';
+// 大少 2026-08-11 21:32 Dropdown zmen 排頂: ALGO_CACHE_BUST = '4.4.1' (REGISTRY array 將 zmen 均算法 block 從中間位置搬去最頂, ID/displayName 唔改, 純 visual 排位)
+const ALGO_CACHE_BUST = '4.4.1';
 
 const REGISTRY = [
+  // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
+  // 之前排位: M1-M6 → M7 → M9 → zmen → M8 → M11
+  // 大少 trigger:「Dropdown List 裡把 zmen 均算法放到最上」
+  // 理由: zmen 均算法係大少自己想出嚟嘅 cycle 風格算法, 大少最熟, 排最頂方便 default 揀
+  // ID/displayName 唔改 (純 visual 排位)
+  // ---- 獨立算法 (舊 M1 v0.3.0 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
+  // 大少 2026-08-08 08:47:「zmen 均算法」係大少自己想出嚟嘅算法, 從 7 個 modules 抽離
+  // 大少 2026-08-08 09:50: 改名「zmen均算法」→「zmen均算法」(算法 vs 算去 typo 修正)
+  // 大少 2026-08-08 09:13: implementation file 改叫 zmen-ma-alignment.ts
+  {
+    id: 'AS-03',
+    displayName: 'zmen均算法',  // 大少 2026-08-08 09:50: 舊 M1 改名 + 抽離 7 個 modules
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    // 預設 = 頂層 exports (向後兼容 ma-alignment v0.3.0 adapter 嘅 analyze 函數, 留俾 zmen均算法)
+    // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
+    //   唔再獨立 expose AS-03-VP dropdown
+    // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返
+  },
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
   // M1: 均線系統週期判斷法 v2.0 (with Volume & Slope 擴展)
   //   大少 2026-08-08 09:13 指示: 跟 docx Kimi v2.0 spec 做全新 implementation
@@ -157,22 +177,8 @@ const REGISTRY = [
     // 9.5: testing page entry 09 — 揀 stock → 撳跑 → out optimal params + walk-forward CV folds
     // 9.6 (next): HK.00700 pilot only + spec doc final
   },
-  // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
-  // 舊 M1 改名「zmen均算法」, 搬去 REGISTRY 尾
-  // 大少 2026-08-08 08:47:「zmen均算法」係大少自己想出嚟嘅算法, 從
-  // 7 個 modules 抽離, 排去 dropdown 最後, 獨立一類
-  // 大少 2026-08-08 09:50: 改名「zmen均算法」→「zmen均算法」(算法 vs 算去 typo 修正)
-  // 大少 2026-08-08 09:13: implementation file 改叫 zmen-ma-alignment.ts
-  {
-    id: 'AS-03',
-    displayName: 'zmen均算法',  // 大少 2026-08-08 09:50: 舊 M1 改名 + 抽離 7 個 modules
-    folder: 'AS-03-cycle-detection',
-    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    // 預設 = 頂層 exports (向後兼容 ma-alignment v0.3.0 adapter 嘅 analyze 函數, 留俾 zmen均算法)
-    // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
-    //   唔再獨立 expose AS-03-VP dropdown
-    // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返
-  },
+  // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) — 2026-08-11 21:32 搬去 REGISTRY 頂 ----
+  // (zmen 均算法 block 已經喺 line 75-92, 排第 1 位, 詳見上方 inline 註解)
   // ---- M8 Decision Engine (08) — Sprint 2 sub-task 2.1 done (8 個 finalAction 決策樹) ----
   // 大少 2026-08-11 19:55: dropdown 排位改 M8 放 M9 下邊, ID/displayName 編號唔改
   //   流程次序: M7(綜合) → M9(回測) → zmen(獨立) → M8(決策) → M11(timeline)
