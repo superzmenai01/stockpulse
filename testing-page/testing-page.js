@@ -69,7 +69,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 23:00 M8 v2 中文化: ALGO_CACHE_BUST = '3.5.0' (Standard Verdict 中文化 + TCM 中文 + 短期走勢對齊 + trading card 加現價 + popup tooltip)
 // 大少 2026-08-11 M8 v3.9 + Warning System v1.0.0: ALGO_CACHE_BUST = '3.9.0' (M8 v3.8 → v3.9.0 改動: Module Warning System Phase 3+4 引入 — testing page 加 WarningBanner 頂部 + WarningCard 個別 verdict 內 + Copy 全部/單個 warning button, 從 ../algorithms/AS-03-cycle-detection/lib/warnings.mjs 引入 helpers)
 // 大少 2026-08-11 Codebase 註解 Phase 4: ALGO_CACHE_BUST = '4.0.0' (testing-page.js __copyWarning / __copyAllWarnings 加 inline 註解 — 凡人話流程 + 永久 rule + 參數說明, 其他 AI 閱讀時能立即明白 Copy handler 點 work)
-const ALGO_CACHE_BUST = '4.0.0';
+// 大少 2026-08-11 19:55 Dropdown 排位: ALGO_CACHE_BUST = '4.1.0' (M9 排 M8 上邊 — REGISTRY array element order 互換, ID/displayName 編號唔改, 純 visual 排位反映 M7→M9→M8 chain 邏輯)
+const ALGO_CACHE_BUST = '4.1.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -135,15 +136,22 @@ const REGISTRY = [
     // Sprint 1 done — M7 Synthesizer 邏輯 (6 個 modules → SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位)
     // Sprint 2 將加 M8 chain (M7 嘅 SynthesizerVerdict 喂入去 M8)
   },
-  // ---- M8 Decision Engine (08) — Sprint 2 sub-task 2.1 done (8 個 finalAction 決策樹) ----
+  // ---- M9 Back Test (09) — Sprint 3 sub-task 9.5 done (大少 22:28 Go) ----
+  // 大少 2026-08-08 22:28 — 6 個月歷史 K 線 replay M8 verdict, 對比 5/10/20 日後真實升跌
+  // Coarse grid (3×3=9) + fine tune top 5 ±20% + adaptive window 6→18 個月 + walk-forward CV 3 段
+  // 自動 POST optimal + forward return records 落 per-symbol cache (9.4)
+  // 大少 2026-08-11 19:55: dropdown 排位 M9 放 M8 上邊, ID/displayName 編號唔改 (只 visual 排位)
+  //   流程次序: M7(綜合) → M9(回測) → zmen(獨立) → M8(決策) → M11(timeline)
+  //   理由: M8 要用 M9 嘅 optimal params, M9 排 M8 上邊反映呢個 chain 邏輯
+  //   受影響: 純 visual, 唔影響 spec doc / ID / adapterExport
   {
-    id: 'AS-03-DEC',
-    displayName: '08 — AS-03-DEC',  // 大少 2026-08-08 10:06: 編號 08 = M8 Decision Engine (大少 13:30 拆返獨立)
+    id: 'AS-03-BT',
+    displayName: '09 — AS-03-BT',  // 大少 2026-08-08 10:06: 編號 09 = M9 Back Test
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    adapterExport: 'decisionEngineAdapter',  // 大少 2026-08-08 15:42: M8 v1.0.0 — 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + trading card (static) done
-    // ✅ 2.1: 8 個 finalAction 決策樹 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + trading card (static formula)
-    // 🚧 2.2-2.5: trading card adaptive + 短期走勢預測 + 人話解讀 (LLM hook) + 5 個 adaptive params runtime auto-calibrate
+    adapterExport: 'backTestAdapter',
+    // 9.5: testing page entry 09 — 揀 stock → 撳跑 → out optimal params + walk-forward CV folds
+    // 9.6 (next): HK.00700 pilot only + spec doc final
   },
   // ---- 獨立算法 (M1 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
   // 舊 M1 改名「zmen均算法」, 搬去 REGISTRY 尾
@@ -161,18 +169,18 @@ const REGISTRY = [
     //   唔再獨立 expose AS-03-VP dropdown
     // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返
   },
-  // ---- M9 Back Test (09) — Sprint 3 sub-task 9.5 done (大少 22:28 Go) ----
-  // 大少 2026-08-08 22:28 — 6 個月歷史 K 線 replay M8 verdict, 對比 5/10/20 日後真實升跌
-  // Coarse grid (3×3=9) + fine tune top 5 ±20% + adaptive window 6→18 個月 + walk-forward CV 3 段
-  // 自動 POST optimal + forward return records 落 per-symbol cache (9.4)
+  // ---- M8 Decision Engine (08) — Sprint 2 sub-task 2.1 done (8 個 finalAction 決策樹) ----
+  // 大少 2026-08-11 19:55: dropdown 排位改 M8 放 M9 下邊, ID/displayName 編號唔改
+  //   流程次序: M7(綜合) → M9(回測) → zmen(獨立) → M8(決策) → M11(timeline)
+  //   理由: M8 要用 M9 嘅 optimal params, M9 排 M8 上邊反映呢個 chain 邏輯
   {
-    id: 'AS-03-BT',
-    displayName: '09 — AS-03-BT',  // 大少 2026-08-08 10:06: 編號 09 = M9 Back Test
+    id: 'AS-03-DEC',
+    displayName: '08 — AS-03-DEC',  // 大少 2026-08-08 10:06: 編號 08 = M8 Decision Engine (大少 13:30 拆返獨立)
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    adapterExport: 'backTestAdapter',
-    // 9.5: testing page entry 09 — 揀 stock → 撳跑 → out optimal params + walk-forward CV folds
-    // 9.6 (next): HK.00700 pilot only + spec doc final
+    adapterExport: 'decisionEngineAdapter',  // 大少 2026-08-08 15:42: M8 v1.0.0 — 8 個 finalAction 決策樹 + 揸車比喻 final_action_reason + trading card (static) done
+    // ✅ 2.1: 8 個 finalAction 決策樹 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + trading card (static formula)
+    // 🚧 2.2-2.5: trading card adaptive + 短期走勢預測 + 人話解讀 (LLM hook) + 5 個 adaptive params runtime auto-calibrate
   },
   // ---- M11 Backtest Timeline (11) — Stage 2 第三次 focus (大少 2026-08-10 00:04 4 個 A confirm) ----
   // 整合 M9 forward return + M10 Trade Journal 嘅 timeline 視覺化
