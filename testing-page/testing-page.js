@@ -71,7 +71,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 Codebase 註解 Phase 4: ALGO_CACHE_BUST = '4.0.0' (testing-page.js __copyWarning / __copyAllWarnings 加 inline 註解 — 凡人話流程 + 永久 rule + 參數說明, 其他 AI 閱讀時能立即明白 Copy handler 點 work)
 // 大少 2026-08-11 19:55 Dropdown 排位: ALGO_CACHE_BUST = '4.1.0' (M9 排 M8 上邊 — REGISTRY array element order 互換, ID/displayName 編號唔改, 純 visual 排位反映 M7→M9→M8 chain 邏輯)
 // 大少 2026-08-11 20:40 B 改善: ALGO_CACHE_BUST = '4.2.0' (M8 verdict 加 optimal_params_timestamp + renderOptimalParamsBanner 頂部 banner — 凡人話 1 句講晒「用咗幾時嘅最佳設定」, 3 種狀況: 冇 cache 黃色 / < 7 日綠色 / ≥ 7 日紅色)
-const ALGO_CACHE_BUST = '4.2.0';
+// 大少 2026-08-11 20:55 A 改善: ALGO_CACHE_BUST = '4.3.0' (testing page 加「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + runFullChain() handler — 凡人話 1 句講晒「撳 1 個掣自動跑晒 3 個 module」, 3 個 step progress 顯示, M9 失敗 fallback 用 default 繼續跑 M8)
+const ALGO_CACHE_BUST = '4.3.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -824,6 +825,138 @@ function renderChart(klines, code, period) {
 
 algorithmSelect.addEventListener('change', onAlgorithmChange);
 runBtn.addEventListener('click', runAlgorithm);
+
+// =============================================================
+// 大少 2026-08-11 20:55 — A 改善: 「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + handler
+// =============================================================
+// 凡人話:
+//   大少撳 1 個掣, 自動跑晒 3 個 module (M7 綜合 → M9 回測拎最佳設定 → M8 用最佳設定做最終判斷)。
+//   唔需要自己逐一撳, 唔需要諗「先撳邊個」。
+//
+// 流程 (3 個 step, sequential 因為 M9 POST 落 cache 之後 M8 讀 cache):
+//   Step 1/3: 跑 M7 (synthesizerAdapter.analyze) → 拎 synthResult
+//   Step 2/3: 跑 M9 (backTestAdapter.analyze) → 拎 optimal params + POST 落 cache
+//             (如果 M9 失敗, chain 繼續用 default 設定跑 M8, 唔 block 整個 chain)
+//   Step 3/3: 跑 M8 (decisionEngineAdapter.analyze) → 內部 load cache 自動用 M9 嘅 optimal
+//   全部跑完 → 3 個 verdict card 一齊出, 大少一眼睇晒成個 chain 結果
+//
+// 永久 rule (大少 2026-08-11):
+//   - Chain 唔 replace 現有 3 個獨立按鈕 (runAlgorithm), 兩者並存
+//   - M9 失敗唔 block chain (用 default 跑 M8, 仲會有「未跑過 M9」banner 提示)
+//   - 全部 verdict 跟 standard warning system (頂部 banner + copy button)
+// =============================================================
+
+async function runFullChain() {
+  // 1. 同步 code (跟 runAlgorithm 一樣, 避免 race condition)
+  const codeInputEl = document.getElementById('input-code');
+  if (codeInputEl && codeInputEl.value) {
+    currentOptions.code = codeInputEl.value;
+  }
+  if (!currentOptions.code) {
+    runStatus.innerHTML = '❌ 請揀或者輸入股票代碼';
+    return;
+  }
+
+  runStatus.innerHTML = '⏳ 撈緊 K 線數據...';
+  resultPanel.innerHTML = '';
+
+  try {
+    // 2. 拎 K 線
+    const code = currentOptions.code;
+    const period = currentOptions.period || '1d';
+    const count = currentOptions.dataWindowDays || 100;
+    const klineUrl = `${BACKEND_URL}/api/kline?code=${encodeURIComponent(code)}&period=${period}&count=${count}`;
+    const klineResp = await fetch(klineUrl);
+    if (!klineResp.ok) {
+      throw new Error(`後端伺服器出錯: ${klineResp.status} ${klineResp.statusText}`);
+    }
+    const klineData = await klineResp.json();
+    const klines = klineData.klines || klineData.data || klineData;
+    if (!Array.isArray(klines) || klines.length === 0) {
+      throw new Error(`後端冇返 K 線數據 (類型: ${typeof klines})`);
+    }
+    runStatus.innerHTML = `✅ 已攞到 ${klines.length} 日 K 線 · 開始跑完整鏈條 (3 步)...`;
+
+    // 3. 動態 import 3 個 adapter (跟 testing page 既有 import 模式, cache bust 一齊)
+    const adapterPath = '../algorithms/AS-03-cycle-detection/adapter.mjs?v=' + ALGO_CACHE_BUST;
+    const mod = await import(adapterPath);
+    const { synthesizerAdapter, backTestAdapter, decisionEngineAdapter } = mod;
+    if (!synthesizerAdapter || !backTestAdapter || !decisionEngineAdapter) {
+      throw new Error('adapter.mjs 唔包含 synthesizerAdapter / backTestAdapter / decisionEngineAdapter');
+    }
+
+    const chainResults = [];  // { step, label, adapter, verdict, ok }
+
+    // Step 1/3: 跑 M7 綜合判定
+    runStatus.innerHTML = '⏳ Step 1/3: 跑 M7 綜合判定 (6 個 module verdict → SSI/TCM/Grade/Kelly)...';
+    try {
+      const m7Verdict = await synthesizerAdapter.analyze(klines, currentOptions);
+      chainResults.push({ step: 'M7', label: 'M7 綜合判定 (6 個模組 → SSI/TCM/Grade/Kelly)', adapter: synthesizerAdapter, verdict: m7Verdict, ok: true });
+    } catch (e) {
+      chainResults.push({ step: 'M7', label: 'M7 綜合判定 (失敗)', adapter: null, verdict: null, ok: false, error: e.message });
+      console.error('[runFullChain] M7 failed:', e);
+    }
+
+    // Step 2/3: 跑 M9 歷史回測 (拎 optimal + POST 落 cache)
+    runStatus.innerHTML = '⏳ Step 2/3: 跑 M9 歷史回測 (拎最佳設定, 需時 30-60 秒)...';
+    try {
+      const m9Verdict = await backTestAdapter.analyze(klines, currentOptions);
+      chainResults.push({ step: 'M9', label: 'M9 歷史回測 (拎最佳設定, POST 落 cache)', adapter: backTestAdapter, verdict: m9Verdict, ok: true });
+    } catch (e) {
+      // M9 失敗唔 block chain (M8 仲可以跑, 用 default optimal, banner 會提示「未跑過 M9」)
+      chainResults.push({ step: 'M9', label: 'M9 歷史回測 (失敗, fallback 用 default)', adapter: null, verdict: null, ok: false, error: e.message });
+      console.warn('[runFullChain] M9 failed, chain 繼續用 default 設定跑 M8:', e);
+    }
+
+    // Step 3/3: 跑 M8 最終判斷 (內部 load cache 自動用 M9 嘅 optimal)
+    runStatus.innerHTML = '⏳ Step 3/3: 跑 M8 最終判斷 (會自動 load M9 嘅最佳設定)...';
+    try {
+      const m8Verdict = await decisionEngineAdapter.analyze(klines, currentOptions);
+      chainResults.push({ step: 'M8', label: 'M8 最終判斷 (用 M9 最佳設定)', adapter: decisionEngineAdapter, verdict: m8Verdict, ok: true });
+    } catch (e) {
+      chainResults.push({ step: 'M8', label: 'M8 最終判斷 (失敗)', adapter: null, verdict: null, ok: false, error: e.message });
+      console.error('[runFullChain] M8 failed:', e);
+    }
+
+    // 4. Render 全部 verdict (M7 + M9 + M8 一齊出)
+    let html = `
+      <div style="background:linear-gradient(90deg,#722ed1,#1890ff);color:#fff;padding:14px 18px;border-radius:8px;margin-bottom:20px;font-family:system-ui,sans-serif;">
+        <div style="font-size:18px;font-weight:700;">🚀 完整鏈條跑完 (M7 → M9 → M8)</div>
+        <div style="font-size:13px;margin-top:6px;opacity:0.9;">${chainResults.filter(r => r.ok).length} / 3 個 step 成功 · 股票: ${code}</div>
+      </div>
+    `;
+    for (const r of chainResults) {
+      const statusIcon = r.ok ? '✅' : '❌';
+      const statusColor = r.ok ? '#52c41a' : '#EE5151';
+      html += `
+        <div style="margin-bottom:20px;">
+          <h3 style="color:${statusColor};margin:0 0 8px 0;font-size:16px;">${statusIcon} ${r.label}</h3>
+          ${r.ok && r.adapter
+            ? r.adapter.renderResult(r.verdict)
+            : `<div style="background:#fff1f0;border:1px solid #EE5151;border-radius:6px;padding:12px;color:#666;">❌ 失敗: ${r.error || '未知錯誤'}</div>`
+          }
+        </div>
+      `;
+    }
+    resultPanel.innerHTML = html;
+    const successCount = chainResults.filter(r => r.ok).length;
+    if (successCount === 3) {
+      runStatus.innerHTML = `✅ 完整鏈條跑完 · 3/3 個 step 成功 · 股票: ${code}`;
+    } else {
+      runStatus.innerHTML = `⚠️ 完整鏈條跑完 · ${successCount}/3 個 step 成功 · 股票: ${code} · 失敗 step 用 fallback 繼續`;
+    }
+  } catch (e) {
+    runStatus.innerHTML = `❌ 完整鏈條失敗: ${e.message}`;
+    resultPanel.innerHTML = `<div style="background:#fff1f0;border:1px solid #EE5151;border-radius:6px;padding:16px;color:#EE5151;">❌ 完整鏈條出錯: ${e.message}<br><br>提示: 試下用獨立「跑算法」按鈕逐個 module 跑, 睇下邊個 step 出問題。</div>`;
+    console.error('[runFullChain] 出錯:', e);
+  }
+}
+
+// 綁定「🚀 跑完整鏈條」按鈕 (跟 runAlgorithm 一樣, 行 page load 即 bind)
+const runFullChainBtn = document.getElementById('run-full-chain-btn');
+if (runFullChainBtn) {
+  runFullChainBtn.addEventListener('click', runFullChain);
+}
 
 // =============================================================
 // Sprint 2 sub-task 2.8 — 「🔄 重新校準」按鈕 event handler (M8 5 個 adaptive params)
