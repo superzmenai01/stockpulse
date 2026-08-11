@@ -12,6 +12,10 @@
 //   export function renderResult(verdict) → HTML string
 //   export function getHelp() → HTML string (optional)
 //
+// 大少 2026-08-11 — Module Warning System v1.0.0
+// 全部 adapter 嘅 analyze() 必須喺 verdict._warnings inlined warnings (AGENTS.md 永久 rule)
+// 警告 UI: 頂部 WarningBanner (renderWarningBanner) + 個別 module 內 WarningCard (renderWarningCards)
+//
 // 兩個 peer module adapters (大少 #10809):
 //   - 預設 exports (id/name/version/...) = ma-alignment adapter (保持 backward compat)
 //   - volumePriceAdapter = VolumePrice module adapter
@@ -28,6 +32,19 @@ export const id = 'AS-03';
 export const name = '均線系統週期斷法';
 export const version = '2.3.0';
 export const description = '用 10 條 rule-based 算法 (A-J) 識別股票所處嘅周期（上升 / 下跌 / 橫行 / 轉勢）+ M5 Multi-TF 多時間框架綜合 (Stage 2) + M8 SlopeMomentum 斜率動能 (Stage 2) + 中長線/短炒 雙策略 (Position + Swing)';
+
+// 大少 2026-08-11 — Module Warning System v1.0.0 引入 (Phase 3)
+// 從 ./lib/warnings.mjs 引入 warning helpers (collect / dedupe / render)
+// 各 module analyze() return 之前 call injectWarnings(verdict, [...]) 即可
+import {
+  WarningCollector,
+  makeWarning,
+  injectWarnings,
+  formatWarningForCopy,
+  formatAllWarningsForCopy,
+  renderWarningBanner,
+  renderWarningCards,
+} from './lib/warnings.mjs';
 
 export const CycleState = Object.freeze({
   UP: 'UP',

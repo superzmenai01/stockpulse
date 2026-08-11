@@ -6,6 +6,10 @@
 //   - Algorithm Registry (hard-code) — 加新 AS-XX 只需要加 1 行
 //   - 動態 import adapter.mjs
 //   - Adapter 提供統一 interface:
+//
+// 大少 2026-08-11 — Module Warning System v1.0.0 引入
+// testing page 收集 verdict._warnings → 顯示頂部 WarningBanner + 個別 verdict 內 WarningCard
+// 加 window.__copyWarning / window.__copyAllWarnings handlers (畀大少 Copy 提示畀 Mavis 修復)
 //       id, name, version, description, inputs
 //       async function analyze(klines, options) → verdict
 //       function renderResult(verdict) → HTML string
@@ -63,8 +67,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 22:15 M7 UI 顯示優化 v6: ALGO_CACHE_BUST = '3.3.0' (TCM 配對 table column 平 min-width 150/150/150 1:1:1 對齊)
 // 大少 2026-08-10 22:50 M7 稱呼改: ALGO_CACHE_BUST = '3.4.0' (「校長/老師」→ 「演算法/Synthesizer」更專業)
 // 大少 2026-08-10 23:00 M8 v2 中文化: ALGO_CACHE_BUST = '3.5.0' (Standard Verdict 中文化 + TCM 中文 + 短期走勢對齊 + trading card 加現價 + popup tooltip)
-// 大少 2026-08-11 M8 v3.8 fix: ALGO_CACHE_BUST = '3.8.0' (M8 v3.7 → v3.8.0 改動: 中長線交易卡加返「現價」 field, 跟短炒一樣 (黃色背景 + 休市標記 + popup), grid 3→4 columns, 用 meta.currentPrice 拎)
-const ALGO_CACHE_BUST = '3.8.0';
+// 大少 2026-08-11 M8 v3.9 + Warning System v1.0.0: ALGO_CACHE_BUST = '3.9.0' (M8 v3.8 → v3.9.0 改動: Module Warning System Phase 3+4 引入 — testing page 加 WarningBanner 頂部 + WarningCard 個別 verdict 內 + Copy 全部/單個 warning button, 從 ../algorithms/AS-03-cycle-detection/lib/warnings.mjs 引入 helpers)
+const ALGO_CACHE_BUST = '3.9.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -647,8 +651,24 @@ async function runAlgorithm() {
     runStatus.innerHTML = `✅ 跑完 · ${actualCount} 日${finalCountHint} · 用咗 ${(endTime - startTime).toFixed(0)} 毫秒`;
 
     // 3. Render result
+    // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 3+4)
+    // 喺 verdict card render 之前, 頂部注入 WarningBanner (如果有 warnings)
+    // 個別 verdict card 內 WarningCard 由 adapter.mjs 自己 handle
     if (currentAdapter.renderResult) {
-      resultPanel.innerHTML = currentAdapter.renderResult(verdict);
+      let resultHTML = currentAdapter.renderResult(verdict);
+      // 頂部 WarningBanner (拎 verdict._warnings, dynamic import)
+      const warnings = verdict._warnings || [];
+      if (warnings.length > 0) {
+        // Dynamic import warnings helper (跟 adapter 同一個 file lib)
+        const { renderWarningBanner, renderWarningCards, formatWarningForCopy, formatAllWarningsForCopy } = await import('../algorithms/AS-03-cycle-detection/lib/warnings.mjs?v=' + ALGO_CACHE_BUST);
+        // 暫存 _currentWarnings 畀 Copy button handler 用
+        window._currentWarnings = warnings;
+        const bannerHTML = renderWarningBanner(warnings);
+        // WarningCard 喺 verdict card 頂部 (e.g. <h3> 之前)
+        // 簡單做法: prepend WarningBanner, WarningCard 由 adapter 自己 inject
+        resultHTML = bannerHTML + resultHTML;
+      }
+      resultPanel.innerHTML = resultHTML;
     } else {
       resultPanel.innerHTML = `<pre>${JSON.stringify(verdict, null, 2)}</pre>`;
     }
@@ -800,6 +820,80 @@ runBtn.addEventListener('click', runAlgorithm);
 // =============================================================
 // 當 M8 verdict card render 時, 內聯 button 「🔄 重新校準」會調用 window.__recalibrateAdaptiveParams
 // 流程: DELETE cache → 重新跑 runAlgorithm() → POST save 新 cache
+// =============================================================
+// 大少 2026-08-11 — Module Warning System v1.0.0 — Copy warning handlers
+// 大少撳 Copy button 將 warning 內容 (Markdown 4 樣) 複製到 clipboard
+// 然後 paste 畀 Mavis 立即知道問題 + 修復方法
+// =============================================================
+window.__copyWarning = async function(idxOrKey) {
+  const warnings = window._currentWarnings || [];
+  let targetWarning = null;
+
+  if (typeof idxOrKey === 'number') {
+    // Index (頂部 banner Copy button)
+    targetWarning = warnings[idxOrKey];
+  } else if (typeof idxOrKey === 'string') {
+    // "module_id_code" key (個別 module Copy button)
+    const [moduleId, code] = idxOrKey.split('_');
+    targetWarning = warnings.find((w) => w.module_id === moduleId && w.code === code);
+  }
+
+  if (!targetWarning) {
+    alert('⚠️ 搵唔到對應警告, 可能 warning 已被 dedupe 或 verdict 冇 _warnings');
+    return;
+  }
+
+  const { formatWarningForCopy } = await import('../algorithms/AS-03-cycle-detection/lib/warnings.mjs?v=' + ALGO_CACHE_BUST);
+  const md = formatWarningForCopy(targetWarning);
+
+  try {
+    await navigator.clipboard.writeText(md);
+    // 簡單 visual feedback
+    const btn = document.activeElement;
+    if (btn && btn.textContent.includes('Copy')) {
+      const origText = btn.textContent;
+      btn.textContent = '✅ Copied!';
+      setTimeout(() => { btn.textContent = origText; }, 1500);
+    }
+  } catch (e) {
+    // Fallback: 用 textarea + execCommand (舊 browser 兼容)
+    const ta = document.createElement('textarea');
+    ta.value = md;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      alert('📋 已 Copy (fallback mode):\n\n' + md);
+    } catch (err) {
+      alert('❌ Copy 失敗, 請手動 Copy:\n\n' + md);
+    }
+    document.body.removeChild(ta);
+  }
+};
+
+window.__copyAllWarnings = async function() {
+  const warnings = window._currentWarnings || [];
+  if (warnings.length === 0) {
+    alert('⚠️ 冇警告可以 Copy');
+    return;
+  }
+  const { formatAllWarningsForCopy } = await import('../algorithms/AS-03-cycle-detection/lib/warnings.mjs?v=' + ALGO_CACHE_BUST);
+  const md = formatAllWarningsForCopy(warnings);
+  try {
+    await navigator.clipboard.writeText(md);
+    const btn = document.activeElement;
+    if (btn && btn.textContent.includes('Copy 全部')) {
+      const origText = btn.textContent;
+      btn.textContent = `✅ Copied! (${warnings.length} 個)`;
+      setTimeout(() => { btn.textContent = origText; }, 2000);
+    }
+  } catch (e) {
+    alert('❌ Copy 失敗:\n\n' + md);
+  }
+};
+
 window.__recalibrateAdaptiveParams = async function() {
   if (!currentOptions || !currentOptions.code) {
     alert('請先輸入股票代碼');
