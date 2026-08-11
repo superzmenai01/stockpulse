@@ -2739,6 +2739,14 @@ export async function analyzeVolatility(klines, options = {}) {
       state: 'SIDEWAYS', confidence: 0,
       interpretation: `[Volatility v1.0] 數據不足: need >= ${minData} bars, got ${klines.length}`,
       evidence: [], warnings: [`數據不足 (${klines.length}/${minData})`],
+      _warnings: [makeWarning('critical', 'M6', 'INSUFFICIENT_DATA',
+        '數據不足以跑波動率分析',
+        {
+          issue: `klines count ${klines?.length || 0} < ${minData} required`,
+          impact: 'M6 verdict fallback SIDEWAYS, 對 M7 综合判定偏差',
+          fix: '增加 dataWindowDays 設定 (e.g. count=200)',
+          context: { kline_count: klines?.length || 0, min_required: minData, period: options.period },
+        })],
       meta: { dataDays: klines.length, configUsed: cfg }, timestamp: Date.now(),
     };
   }
@@ -2976,11 +2984,41 @@ export async function analyzeVolatility(klines, options = {}) {
   else { cycle = 'sideways'; cycleLabel = '蓄力觀察'; }
   const state = cycle === 'uptrend' ? 'UP' : cycle === 'downtrend' ? 'DOWN' : 'SIDEWAYS';
 
+  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c) — M6 Volatility
+  const m6Warnings = [];
+  // ATR% > 30% outlier
+  const currentPrice = recent[recent.length - 1]?.close || 1;
+  const atrPct = (latestNoiseAtr / currentPrice) * 100;
+  if (atrPct > 30) {
+    m6Warnings.push(makeWarning('warning', 'M6', 'OUTLIER_VALUE',
+      `ATR% > 30% 極端波動 (${atrPct.toFixed(1)}%)`,
+      {
+        issue: `ATR% = ${atrPct.toFixed(1)}% > 30% (極端波動)`,
+        impact: '波動率 verdict 唔可信, squeeze/breakout 判斷可能誤判',
+        fix: '可能係股票特殊事件 (拆股/復牌/業績), 排除該日 kline 或增加 dataWindowDays',
+        context: { atr_pct: atrPct, current_price: currentPrice, latest_noise_atr: latestNoiseAtr },
+      }
+    ));
+  }
+  // FALLBACK_USED: matchedRules 0 個
+  if (matchedRules.length === 0) {
+    m6Warnings.push(makeWarning('warning', 'M6', 'FALLBACK_USED',
+      '波動率 rule 全部 fail, fallback SIDEWAYS',
+      {
+        issue: 'matchedRules.length = 0 (波動率 setup 全部 fail)',
+        impact: 'M6 verdict 默認 SIDEWAYS, 對 M7 影响有限',
+        fix: '正常, 屬於橫行市況; 如果市況明顯波動但 verdict SIDEWAYS, 檢查 kline data',
+        context: { matched_rules: 0, atr_pct: atrPct },
+      }
+    ));
+  }
+
   return {
     moduleId: 'volatility', timeframe: options.period || '1d', state, confidence: Math.round(entryScore * 10000) / 10000,
     interpretation: matchedRules.length > 0 ? matchedRules.map(r => r.label).join('；') : '無明確波動率信號',
     evidence: matchedRules.map(r => ({ type: 'rule-' + r.id, label: r.label, value: r.id, passed: true })),
-    warnings: [],
+    warnings: m6Warnings,
+    _warnings: m6Warnings,  // 大少 2026-08-11 v1.0.0
     meta: {
       cycle, cycleLabel, setupType, riskReward,
       entryScore: Math.round(entryScore * 10000) / 10000,
@@ -3667,6 +3705,33 @@ async function analyzeHLStructure(klines, options) {
     ? `${reasonBase}；${adjustmentLog.join('；')}`
     : reasonBase;
 
+  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c) — M2 HL Structure
+  const m2Warnings = [];
+  // peaks + troughs 都係 0
+  if (peakExts.length === 0 && troughExts.length === 0) {
+    m2Warnings.push(makeWarning('critical', 'M2', 'VERDICT_MISSING',
+      '峰谷全部拎唔到',
+      {
+        issue: 'peakExts.length = 0 AND troughExts.length = 0',
+        impact: 'M2 verdict fallback SIDEWAYS, 對 M7 综合判定偏差',
+        fix: '增加 dataWindowDays 設定 (e.g. count=200), 確認 data 有高低點變化',
+        context: { peak_count: 0, trough_count: 0, period: options.period },
+      }
+    ));
+  }
+  // 識別峰谷 < cfg.minLinePoints
+  if (peakExts.length + troughExts.length < cfg.minPairs * 2) {
+    m2Warnings.push(makeWarning('warning', 'M2', 'FALLBACK_USED',
+      `峰谷總數 ${peakExts.length + troughExts.length} < ${cfg.minPairs * 2}`,
+      {
+        issue: `峰谷總數 ${peakExts.length + troughExts.length} < ${cfg.minPairs * 2} required`,
+        impact: '結構判斷唔夠 pairs, 對 cycle 判定有偏差',
+        fix: '增加 dataWindowDays 拎更多峰谷',
+        context: { peak_count: peakExts.length, trough_count: troughExts.length, min_pairs: cfg.minPairs },
+      }
+    ));
+  }
+
   return {
     symbol: options.code || 'TEST',
     cycle: candidate,
@@ -3701,6 +3766,7 @@ async function analyzeHLStructure(klines, options) {
     adjustment_log: adjustmentLog,
     reason: finalReason,
     last_date: String(recent[recent.length - 1].timestamp || recent[recent.length - 1].date || ''),
+    _warnings: m2Warnings,  // 大少 2026-08-11 v1.0.0
   };
 }
 
@@ -4345,7 +4411,38 @@ export async function analyzeTrendline(klines, options = {}) {
     confidence: round(confidence, 4),
     interpretation,
     evidence,
-    warnings: [],
+    warnings: (() => {
+      // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c) — M3 Trendline
+      const m3Warnings = [];
+      // supportLine / resistanceLine 拎唔到 (e.g. 數據太短)
+      if (matchedRules.length === 0) {
+        m3Warnings.push(makeWarning('warning', 'M3', 'FALLBACK_USED',
+          '趨勢線全部 fail, 拎唔到 supportLine / resistanceLine',
+          {
+            issue: 'matchedRules.length = 0 (趨勢線無突破信號)',
+            impact: 'M3 verdict 默認 SIDEWAYS, 對 M7 影响有限',
+            fix: '正常, 屬於橫行市況; 如果市況明顯趨勢但 verdict SIDEWAYS, 檢查 kline data',
+            context: { matched_rules: 0, period: options.period },
+          }
+        ));
+      }
+      return m3Warnings;
+    })(),
+    _warnings: (() => {
+      const m3Warnings = [];
+      if (matchedRules.length === 0) {
+        m3Warnings.push(makeWarning('warning', 'M3', 'FALLBACK_USED',
+          '趨勢線全部 fail',
+          {
+            issue: 'matchedRules.length = 0',
+            impact: 'M3 verdict 默認 SIDEWAYS',
+            fix: '正常橫行市況',
+            context: { matched_rules: 0 },
+          }
+        ));
+      }
+      return m3Warnings;
+    })(),
     meta: {
       matchedRules: matchedRules.map(r => r.id),
       ruleLabels: matchedRules.map(r => r.label),
@@ -5501,7 +5598,49 @@ function _indicatorsDetect(klines, config, symbol, timeframe) {
     confidence,
     interpretation: parts.join(' / '),
     evidence,
-    warnings: [],
+    warnings: (() => {
+      // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c) — M4 Indicators
+      const m4Warnings = [];
+      // RSI 超出 [0, 100] 範圍
+      if (rsiLatest != null && (rsiLatest < 0 || rsiLatest > 100)) {
+        m4Warnings.push(makeWarning('warning', 'M4', 'OUTLIER_VALUE',
+          `RSI 超出 [0, 100] 範圍 (${rsiLatest.toFixed(1)})`,
+          {
+            issue: `rsi = ${rsiLatest.toFixed(1)} (應 [0, 100])`,
+            impact: 'RSI verdict 唔可信, 超買/超賣判斷錯誤',
+            fix: '檢查 RSI 計算邏輯, 可能 kline 有極端值',
+            context: { rsi: rsiLatest, macd: macdLatest },
+          }
+        ));
+      }
+      // MACD 結果 NaN
+      if (macdLatest != null && !isFinite(macdLatest)) {
+        m4Warnings.push(makeWarning('critical', 'M4', 'NAN_RESULT',
+          'MACD 計算結果 NaN',
+          {
+            issue: 'macd 結果係 NaN 或 Infinity',
+            impact: 'MACD verdict 拎唔到',
+            fix: '檢查 MACD 計算邏輯',
+            context: { macd: macdLatest },
+          }
+        ));
+      }
+      return m4Warnings;
+    })(),
+    _warnings: (() => {
+      const m4Warnings = [];
+      if (rsiLatest != null && (rsiLatest < 0 || rsiLatest > 100)) {
+        m4Warnings.push(makeWarning('warning', 'M4', 'OUTLIER_VALUE',
+          'RSI 超出範圍',
+          { issue: `rsi = ${rsiLatest}`, impact: 'RSI 唔可信', fix: '檢查 kline', context: { rsi: rsiLatest } }));
+      }
+      if (macdLatest != null && !isFinite(macdLatest)) {
+        m4Warnings.push(makeWarning('critical', 'M4', 'NAN_RESULT',
+          'MACD NaN',
+          { issue: 'macd NaN', impact: 'MACD 拎唔到', fix: '檢查', context: { macd: macdLatest } }));
+      }
+      return m4Warnings;
+    })(),
     meta: {
       inputBars: klines.length,
       cycleLabel,
