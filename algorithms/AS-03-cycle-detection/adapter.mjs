@@ -7623,7 +7623,8 @@ export const decisionEngineAdapter = {
     // 2. 動態 import 從 .bundle.js (esbuild 已 build, browser-compatible)
     //   大少 2026-08-08 18:40 fix: testing page 喺瀏覽器跑 fetch 唔到 .ts file,
     //   改用 esbuild bundle 嘅 ESM .js
-    const { DecisionEngine, calibrateAdaptiveParams, applyAdaptiveParamsToSynthesizer, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js');
+    //   大少 2026-08-11 fix: 加 ?v=3.6.0 query string (MA trigger 永久 false bug fix 永久 rule)
+    const { DecisionEngine, calibrateAdaptiveParams, applyAdaptiveParamsToSynthesizer, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js?v=3.6.0');
 
     // 3. 2.6 — L2 cache: 試讀 cache (7 日內 valid 就用 cache, 否則重新 calibrate)
     const symbol = options.symbol || options.code || 'unknown';
@@ -8290,7 +8291,7 @@ export const backTestAdapter = {
     const decisionFn = async (kl, opts) => {
       const synthResult = await analyzeDecisionEngine(kl, opts);
       // 將 SynthesizerVerdict 轉 DecisionVerdict
-      const { DecisionEngine, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js');
+      const { DecisionEngine, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js?v=3.6.0');
       const engine = new DecisionEngine();
       return engine.decide({
         synthesizerVerdict: synthResult,
