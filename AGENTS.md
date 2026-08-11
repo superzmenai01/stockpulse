@@ -29,6 +29,30 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 ## 核心 Permanent Rules (濃縮版)
 
+### Module Warning System (永久 rule, 大少 2026-08-11 v1.0.0)
+
+**所有 module (M1-M12 + zmen + 7 個 adaptive params) 嘅 verdict 都要 inlined `_warnings` array**:
+- 用 `makeWarning(level, module_id, code, message, debug)` helper (`lib/warnings.mjs` / `lib/warnings.ts` / `backend/services/warning_collector.py`)
+- 15 個 warning codes (5 🔴 Critical / 7 🟡 Warning / 3 🔵 Info), 詳見 `docs/research/AS-03-cycle-detection/MODULE-WARNING-SYSTEM.md`
+- Propagation chain: M1-M6 → M7 Synthesizer → M8 Decision Engine → M9 Back Test (用 raw verdicts 拎 `_warnings`, 因為 `decisionEngineToStandardVerdict` 唔 propagate)
+- `verdict._warnings` 永遠 inlined, **唔入 DB table** (避免 storage overhead)
+
+**Copy 提示用 Markdown 4 樣格式** (大少 Copy 畀 Mavis 立即 debug):
+- 🚨 **StockPulse 警告** [🔴/🟡/🔵 icon + level]
+- **Module** / **Code** / **問題** / **影響** / **修復建議** / **Debug Context**
+
+**UI 顯示規則** (大少 11:57 永遠全 Show 永久 rule 延伸):
+- 頂部 1 個統一 WarningBanner (有 warnings 先 show, expand 顯示詳細 + Copy button)
+- 個別 module verdict card 內 WarningCard (critical + warning inline, info 唔喺 card 內 show)
+
+**Dedupe by (level + module_id + code)** — 同一個 warning 只保留 1 個
+**排序: Critical (0) → Warning (1) → Info (2), 然後 by module_id**
+
+**禁止**:
+- ❌ 警告入 DB table (storage overhead)
+- ❌ WarningBanner 隱藏 (大少 11:57 永久 rule)
+- ❌ 用 string array warnings (統一用 ModuleWarning object)
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`
