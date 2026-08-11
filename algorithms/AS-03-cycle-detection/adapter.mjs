@@ -7384,6 +7384,98 @@ function renderOptimalParamsBanner(verdict) {
 }
 
 // =============================================================
+// 大少 2026-08-11 22:05 — 改善 1: M9 summary sub-section
+// =============================================================
+// 凡人話: M8 verdict 嘅 banner 之後, 自動加 1 個 M9 summary 小卡 (從 cache 拎 optimal data)
+//         大少唔需要再撳 M9 module 跑, 就可以見到 M9 拎咗咩 optimal 設定畀 M8
+//
+// 條件: verdict.optimal_data 唔係 null (即 M9 cache 有 optimal)
+//       拎到就 render 5 個 metric + hint
+//
+// 永久 rule:
+//   - verdict.optimal_data 永遠 inlined (唔入 DB table, 跟 Module Warning System 永久 rule)
+//   - 拎 data 從 /api/adaptive-params/{symbol}/back-test (30 日 expiry)
+//   - 唔影響 M8 verdict 邏輯, 純 additive sub-section
+// =============================================================
+
+function renderM9Summary(verdict) {
+  const optimalData = verdict?.optimal_data;
+  if (!optimalData) {
+    // 冇 M9 cache, 唔 render sub-section (banner 已經提示「未跑過 M9」)
+    return '';
+  }
+
+  const optimalParams = optimalData.optimal_params || {};
+  const validation = optimalData.validation || {};
+  const kelly = optimalParams.kelly;
+  const rsiWeight = optimalParams.rsiWeight;
+  const ssiWeights = optimalParams.ssiWeights || {};
+  const avgValidateScore = validation.avgValidateScore;
+  const stabilityScore = validation.stabilityScore;
+  const totalValidateSamples = validation.totalValidateSamples;
+  const foldsCount = optimalData.folds_count || 3;
+
+  // 格式化 kelly (0.125 / 0.25 / 0.5 → 1/8 / 1/4 / 1/2)
+  const kellyLabel = kelly === 0.125 ? '1/8 倉' : kelly === 0.25 ? '1/4 倉' : kelly === 0.5 ? '1/2 倉' : `${(kelly * 100).toFixed(0)}%`;
+
+  // 5 個 metric mini-cards (凡人話: 一眼睇晒 M9 拎咗咩設定)
+  const cards = [
+    {
+      label: '凱利倉位',
+      value: kellyLabel,
+      hint: '每注落幾多成倉 (M9 過去試過最佳)',
+      color: '#722ed1',
+    },
+    {
+      label: 'RSI 權重',
+      value: rsiWeight != null ? rsiWeight.toFixed(2) : 'N/A',
+      hint: 'RSI 對 SSI 影響比重 (0-1)',
+      color: '#1890ff',
+    },
+    {
+      label: '均線 / 峰谷 / 趨勢線',
+      value: ssiWeights.ma != null ? `${(ssiWeights.ma * 100).toFixed(0)}% / ${(ssiWeights.hl * 100).toFixed(0)}% / ${(ssiWeights.tl * 100).toFixed(0)}%` : 'N/A',
+      hint: '3 個模組嘅 SSI 權重 (加埋 = 100%)',
+      color: '#13c2c2',
+    },
+    {
+      label: '穩定度分數',
+      value: stabilityScore != null ? stabilityScore.toFixed(1) : 'N/A',
+      hint: '0-100 分, 越高越穩定 (≥ 70 算穩陣)',
+      color: stabilityScore != null && stabilityScore >= 70 ? '#52c41a' : stabilityScore != null && stabilityScore >= 50 ? '#FAAD14' : '#EE5151',
+    },
+    {
+      label: '樣本 / 段數',
+      value: `${totalValidateSamples || 0} / ${foldsCount}`,
+      hint: '過去試過幾多個 / 切做幾多段 (≥ 30 樣本先可信)',
+      color: '#F39C12',
+    },
+  ];
+
+  const cardsHTML = cards.map(c => `
+    <div style="flex:1;min-width:140px;background:#fafafa;border:1px solid #e0e0e0;border-radius:6px;padding:10px 12px;">
+      <div style="font-size:11px;color:#999;margin-bottom:4px;">${c.label}</div>
+      <div style="font-size:18px;font-weight:700;color:${c.color};line-height:1.2;">${c.value}</div>
+      <div style="font-size:10px;color:#888;margin-top:4px;line-height:1.3;">${c.hint}</div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="m9-summary-section" style="background:#f9f0ff;border:1px solid #722ed1;border-radius:8px;padding:14px 16px;margin:16px 0;font-family:system-ui,sans-serif;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <strong style="font-size:14px;color:#722ed1;">📊 M9 最佳設定摘要 (從 cache 拎, 大少無需再撳 M9 module 跑)</strong>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+        ${cardsHTML}
+      </div>
+      <div style="font-size:12px;color:#666;padding-top:8px;border-top:1px dashed #d9d9d9;">
+        💡 想睇詳細 M9 verdict (walk-forward CV 段結果 + 過去判決 + 命中率), 撳 M9 module (09 — AS-03-BT) 跑
+      </div>
+    </div>
+  `;
+}
+
+// =============================================================
 // Sprint 2 sub-task 2.1 — M8 helpers (finalAction color/label/emoji + 連漲日數)
 // =============================================================
 
@@ -8303,6 +8395,7 @@ export const decisionEngineAdapter = {
     let adaptiveParams = null;
     let cacheInfo = null;
     let useCache = false;
+    let optimalData = null;  // 大少 2026-08-11 22:05 — 拎 M9 optimal cache 嘅 data (kelly/rsiWeight/ssiWeights/validation/folds_count)
     try {
       const cacheResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`);
       if (cacheResp.ok) {
@@ -8312,6 +8405,18 @@ export const decisionEngineAdapter = {
           cacheInfo = data;
           useCache = true;
         }
+      }
+      // 大少 2026-08-11 22:05 — 拎 M9 optimal cache (30 日 expiry, 用嚟做 banner + M9 summary sub-section)
+      // 改善 3 修 bug: 之前 banner 拎 `cacheInfo.last_calibrated` (params cache, M8 自己 calibrate) 但寫住「由 M9 cache 嚟」, 邏輯錯
+      // 改善 1 拎 optimal data 做 summary sub-section render
+      try {
+        const optimalResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/back-test`);
+        if (optimalResp.ok) {
+          optimalData = await optimalResp.json();
+        }
+        // 404 (冇 optimal) → optimalData = null, banner fallback 顯示「未跑過 M9」
+      } catch (e) {
+        console.warn('[M8 Decision Engine] M9 optimal cache fetch failed:', e);
       }
     } catch (e) {
       // Backend 唔 work, fallback 去 calibrate
@@ -8554,13 +8659,14 @@ export const decisionEngineAdapter = {
       module_cycle_verdicts: synthResultWithParams.module_cycle_verdicts,
       adaptive_params: adaptiveParams,
       cache_info: cacheInfo,
-      // 大少 2026-08-11 — B 改善: M8 verdict 加 optimal_params_timestamp
-      // 凡人話: 大少一眼睇到 M8 用咗幾時嘅最佳設定(由 M9 cache 嚟)
-      // 冇 cache → source='fresh-calibrate', timestamp=null
-      // 有 cache → source='cache', timestamp=cacheInfo.last_calibrated
-      optimal_params_timestamp: cacheInfo?.last_calibrated || null,
-      optimal_params_source: cacheInfo ? 'cache' : 'fresh-calibrate',
-      optimal_params_age_seconds: cacheInfo?.age_seconds || null,
+      // 大少 2026-08-11 22:05 — 改善 3 (修 banner bug) + 改善 1 (M9 summary)
+      // 之前 B 改善拎 cacheInfo.last_calibrated (params cache 7 日), 但 banner 寫住「由 M9 cache 嚟」邏輯錯
+      // 改善: 拎 optimalData.last_backtest (M9 optimal cache 30 日), 配合 banner 「由 M9 cache 嚟」字眼
+      // 順便拎 optimalData.optimal_params / validation / folds_count 畀 M9 summary sub-section render
+      optimal_params_timestamp: optimalData?.last_backtest || null,
+      optimal_params_source: optimalData ? 'cache' : 'fresh-calibrate',
+      optimal_params_age_seconds: optimalData?.age_seconds || null,
+      optimal_data: optimalData || null,  // 完整 M9 optimal data 畀 renderM9Summary() 用
       _warnings: m8Warnings,  // 大少 2026-08-11 v1.0.0
     };
   },
@@ -8575,6 +8681,11 @@ export const decisionEngineAdapter = {
     //   - 有 cache + ≥ 7 日: 🔴 紅色 banner, 提示過期 + 強烈建議重跑 M9
     const optimalParamsBanner = renderOptimalParamsBanner(verdict);
 
+    // 大少 2026-08-11 22:05 — 改善 1: M9 summary sub-section
+    // 凡人話: banner 之後, 自動加 1 個 M9 summary 小卡 (從 cache 拎 optimal data)
+    //         大少唔需要再撳 M9 module 跑, 就可以見到 M9 拎咗咩 optimal 設定畀 M8
+    const m9Summary = renderM9Summary(verdict);
+
     // 大少 2026-08-11 — 中長線/短炒 wrapper
     //   strategyMode='position' → 中長線 (cycle synth + 5 個 trigger) + 短炒 (原本 M8 8 個最終動作)
     //   strategyMode='swing'    → 只顯示短炒 (backward compat)
@@ -8583,9 +8694,9 @@ export const decisionEngineAdapter = {
 
     if (strategyMode === 'position' && verdict.cycle_synthesizer) {
       const positionContent = renderPositionDecisionEngine(verdict);
-      return optimalParamsBanner + positionContent + swingContent;
+      return optimalParamsBanner + m9Summary + positionContent + swingContent;
     }
-    return optimalParamsBanner + swingContent;
+    return optimalParamsBanner + m9Summary + swingContent;
   },
   getHelp: () => `
     <h3>🚦 終極綜合判斷引擎 (Decision Engine v2.2.0 — M8 中長線/短炒 雙策略)</h3>

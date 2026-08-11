@@ -75,7 +75,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 21:16 M9 bug fix: ALGO_CACHE_BUST = '4.3.1' (A 改善 chain test 揭發 M9 自身有 ReferenceError 'postErrors is not defined' — surgical 1 行 fix 加 const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []))
 // 大少 2026-08-11 21:20 C 改善: ALGO_CACHE_BUST = '4.4.0' (runAlgorithm 撳 M8 之前, 自動 check adaptive_params cache 7 日 expiry — 過期提示「⚠️ 強烈建議撳🚀 跑完整鏈條掣」, 唔 auto trigger M9, 只係 hint)
 // 大少 2026-08-11 21:32 Dropdown zmen 排頂: ALGO_CACHE_BUST = '4.4.1' (REGISTRY array 將 zmen 均算法 block 從中間位置搬去最頂, ID/displayName 唔改, 純 visual 排位)
-const ALGO_CACHE_BUST = '4.4.1';
+// 大少 2026-08-11 22:05 改善 1+3: ALGO_CACHE_BUST = '4.5.0' (M8 verdict 拎 optimalData 替代 cacheInfo 拎 optimal_params_* 3 個 field + 新加 renderM9Summary(verdict) function 喺 banner 之後 render 5 個 metric mini-cards — 凡人話「撳 M8 即刻見到 M9 拎咗咩 optimal 設定」)
+const ALGO_CACHE_BUST = '4.5.0';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
