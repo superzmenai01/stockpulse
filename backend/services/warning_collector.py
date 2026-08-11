@@ -93,6 +93,10 @@ def make_warning(
                      fix='增加 dataWindowDays 設定 count=200',
                      context={'kline_count': count, 'min_required': min_required})
     """
+    # Auto-fix level if code-level mismatch (per WARNING_CODES map)
+    if code in WARNING_CODES and WARNING_CODES[code] != level:
+        level = WARNING_CODES[code]
+    
     debug = {
         'issue': issue,
         'impact': impact,
@@ -128,11 +132,22 @@ class WarningCollector:
                 elif isinstance(w, ModuleWarning):
                     self.warnings.append(w)
     
-    def push(self, warning: ModuleWarning):
-        """Push warning (auto-dedupe by level + module_id + code)"""
+    def push(self, warning):
+        """Push warning (auto-dedupe by level + module_id + code)
+        
+        Accepts either ModuleWarning object or dict (auto-convert)
+        """
+        # Convert dict to ModuleWarning if needed
+        if isinstance(warning, dict):
+            try:
+                warning = ModuleWarning(**warning)
+            except Exception as e:
+                logger.warning(f"[WarningCollector] push: dict conversion failed: {e}, dict: {warning}")
+                return
+        
         # Dedupe check
         for existing in self.warnings:
-            if (existing.level == warning.level 
+            if (existing.level == warning.level
                 and existing.module_id == warning.module_id
                 and existing.code == warning.code):
                 logger.debug(
@@ -202,6 +217,33 @@ def inject_warnings(verdict: Dict[str, Any], warnings: List[ModuleWarning]):
         wc.push(w)
     
     verdict['_warnings'] = wc.to_list()
+
+
+def format_all_warnings_for_copy(warnings: List[Dict[str, Any]]) -> str:
+    """Format all warnings 為 Markdown 報告 (大少 Copy 1 個 button 就拎齊全部)
+    
+    Format:
+        📋 **StockPulse 警告報告** (共 N 個)
+        
+        [1] M1 - INSUFFICIENT_DATA (critical)
+        🚨 **StockPulse 警告** [🔴 Critical]
+        ...
+        
+        ---
+        
+        [2] M5 - OUTLIER_VALUE (warning)
+        ...
+    """
+    if not warnings or not isinstance(warnings, list):
+        return '(無警告)'
+    
+    header = f"📋 **StockPulse 警告報告** (共 {len(warnings)} 個)\n\n"
+    body_parts = []
+    for i, w in enumerate(warnings):
+        title = f"[{i + 1}] {w.get('module_id', '?')} - {w.get('code', '?')} ({w.get('level', '?')})"
+        body_parts.append(title + "\n" + format_warning_for_copy(w) + "\n")
+    body = "\n---\n\n".join(body_parts)
+    return header + body
 
 
 def format_warning_for_copy(warning_dict: Dict[str, Any]) -> str:

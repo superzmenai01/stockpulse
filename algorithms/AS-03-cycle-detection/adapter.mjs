@@ -2986,9 +2986,9 @@ export async function analyzeVolatility(klines, options = {}) {
 
   // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c) — M6 Volatility
   const m6Warnings = [];
-  // ATR% > 30% outlier
+  // ATR% > 30% outlier (用 atrValue 標準 ATR, 唔用 noiseAtr residual)
   const currentPrice = recent[recent.length - 1]?.close || 1;
-  const atrPct = (latestNoiseAtr / currentPrice) * 100;
+  const atrPct = currentPrice > 0 ? (atrValue / currentPrice) * 100 : 0;
   if (atrPct > 30) {
     m6Warnings.push(makeWarning('warning', 'M6', 'OUTLIER_VALUE',
       `ATR% > 30% 極端波動 (${atrPct.toFixed(1)}%)`,
@@ -2996,7 +2996,7 @@ export async function analyzeVolatility(klines, options = {}) {
         issue: `ATR% = ${atrPct.toFixed(1)}% > 30% (極端波動)`,
         impact: '波動率 verdict 唔可信, squeeze/breakout 判斷可能誤判',
         fix: '可能係股票特殊事件 (拆股/復牌/業績), 排除該日 kline 或增加 dataWindowDays',
-        context: { atr_pct: atrPct, current_price: currentPrice, latest_noise_atr: latestNoiseAtr },
+        context: { atr_pct: atrPct, atr_value: atrValue, current_price: currentPrice },
       }
     ));
   }
@@ -3496,6 +3496,14 @@ async function analyzeHLStructure(klines, options) {
       adjustment_log: ['價格完全無變化,無法識別峰谷'],
       reason: '價格完全無變化,預設橫行',
       last_date: String(recent[recent.length - 1].timestamp || recent[recent.length - 1].date || ''),
+      _warnings: [makeWarning('critical', 'M2', 'VERDICT_MISSING',
+        '峰谷全部拎唔到 (價格完全無變化)',
+        {
+          issue: 'peakIdxs.length = 0 AND troughIdxs.length = 0 (價格完全無變化)',
+          impact: 'M2 verdict fallback SIDEWAYS, 對 M7 综合判定偏差',
+          fix: '檢查 kline data, 確認有實際價格變化, 可能要重新 fetch kline',
+          context: { peak_count: 0, trough_count: 0, period: options.period },
+        })],
     };
   }
 
