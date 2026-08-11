@@ -7319,6 +7319,71 @@ function decisionEngineKellyLabel(fraction) {
 }
 
 // =============================================================
+// 大少 2026-08-11 19:55 — B 改善: 頂部最佳設定時段 banner
+// =============================================================
+// 凡人話: M8 verdict 頂部加 1 個小 banner, 大少一眼睇到 M8 用咗幾時嘅最佳設定(由 M9 cache 嚟)
+//
+// 3 種狀況 (凡人話 1 句講晒):
+//   - 冇 cache (source='fresh-calibrate'): 今日先第一次跑, 用咗 default, 建議先跑 M9
+//   - 有 cache + < 7 日: 用咗幾時嘅最佳設定, 仲有幾多日有效
+//   - 有 cache + ≥ 7 日: 已過期, 強烈建議重跑 M9 (C 改善會自動 hint)
+//
+// Style: inline CSS (跟既有 warning banner 風格), 唔依賴外部 CSS file
+//
+// 永久 rule:
+//   - optimal_params_source 唔好寫入 DB table (純 verdict 內部欄位)
+//   - 用 cacheInfo.last_calibrated (由 /api/adaptive-params/{symbol} 拎, 大少 22:28 永久 rule)
+
+const SEVEN_DAYS_SECONDS = 7 * 24 * 3600;
+
+function renderOptimalParamsBanner(verdict) {
+  const ts = verdict?.optimal_params_timestamp;
+  const source = verdict?.optimal_params_source || 'fresh-calibrate';
+  const ageSec = verdict?.optimal_params_age_seconds;
+
+  // Case 1: 冇 cache / fresh-calibrate (第一次跑 / cache 過期被清)
+  if (!ts || source === 'fresh-calibrate') {
+    return `
+      <div class="optimal-params-banner optimal-params-banner-warning" style="background:#fffbe6;border:2px solid #FAAD14;border-radius:8px;padding:10px 16px;margin:16px 0;font-family:system-ui,sans-serif;font-size:13px;">
+        <span style="font-size:16px;">🟡</span>
+        <strong style="color:#FAAD14;">未跑過 M9</strong>
+        <span style="color:#666;margin-left:8px;">— M8 用咗 default 設定, 建議先跑 M9 (回測) 拎呢隻股票嘅最佳設定</span>
+      </div>
+    `;
+  }
+
+  // Case 2/3: 有 cache, 計算 age
+  const effectiveAgeSec = (typeof ageSec === 'number' && ageSec >= 0)
+    ? ageSec
+    : Math.max(0, Math.floor((Date.now() / 1000) - ts));
+  const ageDays = Math.floor(effectiveAgeSec / 86400);
+  const date = new Date(ts * 1000);
+  const dateStr = date.toISOString().substring(0, 10);
+  const timeStr = date.toISOString().substring(11, 16);
+  const remainingDays = Math.max(0, 7 - ageDays);
+
+  // Case 3: 已過期 (≥ 7 日)
+  if (effectiveAgeSec >= SEVEN_DAYS_SECONDS) {
+    return `
+      <div class="optimal-params-banner optimal-params-banner-critical" style="background:#fff1f0;border:2px solid #EE5151;border-radius:8px;padding:10px 16px;margin:16px 0;font-family:system-ui,sans-serif;font-size:13px;">
+        <span style="font-size:16px;">🔴</span>
+        <strong style="color:#EE5151;">M9 最佳設定已過期</strong>
+        <span style="color:#666;margin-left:8px;">— 用咗 ${dateStr} ${timeStr} 嘅設定(已過 ${ageDays} 日), 強烈建議重跑 M9</span>
+      </div>
+    `;
+  }
+
+  // Case 2: 仲有效 (< 7 日)
+  return `
+    <div class="optimal-params-banner optimal-params-banner-ok" style="background:#f6ffed;border:2px solid #52c41a;border-radius:8px;padding:10px 16px;margin:16px 0;font-family:system-ui,sans-serif;font-size:13px;">
+      <span style="font-size:16px;">🟢</span>
+      <strong style="color:#52c41a;">M8 用咗 ${dateStr} ${timeStr} 嘅最佳設定</strong>
+      <span style="color:#666;margin-left:8px;">(由 M9 cache 嚟, ${ageDays} 日內有效, 仲有 ${remainingDays} 日)</span>
+    </div>
+  `;
+}
+
+// =============================================================
 // Sprint 2 sub-task 2.1 — M8 helpers (finalAction color/label/emoji + 連漲日數)
 // =============================================================
 
@@ -8489,11 +8554,26 @@ export const decisionEngineAdapter = {
       module_cycle_verdicts: synthResultWithParams.module_cycle_verdicts,
       adaptive_params: adaptiveParams,
       cache_info: cacheInfo,
+      // 大少 2026-08-11 — B 改善: M8 verdict 加 optimal_params_timestamp
+      // 凡人話: 大少一眼睇到 M8 用咗幾時嘅最佳設定(由 M9 cache 嚟)
+      // 冇 cache → source='fresh-calibrate', timestamp=null
+      // 有 cache → source='cache', timestamp=cacheInfo.last_calibrated
+      optimal_params_timestamp: cacheInfo?.last_calibrated || null,
+      optimal_params_source: cacheInfo ? 'cache' : 'fresh-calibrate',
+      optimal_params_age_seconds: cacheInfo?.age_seconds || null,
       _warnings: m8Warnings,  // 大少 2026-08-11 v1.0.0
     };
   },
   renderResult: (verdict) => {
     if (!verdict) return '<div class="result-error">無 verdict</div>';
+
+    // 大少 2026-08-11 — B 改善: 頂部最佳設定時段 banner
+    // 凡人話: 大少一眼睇到 M8 用咗幾時嘅最佳設定(由 M9 cache 嚟)
+    // 3 種狀況:
+    //   - 冇 cache (fresh-calibrate): 🟡 黃色 banner, 提示用咗 default
+    //   - 有 cache + < 7 日: 🟢 綠色 banner, 顯示日期 + age + 剩餘日數
+    //   - 有 cache + ≥ 7 日: 🔴 紅色 banner, 提示過期 + 強烈建議重跑 M9
+    const optimalParamsBanner = renderOptimalParamsBanner(verdict);
 
     // 大少 2026-08-11 — 中長線/短炒 wrapper
     //   strategyMode='position' → 中長線 (cycle synth + 5 個 trigger) + 短炒 (原本 M8 8 個最終動作)
@@ -8503,9 +8583,9 @@ export const decisionEngineAdapter = {
 
     if (strategyMode === 'position' && verdict.cycle_synthesizer) {
       const positionContent = renderPositionDecisionEngine(verdict);
-      return positionContent + swingContent;
+      return optimalParamsBanner + positionContent + swingContent;
     }
-    return swingContent;
+    return optimalParamsBanner + swingContent;
   },
   getHelp: () => `
     <h3>🚦 終極綜合判斷引擎 (Decision Engine v2.2.0 — M8 中長線/短炒 雙策略)</h3>

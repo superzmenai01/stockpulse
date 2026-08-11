@@ -70,7 +70,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 M8 v3.9 + Warning System v1.0.0: ALGO_CACHE_BUST = '3.9.0' (M8 v3.8 → v3.9.0 改動: Module Warning System Phase 3+4 引入 — testing page 加 WarningBanner 頂部 + WarningCard 個別 verdict 內 + Copy 全部/單個 warning button, 從 ../algorithms/AS-03-cycle-detection/lib/warnings.mjs 引入 helpers)
 // 大少 2026-08-11 Codebase 註解 Phase 4: ALGO_CACHE_BUST = '4.0.0' (testing-page.js __copyWarning / __copyAllWarnings 加 inline 註解 — 凡人話流程 + 永久 rule + 參數說明, 其他 AI 閱讀時能立即明白 Copy handler 點 work)
 // 大少 2026-08-11 19:55 Dropdown 排位: ALGO_CACHE_BUST = '4.1.0' (M9 排 M8 上邊 — REGISTRY array element order 互換, ID/displayName 編號唔改, 純 visual 排位反映 M7→M9→M8 chain 邏輯)
-const ALGO_CACHE_BUST = '4.1.0';
+// 大少 2026-08-11 20:40 B 改善: ALGO_CACHE_BUST = '4.2.0' (M8 verdict 加 optimal_params_timestamp + renderOptimalParamsBanner 頂部 banner — 凡人話 1 句講晒「用咗幾時嘅最佳設定」, 3 種狀況: 冇 cache 黃色 / < 7 日綠色 / ≥ 7 日紅色)
+const ALGO_CACHE_BUST = '4.2.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
