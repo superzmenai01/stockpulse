@@ -84,6 +84,29 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: 284d247d, 1f18a49c, 2af9d2dc, 7791b986, f14d3328
 
+### AS-03 Chain v1.1 — 改善 1+2+3 (大少 2026-08-11 22:05)
+
+**改善 1: M8 verdict embed M9 summary sub-section**:
+- 撳「跑 M8」之後, M8 verdict 嘅 banner 之後, 自動加 1 個 M9 summary 小卡 (從 cache 拎 optimal data)
+- 5 個 metric mini-cards: 凱利倉位 / RSI 權重 / 均線+峰谷+趨勢線權重 / 穩定度分數 / 樣本+段數
+- 條件: `verdict.optimal_data` 唔係 null (即 M9 cache 有 optimal)
+- 大少唔需要再撳 M9 module 跑, 撳 M8 即刻見到 M9 拎咗咩 optimal 設定
+
+**改善 2: Chain 改 conditional** (大少 22:05 insight):
+- 「跑完整鏈條」唔係永遠跑 M9, 改為 M9 過期 / 缺失先跑 (cache OK skip)
+- Step 0 (新增): check `/api/adaptive-params/{symbol}` 拎 `has_optimal` 30 日 expiry
+- has_optimal=true (cache 仲有效) → skip M9 (4 秒搞掂, 唔再 30-60 秒浪費)
+- has_optimal=false / missing → 跑 M9 (拎新 optimal 落 cache)
+- Chain 預計時間改善: 30-65 秒 → 2-4 秒 (cache OK 嗰陣 10x speed)
+
+**改善 3: 修 banner timestamp bug** (chain test 揭發):
+- 之前 B 改善 banner 拎 `cacheInfo.last_calibrated` (params cache 7 日), 但 banner 寫住「由 M9 cache 嚟」邏輯錯
+- Fix: M8 verdict 改拎 `/api/adaptive-params/{symbol}/back-test` 拎 `optimalData.last_backtest` (M9 cache 30 日)
+- verdict 新加 `optimal_data` field 包含完整 optimal data (kelly / rsiWeight / ssiWeights / validation / folds_count)
+- Banner + M9 summary 都拎 optimalData, 邏輯一致
+
+對應 commit: 772cdfa2 (改善 1+3), 540cde9f (改善 2)
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`

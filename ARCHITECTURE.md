@@ -1459,6 +1459,31 @@ if (currentAdapter.renderChartOverlay) {
 
 對應 commit: 284d247d (dropdown), 1f18a49c (B 改善), 2af9d2dc (A 改善), 7791b986 (M9 fix), f14d3328 (C 改善)
 
+### AS-03 Chain v1.1 — 改善 1+2+3 (大少 2026-08-11 22:05, Spec Sync #14)
+
+**改善 1: M8 verdict embed M9 summary sub-section** (commit 772cdfa2):
+- 撳「跑 M8」之後, M8 verdict 嘅 banner 之後, 自動加 1 個 M9 summary 小卡 (從 cache 拎 optimal data)
+- 5 個 metric mini-cards: 凱利倉位 (1/8 / 1/4 / 1/2 倉) / RSI 權重 (0-1) / 均線+峰谷+趨勢線權重 / 穩定度分數 (0-100, 顏色: ≥ 70 綠 / ≥ 50 黃 / < 50 紅) / 樣本+段數
+- 條件: `verdict.optimal_data` 唔係 null (即 M9 cache 有 optimal)
+- 大少唔需要再撳 M9 module 跑, 撳 M8 即刻見到 M9 拎咗咩 optimal 設定
+- Hint sub-section 底部: 「💡 想睇詳細 M9 verdict (walk-forward CV 段結果), 撳 M9 module (09 — AS-03-BT) 跑」
+
+**改善 2: Chain 改 conditional** (commit 540cde9f, 大少 22:05 insight):
+- 「跑完整鏈條」唔係永遠跑 M9, 改為 M9 過期 / 缺失先跑 (cache OK skip)
+- Step 0 (新增): check `/api/adaptive-params/{symbol}` 拎 `has_optimal` 30 日 expiry
+- has_optimal=true (cache 仲有效) → skip M9 (4 秒搞掂)
+- has_optimal=false / missing → 跑 M9 (拎新 optimal 落 cache, 30-60 秒)
+- Chain 預計時間改善: 30-65 秒 → 2-4 秒 (cache OK 嗰陣 10x speed)
+- UX: Skipped 嘅 step render 1 個藍色 hint box「⚡ 跳過呢個 step (cache 仲有效, M8 已經用緊 cache 嘅 optimal)」
+
+**改善 3: 修 banner timestamp bug** (chain test 揭發, commit 772cdfa2):
+- 之前 B 改善 banner 拎 `cacheInfo.last_calibrated` (params cache 7 日), 但 banner 寫住「由 M9 cache 嚟」邏輯錯
+- Fix: M8 verdict 改拎 `/api/adaptive-params/{symbol}/back-test` 拎 `optimalData.last_backtest` (M9 cache 30 日)
+- verdict 新加 `optimal_data` field 包含完整 optimal data (kelly / rsiWeight / ssiWeights / validation / folds_count)
+- Banner + M9 summary 都拎 optimalData, 邏輯一致
+
+對應 commit: 772cdfa2 (改善 1+3), 540cde9f (改善 2)
+
 ### 3-Section Rule (大少 #11056, 2026-08-07, 永久)
 
 **所有 AS-03 module 必須有 3 個 sections**(adapter.mjs 強制):每個 module 嘅 `render{Module}Result()` 必須 render 呢 3 段,缺一唔得。

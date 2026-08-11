@@ -477,16 +477,29 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 
 **Testing Page 用法 (Spec Sync #13 — 3 個掣)**:
 - **「跑算法」掣** (舊): 跑當前 dropdown 揀嘅單一 module
-- **「🚀 跑完整鏈條 (M7→M9→M8)」掣** (Spec Sync #13 Step 3, 紫藍漸層色): 撳 1 個掣自動跑 3 個 module, sequential
+- **「🚀 跑完整鏈條 (M7→M9→M8)」掣** (Spec Sync #13 Step 3 + Spec Sync #14 改善 2 conditional, 紫藍漸層色): 撳 1 個掣自動跑, sequential + conditional
+  - **Step 0 (改善 2 — chain conditional)**: check `/api/adaptive-params/{symbol}` 拎 `has_optimal` 30 日 expiry
+    - has_optimal=true → skip M9 (4 秒搞掂, 唔再 30-60 秒浪費)
+    - has_optimal=false / missing → 跑 M9 (拎新 optimal 落 cache)
   - Step 1/3: 跑 synthesizerAdapter.analyze (M7 綜合)
-  - Step 2/3: 跑 backTestAdapter.analyze (M9 回測, 內部 POST 落 cache)
+  - Step 2/3: 跑 backTestAdapter.analyze (M9 回測, 內部 POST 落 cache) — conditional, cache OK 跳過
   - Step 3/3: 跑 decisionEngineAdapter.analyze (M8 最終, 內部 load cache 自動)
   - M9 失敗 fallback 跑 M8, chain 唔 crash
-  - 3 個 verdict card 一齊出, 頂部紫藍 banner 標明「完整鏈條跑完」
+  - 3 個 verdict card 一齊出 (cache OK 跳過 M9 嗰陣只 render M7 + M8), 頂部紫藍 banner 標明「完整鏈條跑完」
+  - Skipped step render 1 個藍色 hint box「⚡ 跳過呢個 step (cache 仲有效, M8 已經用緊 cache 嘅 optimal)」
+- **M8 verdict 內嵌 M9 summary sub-section** (Spec Sync #14 改善 1):
+  - 撳 M8 之後, banner 之後自動 render 1 個 M9 summary 小卡 (從 cache 拎)
+  - 5 個 metric mini-cards: 凱利倉位 / RSI 權重 / 均線+峰谷+趨勢線權重 / 穩定度分數 / 樣本+段數
+  - 大少唔需要再撳 M9 module 跑, 撳 M8 即刻見到 M9 拎咗咩 optimal 設定
+  - Hint: 「💡 想睇詳細 M9 verdict, 撳 M9 module (09 — AS-03-BT) 跑」
 - **撳「跑 M8」前自動 check cache 過期** (Spec Sync #13 Step 4 C 改善):
   - 3 種狀況 hint: ⚠️ 過期 (建議撳完整鏈條掣重校) / ✅ 仲有效 (繼續跑) / ℹ️ 冇 cache (第一次跑, 建議撳完整鏈條掣)
   - 唔 auto trigger M9, 只係 hint, 大少自己決定
   - Cache endpoint 拎唔到 fallback 直接跑 M8
+- **M8 verdict banner timestamp 修 bug** (Spec Sync #14 改善 3):
+  - 之前拎 `cacheInfo.last_calibrated` (params cache 7 日), 但 banner 寫住「由 M9 cache 嚟」邏輯錯
+  - Fix: 拎 `/api/adaptive-params/{symbol}/back-test` 拎 `optimalData.last_backtest` (M9 cache 30 日)
+  - verdict 新加 `optimal_data` field 包含完整 optimal data
 
 ### Spec / Roadmap
 
