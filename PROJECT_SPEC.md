@@ -511,6 +511,16 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 
 Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註解 (maAlignmentV2 / hlStructure / trendline / indicators / volumePrice / volatility) — 每個 5 行 header, 跟既有 entry style。
 
+### Testing Page UX 改善 — 2 個掣 conditional show/hide (Spec Sync #16, 大少 22:50)
+
+**永久 rule**:
+- M8 (AS-03-DEC) 揀 chain 掣「🚀 跑完整鏈條」, 其他 module 揀單一跑掣「跑算法」
+- 改 module 嗰陣, 自動 show/hide 掣 (onAlgorithmChange 內)
+- 「跑完整鏈條」掣只喺 M8 度顯示 (避免其他 module 嘅大少混淆)
+- 「跑算法」掣 M8 嗰陣隱藏 (改善 2 chain conditional 之後 M8 跑完整鏈條已經夠用, 拎走多餘掣)
+
+對應 commit: 81f39818
+
 ### Spec / Roadmap
 
 詳細 spec: `docs/research/AS-03-cycle-detection/ROADMAP.md` (228 行, 7 stages)

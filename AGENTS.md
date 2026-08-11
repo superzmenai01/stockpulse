@@ -152,6 +152,27 @@ if existing_history is not None:
 
 對應 commit: 將會跟 Spec Sync #15 commit
 
+### UX 改善 — 2 個掣 conditional show/hide (大少 2026-08-11 22:50, Spec Sync #16)
+
+**大少 trigger 2 個問題**:
+1. 「所有 Module 都看到跑完整鏈條, 應該只有在 M8 裡才用吧?」
+2. 「在 M8 裡還有跑算法, 這個是不是可以不要了?」
+
+**改善**:
+- 「🚀 跑完整鏈條 (M7→M9→M8)」掣只喺 M8 (AS-03-DEC) 度顯示
+  - 揀其他 module (M1-M7, M9, M10, M11, zmen) 嗰陣隱藏, 避免混淆
+  - 凡人話: chain flow 嘅設計係 M7→M9→M8 嘅 sequence, 只有揀 M8 嗰陣呢個掣先有意義
+- 「跑算法」掣喺 M8 嗰陣隱藏
+  - 揀 M8 嗰陣只有「跑完整鏈條」1 個掣, UX 更簡潔
+  - 揀其他 module 嗰陣「跑算法」掣仍然顯示
+  - 凡人話: 改善 2 之後 (chain conditional), 揀 M8 嗰陣「跑完整鏈條」已經夠用 (cache OK 嗰陣 2-4 秒搞掂)
+
+**永久 rule (UX)**:
+- M8 (AS-03-DEC) 揀 chain 掣, 其他 module 揀單一跑掣
+- 改 module 嗰陣, 自動 show/hide 掣 (onAlgorithmChange 內)
+
+對應 commit: 81f39818
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`

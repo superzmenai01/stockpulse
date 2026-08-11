@@ -1517,6 +1517,24 @@ Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except 
 
 對應 commit: Spec Sync #15 commit (將會做)
 
+### Testing Page UX 改善 — 2 個掣 conditional show/hide (大少 2026-08-11 22:50, Spec Sync #16)
+
+**Trigger**: 大少問「所有 Module 都看到跑完整鏈條, 應該只有在 M8 裡才用吧?」+「在 M8 裡還有跑算法, 這個是不是可以不要了?」
+
+**改動**:
+- `onAlgorithmChange()` 結尾加 conditional show/hide:
+  - `fullChainBtn.style.display = isM8 ? '' : 'none'` — M8 顯示, 其他隱藏
+  - `runBtn.style.display = isM8 ? 'none' : ''` — M8 隱藏, 其他顯示
+- 永久 rule: M8 = 揀 chain 掣, 其他 module = 揀單一跑掣
+- 永久 rule: 改 module 嗰陣, 自動 show/hide 掣
+
+**影響範圍**:
+- 純 frontend UX, 唔影響 verdict logic
+- 唔影響其他 module 嘅單一跑掣
+- backend 唔需要 restart
+
+對應 commit: 81f39818
+
 ### 3-Section Rule (大少 #11056, 2026-08-07, 永久)
 
 **所有 AS-03 module 必須有 3 個 sections**(adapter.mjs 強制):每個 module 嘅 `render{Module}Result()` 必須 render 呢 3 段,缺一唔得。
