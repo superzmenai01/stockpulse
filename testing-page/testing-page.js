@@ -73,7 +73,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 20:40 B 改善: ALGO_CACHE_BUST = '4.2.0' (M8 verdict 加 optimal_params_timestamp + renderOptimalParamsBanner 頂部 banner — 凡人話 1 句講晒「用咗幾時嘅最佳設定」, 3 種狀況: 冇 cache 黃色 / < 7 日綠色 / ≥ 7 日紅色)
 // 大少 2026-08-11 20:55 A 改善: ALGO_CACHE_BUST = '4.3.0' (testing page 加「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + runFullChain() handler — 凡人話 1 句講晒「撳 1 個掣自動跑晒 3 個 module」, 3 個 step progress 顯示, M9 失敗 fallback 用 default 繼續跑 M8)
 // 大少 2026-08-11 21:16 M9 bug fix: ALGO_CACHE_BUST = '4.3.1' (A 改善 chain test 揭發 M9 自身有 ReferenceError 'postErrors is not defined' — surgical 1 行 fix 加 const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []))
-const ALGO_CACHE_BUST = '4.3.1';
+// 大少 2026-08-11 21:20 C 改善: ALGO_CACHE_BUST = '4.4.0' (runAlgorithm 撳 M8 之前, 自動 check adaptive_params cache 7 日 expiry — 過期提示「⚠️ 強烈建議撳🚀 跑完整鏈條掣」, 唔 auto trigger M9, 只係 hint)
+const ALGO_CACHE_BUST = '4.4.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -651,7 +652,44 @@ async function runAlgorithm() {
       : '';
     runStatus.innerHTML = `✅ 已攞到 ${actualCount} 日 K 線${countHint} · 跑緊演算法...`;
 
-    // 2. Run algorithm
+    // 2. 大少 2026-08-11 21:20 — C 改善: 撳 M8 之前 check adaptive_params cache 過期
+    // 凡人話: 撳 M8 嘅時候, 自動睇下 adaptive_params cache 係咪過期, 過期就提示大少先跑 M9
+    // 唔 auto trigger M9 (打擾大少), 只係 hint, 大少自己決定
+    // 對應 AGENTS.md 「Cache 過期永久 rule: 7 日 expiry (大少 11:39 confirm)」
+    if (currentAdapter.id === 'AS-03-DEC') {
+      try {
+        runStatus.innerHTML = '⏳ 檢查 M8 adaptive_params cache 時效...';
+        const cacheResp = await fetch(`${BACKEND_URL}/api/adaptive-params/${encodeURIComponent(code)}`);
+        if (cacheResp.ok) {
+          const cacheData = await cacheResp.json();
+          const valid = cacheData.valid;
+          const ageDays = Math.floor((cacheData.age_seconds || 0) / 86400);
+          const hasOptimal = cacheData.has_optimal;
+          if (!valid) {
+            // 過期: 提示大少先撳完整鏈條掣
+            runStatus.innerHTML = `⚠️ M8 adaptive_params cache 已過期 ${ageDays} 日 · 強烈建議撳「🚀 跑完整鏈條」掣重校 (M7→M9→M8)`;
+          } else {
+            // 仲有效
+            const remainingDays = Math.max(0, 7 - ageDays);
+            const optimalHint = hasOptimal
+              ? ` · M9 optimal 亦有 cache`
+              : ` · M9 optimal 未跑 (建議撳「🚀 跑完整鏈條」掣)`;
+            runStatus.innerHTML = `✅ M8 adaptive_params cache 仲有效 (${ageDays} 日, 仲有 ${remainingDays} 日)${optimalHint} · 繼續跑 M8...`;
+          }
+        } else if (cacheResp.status === 404) {
+          // 冇 cache
+          runStatus.innerHTML = `ℹ️ 冇 M8 adaptive_params cache (第一次跑) · 建議撳「🚀 跑完整鏈條」掣自動 calibrate · 繼續跑 M8 (會 fresh-calibrate)...`;
+        } else {
+          runStatus.innerHTML = `✅ 已攞到 ${actualCount} 日 K 線 · M8 cache check 返 ${cacheResp.status}, 繼續跑...`;
+        }
+      } catch (e) {
+        // Cache endpoint 拎唔到 (backend 唔 work) 唔 block, 直接跑
+        console.warn('[C 改善] M8 cache check 失敗, fallback 跑 M8:', e);
+        runStatus.innerHTML = `✅ 已攞到 ${actualCount} 日 K 線 · M8 cache check 失敗, 繼續跑...`;
+      }
+    }
+
+    // 3. Run algorithm
     const startTime = performance.now();
     const verdict = await currentAdapter.analyze(klines, currentOptions);
     const endTime = performance.now();
