@@ -77,7 +77,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 21:32 Dropdown zmen 排頂: ALGO_CACHE_BUST = '4.4.1' (REGISTRY array 將 zmen 均算法 block 從中間位置搬去最頂, ID/displayName 唔改, 純 visual 排位)
 // 大少 2026-08-11 22:05 改善 1+3: ALGO_CACHE_BUST = '4.5.0' (M8 verdict 拎 optimalData 替代 cacheInfo 拎 optimal_params_* 3 個 field + 新加 renderM9Summary(verdict) function 喺 banner 之後 render 5 個 metric mini-cards — 凡人話「撳 M8 即刻見到 M9 拎咗咩 optimal 設定」)
 // 大少 2026-08-11 22:05 改善 2: ALGO_CACHE_BUST = '4.5.1' (runFullChain 改 conditional — M9 過期先跑, cache OK skip M9 (4 秒搞掂, 唔再 30-60 秒浪費) — 大少 trigger「跑完整鏈條也會Skeep咗M9, 那是和跑算法是一樣的, 那跑完整鏈條不是可以代替跑算法?」嘅 insight)
-const ALGO_CACHE_BUST = '4.5.1';
+// 大少 2026-08-11 22:50 UX 改善: ALGO_CACHE_BUST = '4.5.2' (onAlgorithmChange 加 conditional show/hide — 「🚀 跑完整鏈條」掣只揀 M8 (AS-03-DEC) 時顯示, 其他 module 隱藏 + 「跑算法」掣 M8 嗰陣隱藏 (揀 chain 掣), 其他 module 顯示 — 大少 trigger「所有Module都看到跑完整鏈條, 應該只有在M8 裡才用吧?」+「在M8裡還有跑算法, 這個是不是可以不要了?」)
+const ALGO_CACHE_BUST = '4.5.2';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -326,6 +327,28 @@ async function onAlgorithmChange() {
       currentOptions[input.key] = input.default;
     }
     inputsForm.appendChild(renderInput(input));
+  }
+
+  // 大少 2026-08-11 22:50 — 改善: 「🚀 跑完整鏈條 (M7→M9→M8)」掣只喺 M8 (AS-03-DEC) 度顯示
+  // 凡人話: chain flow 嘅設計係 M7→M9→M8 嘅 sequence, 只有揀 M8 嗰陣呢個掣先有意義
+  // 揀其他 module (M1-M7, M9, M10, M11, zmen) 嗰陣呢個掣應該隱藏, 避免混淆
+  // 永久 rule: 改 module 嗰陣, 自動 show/hide 「跑完整鏈條」掣
+  const fullChainBtn = document.getElementById('run-full-chain-btn');
+  if (fullChainBtn) {
+    // M8 = 'AS-03-DEC', 係 chain flow 嘅最終 step, 只有揀 M8 嗰陣 chain 有意義
+    const isM8 = algorithmSelect.value === 'AS-03-DEC';
+    fullChainBtn.style.display = isM8 ? '' : 'none';
+  }
+
+  // 大少 2026-08-11 22:50 — 改善 2: 「跑算法」掣喺 M8 嗰陣隱藏
+  // 凡人話: 改善 2 之後 (chain conditional), 揀 M8 嗰陣「跑完整鏈條」已經夠用 (cache OK 嗰陣 2-4 秒搞掂, 唔再 30-60 秒浪費)
+  // 拎走「跑 M8 跑算法」掣 → 大少揀 M8 嗰陣只有「跑完整鏈條」1 個掣, UX 更簡潔
+  // 揀其他 module (M1-M7, M9, M10, M11, zmen) 嗰陣, 「跑算法」掣仍然顯示, 因為其他 module 冇 chain 對應
+  // 永久 rule: M8 = 揀 chain 掣, 其他 module = 揀單一跑掣
+  const runBtn = document.getElementById('run-btn');
+  if (runBtn) {
+    const isM8 = algorithmSelect.value === 'AS-03-DEC';
+    runBtn.style.display = isM8 ? 'none' : '';
   }
 }
 
