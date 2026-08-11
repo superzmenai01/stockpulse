@@ -222,6 +222,7 @@ export async function analyze(klines, options = {}) {
       dataDays: maVerdict.meta.dataDays,
       configUsed: maVerdict.meta.configUsed,
     },
+    _warnings: maVerdict._warnings || [],  // 大少 2026-08-11 v1.0.0: propagate M1 warnings → upper verdict
     timestamp: Date.now(),
   };
 }
@@ -414,6 +415,65 @@ async function runMAAlignment(klines, options = {}) {
     passed: true,
   }));
 
+  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a)
+  // M1 MA Alignment 警告注入:
+  //   🔴 INSUFFICIENT_DATA: kline count < minDataDays (default 100)
+  //   🔴 NAN_RESULT: latestMA5 / latestMA10 / latestMA60 任何一個 NaN
+  //   🟡 FALLBACK_USED: matchedRules 0 個 (全部 A-J rule fail, 用 default SIDEWAYS)
+  //   🔵 CONFIG_DEFAULTS: dataWindowDays 用咗 default 100 (唔係用戶自訂)
+  const m1Warnings = [];
+  if (recent.length < cfg.minDataDays) {
+    m1Warnings.push(makeWarning('critical', 'M1', 'INSUFFICIENT_DATA',
+      '數據不足以跑 MA alignment',
+      {
+        issue: `kline count ${klines.length} < ${cfg.minDataDays} required`,
+        impact: '10 條 rule (A-J) 全部無法 compute, MA alignment verdict 唔可信',
+        fix: '增加 dataWindowDays 設定 (e.g. count=200) 或 fallback 至 v0.3.0 zmen 均算法',
+        context: { kline_count: klines.length, min_required: cfg.minDataDays, period: cfg.period },
+      }
+    ));
+  }
+  // NAN check
+  const nanMAs = [];
+  if (!isFinite(ma5History[ma5History.length - 1])) nanMAs.push('MA5');
+  if (!isFinite(ma10History[ma10History.length - 1])) nanMAs.push('MA10');
+  if (!isFinite(ma60History[ma60History.length - 1])) nanMAs.push('MA60');
+  if (nanMAs.length > 0) {
+    m1Warnings.push(makeWarning('critical', 'M1', 'NAN_RESULT',
+      'MA 計算結果 NaN',
+      {
+        issue: `${nanMAs.join('/')} 結果係 NaN 或 Infinity`,
+        impact: 'State 推導會 fallback SIDEWAYS, 信心 = 0',
+        fix: '檢查 klines 數據 (可能有負數 OHLC, missing data), 試 count 設定大啲',
+        context: { nan_mas: nanMAs, ma5: ma5History[ma5History.length - 1], ma10: ma10History[ma10History.length - 1], ma60: ma60History[ma60History.length - 1] },
+      }
+    ));
+  }
+  // Fallback check (matchedRules 0 個)
+  if (matchedRules.length === 0 && recent.length >= cfg.minDataDays) {
+    m1Warnings.push(makeWarning('warning', 'M1', 'FALLBACK_USED',
+      '10 條 rule 全部 fail, fallback SIDEWAYS',
+      {
+        issue: 'matchedRules.length = 0 (A-J rule 全部唔 trigger)',
+        impact: 'MA alignment verdict 默認 SIDEWAYS, 信心 = 0, 對 M7 综合判定有偏差',
+        fix: '屬於橫行市況正常, 可以忽略; 如果市況明顯趨勢但 verdict 顯示 SIDEWAYS, 檢查 klines 數據',
+        context: { matched_rules: 0, period: cfg.period, kline_count: recent.length },
+      }
+    ));
+  }
+  // Config defaults check
+  if (cfg.dataWindowDays === 100) {
+    m1Warnings.push(makeWarning('info', 'M1', 'CONFIG_DEFAULTS',
+      '用咗 dataWindowDays default 100',
+      {
+        issue: 'dataWindowDays = 100 (default), 唔係用戶自訂',
+        impact: '如果股票歷史少過 100 日, verdict 會 INSUFFICIENT_DATA',
+        fix: '可調大到 200/500/1260 (M9 back test 用)',
+        context: { data_window_days: 100 },
+      }
+    ));
+  }
+
   return {
     moduleId: 'ma-alignment',
     timeframe: options.period || '1d',
@@ -421,7 +481,8 @@ async function runMAAlignment(klines, options = {}) {
     confidence,
     interpretation,
     evidence,
-    warnings: [],
+    warnings: m1Warnings,  // Backward compat: 保留舊 `warnings` field
+    _warnings: m1Warnings,  // 大少 2026-08-11 v1.0.0: 統一 `_warnings` for WarningBanner
     meta: {
       matchedRules: matchedRules.map((r) => r.id),
       ruleLabels: matchedRules.map((r) => r.label),
@@ -2079,6 +2140,50 @@ export async function analyzeVolumePrice(klines, options = {}) {
   const winProbability = Math.min(0.80, Math.max(0.25, baseWin));
 
   // ============ Step 14: 組裝輸出 ============
+  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a) — M5 VolumePrice
+  // 警告注入:
+  //   🟡 OUTLIER_VALUE: volume 全部 0 (klines 入面 volume 0)
+  //   🟡 FALLBACK_USED: outstanding_shares = 0 (turnover_rate 計唔到)
+  //   🔴 KLINE_MISSING: klines 為空 (length = 0)
+  const m5Warnings = [];
+  if (!Array.isArray(klines) || klines.length === 0) {
+    m5Warnings.push(makeWarning('critical', 'M5', 'KLINE_MISSING',
+      'klines 為空',
+      {
+        issue: 'klines array 為空或 undefined',
+        impact: 'M5 全部 verdict 拎唔到, propagation 落 M7 會 MODULE_PARTIAL',
+        fix: '確認 kline endpoint 有返 data, e.g. /api/kline?code=HK.00700&period=1d&count=100',
+        context: { kline_count: klines?.length ?? 0 },
+      }
+    ));
+  } else {
+    const zeroVolCount = klines.filter(k => !k.volume || k.volume === 0).length;
+    if (zeroVolCount === klines.length) {
+      m5Warnings.push(makeWarning('warning', 'M5', 'OUTLIER_VALUE',
+        'volume 全部 0',
+        {
+          issue: `${zeroVolCount}/${klines.length} 條 klines volume 係 0`,
+          impact: '量價分析 verdict 唔可信 (acc/dist score 都係 0)',
+          fix: '檢查 kline endpoint volume 數據, 試另一個 period (1d → 1w)',
+          context: { zero_volume_count: zeroVolCount, total_count: klines.length },
+        }
+      ));
+    }
+    // 檢 outstanding_shares
+    const outstandingSh = typeof outstanding_shares !== 'undefined' ? outstanding_shares : 0;
+    if (outstandingSh === 0) {
+      m5Warnings.push(makeWarning('warning', 'M5', 'FALLBACK_USED',
+        'outstanding_shares = 0',
+        {
+          issue: 'outstanding_shares 拎唔到, turnover_rate fallback 0',
+          impact: '換手率分析 verdict 唔可信',
+          fix: '檢查 Futu get_market_snapshot() 有冇返 outstanding_shares, 美股 / 港股新 IPO 可能拎唔到',
+          context: { outstanding_shares: 0 },
+        }
+      ));
+    }
+  }
+
   return {
     moduleId: 'volume',
     timeframe: options.period || '1d',
@@ -2086,7 +2191,8 @@ export async function analyzeVolumePrice(klines, options = {}) {
     confidence: Math.round(buyTimingScore * 10000) / 10000,
     interpretation: buyReasons.join('；'),
     evidence: matchedRules.map(r => ({ type: `rule-${r.id}`, label: r.label, value: r.id, passed: true })),
-    warnings: [],
+    warnings: m5Warnings,  // Backward compat
+    _warnings: m5Warnings,  // 大少 2026-08-11 v1.0.0
     meta: {
       cycle,
       cycleLabel,
@@ -6730,6 +6836,58 @@ export async function analyzeDecisionEngine(klines, options = {}) {
   const { grade, grade_score, reason } = decisionEngineComputeGrade(ssi_score, alignment_score);
   const { fraction, numeric, position } = decisionEngineComputeKelly(standardVerdicts);
 
+  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a) — M7 Synthesizer
+  // 收集 6 個 module verdict 嘅 _warnings (propagation M1-M6 → M7) + M7 自己 generate
+  // 警告注入:
+  //   🔴 NAN_RESULT: ssi_score / alignment_score / grade_score 任何一個 NaN
+  //   🟡 MODULE_PARTIAL: 6 個 module 入面拎唔到 1+ 個 (standardVerdicts.length < 6)
+  //   🟡 CONFLICT_STATE: 兩個 module state 衝突 (M1 UP + zmen DOWN, 需用 maVerdict + zmen)
+  const m7Warnings = [];
+  // 1. 收集 M1-M6 嘅 _warnings (propagation)
+  //    用 raw verdicts (maVerdict etc.) 而唔係 standardVerdicts, 因為 decisionEngineToStandardVerdict 唔 propagate _warnings
+  const allModuleVerdicts = [maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict];
+  for (const v of allModuleVerdicts) {
+    if (v && v._warnings && Array.isArray(v._warnings)) {
+      m7Warnings.push(...v._warnings);
+    }
+  }
+  // 2. M7 自己 generate
+  // 2a. NAN check
+  const nanFields = [];
+  if (!isFinite(ssi_score)) nanFields.push('ssi_score');
+  if (!isFinite(alignment_score)) nanFields.push('alignment_score');
+  if (!isFinite(grade_score)) nanFields.push('grade_score');
+  if (nanFields.length > 0) {
+    m7Warnings.push(makeWarning('critical', 'M7', 'NAN_RESULT',
+      'M7 綜合判定計算結果 NaN',
+      {
+        issue: `${nanFields.join('/')} 結果係 NaN 或 Infinity`,
+        impact: 'Grade / SSI / Alignment 全部 fallback, M8 綜合判斷會 base on fallback verdict',
+        fix: '檢查 6 個 module verdict 數值, 可能其中 1+ 個已經有 NAN_RESULT warning',
+        context: { nan_fields: nanFields, ssi_score, alignment_score, grade_score },
+      }
+    ));
+  }
+  // 2b. MODULE_PARTIAL check
+  const validVerdicts = standardVerdicts.filter(v => v && v.state);
+  if (validVerdicts.length < 6) {
+    m7Warnings.push(makeWarning('warning', 'M7', 'MODULE_PARTIAL',
+      `6 個 module 入面拎唔到 ${6 - validVerdicts.length} 個`,
+      {
+        issue: `standardVerdicts.length = ${validVerdicts.length} < 6`,
+        impact: 'SSI / Alignment 計算 partial, Grade 可能有偏差',
+        fix: '睇下 M1-M6 個別 verdict 嘅 _warnings, 拎唔到嘅 module 會有 critical warning',
+        context: { valid_count: validVerdicts.length, missing: 6 - validVerdicts.length },
+      }
+    ));
+  }
+  // 2c. CONFLICT_STATE check (M1 vs zmen, 需要拎 zmen verdict, 但 zmen 喺 decisionEngineAdapter 跑嘅, 呢度冇)
+  // 簡化: 睇 maVerdict 嘅 state, 如果唔一致就 conflict
+  const maState = maVerdict?.state;
+  if (maState === 'UP' || maState === 'DOWN') {
+    // 暫時 skip (zmen verdict 喺 M8 度拎)
+  }
+
   return {
     ssi_score,
     ssi_breakdown: breakdown,
@@ -6743,6 +6901,7 @@ export async function analyzeDecisionEngine(klines, options = {}) {
     kelly_position: position,
     module_verdicts: standardVerdicts,
     module_cycle_verdicts: { maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict },
+    _warnings: m7Warnings,  // 大少 2026-08-11 v1.0.0
     timestamp: Date.now(),
   };
 }
@@ -7714,6 +7873,114 @@ export const decisionEngineAdapter = {
     }
 
     // 8. 合併 synth + decision + adaptive params + 雙策略 input (保留所有 trace + 供 render 用)
+    // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a) — M8 Decision Engine
+    // 警告注入:
+    //   🔴 VERDICT_MISSING: cycle_synthesizer 係 null (position mode fallback)
+    //   🔴 NAN_RESULT: meta.ma5 OR meta.ma20 係 null
+    //   🟡 THRESHOLD_BREACH: 5 個 MA trigger 全部 false (slow market, 1+ 日無 trigger)
+    //   🔴 CACHE_INVALID: adaptive_params 計算失敗
+    //   🔵 CACHE_EXPIRING: L2 cache 超過 5 日 (7 日內將過期)
+    //   🔵 CONFIG_DEFAULTS: strategyMode 用咗 default 'position'
+    // 收集 M1-M7 嘅 _warnings (propagation)
+    const m8Warnings = [];
+    // Collect from synthResultWithParams (M7 已經 collect M1-M6 嘅 warnings)
+    if (synthResultWithParams?._warnings && Array.isArray(synthResultWithParams._warnings)) {
+      m8Warnings.push(...synthResultWithParams._warnings);
+    }
+    // Collect from m1Verdict (可能 module_cycle_verdicts 入面 maVerdict 有 _warnings)
+    if (m1Verdict?._warnings) m8Warnings.push(...m1Verdict._warnings);
+    // Collect from zmen verdict
+    // (zmen 嚟自 runMAAlignment, 之後可以加 zmen._warnings)
+    // M8 自己 generate
+    const cycleSynth = decisionVerdict?.cycle_synthesizer;
+    if (strategyMode === 'position' && !cycleSynth) {
+      m8Warnings.push(makeWarning('critical', 'M8', 'VERDICT_MISSING',
+        '中長線 cycle_synthesizer 拎唔到 (position mode fallback)',
+        {
+          issue: 'cycle_synthesizer = null (m1Verdict / zmenVerdict / klineCloses 缺少)',
+          impact: '5 個 MA trigger 全部 fallback false, 中長線 verdict 唔可用',
+          fix: '檢查 kline count 足唔足 (≥ 20), m1Verdict/zmenVerdict 有冇正常 compute',
+          context: { strategy_mode: strategyMode, m1Verdict: !!m1Verdict, zmenVerdict: !!zmenVerdict, kline_count: klineCloses.length },
+        }
+      ));
+    }
+    // NAN check on meta.ma5 / meta.ma20
+    if (cycleSynth?.meta) {
+      if (cycleSynth.meta.ma5 == null || !isFinite(cycleSynth.meta.ma5)) {
+        m8Warnings.push(makeWarning('critical', 'M8', 'NAN_RESULT',
+          '中長線 MA5 計算結果 NaN',
+          {
+            issue: 'cycle_synthesizer.meta.ma5 = null / NaN',
+            impact: '動態止蝕 (5 日線 × 0.98) 計算失敗',
+            fix: '檢查 computeMA 邏輯, 確認 forward-looking 邏輯 (ma[0] = today 5-day MA)',
+            context: { ma5: cycleSynth.meta.ma5 },
+          }
+        ));
+      }
+      if (cycleSynth.meta.ma20 == null || !isFinite(cycleSynth.meta.ma20)) {
+        m8Warnings.push(makeWarning('critical', 'M8', 'NAN_RESULT',
+          '中長線 MA20 計算結果 NaN',
+          {
+            issue: 'cycle_synthesizer.meta.ma20 = null / NaN',
+            impact: '移動止蝕 (20 日線) 計算失敗',
+            fix: '檢查 computeMA 邏輯, 確認 forward-looking 邏輯',
+            context: { ma20: cycleSynth.meta.ma20 },
+          }
+        ));
+      }
+    }
+    // 5 個 MA trigger 全部 false
+    if (cycleSynth?.triggers) {
+      const allFalse = ['ma5StopTriggered', 'ma5BreakDay1', 'ma5BreakDay2', 'ma20Break', 'ma5RetestSuccess'].every(k => !cycleSynth.triggers[k]);
+      if (allFalse) {
+        m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
+          '5 個 MA trigger 全部 false',
+          {
+            issue: 'ma5StopTriggered / ma5BreakDay1 / ma5BreakDay2 / ma20Break / ma5RetestSuccess 全部 false',
+            impact: '中長線無明確進出場信號, verdict 維持 TRANSITION/WAIT',
+            fix: '可能市場橫行, 屬於正常; 如果市況明顯趨勢但 trigger 全 false, 檢查 computeMA',
+            context: { triggers: cycleSynth.triggers },
+          }
+        ));
+      }
+    }
+    // CACHE_INVALID (adaptive_params 失敗)
+    if (!adaptiveParams) {
+      m8Warnings.push(makeWarning('critical', 'M8', 'CACHE_INVALID',
+        'adaptive_params 計算失敗 (L2 cache 無效)',
+        {
+          issue: 'calibrateAdaptiveParams() return null',
+          impact: '5 個 adaptive params 全部 fallback default, M8 verdict 唔可靠',
+          fix: '檢查 calibrateAdaptiveParams() 邏輯, 確認 klines 入面有足夠 data',
+          context: { symbol },
+        }
+      ));
+    }
+    // CACHE_EXPIRING
+    if (cacheInfo && cacheInfo.age_seconds && cacheInfo.age_seconds > 5 * 24 * 3600) {
+      m8Warnings.push(makeWarning('info', 'M8', 'CACHE_EXPIRING',
+        `L2 cache 超過 5 日 (${Math.round(cacheInfo.age_seconds / 3600)} 小時)`,
+        {
+          issue: `cache age = ${Math.round(cacheInfo.age_seconds / 3600)} 小時 (> 5 日, 7 日內將過期)`,
+          impact: 'adaptive params 開始 stale, 自動 re-calibrate 將 trigger',
+          fix: '可主動撳「🔄 重新校準」button 立即 trigger',
+          context: { age_hours: Math.round(cacheInfo.age_seconds / 3600) },
+        }
+      ));
+    }
+    // CONFIG_DEFAULTS
+    if (strategyMode === 'position' && options.strategyMode === undefined) {
+      m8Warnings.push(makeWarning('info', 'M8', 'CONFIG_DEFAULTS',
+        'strategyMode 用咗 default 「中長線」',
+        {
+          issue: '用戶冇指定 strategyMode, 用 default 中長線',
+          impact: '想用短炒要手動切換',
+          fix: 'dropdown 揀「短炒」可手動切換',
+          context: { default_strategy: 'position' },
+        }
+      ));
+    }
+
     return {
       ...decisionVerdict,
       strategy_mode: strategyMode,
@@ -7722,6 +7989,7 @@ export const decisionEngineAdapter = {
       module_cycle_verdicts: synthResultWithParams.module_cycle_verdicts,
       adaptive_params: adaptiveParams,
       cache_info: cacheInfo,
+      _warnings: m8Warnings,  // 大少 2026-08-11 v1.0.0
     };
   },
   renderResult: (verdict) => {
