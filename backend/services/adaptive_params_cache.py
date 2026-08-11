@@ -127,18 +127,40 @@ def save_params(symbol: str, params: dict) -> bool:
     """
     if not params or not isinstance(params, dict):
         raise ValueError(f"Invalid params: {params!r}")
-    # 保留 existing optimal + forward_return_history (唔好覆蓋)
-    existing = _read_cache(symbol) or {}
+    # 大少 2026-08-11 22:38 — Bug fix: 保留 existing optimal + forward_return_history
+    # 之前 (line 131) 用 `existing = _read_cache(symbol) or {}` 然後 chain 拎 existing["optimal"],
+    # 但 `_read_cache` 拎 disk file 嗰陣, 如果 file 過期 / 損壞 / missing 會 return None,
+    # 導致 `existing = {}` 之後 chain `existing["optimal"]` 拎唔到 → 覆蓋 cache 清空 optimal。
+    # Fix: 用 try/except 包住, 即使 _read_cache fail 都 preserve optimal (如果有 disk file)
+    # 同時 logging 加 detail, 之後 debug 容易搵 root cause
+    existing_optimal = None
+    existing_history = None
+    try:
+        existing = _read_cache(symbol)
+        if existing and isinstance(existing, dict):
+            existing_optimal = existing.get("optimal")
+            existing_history = existing.get("forward_return_history")
+            if existing_optimal is None and "optimal" not in existing:
+                # 之前 chain 已經 trace 過, 呢個 case 係 file 存在但冇 optimal (M9 之前 POST 過但被覆蓋)
+                # 永久 rule: forward_return_history 永遠唔 delete (大少 22:28)
+                # optimal 永久保留 (大少 22:28 confirm)
+                pass
+    except Exception as e:
+        logger.warning(f"[adaptive_params_cache] save_params {symbol}: _read_cache failed: {e}, fallback 唔保留 optimal")
+
     data = {
         "symbol": symbol,
         "last_calibrated": time.time(),
         "params": params,
         "auto": True,  # 大少 11:39 confirm auto mode
-        # 保留 optimal (如果有) 永久 (大少 22:28)
-        **({"optimal": existing["optimal"]} if "optimal" in existing else {}),
-        # 保留 forward_return_history (如果有) 永久
-        **({"forward_return_history": existing["forward_return_history"]} if "forward_return_history" in existing else {}),
     }
+    # 保留 optimal (如果有) 永久 (大少 22:28)
+    if existing_optimal is not None:
+        data["optimal"] = existing_optimal
+    # 保留 forward_return_history (如果有) 永久
+    if existing_history is not None:
+        data["forward_return_history"] = existing_history
+
     if _write_cache(symbol, data):
         logger.info(f"[adaptive_params_cache] save_params OK: {symbol}")
         return True

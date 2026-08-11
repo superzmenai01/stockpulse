@@ -501,6 +501,16 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
   - Fix: 拎 `/api/adaptive-params/{symbol}/back-test` 拎 `optimalData.last_backtest` (M9 cache 30 日)
   - verdict 新加 `optimal_data` field 包含完整 optimal data
 
+### Cache 永久保留 (Spec Sync #15, 大少 22:38)
+
+永久 rule (大少 2026-08-08 22:28 確認):
+- `forward_return_history` 永遠唔 delete (永久保留)
+- `optimal` 永久保留 (M9 back test 拎嘅最佳設定)
+
+`backend/services/adaptive_params_cache.py` 嘅 `save_params` function 必須 preserve 已有 optimal 同 forward_return_history, 即使 cache 過期或 `_read_cache` fail 都要 preserve。
+
+Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註解 (maAlignmentV2 / hlStructure / trendline / indicators / volumePrice / volatility) — 每個 5 行 header, 跟既有 entry style。
+
 ### Spec / Roadmap
 
 詳細 spec: `docs/research/AS-03-cycle-detection/ROADMAP.md` (228 行, 7 stages)

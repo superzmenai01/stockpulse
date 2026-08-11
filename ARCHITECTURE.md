@@ -1484,6 +1484,39 @@ if (currentAdapter.renderChartOverlay) {
 
 對應 commit: 772cdfa2 (改善 1+3), 540cde9f (改善 2)
 
+### Codebase 註解 Phase 4 partial gap fill (大少 2026-08-11 22:40, Spec Sync #15)
+
+之前 Phase 4 commit `9173ef1c` 漏咗嘅 header 註解補返:
+
+- **M4 analyzeIndicators header** (line 5808-5836, 29 行) — 之前 verify 失敗係 grep range 太細, 實際已經有
+- **6 個 adapter entry header** (5 行 per entry, 跟 synthesizerAdapter / backTestAdapter / decisionEngineAdapter 同樣 style):
+  - `maAlignmentV2Adapter` (line 6904): 對應 modules/ma-alignment.ts v2.0.0, Algorithm (M1 v2.0) 13 個 rule
+  - `hlStructureAdapter` (line 4219): 對應 modules/hl-structure.ts v1.0.0, Algorithm (M2) 6 step
+  - `trendlineAdapter` (line 5253): 對應 modules/trendline.ts v1.0.0, Algorithm (M3) 線性回歸計趨勢線
+  - `indicatorsAdapter` (line 6212): 對應 modules/indicators.ts v1.0.0, Algorithm (M4) RSI + MACD 背馳
+  - `volumePriceAdapter` (line 2719): 對應 modules/volume.ts v2.0.0, Algorithm (M5 v2.0) 15 條 rule V1-V15
+  - `volatilityAdapter` (line 3254): 對應 modules/volatility.ts v1.0.0, Algorithm (M6) 12 條 rule S1-S12
+
+永久 rule: 全部 algorithm function + adapter entry 必須有 header 註解 (4 段: 對應 module / Spec doc / Algorithm / 凡人話)
+
+### Cache save_params edge case fix (大少 2026-08-11 22:38, Spec Sync #15)
+
+問題: M8 calibrate 跑 `save_params` 嗰陣, `_read_cache(symbol)` 拎 disk file, 如果 file 過期但有 optimal (30 日內), save_params 原本邏輯 chain 拎 `existing["optimal"]` 失敗 (因為 `_read_cache` 返 None 嘅 edge case), 結果寫個新 cache file 清空 optimal。
+
+Root cause: 原本 `existing = _read_cache(symbol) or {}` chain 拎 existing["optimal"] 喺 `_read_cache` fail 嗰陣, 失去 optimal (即使 disk file 存在)。
+
+Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except + 明確 conditional:
+- existing_optimal 拎出嚟 try-catch
+- if existing_optimal is not None: data["optimal"] = existing_optimal
+- 同樣處理 forward_return_history
+
+永久 rule:
+- forward_return_history 永遠唔 delete (大少 22:28)
+- optimal 永久保留 (大少 22:28 confirm)
+- save_params 寫 cache 時必須 preserve 已有 optimal 同 forward_return_history, 即使 cache 過期或 _read_cache fail
+
+對應 commit: Spec Sync #15 commit (將會做)
+
 ### 3-Section Rule (大少 #11056, 2026-08-07, 永久)
 
 **所有 AS-03 module 必須有 3 個 sections**(adapter.mjs 強制):每個 module 嘅 `render{Module}Result()` 必須 render 呢 3 段,缺一唔得。

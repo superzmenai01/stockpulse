@@ -2711,6 +2711,11 @@ export function getVolumeHelp() {
   `;
 }
 
+// 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill
+// 對應 modules/volume.ts v2.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE.md
+// Algorithm (M5 v2.0): 15 條 rule V1-V15 + 11 step algorithm, 確認 / 否決 / 中性 3 個 signal 派生
+// 凡人話: 睇成交量 + 價格行為, 確認走勢係真定假
 export const volumePriceAdapter = {
   id: 'AS-03-VP',
   name: '成交量價格行為確認法',
@@ -3241,6 +3246,11 @@ export function getVolatilityHelp() {
   <p><strong>5 種情況</strong>: 多時段收縮爆發 0.95 / 確認收縮震盪突破 0.9 / 乾淨趨勢擴張 0.7 / 真正收縮形成中 0.55 / 冇明確情況 0.25</p>`;
 }
 
+// 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill
+// 對應 modules/volatility.ts v1.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-06-VOLATILITY.md
+// Algorithm (M6): BB/KC/Squeeze/ATR + 5 個 setup + 3 個 failure mode + 12 條 rule S1-S12
+// 凡人話: 睇波動率 (布林通道 + 肯特納通道 + 擠壓指標), 判斷波動收縮/擴張
 export const volatilityAdapter = {
   id: 'AS-03-VOL',
   name: '波動率同市場結構收縮擴張',
@@ -4201,6 +4211,11 @@ function getHLStructureHelp() {
   `;
 }
 
+// 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill
+// 對應 modules/hl-structure.ts v1.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md
+// Algorithm (M2): 識別極值 (peaks 山頂 + troughs 山谷) + 峰谷趨勢 + 結構分數 + Box boundary + Pattern alert + 價格位置
+// 凡人話: 睇山頂山谷排列, 判斷升勢/跌勢/橫行
 export const hlStructureAdapter = {
   id: 'AS-03-HL',
   name: '高低點結構法 (山頂山谷排列)',
@@ -5230,6 +5245,11 @@ function getTrendlineHelp() {
   `;
 }
 
+// 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill
+// 對應 modules/trendline.ts v1.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md
+// Algorithm (M3): 線性回歸計趨勢線 + 突破/跌破信號 + 動態時間窗口 + 趨勢線強度評分
+// 凡人話: 自動畫趨勢線, 突破/跌破就出信號
 export const trendlineAdapter = {
   id: 'AS-03-TL',
   name: '趨勢線法 (畫線睇走勢)',
@@ -6184,6 +6204,11 @@ function getIndicatorsHelp() {
   `;
 }
 
+// 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill
+// 對應 modules/indicators.ts v1.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md
+// Algorithm (M4): 計算 RSI (14 日) + MACD (12-26-9) + 識別 RSI/MACD 背馳 + 衍生 cycle state + 過濾過買過賣
+// 凡人話: 睇 RSI 同 MACD 嘅背馳同衰竭, 判斷動能強弱
 export const indicatorsAdapter = {
   id: 'AS-03-IND',
   name: '動能背馳與衰竭 (睇 RSI 同 MACD)',
@@ -6871,6 +6896,11 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
   }
 }
 
+// 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill
+// 對應 modules/ma-alignment.ts v2.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md
+// Algorithm (M1 v2.0): 跟 docx Kimi v2.0 spec 全新做, 3 個 cycle state + 13 個 output fields + 三階段信心調整 + 4 條 MA overlay (5/10/20/60)
+// 凡人話: 睇均線排列 + 成交量 + 斜率, 判斷上升/橫行/下跌週期
 export const maAlignmentV2Adapter = {
   id: 'AS-03-MA',
   name: '均線系統週期判斷法 (加咗成交量同斜率)',

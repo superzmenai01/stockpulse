@@ -107,6 +107,51 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: 772cdfa2 (改善 1+3), 540cde9f (改善 2)
 
+### Codebase 註解 Phase 4 partial gap fill (大少 2026-08-11 22:40)
+
+之前 Phase 4 commit `9173ef1c` 漏咗:
+- M4 analyzeIndicators header 註解 (line 5808-5836, 29 行, 之前 verify 失敗係 grep range 太細)
+- 6 個 adapter entry 缺 header 註解 (maAlignmentV2 / hlStructure / trendline / indicators / volumePrice / volatility)
+
+呢個 commit 補返 (5 行 header per entry, 跟 synthesizerAdapter / backTestAdapter / decisionEngineAdapter 同樣 style):
+- 對應 modules/{module}.ts v{version}
+- Spec doc: docs/research/AS-03-cycle-detection/MODULE-XX-*.md
+- Algorithm ({N} 個 step): 簡化描述
+- 凡人話: 一句話解呢個 module 做咩
+
+永久 rule: 全部 algorithm function + adapter entry 必須有 header 註解 (4 段: 對應 module / Spec doc / Algorithm / 凡人話)
+
+### Cache save_params edge case fix (大少 2026-08-11 22:38)
+
+問題: M8 calibrate 跑 `save_params` 嗰陣, `_read_cache(symbol)` 拎 disk file, 如果 file 過期但有 optimal (30 日內), save_params 原本邏輯 chain 拎 `existing["optimal"]` 失敗 (因為 `_read_cache` 返 None 嘅 edge case), 結果寫個新 cache file 清空 optimal。
+
+Root cause: 原本 `existing = _read_cache(symbol) or {}` chain 拎 existing["optimal"] 喺 `_read_cache` fail 嗰陣, 失去 optimal (即使 disk file 存在)。
+
+Fix: 改用 try/except + 明確 conditional, 即使 _read_cache fail 都 preserve 已有 optimal 同 forward_return_history:
+```python
+existing_optimal = None
+existing_history = None
+try:
+    existing = _read_cache(symbol)
+    if existing and isinstance(existing, dict):
+        existing_optimal = existing.get("optimal")
+        existing_history = existing.get("forward_return_history")
+except Exception as e:
+    logger.warning(...)
+
+if existing_optimal is not None:
+    data["optimal"] = existing_optimal
+if existing_history is not None:
+    data["forward_return_history"] = existing_history
+```
+
+永久 rule:
+- forward_return_history 永遠唔 delete (大少 22:28)
+- optimal 永久保留 (大少 22:28 confirm)
+- save_params 寫 cache 時必須 preserve 已有 optimal 同 forward_return_history, 即使 cache 過期或 _read_cache fail
+
+對應 commit: 將會跟 Spec Sync #15 commit
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`
