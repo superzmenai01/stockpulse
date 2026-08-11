@@ -72,7 +72,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 19:55 Dropdown 排位: ALGO_CACHE_BUST = '4.1.0' (M9 排 M8 上邊 — REGISTRY array element order 互換, ID/displayName 編號唔改, 純 visual 排位反映 M7→M9→M8 chain 邏輯)
 // 大少 2026-08-11 20:40 B 改善: ALGO_CACHE_BUST = '4.2.0' (M8 verdict 加 optimal_params_timestamp + renderOptimalParamsBanner 頂部 banner — 凡人話 1 句講晒「用咗幾時嘅最佳設定」, 3 種狀況: 冇 cache 黃色 / < 7 日綠色 / ≥ 7 日紅色)
 // 大少 2026-08-11 20:55 A 改善: ALGO_CACHE_BUST = '4.3.0' (testing page 加「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + runFullChain() handler — 凡人話 1 句講晒「撳 1 個掣自動跑晒 3 個 module」, 3 個 step progress 顯示, M9 失敗 fallback 用 default 繼續跑 M8)
-const ALGO_CACHE_BUST = '4.3.0';
+// 大少 2026-08-11 21:16 M9 bug fix: ALGO_CACHE_BUST = '4.3.1' (A 改善 chain test 揭發 M9 自身有 ReferenceError 'postErrors is not defined' — surgical 1 行 fix 加 const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []))
+const ALGO_CACHE_BUST = '4.3.1';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

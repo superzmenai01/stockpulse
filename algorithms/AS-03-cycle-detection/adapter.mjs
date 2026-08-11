@@ -9309,6 +9309,10 @@ export const backTestAdapter = {
     //   🔴 VERDICT_MISSING: folds.length = 0 (walkForwardCV 完全 fail)
     //   🟡 LOW_SAMPLE_SIZE: forwardReturnHistory.length < 3 (累積樣本少)
     //   🔵 CONFIG_DEFAULTS: dataWindowDays 用咗 default 1260 (唔係用戶自訂)
+    // 大少 2026-08-11 21:16 — A 改善 chain test 揭發 Bug: postErrors 喺呢度 local scope 冇 const 定義
+    //   (line 9284 設咗 fold.postErrors 但 line 9344 warning 注入用 local postErrors → ReferenceError)
+    //   1 行 surgical fix: 從 folds 抽返出嚟
+    const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []);
     const m9Warnings = [];
     if (walkForwardResult.folds.length === 0) {
       m9Warnings.push(makeWarning('critical', 'M9', 'VERDICT_MISSING',
