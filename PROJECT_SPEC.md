@@ -455,7 +455,7 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
 `http://localhost:8765/testing-page/`
 - Vanilla JS standalone HTML (CDN lightweight-charts v4.2.3)
 - 唔 embed StockPulse main app
-- 10 algorithms registered dropdown 排位 (大少 2026-08-08 10:06 加編號 + 13:30 拆返 M7+M8 + 22:28 加 M9):
+- 10 algorithms registered dropdown 排位 (大少 2026-08-08 10:06 加編號 + 13:30 拆返 M7+M8 + 22:28 加 M9 + **2026-08-11 Spec Sync #13 改 M9 排 M8 上邊**):
   ```
   01 — AS-03-MA   (M1 v2.0) ← 第 1 位 (新 M1 跟 docx v2.0 spec, 編號 01)
   02 — AS-03-HL   (M2) ← 第 2 位 (編號 02)
@@ -464,14 +464,29 @@ CREATE INDEX idx_kline_lookup ON kline_cache(code, period, time DESC);
   05 — AS-03-VP   (M5) ← 第 5 位 (編號 05)
   06 — AS-03-VOL  (M6) ← 第 6 位 (編號 06)
   07 — AS-03-SYN  (M7 Synthesizer) ← 第 7 位 (Sprint 1 done, 編號 07)
-  08 — AS-03-DEC  (M8 Decision Engine) ← 第 8 位 (Sprint 2 done, 編號 08) — 8 個 finalAction 揸車比喻 + Trading card + 短期走勢 + LLM hook 解讀 + adaptive params + L2 cache + SVG chart
-  09 — AS-03-BT   (M9 Back Test) ← 第 9 位 (Sprint 3 done, 編號 09 + Spec Sync #8 done 2026-08-10) — 時光機驗證官 + Replay + Coarse/Fine grid + Walk-Forward CV (numFolds 1 + tuneRatio 0.6 過 HLStructure 99 bar gate) + Per-symbol optimal + 永久 forward return + 3 SVG + 6 色標 + 大少話你知 + 2 button + UI error banner (POST silent fail fix) + UI label 動態 + dataWindowDays 1260 (1 段滾動交叉驗證)
+  09 — AS-03-BT   (M9 Back Test) ← 第 8 位 (Spec Sync #13: 排 M8 上邊反映 M7→M9→M8 chain 邏輯, ID 編號 09 唔改)
   ────────────────
-  zmen均算法 (舊 M1 v0.3.0) ← 最後 (獨立算法, 唔加編號)
+  zmen均算法 (舊 M1 v0.3.0) ← 第 9 位 (獨立算法, 唔加編號)
+  ────────────────
+  08 — AS-03-DEC  (M8 Decision Engine) ← 第 10 位 (Spec Sync #13: 排 M9 下邊, ID 編號 08 唔改) — 8 個 finalAction 揸車比喻 + Trading card + 短期走勢 + LLM hook 解讀 + adaptive params + L2 cache + SVG chart + **頂部 optimal_params banner (Spec Sync #13 Step 2 B 改善)**
   ```
+  註: 11 — AS-03-BTL (M11 Backtest Timeline) 都喺 dropdown 最後 (Stage 2 第三次 focus)
 - Dropdown 顯示用 `displayName` (e.g. `01 — AS-03-MA`); 舊 M1 顯示用 `zmen均算法`, 內部 id 維持 `AS-03` 唔變
 - **切算法即清結果** (runStatus / resultPanel / chart, 3 個 sections 都喺 resultPanel)
 - runStatus 顯示「設定 X 日 / 實際 Y 日 (數據限制)」
+
+**Testing Page 用法 (Spec Sync #13 — 3 個掣)**:
+- **「跑算法」掣** (舊): 跑當前 dropdown 揀嘅單一 module
+- **「🚀 跑完整鏈條 (M7→M9→M8)」掣** (Spec Sync #13 Step 3, 紫藍漸層色): 撳 1 個掣自動跑 3 個 module, sequential
+  - Step 1/3: 跑 synthesizerAdapter.analyze (M7 綜合)
+  - Step 2/3: 跑 backTestAdapter.analyze (M9 回測, 內部 POST 落 cache)
+  - Step 3/3: 跑 decisionEngineAdapter.analyze (M8 最終, 內部 load cache 自動)
+  - M9 失敗 fallback 跑 M8, chain 唔 crash
+  - 3 個 verdict card 一齊出, 頂部紫藍 banner 標明「完整鏈條跑完」
+- **撳「跑 M8」前自動 check cache 過期** (Spec Sync #13 Step 4 C 改善):
+  - 3 種狀況 hint: ⚠️ 過期 (建議撳完整鏈條掣重校) / ✅ 仲有效 (繼續跑) / ℹ️ 冇 cache (第一次跑, 建議撳完整鏈條掣)
+  - 唔 auto trigger M9, 只係 hint, 大少自己決定
+  - Cache endpoint 拎唔到 fallback 直接跑 M8
 
 ### Spec / Roadmap
 

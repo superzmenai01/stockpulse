@@ -315,6 +315,11 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   **3-Section Rule (永久, 大少 #11056)**: 每個 module 嘅結果必須有 📖 詳細解讀 + 🎯 策略建議 + 💡 點用點睇 (plain language)。
 - **AS02 Pipeline：** 股票清單 → 財務數據 → LLM 分析 → 結果顯示（auto DQ log）
 - **AS03 Testing Page：** `http://localhost:8765/testing-page/` (vanilla JS, CDN lightweight-charts v4.2.3, 唔 embed StockPulse)
+  - **3 個掣** (Spec Sync #13):
+    - **「跑算法」掣** (舊): 跑當前 dropdown 揀嘅單一 module
+    - **「🚀 跑完整鏈條 (M7→M9→M8)」掣** (新, 紫藍漸層色): 撳 1 個掣自動跑 3 個 module, sequential
+    - 撳「跑 M8」前自動 check cache 過期, 3 種狀況 hint (⚠️ 過期 / ✅ 仲有效 / ℹ️ 冇 cache)
+  - **Dropdown 排位** (Spec Sync #13): M9 排 M8 上邊, ID 編號唔改 (純 visual chain flow 反映 M7→M9→M8 邏輯)
 - **儲存：** User 手動點前端「💾 儲存 N 隻合格股票」button → SaveRunModal → POST `/api/saved-runs`（大少 #9700 永久 rule：runtime endpoint 唔可以 auto-save）
 - **結果庫：** `/library` 頁 (`/api/saved-runs`)
 
@@ -380,6 +385,9 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 | 2026-08-09 | **M9 Pilot 收官** — 10 隻 (5 港 + 5 美) 用 1w 統一 config, 399 forward return records 永久累積, Top 3 (US.AAPL/MSFT/GOOGL) apply 落 M8 落實倉位 | 大少 09:34 / 09:54 / 10:57 |
 | 2026-08-09 | **Backend 1w period fix** — `backend/api/kline.py` PERIOD_MAP 加 `KLType.K_WEEK`, M9 拎 5-10 年 weekly history, 補返 7 隻 stocks data 唔夠問題 | 大少 09:29 揀 B |
 | 2026-08-09 | **Sprint 2 收官 (2.9 spec doc final done)** — AS-03-DEC v2.0.0 (1.0.0 → 1.8.0 → 2.0.0) + 4 個 followup bugs 全部 fix: **Bug 1** (testing page race condition, `da32c4db`) + **Bug 2** (M8 kelly override 落 Synthesizer, `639e6d70`) + **Bug 3+4** (version 顯示 1.0.0 → 2.0.0 + testing page .mjs cache bust sync 永久 rule, `d61d96d6`) + 2 個 testing page 永久 rule 加咗落 memory (HTML cache bust sync + .mjs cache bust) | 大少 12:00 / 12:30 / 13:00 / 13:15 |
+| 2026-08-11 | **Codebase 註解 audit Phase 4 (12 個 file surgical 改動)** — 全部 algorithm function header 加凡人話 4 段 (目的/Input/Output/Algorithm steps) + backend/services/warning_collector.py + testing-page.js 註解 + 4 份 backend/llm file architecture overview + testing-page.js `__copyWarning` inline 註解 | 大少 15:30 |
+| 2026-08-11 | **Module Warning System v1.0.0 (7 phases 全部 done)** — 15 warning codes / 3 層級 / propagation chain M1-M6 → M7 → M8 → M9 / WarningBanner 頂部 + WarningCard 個別 verdict / Copy 提示用 Markdown 4 樣格式 / 永久 rule 加咗落 AGENTS.md (Spec Sync #11) | 大少 11:57 |
+| 2026-08-11 | **Spec Sync #13 — AS-03 Chain Flow v1.0.0 (5 個 step + 1 個 bug fix)** — **Step 1** Dropdown 排位 M9 放 M8 上邊 (visual chain flow) + **Step 2** M8 verdict 加 `optimal_params_timestamp` + 3 種狀況 banner (B 改善) + **Step 3** 「🚀 跑完整鏈條 (M7→M9→M8)」掣 + `runFullChain()` handler (A 改善) + **Step 3.5** M9 ReferenceError 'postErrors' surgical 1 行 fix + **Step 4** 撳 M8 前自動 check cache 過期 hint (C 改善) + 4 份 spec doc sync (AGENTS.md / ARCHITECTURE.md / PROJECT_SPEC.md / README.md) | 大少 19:55 / 20:40 / 20:55 / 21:16 / 21:20 |
 | 2026-08-09 | **Trade Journal followup (Stage 1+ Full scope)** — PUT mark 啱錯 + DELETE 刪 entry + GET stats 6 metrics + 4 個新 DB column (idempotent migration) + 5 個 pytest + testing page 4 個 button (啱/錯/改/刪) + 統計 panel (6 色) + 4 份 spec doc sync + HTML cache bust `?v=2.3.5` → `?v=2.3.6` | 大少 15:04 |
 | 2026-08-10 | **Stage 1+ Hybrid Step 1 (Option 3 大少 confirm)** — `source` field 永久 rule (3 values: manual / paper_trading / m9_pilot_derive) + `scripts/stage1p_aggregate_l2_cache.py` (L2 cache 81 records 48.1% hit rate baseline trigger) + 5 pytest (5/5 pass) + 4 份 spec doc sync + Spec Sync #9 | 大少 09:33 confirm / 09:44 trigger |
 | 2026-08-09 | **即時股價 (Stage 1+)** — `GET /api/stock-price/{symbol}` (用 Futu `ctx.get_cur_kline` 拎今日 partial bar) + testing page trading card row 最左加新 column (date/time 上 + price 下, 5 秒 polling) + 休市/未連接 keep last known + 顯示「(休市)」caption + 1 pytest + HTML cache bust `?v=2.3.6` → `?v=2.3.7` | 大少 15:45 |

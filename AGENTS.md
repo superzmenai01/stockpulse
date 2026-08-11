@@ -53,6 +53,37 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 - ❌ WarningBanner 隱藏 (大少 11:57 永久 rule)
 - ❌ 用 string array warnings (統一用 ModuleWarning object)
 
+### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
+
+完整 chain: **M7(綜合) → M9(回測拎最佳設定) → M8(用最佳設定做最終判斷)**
+
+凡人話: M8 要用 M9 嘅 optimal params, M9 排 M8 上邊反映呢個 chain 邏輯。
+
+永久 rule:
+- **Dropdown 排位** (Step 1): 07=M7 綜合 → 09=M9 回測 → zmen(獨立) → 08=M8 決策 → 11=M11 timeline
+  - ID 同 displayName 編號唔改 (純 visual 排位)
+- **M8 verdict 永久有 optimal_params 3 個 field** (Step 2):
+  - `optimal_params_timestamp`: cache last_calibrated
+  - `optimal_params_source`: 'cache' | 'fresh-calibrate'
+  - `optimal_params_age_seconds`: cache age
+  - Render: 頂部 banner 3 種狀況 (🟡 冇 cache / 🟢 < 7 日 / 🔴 ≥ 7 日)
+- **「🚀 跑完整鏈條 (M7→M9→M8)」掣** (Step 3):
+  - 撳 1 個掣自動跑 3 個 module, sequential (M9 POST 落 cache 落後 M8 讀 cache)
+  - M9 失敗 fallback 跑 M8, chain 唔 crash
+  - 唔 replace 現有 3 個獨立按鈕, 兩者並存
+- **撳 M8 之前 check cache 過期** (Step 4):
+  - 撳獨立「跑 M8」掣, 自動 check `/api/adaptive-params/{symbol}` 拎 cache state
+  - 3 種狀況 hint: ⚠️ 過期 / ✅ 仲有效 / ℹ️ 冇 cache
+  - 唔 auto trigger M9, 只係 hint, 大少自己決定
+- **M9 ReferenceError 'postErrors is not defined'** (Step 3.5 Bug fix):
+  - Root cause: `postErrors` 喺 line 9284 set 喺 `fold.postErrors`, 但 line 9344 warning 注入用 local `postErrors` 假設有 const → ReferenceError
+  - Fix: 1 行 `const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []);`
+  - 永久 rule: local scope 用嘅 variable 必先 const 拎出嚟, 唔好直接用 fold.x 假設 global 可用
+
+7 日 expiry (大少 11:39 confirm: cache > 7 日自動重校)。
+
+對應 commit: 284d247d, 1f18a49c, 2af9d2dc, 7791b986, f14d3328
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`

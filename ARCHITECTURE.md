@@ -1420,6 +1420,45 @@ if (currentAdapter.renderChartOverlay) {
 | ⏸️ Deferred (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — | ⏸️ Deferred — 大少 2026-08-09 14:16 揀 A drop 呢個 task, Stage 2+ 重新 plan |
 | ⏸️ Deferred (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — | ⏸️ Deferred — 大少 2026-08-09 14:16 揀 A drop 呢個 task, Stage 2+ 重新 plan |
 
+### AS-03 Chain Flow (大少 2026-08-11 v1.0.0) — Spec Sync #13
+
+凡人話: M8 要用 M9 嘅 optimal params, M9 排 M8 上邊反映呢個 chain 邏輯。
+
+**Dropdown 排位** (純 visual, ID 同 displayName 編號唔改):
+- 07 = M7 綜合 (synthesizerAdapter)
+- 09 = M9 回測 (backTestAdapter) ← 排 M8 上邊
+- 08 = M8 決策 (decisionEngineAdapter) ← 排 M9 下邊
+- 11 = M11 timeline (backtestTimelineAdapter)
+
+**M8 verdict 加 optimal_params 3 個 field** (Step 2 B 改善):
+- `optimal_params_timestamp`: cache last_calibrated (UNIX seconds)
+- `optimal_params_source`: 'cache' | 'fresh-calibrate'
+- `optimal_params_age_seconds`: cache age
+- Render: 頂部 banner 3 種狀況 (🟡 冇 cache / 🟢 < 7 日 / 🔴 ≥ 7 日)
+- 唔入 DB table, 純 verdict 內部欄位 (跟 Module Warning System 永久 rule)
+
+**「🚀 跑完整鏈條 (M7→M9→M8)」掣** (Step 3 A 改善):
+- 撳 1 個掣自動跑 3 個 module, sequential (M9 POST 落 cache 落後 M8 讀 cache)
+- Step 1/3: 跑 synthesizerAdapter.analyze (M7 綜合)
+- Step 2/3: 跑 backTestAdapter.analyze (M9 回測, 內部 POST 落 cache)
+- Step 3/3: 跑 decisionEngineAdapter.analyze (M8 最終, 內部 load cache 自動)
+- M9 失敗 fallback 跑 M8, chain 唔 crash
+- 唔 replace 現有 3 個獨立按鈕, 兩者並存
+- 位置: testing-page/index.html `<button id="run-full-chain-btn">`, 喺 run-btn 旁邊
+
+**撳 M8 之前 check cache 過期** (Step 4 C 改善):
+- 撳獨立「跑 M8」掣, runAlgorithm() 自動 check `/api/adaptive-params/{symbol}` 拎 cache state
+- 3 種狀況 hint: ⚠️ 過期 / ✅ 仲有效 / ℹ️ 冇 cache
+- 唔 auto trigger M9, 只係 hint, 大少自己決定
+- Cache endpoint 拎唔到 (404 / network fail) 唔 block, fallback 直接跑 M8
+
+**M9 ReferenceError 'postErrors is not defined' fix** (Step 3.5 Bug fix):
+- Root cause: `postErrors` 喺 `fold.postErrors` (line 9284) 但 line 9344 warning 注入用 local `postErrors` 假設有 const → ReferenceError
+- Fix: 1 行 `const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []);`
+- 永久 rule: local scope 用嘅 variable 必先 const 拎出嚟, 唔好直接用 fold.x 假設 global 可用
+
+對應 commit: 284d247d (dropdown), 1f18a49c (B 改善), 2af9d2dc (A 改善), 7791b986 (M9 fix), f14d3328 (C 改善)
+
 ### 3-Section Rule (大少 #11056, 2026-08-07, 永久)
 
 **所有 AS-03 module 必須有 3 個 sections**(adapter.mjs 強制):每個 module 嘅 `render{Module}Result()` 必須 render 呢 3 段,缺一唔得。
