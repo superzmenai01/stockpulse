@@ -76,7 +76,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 21:20 C 改善: ALGO_CACHE_BUST = '4.4.0' (runAlgorithm 撳 M8 之前, 自動 check adaptive_params cache 7 日 expiry — 過期提示「⚠️ 強烈建議撳🚀 跑完整鏈條掣」, 唔 auto trigger M9, 只係 hint)
 // 大少 2026-08-11 21:32 Dropdown zmen 排頂: ALGO_CACHE_BUST = '4.4.1' (REGISTRY array 將 zmen 均算法 block 從中間位置搬去最頂, ID/displayName 唔改, 純 visual 排位)
 // 大少 2026-08-11 22:05 改善 1+3: ALGO_CACHE_BUST = '4.5.0' (M8 verdict 拎 optimalData 替代 cacheInfo 拎 optimal_params_* 3 個 field + 新加 renderM9Summary(verdict) function 喺 banner 之後 render 5 個 metric mini-cards — 凡人話「撳 M8 即刻見到 M9 拎咗咩 optimal 設定」)
-const ALGO_CACHE_BUST = '4.5.0';
+// 大少 2026-08-11 22:05 改善 2: ALGO_CACHE_BUST = '4.5.1' (runFullChain 改 conditional — M9 過期先跑, cache OK skip M9 (4 秒搞掂, 唔再 30-60 秒浪費) — 大少 trigger「跑完整鏈條也會Skeep咗M9, 那是和跑算法是一樣的, 那跑完整鏈條不是可以代替跑算法?」嘅 insight)
+const ALGO_CACHE_BUST = '4.5.1';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -874,22 +875,25 @@ runBtn.addEventListener('click', runAlgorithm);
 
 // =============================================================
 // 大少 2026-08-11 20:55 — A 改善: 「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + handler
+// 大少 2026-08-11 22:05 — 改善 2: 改 conditional (M9 過期先跑, cache OK skip M9)
 // =============================================================
 // 凡人話:
 //   大少撳 1 個掣, 自動跑晒 3 個 module (M7 綜合 → M9 回測拎最佳設定 → M8 用最佳設定做最終判斷)。
 //   唔需要自己逐一撳, 唔需要諗「先撳邊個」。
 //
-// 流程 (3 個 step, sequential 因為 M9 POST 落 cache 之後 M8 讀 cache):
+// 流程 (改善 2 之後改 conditional):
+//   Step 0 (新增): Check M9 cache (has_optimal 30 日內?)
 //   Step 1/3: 跑 M7 (synthesizerAdapter.analyze) → 拎 synthResult
 //   Step 2/3: 跑 M9 (backTestAdapter.analyze) → 拎 optimal params + POST 落 cache
-//             (如果 M9 失敗, chain 繼續用 default 設定跑 M8, 唔 block 整個 chain)
+//             (Conditional: 改善 2 改為只係 has_optimal=false / 過期先跑, cache OK skip M9, 4 秒搞掂)
 //   Step 3/3: 跑 M8 (decisionEngineAdapter.analyze) → 內部 load cache 自動用 M9 嘅 optimal
-//   全部跑完 → 3 個 verdict card 一齊出, 大少一眼睇晒成個 chain 結果
+//   全部跑完 → 3 個 verdict card 一齊出 (cache OK 跳過 M9 嗰陣只 render M7 + M8), 大少一眼睇晒
 //
 // 永久 rule (大少 2026-08-11):
 //   - Chain 唔 replace 現有 3 個獨立按鈕 (runAlgorithm), 兩者並存
 //   - M9 失敗唔 block chain (用 default 跑 M8, 仲會有「未跑過 M9」banner 提示)
 //   - 全部 verdict 跟 standard warning system (頂部 banner + copy button)
+//   - 改善 2: cache OK (M9 optimal 30 日內) 嗰陣 skip M9, 唔浪費 30-60 秒
 // =============================================================
 
 async function runFullChain() {
@@ -933,7 +937,38 @@ async function runFullChain() {
 
     const chainResults = [];  // { step, label, adapter, verdict, ok }
 
-    // Step 1/3: 跑 M7 綜合判定
+    // Step 0 (改善 2 — chain conditional): 檢查 M9 cache, 過期先跑
+    // 大少 22:05 觀察: cache OK 嗰陣永遠跑 M9 浪費 30-60 秒, 應該 conditional
+    // Cache OK = M9 optimal 30 日內有效 (has_optimal = true)
+    // Cache 過期/缺失 = has_optimal = false → 跑 M9 拎新 optimal
+    let m9Needed = true;
+    let m9SkippedReason = '';
+    try {
+      runStatus.innerHTML = '⏳ 檢查 M9 cache 過期...';
+      const cacheCheckResp = await fetch(`${BACKEND_URL}/api/adaptive-params/${encodeURIComponent(code)}`);
+      if (cacheCheckResp.ok) {
+        const cacheCheck = await cacheCheckResp.json();
+        if (cacheCheck.has_optimal === true) {
+          m9Needed = false;
+          const optAgeDays = Math.floor((cacheCheck.age_seconds || 0) / 86400);
+          // M9 optimal 30 日 expiry, 拎返嚟嘅 age_seconds 係 optimal age
+          // 實際 age 要拎 optimal.last_backtest, 但 response 冇, 用 has_optimal 已經夠
+          m9SkippedReason = `M9 optimal cache 仲有效 (${optAgeDays} 日內, < 30 日)`;
+        } else {
+          m9Needed = true;
+          m9SkippedReason = 'M9 optimal 過期或缺失, 要重跑';
+        }
+      } else if (cacheCheckResp.status === 404) {
+        m9Needed = true;
+        m9SkippedReason = 'M9 optimal 冇 cache, 要跑第一次';
+      }
+    } catch (e) {
+      console.warn('[runFullChain] M9 cache check failed, fallback 跑 M9:', e);
+      m9Needed = true;
+      m9SkippedReason = 'M9 cache check 失敗, fallback 跑 M9';
+    }
+
+    // Step 1/3: 跑 M7 綜合判定 (永遠跑, ~2 秒)
     runStatus.innerHTML = '⏳ Step 1/3: 跑 M7 綜合判定 (6 個 module verdict → SSI/TCM/Grade/Kelly)...';
     try {
       const m7Verdict = await synthesizerAdapter.analyze(klines, currentOptions);
@@ -943,15 +978,21 @@ async function runFullChain() {
       console.error('[runFullChain] M7 failed:', e);
     }
 
-    // Step 2/3: 跑 M9 歷史回測 (拎 optimal + POST 落 cache)
-    runStatus.innerHTML = '⏳ Step 2/3: 跑 M9 歷史回測 (拎最佳設定, 需時 30-60 秒)...';
-    try {
-      const m9Verdict = await backTestAdapter.analyze(klines, currentOptions);
-      chainResults.push({ step: 'M9', label: 'M9 歷史回測 (拎最佳設定, POST 落 cache)', adapter: backTestAdapter, verdict: m9Verdict, ok: true });
-    } catch (e) {
-      // M9 失敗唔 block chain (M8 仲可以跑, 用 default optimal, banner 會提示「未跑過 M9」)
-      chainResults.push({ step: 'M9', label: 'M9 歷史回測 (失敗, fallback 用 default)', adapter: null, verdict: null, ok: false, error: e.message });
-      console.warn('[runFullChain] M9 failed, chain 繼續用 default 設定跑 M8:', e);
+    // Step 2/3: 跑 M9 歷史回測 (改善 2 改 conditional — cache OK 跳過, ~30-60 秒 OR 0 秒)
+    if (m9Needed) {
+      runStatus.innerHTML = '⏳ Step 2/3: 跑 M9 歷史回測 (拎最佳設定, 需時 30-60 秒)...';
+      try {
+        const m9Verdict = await backTestAdapter.analyze(klines, currentOptions);
+        chainResults.push({ step: 'M9', label: 'M9 歷史回測 (拎最佳設定, POST 落 cache)', adapter: backTestAdapter, verdict: m9Verdict, ok: true });
+      } catch (e) {
+        // M9 失敗唔 block chain (M8 仲可以跑, 用 default optimal, banner 會提示「未跑過 M9」)
+        chainResults.push({ step: 'M9', label: 'M9 歷史回測 (失敗, fallback 用 default)', adapter: null, verdict: null, ok: false, error: e.message });
+        console.warn('[runFullChain] M9 failed, chain 繼續用 default 設定跑 M8:', e);
+      }
+    } else {
+      // Cache OK, skip M9 (改善 2 — chain 加速)
+      runStatus.innerHTML = `⚡ Step 2/3: M9 cache 仲有效 (${m9SkippedReason}), 跳過 M9 · 繼續跑 M8...`;
+      chainResults.push({ step: 'M9', label: `M9 歷史回測 (⚡ 跳過, ${m9SkippedReason})`, adapter: null, verdict: null, ok: true, skipped: true });
     }
 
     // Step 3/3: 跑 M8 最終判斷 (內部 load cache 自動用 M9 嘅 optimal)
@@ -964,30 +1005,37 @@ async function runFullChain() {
       console.error('[runFullChain] M8 failed:', e);
     }
 
-    // 4. Render 全部 verdict (M7 + M9 + M8 一齊出)
+    // 4. Render 全部 verdict (改善 2 — 顯示 skipped step, cache OK 嗰陣只 render M7 + M8)
+    const skippedCount = chainResults.filter(r => r.ok && r.skipped).length;
+    const failCount = chainResults.filter(r => !r.ok).length;
+    const summary = `${chainResults.filter(r => r.ok).length} / 3 個 step 成功${skippedCount > 0 ? ` (${skippedCount} skipped · ⚡ cache 仲有效)` : ''} · 股票: ${code}`;
     let html = `
       <div style="background:linear-gradient(90deg,#722ed1,#1890ff);color:#fff;padding:14px 18px;border-radius:8px;margin-bottom:20px;font-family:system-ui,sans-serif;">
         <div style="font-size:18px;font-weight:700;">🚀 完整鏈條跑完 (M7 → M9 → M8)</div>
-        <div style="font-size:13px;margin-top:6px;opacity:0.9;">${chainResults.filter(r => r.ok).length} / 3 個 step 成功 · 股票: ${code}</div>
+        <div style="font-size:13px;margin-top:6px;opacity:0.9;">${summary}</div>
       </div>
     `;
     for (const r of chainResults) {
-      const statusIcon = r.ok ? '✅' : '❌';
-      const statusColor = r.ok ? '#52c41a' : '#EE5151';
+      const statusIcon = r.skipped ? '⚡' : (r.ok ? '✅' : '❌');
+      const statusColor = r.skipped ? '#1890ff' : (r.ok ? '#52c41a' : '#EE5151');
       html += `
         <div style="margin-bottom:20px;">
           <h3 style="color:${statusColor};margin:0 0 8px 0;font-size:16px;">${statusIcon} ${r.label}</h3>
           ${r.ok && r.adapter
             ? r.adapter.renderResult(r.verdict)
-            : `<div style="background:#fff1f0;border:1px solid #EE5151;border-radius:6px;padding:12px;color:#666;">❌ 失敗: ${r.error || '未知錯誤'}</div>`
+            : r.skipped
+              ? `<div style="background:#e6f7ff;border:1px solid #1890ff;border-radius:6px;padding:12px;color:#1890ff;">⚡ 跳過呢個 step (cache 仲有效, 唔需要重跑 M9, M8 已經用緊 cache 嘅 optimal)</div>`
+              : `<div style="background:#fff1f0;border:1px solid #EE5151;border-radius:6px;padding:12px;color:#666;">❌ 失敗: ${r.error || '未知錯誤'}</div>`
           }
         </div>
       `;
     }
     resultPanel.innerHTML = html;
     const successCount = chainResults.filter(r => r.ok).length;
-    if (successCount === 3) {
+    if (successCount === 3 && skippedCount === 0) {
       runStatus.innerHTML = `✅ 完整鏈條跑完 · 3/3 個 step 成功 · 股票: ${code}`;
+    } else if (successCount === 3 && skippedCount > 0) {
+      runStatus.innerHTML = `⚡ 完整鏈條跑完 · ${3 - skippedCount}/3 個 step 跑咗 (M9 skipped, cache 仲有效) · 股票: ${code}`;
     } else {
       runStatus.innerHTML = `⚠️ 完整鏈條跑完 · ${successCount}/3 個 step 成功 · 股票: ${code} · 失敗 step 用 fallback 繼續`;
     }
