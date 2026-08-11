@@ -7980,6 +7980,76 @@ export const decisionEngineAdapter = {
         }
       ));
     }
+    // 大少 2026-08-11 — 7 個 adaptive params warning 注入
+    if (adaptiveParams) {
+      const { ssiWeights, rsiWeight, kellyFraction, markowitzCorr, hurstThresholds } = adaptiveParams;
+      // Hurst 強趨勢 (>0.95)
+      if (hurstThresholds?.persistent > 0.95) {
+        m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
+          `Hurst persistent > 0.95 強趨勢 (${hurstThresholds.persistent.toFixed(3)})`,
+          {
+            issue: `hurstThresholds.persistent = ${hurstThresholds.persistent.toFixed(3)} > 0.95 (極端)`,
+            impact: '可能係 data 太短 / noise 太少, 強趨勢判斷要小心',
+            fix: '增加 dataWindowDays 拎更多 samples, 確認 Hurst 計算無 bug',
+            context: { hurst_persistent: hurstThresholds.persistent, hurst_reverting: hurstThresholds.reverting },
+          }
+        ));
+      }
+      // Hurst 強反轉 (<0.05)
+      if (hurstThresholds?.reverting < 0.05) {
+        m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
+          `Hurst reverting < 0.05 強反轉 (${hurstThresholds.reverting.toFixed(3)})`,
+          {
+            issue: `hurstThresholds.reverting = ${hurstThresholds.reverting.toFixed(3)} < 0.05 (極端)`,
+            impact: '可能係 data 太短, 反轉判斷要小心',
+            fix: '增加 dataWindowDays 拎更多 samples',
+            context: { hurst_persistent: hurstThresholds.persistent, hurst_reverting: hurstThresholds.reverting },
+          }
+        ));
+      }
+      // R² 過低 (ssiWeights normalize 後 < 0.3 嘅 module 過多)
+      if (ssiWeights) {
+        const lowFitModules = Object.entries(ssiWeights).filter(([k, v]) => v < 0.15);
+        if (lowFitModules.length >= 2) {
+          m8Warnings.push(makeWarning('warning', 'M8', 'OUTLIER_VALUE',
+            `${lowFitModules.length} 個 module SSI 權重 < 0.15 (R² 過低)`,
+            {
+              issue: `ssiWeights 入面 ${lowFitModules.length} 個 module 權重 < 0.15`,
+              impact: '呢啲 module 對 verdict 影響太低, 可能 R² 過低 (data 唔啱呢條線)',
+              fix: '增加 dataWindowDays 拎更多 data, 或試另一個 period (1d → 1w)',
+              context: { ssi_weights: ssiWeights, low_fit_modules: lowFitModules.map(([k]) => k) },
+            }
+          ));
+        }
+      }
+      // Kelly 連續高波動 (每次都 >= 5%)
+      if (kellyFraction === 'octo') {
+        m8Warnings.push(makeWarning('info', 'M8', 'CONFIG_DEFAULTS',
+          'Kelly 八分一倉 (高波動)',
+          {
+            issue: `kellyFraction = 'octo' (1/8 = 12.5%), 自動切到高波動倉位`,
+            impact: '波動大, 倉位自動收細保護',
+            fix: '正常, 唔使特別處理; 如果想加倉, 確認風險承受能力',
+            context: { kelly_fraction: kellyFraction, kelly_numeric: 0.125 },
+          }
+        ));
+      }
+      // 馬可維茨相關係數全部接近 0 (分散風險低)
+      if (markowitzCorr) {
+        const avgCorr = (Math.abs(markowitzCorr.dailyWeekly) + Math.abs(markowitzCorr.dailyMonthly) + Math.abs(markowitzCorr.weeklyMonthly)) / 3;
+        if (avgCorr > 0.8) {
+          m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
+            `馬可維茨平均相關係數 > 0.8 (${avgCorr.toFixed(3)}, 分散風險低)`,
+            {
+              issue: `3 個時段 (日/週/月) 平均相關係數 = ${avgCorr.toFixed(3)} > 0.8`,
+              impact: '日/週/月 走勢高度同步, 多 timeframe 分散效果低',
+              fix: '可能係 data 期間市況單調, 試多啲 period 或加長 dataWindowDays',
+              context: { markowitz_corr: markowitzCorr, avg_abs_corr: avgCorr },
+            }
+          ));
+        }
+      }
+    }
 
     return {
       ...decisionVerdict,
@@ -8686,6 +8756,79 @@ export const backTestAdapter = {
       }
     }
 
+    // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5b) — M9 Back Test
+    // 警告注入:
+    //   🟡 LOW_SAMPLE_SIZE: totalValidateSamples = 0 (大少 10:35 fix 嘅 0 samples bug)
+    //   🟡 POST_FAILED: postErrors.length > 0 (大少 10:35 fix 嘅 silent fail bug)
+    //   🔴 VERDICT_MISSING: folds.length = 0 (walkForwardCV 完全 fail)
+    //   🟡 LOW_SAMPLE_SIZE: forwardReturnHistory.length < 3 (累積樣本少)
+    //   🔵 CONFIG_DEFAULTS: dataWindowDays 用咗 default 1260 (唔係用戶自訂)
+    const m9Warnings = [];
+    if (walkForwardResult.folds.length === 0) {
+      m9Warnings.push(makeWarning('critical', 'M9', 'VERDICT_MISSING',
+        'Walk-Forward CV 完全 fail, 0 個 fold',
+        {
+          issue: 'walkForwardResult.folds.length = 0',
+          impact: 'M9 全部 optimal 拎唔到, 對 M8 套用會 fallback default',
+          fix: '檢查 kline count 足唔足 (≥ 126 日), runReplay 邏輯, 跑時有冇 exception',
+          context: { folds_count: 0, total_validate_samples: optimal.totalValidateSamples },
+        }
+      ));
+    } else if (optimal.totalValidateSamples === 0) {
+      m9Warnings.push(makeWarning('warning', 'M9', 'LOW_SAMPLE_SIZE',
+        '0 validate samples (M9 結果唔可靠)',
+        {
+          issue: 'totalValidateSamples = 0 (即使 folds.length > 0)',
+          impact: 'Walk-Forward CV 結果冇 statistical significance, M9 結論唔可信',
+          fix: '大少 10:35 fix: 調大 numFolds / tuneRatio 確保 tune verdict 過 bar gate (HLStructure 99 條)',
+          context: { folds_count: walkForwardResult.folds.length, total_validate_samples: 0 },
+        }
+      ));
+    } else if (optimal.totalValidateSamples < 10) {
+      m9Warnings.push(makeWarning('warning', 'M9', 'LOW_SAMPLE_SIZE',
+        `validate samples 偏少 (${optimal.totalValidateSamples} 個)`,
+        {
+          issue: `totalValidateSamples = ${optimal.totalValidateSamples} < 10`,
+          impact: '統計意義唔足, M9 結論要小心睇',
+          fix: '增加 dataWindowDays 設定 (e.g. 1260 → 2520) 拎更多 samples',
+          context: { total_validate_samples: optimal.totalValidateSamples, recommended: '>= 30' },
+        }
+      ));
+    }
+    if (postErrors && postErrors.length > 0) {
+      m9Warnings.push(makeWarning('warning', 'M9', 'POST_FAILED',
+        `${postErrors.length} 個 forward return POST 失敗`,
+        {
+          issue: 'POST 落 /api/adaptive-params/{symbol}/forward-return 失敗',
+          impact: 'forward_return_history 累積唔到, Stage 1+ Stream B 數據缺失',
+          fix: '大少 10:35 fix: 加 response.ok check + UI banner 顯示, 檢查 backend 18792 port',
+          context: { failed_count: postErrors.length, sample_error: postErrors[0] },
+        }
+      ));
+    }
+    if (forwardReturnHistory.length < 3) {
+      m9Warnings.push(makeWarning('info', 'M9', 'LOW_SAMPLE_SIZE',
+        `forward_return_history 累積樣本少 (${forwardReturnHistory.length} 個)`,
+        {
+          issue: `forwardReturnHistory.length = ${forwardReturnHistory.length} < 3`,
+          impact: 'Stage 1+ Stream B 命中率統計暫時冇意義',
+          fix: '正常, 多跑幾次 M9 累積更多 samples, 或多寫 trade journal entries',
+          context: { history_count: forwardReturnHistory.length, recommended: '>= 30' },
+        }
+      ));
+    }
+    if (options.dataWindowDays === undefined || options.dataWindowDays === 1260) {
+      m9Warnings.push(makeWarning('info', 'M9', 'CONFIG_DEFAULTS',
+        'dataWindowDays 用咗 default 1260 (4 年)',
+        {
+          issue: 'dataWindowDays = 1260 (default), 唔係用戶自訂',
+          impact: '可能用戶想用 2520 (8 年) 但忘記設定',
+          fix: '可調大到 2520 (8 年) 拎更多 samples',
+          context: { data_window_days: options.dataWindowDays ?? 1260 },
+        }
+      ));
+    }
+
     return {
       symbol,
       walkForwardResult,
@@ -8693,6 +8836,7 @@ export const backTestAdapter = {
       forwardReturnHistory,  // 9.7.3 永遠 full show
       // 大少 2026-08-10 Bug 1 fix A.2 — collect 所有 fold POST 失敗訊息, 畀 UI banner 用
       postErrors: walkForwardResult.folds.flatMap(f => f.postErrors || []),
+      _warnings: m9Warnings,  // 大少 2026-08-11 v1.0.0
       timestamp: Date.now(),
     };
   },
