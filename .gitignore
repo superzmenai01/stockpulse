@@ -49,6 +49,7 @@ backend/data/stocks.db
 # sed backup files
 *.bak
 *.bak-*    # 帶 timestamp suffix 嘅 backup (e.g. stocks.db.bak-20260810-before-source-field)
+**/*.bak-*  # 同上但匹配 subdirectory 深層 (e.g. backend/data/stocks.db.bak-...)
 
 # Stage 1+ tune results 暫存 (大少 2026-08-10 Hybrid Option 3)
 # 真正 tune 結果將來會入 backend/data/ 正式 table
@@ -57,3 +58,4 @@ scripts/stage1p_tuning_results.json
 # docx files (source binary, 唔 commit)
 *.docx
 docs/演算法概念SPECS/
+.gitignore.test

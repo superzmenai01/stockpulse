@@ -1,5 +1,24 @@
 """
-StockPulse 組別 API
+StockPulse 組別 API — 大少 2026-08-08
+
+凡人話: 大少用「組別」去將股票分類 (例: 「港股觀察名單」、「AI 概念股」
+       「高息股」、「美股 ETF」), 然後 frontend sidebar 顯示。
+
+Endpoints:
+- GET    /api/groups                        拎所有組別
+- GET    /api/groups/{group_id}             拎單個組別
+- POST   /api/groups                        開新組別
+- PUT    /api/groups/{group_id}             改組別名/顏色
+- DELETE /api/groups/{group_id}             刪組別
+- POST   /api/groups/reorder                重新排序 (拖拽 sidebar)
+- GET    /api/groups/{group_id}/stocks      拎組別入面嘅股票
+- POST   /api/groups/{group_id}/stocks      加股票落組別
+- DELETE /api/groups/{group_id}/stocks/{code}  從組別移除股票
+
+Cross-ref:
+- backend/models/group.py (CRUD: create_group / get_groups / ...)
+- backend/models/group_stock.py (M:N 關係表)
+- 永久 rule: 組別排序 user drag 後要即時 save (sidebar 體驗)
 """
 
 from fastapi import APIRouter, HTTPException

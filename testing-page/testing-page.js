@@ -68,7 +68,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-10 22:50 M7 稱呼改: ALGO_CACHE_BUST = '3.4.0' (「校長/老師」→ 「演算法/Synthesizer」更專業)
 // 大少 2026-08-10 23:00 M8 v2 中文化: ALGO_CACHE_BUST = '3.5.0' (Standard Verdict 中文化 + TCM 中文 + 短期走勢對齊 + trading card 加現價 + popup tooltip)
 // 大少 2026-08-11 M8 v3.9 + Warning System v1.0.0: ALGO_CACHE_BUST = '3.9.0' (M8 v3.8 → v3.9.0 改動: Module Warning System Phase 3+4 引入 — testing page 加 WarningBanner 頂部 + WarningCard 個別 verdict 內 + Copy 全部/單個 warning button, 從 ../algorithms/AS-03-cycle-detection/lib/warnings.mjs 引入 helpers)
-const ALGO_CACHE_BUST = '3.9.0';
+// 大少 2026-08-11 Codebase 註解 Phase 4: ALGO_CACHE_BUST = '4.0.0' (testing-page.js __copyWarning / __copyAllWarnings 加 inline 註解 — 凡人話流程 + 永久 rule + 參數說明, 其他 AI 閱讀時能立即明白 Copy handler 點 work)
+const ALGO_CACHE_BUST = '4.0.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -822,9 +823,30 @@ runBtn.addEventListener('click', runAlgorithm);
 // 流程: DELETE cache → 重新跑 runAlgorithm() → POST save 新 cache
 // =============================================================
 // 大少 2026-08-11 — Module Warning System v1.0.0 — Copy warning handlers
-// 大少撳 Copy button 將 warning 內容 (Markdown 4 樣) 複製到 clipboard
-// 然後 paste 畀 Mavis 立即知道問題 + 修復方法
 // =============================================================
+// Module Warning System — Copy 提示 handlers (大少 2026-08-11 永久 rule)
+//
+// 目的: 當頂部 WarningBanner 或個別 module verdict card 內 WarningCard 嘅
+//       Copy button 撳落嚟, 將個 warning (Markdown 4 樣格式) 寫落 clipboard,
+//       大少可以直接 paste 畀 Mavis 立即知道問題 + 修復方法。
+//
+// 凡人話流程:
+//   1. 大少撳 Copy 全部 / Copy 單個 button
+//   2. handler 拎 window._currentWarnings (即當前 verdict._warnings)
+//   3. 動態 import formatWarningForCopy / formatAllWarningsForCopy (ESM lib)
+//   4. writeText 落 clipboard
+//   5. visual feedback: button text 變 '✅ Copied!' 1.5-2 秒後還原
+//
+// 永久 rule (大少 2026-08-11):
+//   - Copy 提示一定要 Markdown 4 樣 (Module/Code/問題/影響/修復/Debug Context)
+//   - fallback 機制: clipboard API 失敗 → textarea + execCommand
+//   - dedupe by (level + module_id + code), sort Critical → Warning → Info
+// =============================================================
+
+// 單個 warning Copy handler
+// 參數 idxOrKey:
+//   - number: 頂部 banner 嘅 index (用 array index 拎 warning)
+//   - string: "module_id_code" 格式 (個別 module Copy button 用)
 window.__copyWarning = async function(idxOrKey) {
   const warnings = window._currentWarnings || [];
   let targetWarning = null;
@@ -873,6 +895,9 @@ window.__copyWarning = async function(idxOrKey) {
   }
 };
 
+// Copy 全部 warnings handler (頂部 banner 嘅 Copy 全部 button)
+// 凡人話: 一次過拎晒所有 warnings, 攤平做一個 Markdown 大文檔, paste 畀
+//         Mavis 即時睇晒全部問題 (唔使逐個 copy)。
 window.__copyAllWarnings = async function() {
   const warnings = window._currentWarnings || [];
   if (warnings.length === 0) {

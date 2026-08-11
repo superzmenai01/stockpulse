@@ -8,6 +8,46 @@ Cover 所有 OpenAI-compatible API:
 - 任何其他 OpenAI-compatible endpoint (DeepSeek / Together / etc.)
 
 設計原則：1 個 generic adapter cover 多個 provider，避免寫 N 個 specific adapter。
+
+================================================================================
+Data flow (凡人話):
+================================================================================
+  caller (e.g. AS-02 analyzer)
+    │
+    ▼
+  provider.chat(messages) / chat_json(messages, schema)
+    │
+    │  1. Build payload: { model, messages, temperature, max_tokens? }
+    │  2. urllib.request POST → <endpoint>/chat/completions
+    │     (用 stdlib urllib 而唔係 requests, 因為 urllib3 latin-1 fallback 撞 emoji)
+    │  3. Parse response: data["choices"][0]["message"]["content"]
+    │  4. (chat_json only) 加 JSON instruction 到 system prompt, 處理 ```json block
+    │
+    ▼
+  return str (or dict for chat_json)
+
+================================================================================
+Error handling:
+================================================================================
+  - HTTPError: 拎 status code + body 前 200 char 寫 log, 然後 re-raise
+  - URLError / TimeoutError: 寫 log, re-raise (caller 決定 fallback)
+  - Unexpected response format: 寫 log, raise ValueError
+  - health_check(): try-except 包住, 失敗 return False (唔 re-raise, 畀 caller 友善處理)
+
+================================================================================
+Token counting (凡人話):
+================================================================================
+  - 中文字: ~1.5 chars per token
+  - 英文/數字: ~4 chars per token
+  - 用 regex `[\u4e00-\u9fff]` 數中文字, 其他 chars 計另一邊
+  - 對大部分 use case 已經夠準確, 唔需要 call 真嘅 tokenizer
+
+================================================================================
+Cross-ref:
+================================================================================
+  - base.py: AbstractProvider interface
+  - factory.py: get_active_provider() 返呢個 class 嘅 instance
+  - models.llm_settings: settings DB schema (provider / endpoint / model / api_key)
 """
 from __future__ import annotations
 import json
@@ -17,8 +57,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-import requests
-
+# import requests  # 不再使用 (大少 fix: urllib3 latin-1 fallback 撞 emoji)
 from .base import AbstractProvider
 
 logger = logging.getLogger(__name__)

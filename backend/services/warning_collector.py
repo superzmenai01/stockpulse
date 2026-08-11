@@ -9,6 +9,44 @@ Warning inlined 入 verdict (唔入 DB table, 避免 storage overhead)。
 - WarningCollector helper (push + dedupe + sort)
 - 每個 module adapter analyze() return 之前 push 落 verdict._warnings
 - Propagation: M1-M6 → M7 → M8 → M9 (push parent warnings 落 child verdict)
+
+================================================================================
+凡人話 Usage Example (Python side — 12 個 module adapter 用):
+================================================================================
+    from backend.services.warning_collector import make_warning, WarningCollector
+
+    # 1. 單個 warning (M4 動能發現 RSI outlier)
+    warning = make_warning(
+        level='warning',                    # 自動對應 OUTLIER_VALUE
+        module_id='M4',
+        code='OUTLIER_VALUE',
+        message='RSI 數值異常 (5.0 > 1.0 標準化上限)',
+        issue='raw RSI = 95.2, normalized = 5.0',
+        impact='M4 verdict confidence 跌到 0.4, M7 SSI 拉低 8%',
+        fix='考慮用 14 日 RSI 重算, 或 mark 做 outlier skip',
+        context={'raw_rsi': 95.2, 'normalized': 5.0, 'threshold': 1.0},
+    )
+
+    # 2. WarningCollector 收集 + dedupe + sort (M7 Synthesizer 用)
+    collector = WarningCollector(module_id='M7')
+    for v in [ma_v, hl_v, tl_v, ind_v, vp_v, vol_v]:  # 6 個 module verdicts
+        collector.push_dict(v.get('_warnings', []))   # propagate parent warnings
+    if len(standard_verdicts) < 6:
+        collector.push(make_warning('warning', 'M7', 'MODULE_PARTIAL',
+            f'得 {len(standard_verdicts)}/6 個 module verdict', ...))
+    return {'grade': ..., 'ssi_score': ..., '_warnings': collector.get_sorted()}
+
+    # 3. Frontend 拎到 verdict._warnings 會自動 render WarningBanner + WarningCard
+    #    大少撳 Copy button → formatWarningForCopy() → Markdown 4 樣貼畀 Mavis 修復
+================================================================================
+⚠️ 永久 rule (大少 2026-08-11):
+  - 12 個 module (M1-M12) + zmen + 7 個 adaptive params 全部要 inlined _warnings
+  - 唔入 DB table (避免 storage overhead, 每次 run 即時計算)
+  - 排序: Critical (0) → Warning (1) → Info (2) → module_id
+  - Dedupe by (level + module_id + code)
+  - Copy 提示用 Markdown 4 樣格式 (大少 22:30 確認)
+  - Cross-ref: algorithms/AS-03-cycle-detection/lib/warnings.{ts,mjs}
+================================================================================
 """
 
 import time
@@ -54,6 +92,12 @@ class ModuleWarning:
     timestamp: float = field(default_factory=time.time)
 
     def __post_init__(self):
+        """凡人話: 自動 validate 個 warning code 嘅 level 係咪啱。
+        例如 INSUFFICIENT_DATA 永遠係 'critical', 唔可以亂填做 'info'。
+        如果 caller 寫錯 level, 我哋 log debug 留底 (唔 raise, 因為有時 caller
+        想 override, e.g. low severity case)。
+        永久 rule: 15 個 code 嘅 level 喺 WARNING_CODES dict 統一 mirror。
+        """
         # Auto-validate level (根據 code 自動 fill)
         if self.code in WARNING_CODES:
             expected_level = WARNING_CODES[self.code]

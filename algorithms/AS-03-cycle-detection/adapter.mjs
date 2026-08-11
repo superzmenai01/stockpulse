@@ -227,10 +227,34 @@ export async function analyze(klines, options = {}) {
   };
 }
 
-// ===== runMAAlignment — extract MA alignment logic (大少 #10846 refactor) =====
+// ===== runMAAlignment (M1 v0.3.0 zmen 算法) — extract MA alignment logic =====
 //
-// 原本 analyze() 嘅 MA alignment 部分抽成獨立 helper。
+// 大少 #10846 refactor (2026-08-06): 原本 analyze() 嘅 MA alignment 部分抽成獨立 helper。
 // 保留所有 ma-alignment.ts v0.3.0 嘅 logic，唔改任何 rule。
+//
+// Algorithm: 10 條 rule-based (A-J) 識別股票所處嘅週期
+//   - A. 連續 5 日 MA5 > MA60 → 上升勢 (strong)
+//   - B. 連續 5 日 MA5 < MA60 → 下跌勢 (strong)
+//   - C. 5 日裡 MA5 > MA60 但當日 low < MA60 → 橫行向下 (medium)
+//   - D. 5 日裡 MA5 < MA60 但當日 high > MA60 → 橫行向上 (medium)
+//   - F. 5 日裡 MA5+MA10 都 > MA60 但 MA5 < MA10 → 升勢調整向下 (medium)
+//   - G. 5 日裡 MA5+MA10 都 < MA60 但 MA5 > MA10 → 跌勢調整向上 (medium)
+//   - H. 7 日 reversal window (1/2/3 日新 + 餘下舊) → 轉勢 (strong)
+//   - I. 連續 5 日 low ≥ MA5 × (1 - threshold) → 有機會長升 (weak)
+//   - J. 連續 5 日 high ≤ MA5 × (1 + threshold) → 有機會長跌 (weak)
+//
+// 用法 (Usage):
+//   await runMAAlignment(klines, { dataWindowDays: 100 }) → maVerdict
+//
+// Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
+//   - state: 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION'
+//   - confidence: 0-1
+//   - _warnings: ModuleWarning[] (大少 2026-08-11 Warning System v1.0.0)
+//     可能包含 INSUFFICIENT_DATA / NAN_RESULT / FALLBACK_USED / CONFIG_DEFAULTS
+//
+// 對應 module: M1 v0.3.0 (zmen 算法, 大少獨立於 7 個 modules)
+// 對應 ts file: algorithms/AS-03-cycle-detection/modules/zmen-ma-alignment.ts
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md
 
 async function runMAAlignment(klines, options = {}) {
   const cfg = {
@@ -1766,9 +1790,10 @@ const DEFAULT_VOLUME_PRICE_CONFIG = {
   denseZoneAtrMultiple: 0.5,
 };
 
-// ===== VolumePrice v2.0.0 (大少 2026-08-07 overwrite) =====
+// ===== VolumePrice v2.0.0 (M5 — 對應 modules/volume.ts) =====
 //
-// 對應 modules/volume.ts v2.0.0 — 跟 ma-alignment / hl-structure / trendline / indicators pattern 一致
+// 大少 2026-08-07 overwrite: 對應 modules/volume.ts v2.0.0
+// 跟 ma-alignment / hl-structure / trendline / indicators pattern 一致
 // 跟 docx `05成交量價格行為確認法.docx` v2.0 spec
 // Spec doc: `docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md`
 //
@@ -1778,6 +1803,21 @@ const DEFAULT_VOLUME_PRICE_CONFIG = {
 // rolling volume-price correlation → volume regime → rule engine → output)
 //
 // State 派生: cycle (uptrend / downtrend / sideways) + signal (CONFIRM / DISCONFIRM / NEUTRAL)
+//
+// 用法 (Usage):
+//   await analyzeVolumePrice(klines, { volumePriceConfig: { ... } }) → volumeVerdict
+//
+// Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
+//   - state: 'UP' | 'DOWN' | 'SIDEWAYS'
+//   - confidence: buyTimingScore (0-1)
+//   - meta.cycle: 'uptrend' | 'downtrend' | 'sideways'
+//   - meta.signal: 'CONFIRM' | 'DISCONFIRM' | 'NEUTRAL'
+//   - meta.breakoutStatus: { isBreakout, isConfirmed, pattern, strength, falseBreakoutRisk }
+//   - _warnings: ModuleWarning[] 可能包含 KLINE_MISSING / OUTLIER_VALUE / FALLBACK_USED
+//
+// 對應 module: M5 (VolumePrice)
+// 對應 ts file: algorithms/AS-03-cycle-detection/modules/volume.ts
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md
 
 export async function analyzeVolumePrice(klines, options = {}) {
   const cfg = { ...DEFAULT_VOLUME_PRICE_CONFIG, ...(options.volumePriceConfig || {}) };
@@ -2717,6 +2757,29 @@ export const volumePriceAdapter = {
 // =============================================================================
 // 對應 modules/volatility.ts v1.0.0 + MODULE-06-VOLATILITY.md
 // 簡化: Squeeze (BB vs KC) + ATR 分解 + 5 種 setup + 3 種 failure mode
+//
+// Algorithm (M6):
+//   1. BB (Bollinger Bands) — 20 日 SMA ± 2σ
+//   2. KC (Keltner Channels) — 20 日 SMA ± 1.5 ATR(14)
+//   3. Squeeze detection — BB 寬度 < KC 寬度 → 波動收縮
+//   4. ATR decomposition — 分 trend (高低距) + noise (殘差) 兩個 component
+//   5. 5 種 setup detection (squeeze fire / VCP breakout / genuine squeeze / strong trend / quality squeeze)
+//   6. 3 種 failure mode (weak follow-through / noisy squeeze / extension failure)
+//
+// 用法 (Usage):
+//   await analyzeVolatility(klines, { volatilityConfig: { atrPeriod: 14 } }) → volatilityVerdict
+//
+// Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
+//   - state: 'UP' | 'DOWN' | 'SIDEWAYS' (cycle 判斷: uptrend / downtrend / sideways)
+//   - confidence: 0-1 (entry score)
+//   - meta.cycle: 'uptrend' | 'downtrend' | 'sideways'
+//   - meta.squeeze: { isSqueeze, duration, qualityScore, isGenuine }
+//   - meta.atrDecomposition: { trend, noise, ratio }
+//   - _warnings: ModuleWarning[] 可能包含 INSUFFICIENT_DATA / OUTLIER_VALUE / FALLBACK_USED
+//
+// 對應 module: M6 (Volatility)
+// 對應 ts file: algorithms/AS-03-cycle-detection/modules/volatility.ts
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-06-VOLATILITY.md
 
 const DEFAULT_VOLATILITY_CONFIG = {
   bbPeriod: 20,
@@ -3438,7 +3501,35 @@ function analyzeTrend(values, tolerance) {
   return { trend: 'mixed', consistency };
 }
 
-// Main analyze function (vanilla JS port of modules/hl-structure.ts)
+// ===== analyzeHLStructure (M2 — 對應 modules/hl-structure.ts) =====
+//
+// 大少 2026-08-07 Stage 1 focus — 高低點結構法 (山頂山谷排列)
+// 對應 modules/hl-structure.ts v1.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md
+//
+// Algorithm (M2):
+//   1. 識別極值 (peaks 山頂 + troughs 山谷) — 用 adaptive window
+//   2. 計算峰谷趨勢 (peakTrend: rising/falling/mixed + troughTrend)
+//   3. 結構分數 (structureScore 0-1, weighted_structure_score 含成交量加權)
+//   4. Box boundary detection (箱體震盪)
+//   5. Pattern alert (頭肩頂/雙頂/雙底/三角形)
+//   6. 價格位置 (above_peak / between / below_trough / broken)
+//
+// 用法 (Usage):
+//   await analyzeHLStructure(klines, { hlsOverrides: { ... } }) → hlVerdict
+//
+// Output: { cycle, cycle_label, confidence, peaks, troughs, ... , _warnings }
+//   - cycle: 'uptrend' | 'downtrend' | 'sideways'
+//   - peaks: array of { date, close, high, low, weight }
+//   - troughs: array of { date, close, high, low, weight }
+//   - pattern_alert: 'none' | 'head_shoulders_top' | 'double_top' | 'double_bottom' | 'triangle'
+//   - price_position: 'above_peak' | 'between' | 'below_trough' | 'broken'
+//   - _warnings: ModuleWarning[] 可能包含 VERDICT_MISSING / FALLBACK_USED
+//
+// 對應 module: M2 (HL Structure)
+// 對應 ts file: algorithms/AS-03-cycle-detection/modules/hl-structure.ts
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md
+
 async function analyzeHLStructure(klines, options) {
   const cfg = { ...DEFAULT_HL_STRUCTURE_CONFIG, ...(options.hlsOverrides || {}) };
   const n = klines.length;
@@ -4187,6 +4278,35 @@ const DEFAULT_TRENDLINE_CONFIG = {
   flatSlopeThreshold: 0.001,
   maxExtremeAgeDays: 30,
 };
+
+// ===== analyzeTrendline (M3 — 對應 modules/trendline.ts) =====
+//
+// 大少 2026-08-07 Stage 1 focus — 趨勢線法 (畫線睇走勢)
+// 對應 modules/trendline.ts v0.1.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md
+//
+// Algorithm (M3):
+//   1. 識別極值點 (peaks 高點 + troughs 低點, 用 extremeWindow 預設 3 日)
+//   2. Fit 2 條 linear regression line (支持線 + 阻力線, 用 LinearRegression R²)
+//   3. R² 過濾 (minR² 0.55, 太低即唔用呢條 line)
+//   4. Analyze touches (確認 line 真係 touch 到幾多個極值)
+//   5. Detect breakout (跟 breakoutWindow 5 日 + breakoutConfirmDays 2 日確認)
+//   6. Derive state (UP/DOWN/SIDEWAYS) + confidence (R² 加權)
+//
+// 用法 (Usage):
+//   await analyzeTrendline(klines, { trendlineConfig: { minR2: 0.55 } }) → trendlineVerdict
+//
+// Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
+//   - state: 'UP' | 'DOWN' | 'SIDEWAYS'
+//   - meta.matchedRules: rule IDs (e.g. ['H', 'A', 'I'])
+//   - meta.supportLine: { slope, intercept, rSquared, touches }
+//   - meta.resistanceLine: { slope, intercept, rSquared, touches }
+//   - meta.breakoutStatus: { isBreakout, isConfirmed, pattern }
+//   - _warnings: ModuleWarning[] 可能包含 FALLBACK_USED
+//
+// 對應 module: M3 (Trendline)
+// 對應 ts file: algorithms/AS-03-cycle-detection/modules/trendline.ts
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md
 
 export async function analyzeTrendline(klines, options = {}) {
   const cfg = { ...DEFAULT_TRENDLINE_CONFIG, ...(options.trendlineConfig || {}) };
@@ -5686,7 +5806,33 @@ function _indicatorsDetect(klines, config, symbol, timeframe) {
 }
 
 /**
- * 入口: 分析 K 線 + 返 verdict (跟 trendline/volume 同一 pattern)
+ * ===== analyzeIndicators (M4 — 對應 modules/indicators.ts) =====
+ *
+ * 大少 2026-08-07 Stage 1 focus — 動能背馳與衰竭 (睇 RSI 同 MACD)
+ * 對應 modules/indicators.ts v1.0.0
+ * Spec doc: docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md
+ *
+ * Algorithm (M4):
+ *   1. 計算 RSI (14 日 default, normalized 0-1, raw 0-100)
+ *   2. 計算 MACD (12-26-9 default)
+ *   3. 識別 RSI 背馳 (頂背馳/底背馳)
+ *   4. 識別 MACD 背馳
+ *   5. 衍生 cycle state (UP/DOWN/SIDEWAYS/TRANSITION)
+ *   6. Historical opportunities (RSI 超賣 + MACD 金叉 + 收 > MA5 過濾)
+ *
+ * 用法 (Usage):
+ *   await analyzeIndicators(klines, { indicatorsConfig: { rsiPeriod: 14 } }) → indicatorsVerdict
+ *
+ * Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
+ *   - state: 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION'
+ *   - meta.rsiSeries: array of RSI values
+ *   - meta.macdSeries: array of MACD values
+ *   - meta.divergence: { rsiDivergences, macdDivergences, totalCount }
+ *   - _warnings: ModuleWarning[] 可能包含 OUTLIER_VALUE (RSI > 1) / NAN_RESULT (MACD NaN)
+ *
+ * 對應 module: M4 (Indicators)
+ * 對應 ts file: algorithms/AS-03-cycle-detection/modules/indicators.ts
+ * Spec doc: docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md
  */
 export async function analyzeIndicators(klines, options = {}) {
   const n = klines.length;
@@ -6119,6 +6265,38 @@ function maV2Round(value, decimals) {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
 }
+
+// ===== analyzeMAAlignmentV2 (M1 v2.0 — 對應 modules/ma-alignment.ts) =====
+//
+// 大少 2026-08-08 09:13 全新 v2.0: 跟 docx Kimi v2.0 spec
+// 對應 modules/ma-alignment.ts v2.0.0
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md
+//
+// Algorithm (M1 v2.0 — 13 條 rule-based):
+//   - 3 cycles: 主升/主跌/橫行
+//   - 13 個 output fields
+//   - 三階段信心調整 (基礎分 × 成交量加權 × 斜率加權)
+//   - 13 條 rule (P1-P13) 識別 mainCycle + adjustmentLog
+//
+// 用法 (Usage):
+//   await analyzeMAAlignmentV2(klines, { config: { maPeriods: [5, 10, 20, 60] } }) → maV2Verdict
+//
+// Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
+//   - state: 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION' (主 cycle)
+//   - confidence: 0-1 (三階段調整後)
+//   - meta.cycle: 'uptrend' | 'downtrend' | 'sideways'
+//   - meta.maValues: { MA5, MA10, MA20, MA60 }
+//   - meta.maRanks: 排列名次
+//   - meta.maSlopes: 各 MA 斜率
+//   - meta.momentumScore: 0-1
+//   - _warnings: ModuleWarning[] 可能包含 INSUFFICIENT_DATA / NAN_RESULT / FALLBACK_USED / THRESHOLD_BREACH
+//
+// 對應 module: M1 v2.0 (新版均線演算法, 跟舊 M1 v0.3.0 zmen 算法唔同)
+// 對應 ts file: algorithms/AS-03-cycle-detection/modules/ma-alignment.ts
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md
+//
+// 注: M1 v0.3.0 zmen 算法 (runMAAlignment line 235+) 係獨立演算法 (大少 cycle 風格基礎),
+//     M1 v2.0 (analyzeMAAlignmentV2 本 function) 係 Sprint 1 嘅新 v2.0 版本 (Kimi spec)
 
 async function analyzeMAAlignmentV2(klines, options = {}) {
   const cfg = { ...MA_ALIGNMENT_V2_DEFAULTS, ...(options.config || {}) };
@@ -6977,7 +7155,37 @@ function decisionEngineComputeKelly(verdicts) {
   return { fraction, numeric, position: numeric };
 }
 
-// ---------- 主 analyze 函數 ----------
+// ============================================================================
+//  M7 Synthesizer 主入口 — analyzeDecisionEngine (M7 v1.0.0 — Sprint 2 收官)
+//
+//  目的: 拎 6 個子模組 verdict (M1 均線 / M2 峰谷 / M3 趨勢線 / M4 動能 /
+//        M5 量價 / M6 波動), 跑 5 個 sub-step 推導出最終 ssi_score / grade /
+//        6×6 TCM matrix / 凱利倉位 fraction。
+//
+//  Input  : klines  = 標準化 K 線 array (open/high/low/close/volume/...)
+//           options = { code, dataWindowDays, ... } 額外選項
+//
+//  Output : SynthesizerVerdict 結構, 包含:
+//           - ssi_score (0-100, 越高越強)  / grade (A+ ~ F)
+//           - tcm_matrix 6×6 配對表 (每對 module 嘅 pairing verdict)
+//           - alignment_score (6 個 module 嘅 confidence 平均)
+//           - kelly_fraction / kelly_numeric / kelly_position (凱利倉位)
+//           - module_verdicts: 6 個 sub-verdict
+//           - _warnings: 5 個層級 inline 警告 (依 Module Warning System 永久 rule)
+//
+//  Algorithm 5 個 sub-step:
+//    1. 跑 6 個 analyze*() 模組 (Promise.all 並行)
+//    2. 透過 decisionEngineToStandardVerdict 轉做 standard format
+//    3. computeSentiment6D: 6 維情緒雷達 (consistency/conf_avg/rules_cov/sent_6d/cycle/health)
+//    4. computeAlignment: 6 個 module verdict 嘅 alignment score (平均 confidence)
+//    5. computeGrade: SSI×60% + Alignment×40% → grade_score → A+/A/B/C/D/F
+//    6. computeKelly: 平均 max_drawdown_estimate → half/quarter/octo
+//    7. propagate warnings: collect 6 個 module 嘅 _warnings + 加 M7 自己嘅 (e.g. MODULE_PARTIAL)
+//
+//  ⚠️ 永久 rule: 對外一定要有 _warnings array (Module Warning System v1.0.0)
+//  ⚠️ Warning 永遠 inlined verdict 入面, 唔好寫入 DB table
+//  ⚠️ Cross-ref: lib/warnings.mjs (makeWarning), backend/services/warning_collector.py
+// ============================================================================
 export async function analyzeDecisionEngine(klines, options = {}) {
   // 1) 跑 6 個 modules
   const [
@@ -7929,6 +8137,45 @@ export const decisionEngineAdapter = {
       help: '中長線 (position, 預設) = 大少 cycle 風格 (持倉 1-3 個月, 動態 5 日線止蝕, 凱利 1/8); 短炒 (swing) = M8 原本 8 個最終動作 (持倉 1-2 星期, 止蝕-3% 目標+5% 凱利 1/4)',
     },
   ],
+  // ============================================================================
+  //  M8 Decision Engine 主入口 — decisionEngineAdapter.analyze (M8 v2.2.0)
+  //
+  //  目的: 綜合 M7 SynthesizerVerdict + 兩條 MA 路徑 (M1 v0.3.0 zmen 嘅
+  //        傳統 cycle + M1 v2.0 嘅新均線對齊) + 5 個 MA Trigger 推導
+  //        8 個最終動作 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + 5 個
+  //        trading card 價位 (現價/入場/止蝕/目標/移止)。
+  //
+  //  Input  : klines  = 標準化 K 線 array
+  //           options = { code, strategyMode: 'position' | 'swing', ... }
+  //                     strategyMode 預設 'position' (大少 2026-08-11 user rule)
+  //
+  //  Output : M8 Verdict, 包含:
+  //           - finalAction: 8 個最終動作之一 (中長線會 map 去 TRAP/TRANSITION/...)
+  //           - grade / grade_score (A+ ~ F)
+  //           - maTriggers: 5 個 MA trigger (T1-T5) fire status
+  //           - cycleTransition: 轉勢確認 / 調整完成 2 個 transition
+  //           - tradingCard: { currentPrice, entryZone, stopLoss, targetPrice, trailingStop }
+  //           - shortTermOutlook: 9 個 scenarios (UP3/UP1/NEUTRAL/DOWN1/DOWN3/CRASH/RECOVERY/BREAKOUT/REVERSAL)
+  //           - adaptiveParams: 7 日 cache 嘅 5 個數學參數 (R²/6 維情緒/ATR%/Pearson/Hurst)
+  //           - interpretation: 人話解讀 (Sprint 2 sub-task 2.4 hardcoded template,
+  //                            將來會 swap 落 LLM hook per 永久 rule)
+  //           - _warnings: 5 個層級 inline 警告
+  //
+  //  Algorithm 流程:
+  //    1. strategyMode 分流 (中長線 'position' / 短炒 'swing')
+  //    2. 跑 M7 + M1 v0.3.0 (zmen 舊版 cycle synthesizer 用)
+  //    3. 中長線 → cycle synthesizer 推導 5 個 MA trigger + 8 個 action mapping
+  //    4. 短炒 → SSI score 推導 8 個 finalAction
+  //    5. 兩種策略都會 render trading card + short term outlook + adaptive params
+  //    6. propagate warnings: collect M7 + 5 trigger 狀態 + adaptive params 7 日 cache
+  //
+  //  ⚠️ 永久 rule (大少 2026-08-11):
+  //     - 預設中長線 (default 'position')
+  //     - 將來 swap LLM hook 喺 interpretation field
+  //     - _warnings 永遠 inlined verdict
+  //  ⚠️ Cross-ref: modules/decision-engine.ts, modules/cycle-synthesizer.ts,
+  //                build/decision-engine.bundle.js (computeMA patch)
+  // ============================================================================
   analyze: async (klines, options = {}) => {
     // 0. 大少 2026-08-11 — 中長線/短炒 雙策略分流
     const strategyMode = options.strategyMode === 'swing' ? 'swing' : 'position';  // 預設中長線
@@ -8801,6 +9048,42 @@ export const backTestAdapter = {
     { key: 'dataWindowDays', label: '回顧天數 (睇過去幾多日數)', type: 'number', default: 1260, min: 90, max: 1260 },
     { key: 'stepDays', label: '跑判決步長 (每隔幾日跑一次)', type: 'number', default: 5, min: 1, max: 30 },
   ],
+  // ============================================================================
+  //  M9 Back Test 主入口 — backTestAdapter.analyze (M9 v0.6.0)
+  //
+  //  目的: 拎 M8 verdict 嘅歷史, 用 walk-forward CV (time-series cross-validation)
+  //        重播之前嘅判決, 對比之後 5/10/20 日真實升跌, 同時自動搵出呢隻股票
+  //        嘅最佳參數 (grid search over adaptive params)。
+  //
+  //  Input  : klines  = 標準化 K 線 array (window 預設 1260 日 = 5 年)
+  //           options = { code, dataWindowDays=1260, stepDays=5, ... }
+  //
+  //  Output : M9 Back Test Verdict, 包含:
+  //           - bestParams: { rSquared, sentiment6D, atrPercent, pearson, hurst, kellyFraction, ... }
+  //           - kellyFraction (octo/quarter/half) + Kelly pie SVG
+  //           - overallPerformance: 命中率 / 平均回報 / Sharpe / max drawdown
+  //           - walkForwardBars: 9.3 嘅 walk-forward CV bar chart
+  //           - folds: 每個 fold 嘅 (date, action, predictedReturn, actualReturn)
+  //           - history: 過去判決 verdict (cached forward_return_history)
+  //           - interpretation: 大少話你知 (plain language 解讀)
+  //           - applyToM8Button: 永久保留 1 個可 click button 「Apply to M8」
+  //           - _warnings: 5 個層級 inline 警告 (VERDICT_MISSING/LOW_SAMPLE_SIZE/POST_FAILED)
+  //
+  //  Algorithm 流程:
+  //    1. Normalize klines (backend 'time' string → 'timestamp' number)
+  //    2. 跑 9.1 fold split: walk-forward 切做 train/validate/test
+  //    3. 跑 9.2 對 M8 verdict 跑 5/10/20 日 forward return
+  //    4. 跑 9.3 walk-forward grid search over 5 個 adaptive params
+  //    5. 跑 9.4 自動 POST optimal params 落 /api/forward-returns 永久 cache
+  //    6. Render 6 個 section: ⏰header / 🎯Kelly pie / 📊整體表現 / 📋folds / 📜history / 📖解讀
+  //
+  //  ⚠️ 永久 rule (大少 2026-08-10 22:28):
+  //     - forward_return_history 永遠唔 delete (cache 永久保留)
+  //     - 0 validate samples 唔可以 silent fail (要 fire POST_FAILED warning)
+  //     - postErrors.length > 0 一定要 inline banner + 有 retry button
+  //  ⚠️ Cross-ref: modules/back-test.ts, build/back-test.bundle.js,
+  //                backend/services/adaptive_params_cache.py
+  // ============================================================================
   analyze: async (klines, options = {}) => {
     const symbol = options.symbol || options.code || 'unknown';
 

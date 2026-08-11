@@ -1,5 +1,17 @@
 """
-StockPulse 股票搜索 API
+StockPulse 股票搜索 API — 大少 2026-08-08
+
+凡人話: 大少喺 testing page 揀股票 / 或者 AS-XX 揀觀察名單嘅時候,
+       經呢個 API 拎 stock data。
+
+Endpoints:
+- GET /api/stocks/search?q=xxx&market=HK    搜索股票 (autocomplete)
+- GET /api/stocks/{code}                    拎單隻股票 metadata
+- GET /api/stocks/?market=HK&limit=100      拎指定市場嘅股票列表
+
+Cross-ref:
+- backend/models/stock.py (CRUD: search_stocks / get_stock / get_stocks_by_market)
+- 永久 rule: 股票 metadata cache 7 日 (backend/services/stock_cache.py)
 """
 
 from fastapi import APIRouter, Query

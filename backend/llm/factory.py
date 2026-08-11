@@ -4,10 +4,41 @@ LLM Factory — 大少 2026-08-01 #9146
 `get_active_provider()` 每次 call 都讀 settings db，自動同 instantiate。
 Settings 改咗即時生效（唔需要重啟 server）。
 
-Apply Scope (永久 rule):
-- AS-02 + 所有將來 AS-XX 永遠 call `get_active_provider()`
-- 唔好 pass provider 名做 parameter
-- 唔好 hard-code `MiniMaxProvider()` 之類
+================================================================================
+Apply Scope (永久 rule, 大少 2026-08-01 #9146):
+================================================================================
+  - AS-02 + 所有將來 AS-XX 永遠 call `get_active_provider()`
+  - 唔好 pass provider 名做 parameter
+  - 唔好 hard-code `OpenAICompatibleProvider(api_key=...)` 之類
+  - 唔好 cache provider instance (settings 改咗要即時生效)
+  - Caller 唔需要 try/except, get_active_provider() 內部 try-except
+    包住, 失敗 return None, caller check None 就 fallback
+
+================================================================================
+Caller map (邊啲 module 用緊):
+================================================================================
+  - backend/services/as02_analyzer.py (AS-02 公司質素分析)
+      └─> provider = get_active_provider()
+      └─> if provider: provider.chat_json(messages, schema=AS02_SCHEMA)
+  - 將來 AS-XX (所有用 LLM 嘅 algorithm)
+      └─> 一律 call get_active_provider()
+  - backend/api/llm_settings.py
+      └─> 用 list_predefined_providers() 拎下拉選單 options
+  - Settings page frontend
+      └─> 用 /api/llm-settings/* endpoints, 唔直接 call factory
+
+================================================================================
+Hot-reload mechanism (凡人話):
+================================================================================
+  Step 1: 大少喺 Settings page 揀新 provider, 撳 Save
+  Step 2: settings DB (sqlite) 寫入新 active provider
+  Step 3: 下次 caller call get_active_provider() 自動讀新 settings
+  Step 4: 新 OpenAICompatibleProvider(api_key, endpoint, model) 即時 instantiate
+  Step 5: 唔需要重啟 backend server (uvicorn)
+
+  Spec: PROJECT_SPEC.md §LLM Settings + ARCHITECTURE.md §LLM Abstraction Layer
+  永久 rule: settings 改咗唔需要重啟 server
+================================================================================
 """
 import logging
 from typing import Optional

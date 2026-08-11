@@ -3,11 +3,40 @@ Abstract LLM Provider Base Class — 大少 2026-08-01 #9146
 
 所有 LLM provider (MiniMax / Kimi / Gemini / OpenAI / Custom) 都係 extend 呢個 class。
 
-Interface:
+================================================================================
+點解要呢個 abstraction (凡人話):
+================================================================================
+  StockPulse 之前 hard-code 死 MiniMax API (大少 2026-08-01 決定抽象化)。
+  抽象出來之後:
+  - 新增 provider (e.g. Kimi / OpenAI) 只需要寫 1 個 file, 唔使改 algorithm code
+  - 切換 provider 唔需要重新 deploy, 改 settings DB 即時生效
+  - 統一 test interface, 每個 provider 都有 chat / chat_json / count_tokens /
+    health_check 4 個 method, 唔會有 surprise
+
+Interface (所有 subclass 必須 implement):
 - chat()           — 文字對話
 - chat_json()      — 結構化 JSON 輸出
 - count_tokens()   — Token 計數
 - health_check()   — 連線測試
+- provider_name    — Provider 名 (e.g. 'minimax', 'kimi', 'custom')
+- default_model    — 預設 model
+
+================================================================================
+Caller map (邊啲 module 用緊呢個 abstraction):
+================================================================================
+  - AS-02 公司質素分析 (services/as02_analyzer.py)
+      └─> get_active_provider() 拎 AbstractProvider instance
+      └─> provider.chat_json() 拎 LLM narrative
+  - 將來 AS-XX (所有用 LLM 嘅 algorithm)
+      └─> 一律 call get_active_provider(), 唔好 hard-code provider
+  - Settings page
+      └─> provider.health_check() 測連線
+
+  Spec: PROJECT_SPEC.md §LLM Providers + ARCHITECTURE.md §LLM Abstraction Layer
+  Cross-ref:
+    - factory.py: get_active_provider() 每次 call 重新讀 settings
+    - custom.py: OpenAI-compatible 1 個 adapter cover 多個 provider
+================================================================================
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
