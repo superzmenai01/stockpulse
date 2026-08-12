@@ -79,7 +79,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-11 22:05 改善 2: ALGO_CACHE_BUST = '4.5.1' (runFullChain 改 conditional — M9 過期先跑, cache OK skip M9 (4 秒搞掂, 唔再 30-60 秒浪費) — 大少 trigger「跑完整鏈條也會Skeep咗M9, 那是和跑算法是一樣的, 那跑完整鏈條不是可以代替跑算法?」嘅 insight)
 // 大少 2026-08-11 22:50 UX 改善: ALGO_CACHE_BUST = '4.5.2' (onAlgorithmChange 加 conditional show/hide — 「🚀 跑完整鏈條」掣只揀 M8 (AS-03-DEC) 時顯示, 其他 module 隱藏 + 「跑算法」掣 M8 嗰陣隱藏 (揀 chain 掣), 其他 module 顯示 — 大少 trigger「所有Module都看到跑完整鏈條, 應該只有在M8 裡才用吧?」+「在M8裡還有跑算法, 這個是不是可以不要了?」)
 // 大少 2026-08-13 07:23 M9 popup 註解全面化: ALGO_CACHE_BUST = '4.5.3' (M9 verdict 25 個 keyword 全部加 m9-verdict-tooltip class + data-help attribute, 8 section 全部凡人話解釋 — 跟 M7/M8 同樣 inline <style> block 嘅 hover popup 風格)
-const ALGO_CACHE_BUST = '4.5.3';
+// 大少 2026-08-13 07:46 WarningBanner expand bug fix: ALGO_CACHE_BUST = '4.5.4' (warnings.mjs 「展開 ▼」button onclick 改拎 this.parentElement.nextElementSibling (hidden list div), 之前拎 this.nextElementSibling 拎錯 Copy 全部 button, 撳咗 toggle 錯 element, list 永遠唔出 — 1 個 Info warning 嘅詳細內容完全冇辦法睇)
+const ALGO_CACHE_BUST = '4.5.4';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----

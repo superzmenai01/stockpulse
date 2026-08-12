@@ -208,7 +208,7 @@ export function renderWarningBanner(warnings) {
       <div style="display:flex;align-items:center;gap:12px;">
         <span style="font-size:20px;">${style.icon}</span>
         <strong style="color:${style.color};font-size:15px;">${summary}</strong>
-        <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.textContent === '展開 ▼' ? '收埋 ▲' : '展開 ▼';" style="background:${style.color};color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-left:auto;">展開 ▼</button>
+        <button onclick="const d = this.parentElement.nextElementSibling; d.style.display = d.style.display === 'none' ? 'block' : 'none'; this.textContent = this.textContent === '展開 ▼' ? '收埋 ▲' : '展開 ▼';" style="background:${style.color};color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-left:auto;">展開 ▼</button>
         <button onclick="window.__copyAllWarnings && window.__copyAllWarnings()" style="background:#666;color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;">📋 Copy 全部</button>
       </div>
       <div style="display:none;margin-top:12px;max-height:400px;overflow-y:auto;">
