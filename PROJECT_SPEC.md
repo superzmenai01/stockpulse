@@ -521,6 +521,34 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 
 對應 commit: 81f39818
 
+### M9 popup 註解全面化 (Spec Sync #17, 大少 2026-08-13 07:23)
+
+**永久 rule (M7/M8/M9 verdict popup 一致性)**:
+- M7 / M8 / M9 三個 verdict 嘅 keyword 全部要有 hover popup 註解 (凡人話, 普通話, 0 英文 technical term)
+- Style 全部 inline `<style>` block 喺 verdict HTML render 函數, 唔好放 testing-page.css
+  - `.{module}-verdict-tooltip { position: relative; cursor: help; }`
+  - `:hover::after { content: attr(data-help); ... }` (黑色背景 92% 透明, 大字 14px, max-width 380px, 即時顯示 0.1s)
+  - `:hover::before { content: ''; border: 6px solid transparent; border-top-color: ...; }` (箭嘴)
+  - `@keyframes {Module}TooltipFadeIn { from { opacity: 0; } to { opacity: 1; } }`
+- `{Module}_TOOLTIPS` dict 喺 verdict render 函數入面 define, 改 keyword 嗰陣必須一齊更新
+- 應用 span / div / svg / button / th / td 都得, 視乎 keyword 嘅 layout
+- 大少 trigger (2026-08-13 07:23):「你先把M9都一樣加上Popup註解, 要全面化, 普通話無英文, 講人話」
+
+**M9 25 個 key 對應 8 section** (跟 M9 verdict HTML 結構):
+| Section | Key 數 | Key list |
+|---------|-------|----------|
+| 1 頂部時段表 | 4 | m9_title / m9_period / m9_folds / m9_samples |
+| 2 最佳參數 | 5 | m9_kelly / m9_kelly_pct / m9_kelly_pie / m9_rsi_weight / m9_ssi_weights |
+| 3 整體表現 | 4 | m9_avg_score / m9_stability / m9_samples_box / m9_folds_box |
+| 4 Walk-Forward bar | 3 | m9_wf_bar / m9_tune_score / m9_validate_score |
+| 5 段細節表 | 1 (新) | m9_fold_n (重 m9_tune_score / m9_validate_score) |
+| 6 Forward return | 5 | m9_scatter / m9_fwd5 / m9_fwd10 / m9_fwd20 / m9_hit |
+| 7 大少話你知 | 1 | m9_advice |
+| 8 Apply to M8 | 2 | m9_recalibrate / m9_apply |
+| **總** | **25** | 36 個 instance (有 reuse) |
+
+對應 commit: 9f72b113 (feat(m9-rendering): M9 popup 註解全面化)
+
 ### Spec / Roadmap
 
 詳細 spec: `docs/research/AS-03-cycle-detection/ROADMAP.md` (228 行, 7 stages)

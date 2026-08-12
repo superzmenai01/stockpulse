@@ -1535,6 +1535,33 @@ Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except 
 
 對應 commit: 81f39818
 
+### M9 popup 註解全面化 (大少 2026-08-13 07:23, Spec Sync #17)
+
+**Trigger**: 大少 trigger「你先把M9都一樣加上Popup註解,要全面化,普通話無英文,講人話」
+
+**改動**:
+- M9 verdict HTML render 函數 (`backTestAdapter.renderResult`) 加 inline `<style>` block
+  - 跟 M7/M8 同樣 pattern: `.m9-verdict-tooltip { position: relative; cursor: help; }` + hover::after content attr(data-help) + 箭嘴 + 即時顯示 0.1s
+- M9_TOOLTIPS dict 25 個 key 全部應用:
+  - Section 1 頂部時段表: m9_title / m9_period / m9_folds / m9_samples
+  - Section 2 最佳參數: m9_kelly / m9_kelly_pct / m9_kelly_pie / m9_rsi_weight / m9_ssi_weights
+  - Section 3 整體表現: m9_avg_score / m9_stability / m9_samples_box / m9_folds_box
+  - Section 4 Walk-Forward bar: m9_wf_bar / m9_tune_score / m9_validate_score
+  - Section 5 段細節表: m9_fold_n (重用 m9_tune_score / m9_validate_score)
+  - Section 6 Forward return: m9_scatter / m9_fwd5 / m9_fwd10 / m9_fwd20 / m9_hit
+  - Section 7 大少話你知: m9_advice
+  - Section 8 Apply to M8: m9_recalibrate / m9_apply
+- 36 個 m9-verdict-tooltip instance (有 reuse, 25 個 unique key)
+- 凡人話 attribute 純普通話, 0 英文 technical term (除咗 RSI / Kelly 之類大少容許嘅 common trading term)
+
+**永久 rule**:
+- M7/M8/M9 三個 verdict 嘅 keyword 全部要有 popup 註解 (凡人話, 普通話)
+- Style 永久 inline `<style>` block 喺 verdict HTML render 函數, 唔好放 testing-page.css
+- `M9_TOOLTIPS` dict 喺 M9 verdict render 函數入面 define, 改 keyword 嗰陣必須一齊更新
+- 應用 span / div / svg / button / th / td 都得, 視乎 keyword 嘅 layout
+
+對應 commit: 9f72b113 (feat(m9-rendering): M9 popup 註解全面化)
+
 ### 3-Section Rule (大少 #11056, 2026-08-07, 永久)
 
 **所有 AS-03 module 必須有 3 個 sections**(adapter.mjs 強制):每個 module 嘅 `render{Module}Result()` 必須 render 呢 3 段,缺一唔得。

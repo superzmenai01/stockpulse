@@ -173,6 +173,51 @@ if existing_history is not None:
 
 對應 commit: 81f39818
 
+### M9 popup 註解全面化 (大少 2026-08-13 07:23, Spec Sync #17)
+
+**大少 trigger**:「你先把M9都一樣加上Popup註解,要全面化,普通話無英文,講人話」
+
+**目的**: 跟 M7/M8 同樣做法,M9 verdict 全部 keyword 都要有 hover popup 凡人話解釋,大少睇 verdict 嗰陣唔使再睇教學文件都明。
+
+**25 個 M9_TOOLTIPS key** (8 section 全部 keyword):
+| Section | Key | 凡人話 |
+|---------|-----|--------|
+| 1 頂部時段表 | m9_title | 回測驗證 (第九模組) 嘅目的 |
+| 1 頂部時段表 | m9_period | 模擬時段 (過去 5 年預設 / 大少自訂) |
+| 1 頂部時段表 | m9_folds | 滾動交叉驗證段數 (預設 3 段) |
+| 1 頂部時段表 | m9_samples | 真實樣本數 (≥ 30 先可信) |
+| 2 最佳參數 | m9_kelly | 凱利倉位比例 (跟平均真實波幅率自動切) |
+| 2 最佳參數 | m9_kelly_pct | 凱利倉位百分比 (撳呢個比例落注) |
+| 2 最佳參數 | m9_kelly_pie | 凱利倉位餅圖 (顏色越細越穩陣) |
+| 2 最佳參數 | m9_rsi_weight | RSI 情緒權重 (0-100%) |
+| 2 最佳參數 | m9_ssi_weights | 策略權重分配 (均線 / 高低點 / 趨勢線) |
+| 3 整體表現 | m9_avg_score | 平均驗證分數 (0-100, ≥ 70 穩陣) |
+| 3 整體表現 | m9_stability | 穩定度 (0-100%, 越高越穩定) |
+| 3 整體表現 | m9_samples_box | 真實樣本數 box |
+| 3 整體表現 | m9_folds_box | 完成驗證段數 box |
+| 4 Walk-Forward bar | m9_wf_bar | 每段滾動驗證表現 (藍橙差距 = overfit) |
+| 4 Walk-Forward bar | m9_tune_score | 校準分 (歷史 tune 出嘅分) |
+| 4 Walk-Forward bar | m9_validate_score | 真實分 (未來 validate 嘅分) |
+| 5 段細節表 | m9_fold_n | 第 N 段 (滾動驗證第 N 段) |
+| 6 Forward return | m9_scatter | 5 日後回報分佈 (綠升紅跌) |
+| 6 Forward return | m9_fwd5 | 5 日後回報 (對齊睇模擬準唔準) |
+| 6 Forward return | m9_fwd10 | 10 日後回報 (對齊 5 日睇趨勢延續) |
+| 6 Forward return | m9_fwd20 | 20 日後回報 (對齊 10 日睇中期) |
+| 6 Forward return | m9_hit | 啱唔啱 (綠啱 / 紅錯) |
+| 7 大少話你知 | m9_advice | 用規則自動生成嘅凡人話解讀 (LLM hook 預留) |
+| 8 Apply to M8 | m9_recalibrate | 重新校準掣 (解決 30 日過期) |
+| 8 Apply to M8 | m9_apply | 立即套用 M8 掣 (POST 落 M8 cache) |
+
+**永久 rule (M9 popup 註解)**:
+- M9 verdict 25 個 keyword 全部要加 `m9-verdict-tooltip` class + `data-help` attribute (凡人話, 普通話, 0 英文 technical term)
+- Style: 跟 M7/M8 同樣 inline `<style>` block (position relative + cursor help + hover::after content attr(data-help) + 箭嘴 + 即時顯示 0.1s)
+- 唔好放 testing-page.css (永久 rule 永久跟 M7/M8 一致, 全部 inline)
+- `M9_TOOLTIPS` dict 喺 M9 verdict HTML render 函數入面 define
+- 改 keyword 嗰陣必須一齊更新 `M9_TOOLTIPS` dict
+- 應用 span / div / svg / button / th / td 都得, 視乎 keyword 嘅 layout
+- 大少 trigger (2026-08-13 07:23):「你先把M9都一樣加上Popup註解, 要全面化, 普通話無英文, 講人話」
+- 對應 commit: 9f72b113 (feat(m9-rendering): M9 popup 註解全面化)
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`
