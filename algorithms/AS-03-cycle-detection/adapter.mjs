@@ -9561,7 +9561,93 @@ export const backTestAdapter = {
     };
     const hitEmoji = (hit) => hit === true ? '🟢' : hit === false ? '🔴' : '⚫';
 
-    let html = '';
+    // 大少 2026-08-13 07:25 — M9 verdict 全面化 popup 註解 (跟 M7/M8 同樣 style)
+    // 凡人話: M9 8 區 keyword 全部加 hover popup 解釋, 大少唔使睇教學都明白
+    // 永久 rule: 全部 algorithm verdict 嘅 keyword 都要有 popup 註解 (M7/M8/M9 一致)
+    // Style: 跟 M7/M8 同樣 inline <style> block (position relative + hover::after + 箭嘴 + 即時顯示)
+    const M9_TOOLTIPS = {
+      // Section 1: 頂部時段表
+      m9_title: '回測驗證 (M9 第九模組): 拎呢隻股票過去試卷, 重播演算法嘅判決, 對比真實後續升跌, 畀大少一個「呢個演算法過唔過得自己」嘅證據',
+      m9_period: '模擬時段: 過去 5 年 (預設) 或者大少自訂嘅日子範圍, 模擬演算法喺呢段時段嘅表現',
+      m9_folds: '滾動交叉驗證段數: 預設 3 段, 每段用前段 tune (校準), 後段 validate (真實驗證), 模擬「邊個設定最work」',
+      m9_samples: '真實樣本數: 過去模擬中真實試過幾多個 (>= 30 樣本先可信, < 30 系統會警告)',
+
+      // Section 2: 🎯 最佳參數
+      m9_kelly: '凱利倉位比例: 跟平均真實波幅率自動切嘅倉位大小 (半倉 = 低波動 / 四分一倉 = 中波動 / 八分一倉 = 高波動), 自動風控',
+      m9_kelly_pct: '凱利倉位百分比: 撳呢個比例落注 (例 12.5% = 八分一倉, 25% = 四分一倉, 50% = 半倉), 越細越穩陣',
+      m9_kelly_pie: '凱利倉位餅圖: 跟平均真實波幅率自動切嘅倉位大小, 越細越穩陣 (藍 = 八分一倉, 綠 = 四分一倉, 黃 = 大倉, 紅 = 滿倉博)',
+      m9_rsi_weight: '相對強弱指標權重: 相對強弱指標 (RSI) 對綜合判定嘅影響比重 (0-100%), 大少可以調整呢個權重睇下 RSI 影響有幾大',
+      m9_ssi_weights: '策略權重分配: 均線 / 高低點 / 趨勢線 3 個模組嘅綜合判定權重 (加埋 = 100%), 過往準 = 高權重',
+
+      // Section 3: 📊 整體表現
+      m9_avg_score: '平均驗證分數: 過去幾段真實分嘅平均值 (0-100, 越高越好), >= 70 算穩陣',
+      m9_stability: '穩定度: 過去幾段嘅表現穩定程度 (0-100%, 越高越穩定), 越高代表唔係忽高忽低',
+      m9_samples_box: '真實樣本數: 過去試過幾多個 (>= 30 樣本先可信, < 30 系統會警告)',
+      m9_folds_box: '完成驗證段數: 預設 3 段, 越多越穩但越慢',
+
+      // Section 4: Walk-Forward bar chart
+      m9_tune_score: '校準分: 用歷史 tune (校準) 嗰陣拎到嘅分, 越高代表「過去呢段最work嘅設定」',
+      m9_validate_score: '真實分: 用未來 validate (真實驗證) 嗰陣拎到嘅分, 越高代表「呢個設定真係work」',
+      m9_wf_bar: '每段滾動驗證表現: 藍色 = 校準分 (用歷史 tune), 橙色 = 真實分 (用未來 validate), 兩條柱愈高愈好, 差距大代表 overfit (過擬合)',
+
+      // Section 5: 段細節表
+      m9_fold_n: '第 N 段: 滾動交叉驗證嘅第 N 段 (預設 3 段, 每段拎唔同時段嘅最佳設定)',
+
+      // Section 6: Forward return history
+      m9_fwd5: '5 日後回報: 模擬建議買入/賣出之後, 真實 5 日後升咗幾多 %, 對齊睇模擬準唔準',
+      m9_fwd10: '10 日後回報: 模擬之後 10 日真實升跌, 對齊 5 日後睇趨勢延續性',
+      m9_fwd20: '20 日後回報: 模擬之後 20 日真實升跌, 對齊 10 日後睇中期走勢',
+      m9_hit: '啱唔啱: 模擬建議嘅動作 (買/賣/等), 同真實 5 日後結果對比, 綠色 = 啱, 紅色 = 錯',
+      m9_scatter: '5 日後回報分佈: 綠點 = 模擬後升, 紅點 = 模擬後跌, 散點越集中代表表現越穩定',
+
+      // Section 7: 大少話你知
+      m9_advice: '大少話你知: 用規則自動生成嘅凡人話解讀, 將來可以換成大語言模型 (OpenAI / MiniMax / Kimi) 寫詳細解讀',
+
+      // Section 8: Apply to M8
+      m9_recalibrate: '重新校準掣: 重新跑 M9 整個流程, 用嚟解決「過咗 30 日」, 系統自動建議重校',
+      m9_apply: '立即套用 M8 掣: 將 M9 拎到嘅最佳設定 POST 落 M8 cache, 撳 M8 嗰陣自動用呢個設定',
+    };
+
+    // 大少 2026-08-13 07:25 — M9 verdict popup 註解 inline CSS (跟 M7/M8 同樣 style)
+    // 凡人話: hover 任何 keyword 0.1 秒即時顯示黑色 popup, 大字 14px, 自動加箭嘴
+    // 永久 rule: M7/M8/M9 三個 verdict 嘅 tooltip 全部 inline <style> block, 唔好放 testing-page.css
+    const m9TooltipStyle = `<style>
+      .m9-verdict-tooltip { position: relative; cursor: help; }
+      .m9-verdict-tooltip:hover::after {
+        content: attr(data-help);
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.92);
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.6;
+        white-space: normal;
+        width: max-content;
+        max-width: 380px;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        pointer-events: none;
+        animation: m9TooltipFadeIn 0.1s ease-in;
+      }
+      .m9-verdict-tooltip:hover::before {
+        content: '';
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 6px solid transparent;
+        border-top-color: rgba(0, 0, 0, 0.92);
+        z-index: 10000;
+        pointer-events: none;
+      }
+      @keyframes m9TooltipFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>`;
+
+    let html = m9TooltipStyle;
 
     // ===== 大少 2026-08-10 Bug 1 fix A.2 — M9 UI error banner (永遠 full show) =====
     // 之前 silent fail 唔顯示, 用家以為儲咗但其實冇。改用紅色 banner 顯示 POST 失敗數。
@@ -9575,22 +9661,22 @@ export const backTestAdapter = {
       html += `</div></div>`;
     }
 
-    // ===== Section 1: 大標題 + 簡述 =====
+    // ===== Section 1: 大標題 + 簡述 (大少 2026-08-13 07:25 — keyword 全部加 m9-verdict-tooltip) =====
     html += `<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 20px; border-radius: 12px; margin-bottom: 16px;">`;
-    html += `<h3 style="margin: 0 0 8px 0; font-size: 18px;">⏰ 回測驗證結果 (第九模組 v0.6.0)</h3>`;
-    html += `<p style="margin: 0; opacity: 0.95;">用歷史 K 線重播之前嘅判決, 對比之後 5 / 10 / 20 日真實升咗幾多</p>`;
-    html += `<p style="margin: 4px 0 0 0; opacity: 0.85; font-size: 13px;">📊 ${symbol} · ${folds.length} 段滾動驗證 · ${overall.totalValidateSamples} 個真實樣本</p>`;
+    html += `<h3 class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_title}" style="margin: 0 0 8px 0; font-size: 18px;">⏰ 回測驗證結果 (第九模組 v0.6.0)</h3>`;
+    html += `<p class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_period}" style="margin: 0; opacity: 0.95;">用歷史 K 線重播之前嘅判決, 對比之後 5 / 10 / 20 日真實升咗幾多</p>`;
+    html += `<p style="margin: 4px 0 0 0; opacity: 0.85; font-size: 13px;">📊 ${symbol} · <span class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_folds}">${folds.length} 段滾動驗證</span> · <span class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_samples}">${overall.totalValidateSamples} 個真實樣本</span></p>`;
     html += `</div>`;
 
-    // ===== Section 2: 最佳參數 (帶 Kelly pie chart 9.7.2) =====
+    // ===== Section 2: 最佳參數 (帶 Kelly pie chart 9.7.2, 大少 2026-08-13 — keyword 全部加 m9-verdict-tooltip) =====
     html += `<h4 style="margin: 16px 0 8px 0; color: #333;">🎯 呢隻股票嘅最佳參數</h4>`;
     const kellyPct = overall.bestParams.kelly * 100;
     const kellyColor = colorByKelly(overall.bestParams.kelly);
     html += `<div style="display: flex; gap: 12px; align-items: center; background: #f0f8ff; padding: 16px; border-radius: 12px; margin-bottom: 12px;">`;
 
-    // Kelly pie chart (SVG, 永遠 full show)
+    // Kelly pie chart (SVG, 永遠 full show, 大少 07:25 — 加 m9-verdict-tooltip)
     const kellyAngle = (overall.bestParams.kelly / 0.5) * 360;  // 0.5 = half (100%)
-    html += `<svg width="100" height="100" viewBox="0 0 100 100" style="flex-shrink: 0;">`;
+    html += `<svg class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_kelly_pie}" width="100" height="100" viewBox="0 0 100 100" style="flex-shrink: 0;">`;
     html += `<circle cx="50" cy="50" r="40" fill="#e0e0e0" />`;
     html += `<path d="M 50 10 A 40 40 0 ${kellyAngle > 180 ? 1 : 0} 1 ${50 + 40 * Math.sin(kellyAngle * Math.PI / 180)} ${50 - 40 * Math.cos(kellyAngle * Math.PI / 180)} L 50 50 Z" fill="${kellyColor}" />`;
     html += `<circle cx="50" cy="50" r="25" fill="white" />`;
@@ -9599,33 +9685,33 @@ export const backTestAdapter = {
     html += `</svg>`;
 
     html += `<div style="flex: 1; line-height: 1.6;">`;
-    html += `<p style="margin: 4px 0;"><b>建議倉位 (Kelly):</b> <span style="color: ${kellyColor}; font-weight: bold; font-size: 16px;">${kellyPct.toFixed(1)}%</span> ${kellyPct <= 15 ? '🛡️ 細倉穩陣' : kellyPct <= 30 ? '⚖️ 中倉平衡' : kellyPct <= 45 ? '⚡ 進取' : '🎲 大倉博一博'}</p>`;
-    html += `<p style="margin: 4px 0;"><b>RSI 情緒權重:</b> ${(overall.bestParams.rsiWeight * 100).toFixed(0)}%</p>`;
-    html += `<p style="margin: 4px 0;"><b>策略權重分配:</b> 均線 ${(overall.bestParams.ssiWeights.ma * 100).toFixed(0)}% · 高低點 ${(overall.bestParams.ssiWeights.hl * 100).toFixed(0)}% · 趨勢線 ${(overall.bestParams.ssiWeights.tl * 100).toFixed(0)}%</p>`;
+    html += `<p style="margin: 4px 0;"><b class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_kelly}">建議倉位 (Kelly):</b> <span class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_kelly_pct}" style="color: ${kellyColor}; font-weight: bold; font-size: 16px;">${kellyPct.toFixed(1)}%</span> ${kellyPct <= 15 ? '🛡️ 細倉穩陣' : kellyPct <= 30 ? '⚖️ 中倉平衡' : kellyPct <= 45 ? '⚡ 進取' : '🎲 大倉博一博'}</p>`;
+    html += `<p class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_rsi_weight}" style="margin: 4px 0;"><b>RSI 情緒權重:</b> ${(overall.bestParams.rsiWeight * 100).toFixed(0)}%</p>`;
+    html += `<p class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_ssi_weights}" style="margin: 4px 0;"><b>策略權重分配:</b> 均線 ${(overall.bestParams.ssiWeights.ma * 100).toFixed(0)}% · 高低點 ${(overall.bestParams.ssiWeights.hl * 100).toFixed(0)}% · 趨勢線 ${(overall.bestParams.ssiWeights.tl * 100).toFixed(0)}%</p>`;
     html += `</div></div>`;
 
-    // ===== Section 3: 整體表現 (帶 Walk-Forward bar chart 9.7.2) =====
+    // ===== Section 3: 整體表現 (帶 Walk-Forward bar chart 9.7.2, 大少 2026-08-13 — keyword 全部加 m9-verdict-tooltip) =====
     // 大少 2026-08-10 08:45 fix: 動態化 folds.length (之前 hard-coded "3 段滾動交叉驗證" 但 numFolds 已改 1)
     html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📊 整體表現 (${folds.length} 段滾動交叉驗證)</h4>`;
     const scoreColor = colorByScore(overall.avgValidateScore);
     const stabColor = colorByStability(overall.stabilityScore);
     html += `<div style="background: #f9f9f9; padding: 16px; border-radius: 12px; margin-bottom: 12px;">`;
 
-    // 4 個關鍵指標 (永遠 full show, 大少 11:57 永久 rule)
+    // 4 個關鍵指標 (永遠 full show, 大少 11:57 永久 rule, 2026-08-13 07:25 全部加 m9-verdict-tooltip)
     html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">`;
-    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: ${scoreColor};">${overall.avgValidateScore.toFixed(1)}</div><div style="font-size: 12px; color: #666;">平均驗證分數</div></div>`;
-    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: ${stabColor};">${(overall.stabilityScore * 100).toFixed(0)}%</div><div style="font-size: 12px; color: #666;">穩定度 (越接近 100% 越穩)</div></div>`;
-    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: #333;">${overall.totalValidateSamples}</div><div style="font-size: 12px; color: #666;">真實樣本數</div></div>`;
-    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: #333;">${folds.length}</div><div style="font-size: 12px; color: #666;">完成驗證段數</div></div>`;
+    html += `<div class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_avg_score}" style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: ${scoreColor};">${overall.avgValidateScore.toFixed(1)}</div><div style="font-size: 12px; color: #666;">平均驗證分數</div></div>`;
+    html += `<div class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_stability}" style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: ${stabColor};">${(overall.stabilityScore * 100).toFixed(0)}%</div><div style="font-size: 12px; color: #666;">穩定度 (越接近 100% 越穩)</div></div>`;
+    html += `<div class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_samples_box}" style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: #333;">${overall.totalValidateSamples}</div><div style="font-size: 12px; color: #666;">真實樣本數</div></div>`;
+    html += `<div class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_folds_box}" style="text-align: center; padding: 12px; background: white; border-radius: 8px;"><div style="font-size: 24px; font-weight: bold; color: #333;">${folds.length}</div><div style="font-size: 12px; color: #666;">完成驗證段數</div></div>`;
     html += `</div>`;
 
-    // ===== Section 4: Walk-Forward bar chart (SVG 9.7.2, 動態段數) =====
+    // ===== Section 4: Walk-Forward bar chart (SVG 9.7.2, 動態段數, 大少 2026-08-13 07:25 — 加 m9-verdict-tooltip) =====
     if (folds.length > 0) {
-      html += `<h5 style="margin: 16px 0 8px 0; color: #555;">🔀 每段驗證嘅表現 (藍 = 校準, 橙 = 真實)</h5>`;
+      html += `<h5 class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_wf_bar}" style="margin: 16px 0 8px 0; color: #555;">🔀 每段驗證嘅表現 (藍 = 校準, 橙 = 真實)</h5>`;
       const maxScore = Math.max(...folds.flatMap(f => [f.tuneScore, f.validateScore]), 100);
       const barW = 280 / folds.length - 8;
       const chartH = 120;
-      html += `<svg width="100%" height="${chartH + 30}" viewBox="0 0 300 ${chartH + 30}" style="background: white; border-radius: 8px; padding: 8px;">`;
+      html += `<svg class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_wf_bar}" width="100%" height="${chartH + 30}" viewBox="0 0 300 ${chartH + 30}" style="background: white; border-radius: 8px; padding: 8px;">`;
       // 標題
       folds.forEach((fold, i) => {
         const x = 10 + i * (barW + 8);
@@ -9644,20 +9730,20 @@ export const backTestAdapter = {
       html += `<line x1="0" y1="${chartH + 5}" x2="300" y2="${chartH + 5}" stroke="#ddd" />`;
       html += `</svg>`;
       html += `<div style="display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: #666;">`;
-      html += `<span>🟦 校準分 (用歷史 tune 出嘅分)</span><span>🟧 真實分 (用未來 validate 嘅分)</span>`;
+      html += `<span class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_tune_score}">🟦 校準分 (用歷史 tune 出嘅分)</span><span class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_validate_score}">🟧 真實分 (用未來 validate 嘅分)</span>`;
       html += `</div>`;
     }
     html += `</div>`;
 
-    // ===== Section 5: Walk-Forward 段細節表 (永遠 full show 9.7.3) =====
+    // ===== Section 5: Walk-Forward 段細節表 (永遠 full show 9.7.3, 大少 2026-08-13 07:25 — keyword 加 m9-verdict-tooltip) =====
     if (folds.length > 0) {
       html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📋 每段嘅最佳設定細節 (永遠 full show)</h4>`;
       html += `<table style="width:100%; border-collapse: collapse; margin-bottom: 12px; background: white; border-radius: 8px; overflow: hidden;">`;
-      html += `<tr style="background: #f5f5f5;"><th style="padding: 10px; text-align: left;">段</th><th style="padding: 10px; text-align: right;">建議倉位</th><th style="padding: 10px; text-align: right;">情緒權重</th><th style="padding: 10px; text-align: right;">校準分</th><th style="padding: 10px; text-align: right;">真實分</th><th style="padding: 10px; text-align: right;">樣本數</th></tr>`;
+      html += `<tr style="background: #f5f5f5;"><th class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_fold_n}" style="padding: 10px; text-align: left;">段</th><th style="padding: 10px; text-align: right;">建議倉位</th><th style="padding: 10px; text-align: right;">情緒權重</th><th class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_tune_score}" style="padding: 10px; text-align: right;">校準分</th><th class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_validate_score}" style="padding: 10px; text-align: right;">真實分</th><th style="padding: 10px; text-align: right;">樣本數</th></tr>`;
       for (const fold of folds) {
         const fColor = colorByScore(fold.validateScore);
         html += `<tr style="border-bottom: 1px solid #eee;">`;
-        html += `<td style="padding: 10px;">第 ${fold.foldIndex + 1} 段</td>`;
+        html += `<td class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_fold_n}" style="padding: 10px;">第 ${fold.foldIndex + 1} 段</td>`;
         html += `<td style="padding: 10px; text-align: right; color: ${colorByKelly(fold.bestParams.kelly)}; font-weight: bold;">${(fold.bestParams.kelly * 100).toFixed(1)}%</td>`;
         html += `<td style="padding: 10px; text-align: right;">${(fold.bestParams.rsiWeight * 100).toFixed(0)}%</td>`;
         html += `<td style="padding: 10px; text-align: right; color: #1890ff;">${fold.tuneScore.toFixed(1)}</td>`;
@@ -9668,16 +9754,16 @@ export const backTestAdapter = {
       html += `</table>`;
     }
 
-    // ===== Section 6: Forward return history (永遠 full show 9.7.3) =====
+    // ===== Section 6: Forward return history (永遠 full show 9.7.3, 大少 2026-08-13 07:25 — keyword 加 m9-verdict-tooltip) =====
     if (forwardReturnHistory.length > 0) {
       html += `<h4 style="margin: 16px 0 8px 0; color: #333;">📜 過往判決記錄 (永久累積, 永遠 full show)</h4>`;
       html += `<p style="font-size: 12px; color: #888; margin-bottom: 8px;">顯示最近 ${forwardReturnHistory.length} 條 (總共可能仲多, 全部永久保留)</p>`;
 
-      // 9.7.2 散點圖 SVG
+      // 9.7.2 散點圖 SVG (大少 07:25 — 加 m9-verdict-tooltip)
       const recent20 = forwardReturnHistory.slice(0, 20);
       const scatterW = 600;
       const scatterH = 140;
-      html += `<svg width="100%" height="${scatterH}" viewBox="0 0 ${scatterW} ${scatterH}" style="background: white; border-radius: 8px; padding: 8px;">`;
+      html += `<svg class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_scatter}" width="100%" height="${scatterH}" viewBox="0 0 ${scatterW} ${scatterH}" style="background: white; border-radius: 8px; padding: 8px;">`;
       // Y 軸 (0 中心線, ±10%)
       html += `<line x1="30" y1="${scatterH / 2}" x2="${scatterW - 10}" y2="${scatterH / 2}" stroke="#ddd" stroke-dasharray="3,3" />`;
       // 數據點
@@ -9697,14 +9783,14 @@ export const backTestAdapter = {
       html += `<text x="${scatterW / 2}" y="14" text-anchor="middle" font-size="11" fill="#333">5 日後回報分佈 (綠 = 升, 紅 = 跌)</text>`;
       html += `</svg>`;
 
-      // 詳細表
+      // 詳細表 (大少 07:25 — fwd5/fwd10/fwd20/hit 全部加 m9-verdict-tooltip)
       html += `<table style="width:100%; border-collapse: collapse; margin-top: 12px; background: white; border-radius: 8px; overflow: hidden; font-size: 13px;">`;
-      html += `<tr style="background: #f5f5f5;"><th style="padding: 8px; text-align: left;">日期</th><th style="padding: 8px; text-align: left;">行動</th><th style="padding: 8px; text-align: right;">5 日後</th><th style="padding: 8px; text-align: right;">10 日後</th><th style="padding: 8px; text-align: right;">20 日後</th></tr>`;
+      html += `<tr style="background: #f5f5f5;"><th style="padding: 8px; text-align: left;">日期</th><th style="padding: 8px; text-align: left;">行動</th><th class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_fwd5}" style="padding: 8px; text-align: right;">5 日後</th><th class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_fwd10}" style="padding: 8px; text-align: right;">10 日後</th><th class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_fwd20}" style="padding: 8px; text-align: right;">20 日後</th></tr>`;
       for (const r of forwardReturnHistory) {
         html += `<tr style="border-bottom: 1px solid #f0f0f0;">`;
         html += `<td style="padding: 8px;">${r.date}</td>`;
         html += `<td style="padding: 8px;">${r.action}</td>`;
-        html += `<td style="padding: 8px; text-align: right;">${r.fwd5 === null ? '—' : `${hitEmoji(r.hit)} ${r.fwd5 > 0 ? '+' : ''}${r.fwd5.toFixed(2)}%`}</td>`;
+        html += `<td class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_hit}" style="padding: 8px; text-align: right;">${r.fwd5 === null ? '—' : `${hitEmoji(r.hit)} ${r.fwd5 > 0 ? '+' : ''}${r.fwd5.toFixed(2)}%`}</td>`;
         html += `<td style="padding: 8px; text-align: right;">${r.fwd10 === null ? '—' : `${r.fwd10 > 0 ? '+' : ''}${r.fwd10.toFixed(2)}%`}</td>`;
         html += `<td style="padding: 8px; text-align: right;">${r.fwd20 === null ? '—' : `${r.fwd20 > 0 ? '+' : ''}${r.fwd20.toFixed(2)}%`}</td>`;
         html += `</tr>`;
@@ -9712,9 +9798,9 @@ export const backTestAdapter = {
       html += `</table>`;
     }
 
-    // ===== Section 7: 大少話你知 box (9.7.5 LLM hook placeholder) =====
+    // ===== Section 7: 大少話你知 box (9.7.5 LLM hook placeholder, 大少 2026-08-13 07:25 — 加 m9-verdict-tooltip) =====
     html += `<div style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); color: #333; padding: 16px 20px; border-radius: 12px; margin: 16px 0;">`;
-    html += `<h4 style="margin: 0 0 8px 0; font-size: 16px;">📖 大少話你知</h4>`;
+    html += `<h4 class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_advice}" style="margin: 0 0 8px 0; font-size: 16px;">📖 大少話你知</h4>`;
     // 9.7.5 用 stable 程度 + score 簡單人話解讀
     let advice = '';
     if (overall.avgValidateScore >= 70 && overall.stabilityScore >= 0.7) {
@@ -9730,14 +9816,14 @@ export const backTestAdapter = {
     html += `<p style="margin: 8px 0 0 0; font-size: 12px; opacity: 0.7;">🪝 將來可換成大語言模型 (OpenAI / MiniMax / Kimi), 而家用 rule 寫嘅簡單解讀</p>`;
     html += `</div>`;
 
-    // ===== Section 8: Apply to M8 button (9.7.6 真實可 click) =====
+    // ===== Section 8: Apply to M8 button (9.7.6 真實可 click, 大少 2026-08-13 07:25 — 掣加 m9-verdict-tooltip) =====
     html += `<h4 style="margin: 16px 0 8px 0; color: #333;">🔄 套用呢個設定落第八模組</h4>`;
     html += `<div style="background: #e8f5e9; padding: 16px; border-radius: 12px;">`;
     html += `<p style="margin: 4px 0;">✅ 最佳設定已經自動儲存落 per-symbol 快取 (30 日內有效)。</p>`;
     html += `<p style="margin: 4px 0; font-size: 13px; color: #555;">下次跑 <code>08 — AS-03-DEC</code> 嗰陣, 第八模組會自動用呢個設定 (取代默認)。</p>`;
     html += `<div style="display: flex; gap: 8px; margin-top: 12px;">`;
-    html += `<button id="m9-recalibrate-btn" onclick="window.__recalibrateM9Optimal && window.__recalibrateM9Optimal()" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">🔄 重新校準</button>`;
-    html += `<button id="m9-apply-btn" onclick="window.__applyM9OptimalToM8 && window.__applyM9OptimalToM8()" style="background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">📌 立即套用 (8) M8</button>`;
+    html += `<button id="m9-recalibrate-btn" class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_recalibrate}" onclick="window.__recalibrateM9Optimal && window.__recalibrateM9Optimal()" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">🔄 重新校準</button>`;
+    html += `<button id="m9-apply-btn" class="m9-verdict-tooltip" data-help="${M9_TOOLTIPS.m9_apply}" onclick="window.__applyM9OptimalToM8 && window.__applyM9OptimalToM8()" style="background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">📌 立即套用 (8) M8</button>`;
     html += `</div>`;
     html += `<p id="m9-action-status" style="margin: 8px 0 0 0; font-size: 12px; color: #666;"></p>`;
     html += `</div>`;
