@@ -6577,8 +6577,8 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
       `M1 v2.0 信心過低 (${(confidence * 100).toFixed(0)}%)`,
       {
         issue: `confidence = ${confidence.toFixed(4)} < 0.4`,
-        impact: 'M1 verdict 不可信',
-        fix: '橫行市況, 屬於正常',
+        impact: 'M1 verdict 不可信 (橫行判斷信心不足)',
+        fix: '橫行市況屬於正常, 唔代表演算法錯。M1 verdict 寫 sideways 但 confidence < 40%, 代表 M1 唔太 confident 呢個橫行判斷, 怕隨時有變化。確認橫行方法: 1) M1 嘅 maxSpreadPct 細過 thresholdPct 2) 短期均線斜率都接近 0 3) 成交量無明顯 expanding。如果市況明顯趨勢但 M1 verdict 寫 sideways, 檢查 kline data 視窗 (dataWindowDays) 夠唔夠長',
         context: { confidence },
       }
     ));

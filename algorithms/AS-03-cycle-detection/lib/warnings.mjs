@@ -124,8 +124,24 @@ export function formatWarningForCopy(warning) {
   }[warning.level] || '⚪ Unknown';
 
   const ctx = warning.debug?.context || {};
+  // 大少 2026-08-13 10:50 永久 rule: warning context 嘅 number value 統一 4 位小數 + 去 trailing zero
+  // 凡人話: 大少 Copy warning 畀我 debug 嗰陣, 0.276 同 0.2760 同 0.27600 應該都係顯示做 0.276, 唔好睇到唔同 precision 嘅 number 混淆
+  // - parseFloat(v.toFixed(4)) 自動去 trailing zero: 0.2760 → 0.276, 0.1234 → 0.1234, 5 → 5
+  // - Object value (e.g. markowitz_corr {dailyWeekly: 0.85, ...}) 唔處理 (object 內部 number 由 caller 控制)
   const contextLines = Object.keys(ctx).length
-    ? Object.entries(ctx).map(([k, v]) => `  - ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+    ? Object.entries(ctx).map(([k, v]) => {
+        let displayValue;
+        if (v === null || v === undefined) {
+          displayValue = v;
+        } else if (typeof v === 'object') {
+          displayValue = JSON.stringify(v);
+        } else if (typeof v === 'number') {
+          displayValue = parseFloat(v.toFixed(4));
+        } else {
+          displayValue = v;
+        }
+        return `  - ${k}: ${displayValue}`;
+      })
     : ['  - (no context)'];
 
   return [
