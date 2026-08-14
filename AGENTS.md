@@ -272,6 +272,23 @@ if existing_history is not None:
 - 大少 trigger (2026-08-13 07:23):「你先把M9都一樣加上Popup註解, 要全面化, 普通話無英文, 講人話」
 - 對應 commit: 9f72b113 (feat(m9-rendering): M9 popup 註解全面化)
 
+### dataWindowDays 默認值永久 rule (大少 2026-08-14 23:15)
+
+**凡人話解釋**: testing page 撳跑 algorithm 嗰陣, 永遠用 5 年 K 線 (1260 日), 唔再用 100 日 (5 個月) 默認值。
+
+**永久 rule**:
+- testing page 默認 `dataWindowDays` = 1260 (5 年, 對齊 M9 設定), 唔再係 100
+- M1 v0.3.0 zmen + M9 algorithm 移除 `CONFIG_DEFAULTS` trigger, 因為 trigger 條件 (`=== 100` 或 `=== 1260`) 永遠會 trigger 變廢話
+- 原因: 「用咗默認值」呢個 warning 對 user 冇 information value, 因為 testing page 永遠有 default value, user 自己揀 default 唔等於 user 冇自訂
+- 之後 M9 算法加 `auto-calibrate dataWindowDays` sub-task (9.8), 拎出嚟做 follow-up sprint
+
+**影響**:
+- 大少撳跑 zmen / M9 唔再見到 CONFIG_DEFAULTS warning (因為永遠唔 trigger)
+- 5 年 K 線對 long-history 股票 (騰訊/匯豐/中芯) 夠, verdict 更準
+- 對短-history 股票 (新上市), user 自行調小 dataWindowDays (e.g. 60/252)
+
+對應 commit: 即將 push (dataWindowDays 默認 100 → 1260 + CONFIG_DEFAULTS trigger 移除)
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`

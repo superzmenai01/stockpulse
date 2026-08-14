@@ -84,7 +84,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-14 11:33 Warning v1.1.0 — 2 banner 分類: ALGO_CACHE_BUST = '4.6.0' (warnings.mjs 加 WARNING_CATEGORIES (15 個 code 分 system / stock_state) + CATEGORY_DISPLAY (2 種 template) + renderWarningBanners() render 2 個獨立 banner (🔧 系統 + 📊 股票狀態) + formatWarningForCopy / formatAllWarningsForCopy 加 category label, renderWarningBanner() 保留 backward compat, 凡人話: 大少一眼分到「呢個係 verdict 唔可信」定「呢個係股票狀態提示」)
 // 大少 2026-08-14 12:10 Warning v1.1.0 — 統一 13 個 warning 注入點 template: ALGO_CACHE_BUST = '4.6.1' (adapter.mjs 28 個 makeWarning 注入點嘅 impact 同 fix 統一跟 CATEGORY_DISPLAY template, system 「Verdict 唔可信, 唔好落單」/ 「Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc」, stock_state 「Verdict 已經準確, 留意股票狀態」/ 「睇其他 module 確認 / 留意 M7 alignment」, issue 保留各 module 嘅 specific context, 凡人話: 大少見到 impact 即知 verdict 信唔信, 唔使再讀各 module 自己寫嘅 string)
 // 大少 2026-08-14 14:44 Popup 用語專業化: ALGO_CACHE_BUST = '4.6.2' (M7 grade tooltip 改「學校評分制」做「Grade 評分制」+ 跟美股標普評級同 standard credit rating 邏輯, 凡人話: 大少見到「學校」呢啲 casual 詞覺得唔專業, 改用 standard financial industry 用語)
-const ALGO_CACHE_BUST = '4.6.2';
+// 大少 2026-08-14 23:15 dataWindowDays 默認 100 → 1260 + 移除 CONFIG_DEFAULTS trigger: ALGO_CACHE_BUST = '4.6.3' (testing page 默認值 100 → 1260, M1 v0.3.0 zmen + M9 移除 CONFIG_DEFAULTS trigger 因為 default 永遠等於 trigger 條件, warning 永遠 trigger 變廢話, 凡人話: 大少撳跑 zmen / M9 唔再見到 CONFIG_DEFAULTS 呢個廢話 warning, 跟住揀項 1 嘅 M9 auto-calibrate dataWindowDays 拎出嚟做 follow-up sprint)
+const ALGO_CACHE_BUST = '4.6.3';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -662,11 +663,10 @@ async function runAlgorithm() {
 
   try {
     // 1. Fetch K 線 from backend
+    // 大少 2026-08-14 23:15 — 永久 rule: dataWindowDays 默認值 100 → 1260 (5 年, 對 long-history 股票最 safe, 唔再 trigger CONFIG_DEFAULTS warning)
     const code = currentOptions.code;
     const period = currentOptions.period || '1d';
-    const count = currentOptions.dataWindowDays || 100;
-
-    const klineUrl = `${BACKEND_URL}/api/kline?code=${encodeURIComponent(code)}&period=${period}&count=${count}`;
+    const count = currentOptions.dataWindowDays || 1260;
     const klineResp = await fetch(klineUrl);
 
     if (!klineResp.ok) {
@@ -942,9 +942,10 @@ async function runFullChain() {
 
   try {
     // 2. 拎 K 線
+    // 大少 2026-08-14 23:15 — 永久 rule: dataWindowDays 默認值 100 → 1260 (5 年, 對 long-history 股票最 safe, 唔再 trigger CONFIG_DEFAULTS warning)
     const code = currentOptions.code;
     const period = currentOptions.period || '1d';
-    const count = currentOptions.dataWindowDays || 100;
+    const count = currentOptions.dataWindowDays || 1260;
     const klineUrl = `${BACKEND_URL}/api/kline?code=${encodeURIComponent(code)}&period=${period}&count=${count}`;
     const klineResp = await fetch(klineUrl);
     if (!klineResp.ok) {

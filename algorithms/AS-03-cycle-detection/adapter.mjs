@@ -79,11 +79,11 @@ export const inputs = [
   },
   {
     key: 'dataWindowDays',
-    label: '取數據日數',
+    label: '取數據日數 (5 年 K 線, 對齊 M9, 永久 rule: 大少 2026-08-14 23:15)',
     type: 'number',
-    default: 100,
+    default: 1260,
     min: 90,
-    max: 500,
+    max: 1260,
   },
   {
     key: 'consecutiveDays',
@@ -485,18 +485,9 @@ async function runMAAlignment(klines, options = {}) {
       }
     ));
   }
-  // Config defaults check
-  if (cfg.dataWindowDays === 100) {
-    m1Warnings.push(makeWarning('info', 'M1', 'CONFIG_DEFAULTS',
-      '用咗 dataWindowDays default 100',
-      {
-        issue: 'dataWindowDays = 100 (default), 唔係用戶自訂',
-        impact: 'Verdict 唔可信, 唔好落單',
-        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-        context: { data_window_days: 100 },
-      }
-    ));
-  }
+  // 大少 2026-08-14 23:15 — 永久 rule: 移除 CONFIG_DEFAULTS trigger (因為 testing page 默認 1260, user 永遠唔再「冇自訂」呢個 state, warning 已經多餘)
+  // 之前: if (cfg.dataWindowDays === 100) → trigger CONFIG_DEFAULTS warning
+  // 之後: 永遠唔 trigger (user 喺 testing page 自己揀 default = 1260, 唔需要 system 提)
 
   return {
     moduleId: 'ma-alignment',
@@ -9508,17 +9499,9 @@ export const backTestAdapter = {
         }
       ));
     }
-    if (options.dataWindowDays === undefined || options.dataWindowDays === 1260) {
-      m9Warnings.push(makeWarning('info', 'M9', 'CONFIG_DEFAULTS',
-        'dataWindowDays 用咗 default 1260 (4 年)',
-        {
-          issue: 'dataWindowDays = 1260 (default), 唔係用戶自訂',
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { data_window_days: options.dataWindowDays ?? 1260 },
-        }
-      ));
-    }
+    // 大少 2026-08-14 23:15 — 永久 rule: 移除 CONFIG_DEFAULTS trigger (因為 testing page 默認 1260, user 永遠唔再「冇自訂」呢個 state, warning 已經多餘)
+    // 之前: if (options.dataWindowDays === undefined || options.dataWindowDays === 1260) → trigger CONFIG_DEFAULTS warning
+    // 之後: 永遠唔 trigger (user 喺 testing page 自己揀 default = 1260, 唔需要 system 提)
 
     return {
       symbol,
