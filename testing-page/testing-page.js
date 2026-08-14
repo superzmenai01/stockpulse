@@ -83,7 +83,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-13 10:50 M1 fix 詳細 + context 統一 precision: ALGO_CACHE_BUST = '4.5.5' (B: M1 v2.0 THRESHOLD_BREACH warning 嘅 fix message 改詳細 (解釋「唔代表演算法錯」+ 確認橫行方法 3 步 + 檢查 dataWindowDays) + C: formatWarningForCopy 對 number context value 統一 4 位小數 + 去 trailing zero (parseFloat(toFixed(4))), object 仍然 JSON.stringify)
 // 大少 2026-08-14 11:33 Warning v1.1.0 — 2 banner 分類: ALGO_CACHE_BUST = '4.6.0' (warnings.mjs 加 WARNING_CATEGORIES (15 個 code 分 system / stock_state) + CATEGORY_DISPLAY (2 種 template) + renderWarningBanners() render 2 個獨立 banner (🔧 系統 + 📊 股票狀態) + formatWarningForCopy / formatAllWarningsForCopy 加 category label, renderWarningBanner() 保留 backward compat, 凡人話: 大少一眼分到「呢個係 verdict 唔可信」定「呢個係股票狀態提示」)
 // 大少 2026-08-14 12:10 Warning v1.1.0 — 統一 13 個 warning 注入點 template: ALGO_CACHE_BUST = '4.6.1' (adapter.mjs 28 個 makeWarning 注入點嘅 impact 同 fix 統一跟 CATEGORY_DISPLAY template, system 「Verdict 唔可信, 唔好落單」/ 「Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc」, stock_state 「Verdict 已經準確, 留意股票狀態」/ 「睇其他 module 確認 / 留意 M7 alignment」, issue 保留各 module 嘅 specific context, 凡人話: 大少見到 impact 即知 verdict 信唔信, 唔使再讀各 module 自己寫嘅 string)
-const ALGO_CACHE_BUST = '4.6.1';
+// 大少 2026-08-14 14:44 Popup 用語專業化: ALGO_CACHE_BUST = '4.6.2' (M7 grade tooltip 改「學校評分制」做「Grade 評分制」+ 跟美股標普評級同 standard credit rating 邏輯, 凡人話: 大少見到「學校」呢啲 casual 詞覺得唔專業, 改用 standard financial industry 用語)
+const ALGO_CACHE_BUST = '4.6.2';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----

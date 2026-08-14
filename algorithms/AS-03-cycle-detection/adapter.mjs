@@ -8078,7 +8078,7 @@ const TOOLTIPS = {
   rsi_neutral: '普通狀態(30-70),冇超買超賣,正常',
   unconfirmed: '0 個 evidence 確認(默認橫行)。唔等於「100% 唔會」,係「冇 data」',
   flat: 'SIDEWAYS 預期 0% return(唔賺唔蝕)',
-  grade: '學校評分制 8 級(A+ = 頂級 / A = 優 / B+ = 良 / B = 可 / C+ = 普通 / C = 弱 / D = 差 / F = 失敗)',
+  grade: 'Grade 評分制 8 級(A+ = 頂級 / A = 優 / B+ = 良 / B = 可 / C+ = 普通 / C = 弱 / D = 差 / F = 失敗), 跟美股標普評級同 standard credit rating 邏輯',
   ssi_label: 'Strategic Strength Index 戰略強度指數(0-100,3 個戰略演算法共識強度)',
   ssi_consistency: '戰略組 3 個演算法(均線+峰谷+趨勢線)睇法有幾一致(100%=3 個都話一樣,0%=3 個各講各的)',
   ssi_confidence: '戰略組 3 個演算法平均信心(0-100%,高=3 個都肯定,低=3 個都唔太肯定)',
