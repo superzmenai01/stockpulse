@@ -451,8 +451,8 @@ async function runMAAlignment(klines, options = {}) {
       '數據不足以跑 MA alignment',
       {
         issue: `kline count ${klines.length} < ${cfg.minDataDays} required`,
-        impact: '10 條 rule (A-J) 全部無法 compute, MA alignment verdict 唔可信',
-        fix: '增加 dataWindowDays 設定 (e.g. count=200) 或 fallback 至 v0.3.0 zmen 均算法',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { kline_count: klines.length, min_required: cfg.minDataDays, period: cfg.period },
       }
     ));
@@ -467,8 +467,8 @@ async function runMAAlignment(klines, options = {}) {
       'MA 計算結果 NaN',
       {
         issue: `${nanMAs.join('/')} 結果係 NaN 或 Infinity`,
-        impact: 'State 推導會 fallback SIDEWAYS, 信心 = 0',
-        fix: '檢查 klines 數據 (可能有負數 OHLC, missing data), 試 count 設定大啲',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { nan_mas: nanMAs, ma5: ma5History[ma5History.length - 1], ma10: ma10History[ma10History.length - 1], ma60: ma60History[ma60History.length - 1] },
       }
     ));
@@ -479,8 +479,8 @@ async function runMAAlignment(klines, options = {}) {
       '10 條 rule 全部 fail, fallback SIDEWAYS',
       {
         issue: 'matchedRules.length = 0 (A-J rule 全部唔 trigger)',
-        impact: 'MA alignment verdict 默認 SIDEWAYS, 信心 = 0, 對 M7 综合判定有偏差',
-        fix: '屬於橫行市況正常, 可以忽略; 如果市況明顯趨勢但 verdict 顯示 SIDEWAYS, 檢查 klines 數據',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { matched_rules: 0, period: cfg.period, kline_count: recent.length },
       }
     ));
@@ -491,8 +491,8 @@ async function runMAAlignment(klines, options = {}) {
       '用咗 dataWindowDays default 100',
       {
         issue: 'dataWindowDays = 100 (default), 唔係用戶自訂',
-        impact: '如果股票歷史少過 100 日, verdict 會 INSUFFICIENT_DATA',
-        fix: '可調大到 200/500/1260 (M9 back test 用)',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { data_window_days: 100 },
       }
     ));
@@ -2191,8 +2191,8 @@ export async function analyzeVolumePrice(klines, options = {}) {
       'klines 為空',
       {
         issue: 'klines array 為空或 undefined',
-        impact: 'M5 全部 verdict 拎唔到, propagation 落 M7 會 MODULE_PARTIAL',
-        fix: '確認 kline endpoint 有返 data, e.g. /api/kline?code=HK.00700&period=1d&count=100',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { kline_count: klines?.length ?? 0 },
       }
     ));
@@ -2203,8 +2203,8 @@ export async function analyzeVolumePrice(klines, options = {}) {
         'volume 全部 0',
         {
           issue: `${zeroVolCount}/${klines.length} 條 klines volume 係 0`,
-          impact: '量價分析 verdict 唔可信 (acc/dist score 都係 0)',
-          fix: '檢查 kline endpoint volume 數據, 試另一個 period (1d → 1w)',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { zero_volume_count: zeroVolCount, total_count: klines.length },
         }
       ));
@@ -2216,7 +2216,7 @@ export async function analyzeVolumePrice(klines, options = {}) {
         'outstanding_shares = 0',
         {
           issue: 'outstanding_shares 拎唔到, turnover_rate fallback 0',
-          impact: '換手率分析 verdict 唔可信',
+          impact: 'Verdict 唔可信, 唔好落單',
           fix: '檢查 Futu get_market_snapshot() 有冇返 outstanding_shares, 美股 / 港股新 IPO 可能拎唔到',
           context: { outstanding_shares: 0 },
         }
@@ -2811,7 +2811,7 @@ export async function analyzeVolatility(klines, options = {}) {
         '數據不足以跑波動率分析',
         {
           issue: `klines count ${klines?.length || 0} < ${minData} required`,
-          impact: 'M6 verdict fallback SIDEWAYS, 對 M7 综合判定偏差',
+          impact: 'Verdict 唔可信, 唔好落單',
           fix: '增加 dataWindowDays 設定 (e.g. count=200)',
           context: { kline_count: klines?.length || 0, min_required: minData, period: options.period },
         })],
@@ -3601,8 +3601,8 @@ async function analyzeHLStructure(klines, options) {
         '峰谷全部拎唔到 (價格完全無變化)',
         {
           issue: 'peakIdxs.length = 0 AND troughIdxs.length = 0 (價格完全無變化)',
-          impact: 'M2 verdict fallback SIDEWAYS, 對 M7 综合判定偏差',
-          fix: '檢查 kline data, 確認有實際價格變化, 可能要重新 fetch kline',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { peak_count: 0, trough_count: 0, period: options.period },
         })],
     };
@@ -3822,7 +3822,7 @@ async function analyzeHLStructure(klines, options) {
       '峰谷全部拎唔到',
       {
         issue: 'peakExts.length = 0 AND troughExts.length = 0',
-        impact: 'M2 verdict fallback SIDEWAYS, 對 M7 综合判定偏差',
+        impact: 'Verdict 唔可信, 唔好落單',
         fix: '增加 dataWindowDays 設定 (e.g. count=200), 確認 data 有高低點變化',
         context: { peak_count: 0, trough_count: 0, period: options.period },
       }
@@ -3834,8 +3834,8 @@ async function analyzeHLStructure(klines, options) {
       `峰谷總數 ${peakExts.length + troughExts.length} < ${cfg.minPairs * 2}`,
       {
         issue: `峰谷總數 ${peakExts.length + troughExts.length} < ${cfg.minPairs * 2} required`,
-        impact: '結構判斷唔夠 pairs, 對 cycle 判定有偏差',
-        fix: '增加 dataWindowDays 拎更多峰谷',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { peak_count: peakExts.length, trough_count: troughExts.length, min_pairs: cfg.minPairs },
       }
     ));
@@ -4578,8 +4578,8 @@ export async function analyzeTrendline(klines, options = {}) {
           '趨勢線全部 fail',
           {
             issue: 'matchedRules.length = 0',
-            impact: 'M3 verdict 默認 SIDEWAYS',
-            fix: '正常橫行市況',
+            impact: 'Verdict 唔可信, 唔好落單',
+            fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
             context: { matched_rules: 0 },
           }
         ));
@@ -5767,8 +5767,8 @@ function _indicatorsDetect(klines, config, symbol, timeframe) {
           'MACD 計算結果 NaN',
           {
             issue: 'macd 結果係 NaN 或 Infinity',
-            impact: 'MACD verdict 拎唔到',
-            fix: '檢查 MACD 計算邏輯',
+            impact: 'Verdict 唔可信, 唔好落單',
+            fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
             context: { macd: macdLatest },
           }
         ));
@@ -5780,12 +5780,12 @@ function _indicatorsDetect(klines, config, symbol, timeframe) {
       if (rsiLatest != null && (rsiLatest < 0 || rsiLatest > 100)) {
         m4Warnings.push(makeWarning('warning', 'M4', 'OUTLIER_VALUE',
           'RSI 超出範圍',
-          { issue: `rsi = ${rsiLatest}`, impact: 'RSI 唔可信', fix: '檢查 kline', context: { rsi: rsiLatest } }));
+          { issue: `rsi = ${rsiLatest}`, impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { rsi: rsiLatest } }));
       }
       if (macdLatest != null && !isFinite(macdLatest)) {
         m4Warnings.push(makeWarning('critical', 'M4', 'NAN_RESULT',
           'MACD NaN',
-          { issue: 'macd NaN', impact: 'MACD 拎唔到', fix: '檢查', context: { macd: macdLatest } }));
+          { issue: 'macd NaN', impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { macd: macdLatest } }));
       }
       return m4Warnings;
     })(),
@@ -6347,8 +6347,8 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
         '數據不足以跑 M1 v2.0 MA Alignment',
         {
           issue: `klines count ${klines.length} < ${requiredLength} required`,
-          impact: '10 條 rule (A-J) 全部無法 compute, M1 verdict 唔可信',
-          fix: '增加 dataWindowDays 設定 (e.g. count=200)',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { kline_count: klines.length, min_required: requiredLength },
         })],
       meta: {
@@ -6565,8 +6565,8 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
       'M1 v2.0 cycle = sideways 默認',
       {
         issue: 'M1 v2.0 cycle 推導結果 = sideways (無明確 rule match)',
-        impact: 'M1 verdict 默認 SIDEWAYS, 對 M7 综合判定有偏差',
-        fix: '正常橫行市況; 如果市況明顯趨勢但 verdict SIDEWAYS, 檢查 kline data',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { candidate: 'sideways', period: '1d' },
       }
     ));
@@ -6576,9 +6576,9 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     m1v2Warnings.push(makeWarning('warning', 'M1', 'THRESHOLD_BREACH',
       `M1 v2.0 信心過低 (${(confidence * 100).toFixed(0)}%)`,
       {
-        issue: `confidence = ${confidence.toFixed(4)} < 0.4`,
-        impact: 'M1 verdict 不可信 (橫行判斷信心不足)',
-        fix: '橫行市況屬於正常, 唔代表演算法錯。M1 verdict 寫 sideways 但 confidence < 40%, 代表 M1 唔太 confident 呢個橫行判斷, 怕隨時有變化。確認橫行方法: 1) M1 嘅 maxSpreadPct 細過 thresholdPct 2) 短期均線斜率都接近 0 3) 成交量無明顯 expanding。如果市況明顯趨勢但 M1 verdict 寫 sideways, 檢查 kline data 視窗 (dataWindowDays) 夠唔夠長',
+        issue: `confidence = ${confidence.toFixed(4)} < 0.4 (橫行判斷信心不足, 短期均線斜率有動 / 量縮)`,
+        impact: 'Verdict 已經準確, 留意股票狀態',
+        fix: '睇其他 module 確認 / 留意 M7 alignment',
         context: { confidence },
       }
     ));
@@ -7283,8 +7283,8 @@ export async function analyzeDecisionEngine(klines, options = {}) {
       'M7 綜合判定計算結果 NaN',
       {
         issue: `${nanFields.join('/')} 結果係 NaN 或 Infinity`,
-        impact: 'Grade / SSI / Alignment 全部 fallback, M8 綜合判斷會 base on fallback verdict',
-        fix: '檢查 6 個 module verdict 數值, 可能其中 1+ 個已經有 NAN_RESULT warning',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { nan_fields: nanFields, ssi_score, alignment_score, grade_score },
       }
     ));
@@ -7296,8 +7296,8 @@ export async function analyzeDecisionEngine(klines, options = {}) {
       `6 個 module 入面拎唔到 ${6 - validVerdicts.length} 個`,
       {
         issue: `standardVerdicts.length = ${validVerdicts.length} < 6`,
-        impact: 'SSI / Alignment 計算 partial, Grade 可能有偏差',
-        fix: '睇下 M1-M6 個別 verdict 嘅 _warnings, 拎唔到嘅 module 會有 critical warning',
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { valid_count: validVerdicts.length, missing: 6 - validVerdicts.length },
       }
     ));
@@ -8567,8 +8567,8 @@ export const decisionEngineAdapter = {
           '5 個 MA trigger 全部 false',
           {
             issue: 'ma5StopTriggered / ma5BreakDay1 / ma5BreakDay2 / ma20Break / ma5RetestSuccess 全部 false',
-            impact: '中長線無明確進出場信號, verdict 維持 TRANSITION/WAIT',
-            fix: '可能市場橫行, 屬於正常; 如果市況明顯趨勢但 trigger 全 false, 檢查 computeMA',
+            impact: 'Verdict 已經準確, 留意股票狀態',
+            fix: '睇其他 module 確認 / 留意 M7 alignment',
             context: { triggers: cycleSynth.triggers },
           }
         ));
@@ -8580,8 +8580,8 @@ export const decisionEngineAdapter = {
         'adaptive_params 計算失敗 (L2 cache 無效)',
         {
           issue: 'calibrateAdaptiveParams() return null',
-          impact: '5 個 adaptive params 全部 fallback default, M8 verdict 唔可靠',
-          fix: '檢查 calibrateAdaptiveParams() 邏輯, 確認 klines 入面有足夠 data',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { symbol },
         }
       ));
@@ -8592,8 +8592,8 @@ export const decisionEngineAdapter = {
         `L2 cache 超過 5 日 (${Math.round(cacheInfo.age_seconds / 3600)} 小時)`,
         {
           issue: `cache age = ${Math.round(cacheInfo.age_seconds / 3600)} 小時 (> 5 日, 7 日內將過期)`,
-          impact: 'adaptive params 開始 stale, 自動 re-calibrate 將 trigger',
-          fix: '可主動撳「🔄 重新校準」button 立即 trigger',
+          impact: 'Verdict 已經準確, 留意股票狀態',
+          fix: '睇其他 module 確認 / 留意 M7 alignment',
           context: { age_hours: Math.round(cacheInfo.age_seconds / 3600) },
         }
       ));
@@ -8604,8 +8604,8 @@ export const decisionEngineAdapter = {
         'strategyMode 用咗 default 「中長線」',
         {
           issue: '用戶冇指定 strategyMode, 用 default 中長線',
-          impact: '想用短炒要手動切換',
-          fix: 'dropdown 揀「短炒」可手動切換',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { default_strategy: 'position' },
         }
       ));
@@ -8618,9 +8618,9 @@ export const decisionEngineAdapter = {
         m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
           `Hurst persistent > 0.95 強趨勢 (${hurstThresholds.persistent.toFixed(3)})`,
           {
-            issue: `hurstThresholds.persistent = ${hurstThresholds.persistent.toFixed(3)} > 0.95 (極端)`,
-            impact: '可能係 data 太短 / noise 太少, 強趨勢判斷要小心',
-            fix: '增加 dataWindowDays 拎更多 samples, 確認 Hurst 計算無 bug',
+            issue: `hurstThresholds.persistent = ${hurstThresholds.persistent.toFixed(3)} > 0.95 (極端, 可能 data 太短 / noise 太少)`,
+            impact: 'Verdict 已經準確, 留意股票狀態',
+            fix: '睇其他 module 確認 / 留意 M7 alignment',
             context: { hurst_persistent: hurstThresholds.persistent, hurst_reverting: hurstThresholds.reverting },
           }
         ));
@@ -8630,9 +8630,9 @@ export const decisionEngineAdapter = {
         m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
           `Hurst reverting < 0.05 強反轉 (${hurstThresholds.reverting.toFixed(3)})`,
           {
-            issue: `hurstThresholds.reverting = ${hurstThresholds.reverting.toFixed(3)} < 0.05 (極端)`,
-            impact: '可能係 data 太短, 反轉判斷要小心',
-            fix: '增加 dataWindowDays 拎更多 samples',
+            issue: `hurstThresholds.reverting = ${hurstThresholds.reverting.toFixed(3)} < 0.05 (極端, 可能 data 太短)`,
+            impact: 'Verdict 已經準確, 留意股票狀態',
+            fix: '睇其他 module 確認 / 留意 M7 alignment',
             context: { hurst_persistent: hurstThresholds.persistent, hurst_reverting: hurstThresholds.reverting },
           }
         ));
@@ -8658,8 +8658,8 @@ export const decisionEngineAdapter = {
           'Kelly 八分一倉 (高波動)',
           {
             issue: `kellyFraction = 'octo' (1/8 = 12.5%), 自動切到高波動倉位`,
-            impact: '波動大, 倉位自動收細保護',
-            fix: '正常, 唔使特別處理; 如果想加倉, 確認風險承受能力',
+            impact: 'Verdict 唔可信, 唔好落單',
+            fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
             context: { kelly_fraction: kellyFraction, kelly_numeric: 0.125 },
           }
         ));
@@ -8671,9 +8671,9 @@ export const decisionEngineAdapter = {
           m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
             `馬可維茨平均相關係數 > 0.8 (${avgCorr.toFixed(3)}, 分散風險低)`,
             {
-              issue: `3 個時段 (日/週/月) 平均相關係數 = ${avgCorr.toFixed(3)} > 0.8`,
-              impact: '日/週/月 走勢高度同步, 多 timeframe 分散效果低',
-              fix: '可能係 data 期間市況單調, 試多啲 period 或加長 dataWindowDays',
+              issue: `3 個時段 (日/週/月) 平均相關係數 = ${avgCorr.toFixed(3)} > 0.8 (市況單調, 多 timeframe 分散效果低)`,
+              impact: 'Verdict 已經準確, 留意股票狀態',
+              fix: '睇其他 module 確認 / 留意 M7 alignment',
               context: { markowitz_corr: markowitzCorr, avg_abs_corr: avgCorr },
             }
           ));
@@ -9460,7 +9460,7 @@ export const backTestAdapter = {
         'Walk-Forward CV 完全 fail, 0 個 fold',
         {
           issue: 'walkForwardResult.folds.length = 0',
-          impact: 'M9 全部 optimal 拎唔到, 對 M8 套用會 fallback default',
+          impact: 'Verdict 唔可信, 唔好落單',
           fix: '檢查 kline count 足唔足 (≥ 126 日), runReplay 邏輯, 跑時有冇 exception',
           context: { folds_count: 0, total_validate_samples: optimal.totalValidateSamples },
         }
@@ -9470,8 +9470,8 @@ export const backTestAdapter = {
         '0 validate samples (M9 結果唔可靠)',
         {
           issue: 'totalValidateSamples = 0 (即使 folds.length > 0)',
-          impact: 'Walk-Forward CV 結果冇 statistical significance, M9 結論唔可信',
-          fix: '大少 10:35 fix: 調大 numFolds / tuneRatio 確保 tune verdict 過 bar gate (HLStructure 99 條)',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { folds_count: walkForwardResult.folds.length, total_validate_samples: 0 },
         }
       ));
@@ -9480,8 +9480,8 @@ export const backTestAdapter = {
         `validate samples 偏少 (${optimal.totalValidateSamples} 個)`,
         {
           issue: `totalValidateSamples = ${optimal.totalValidateSamples} < 10`,
-          impact: '統計意義唔足, M9 結論要小心睇',
-          fix: '增加 dataWindowDays 設定 (e.g. 1260 → 2520) 拎更多 samples',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { total_validate_samples: optimal.totalValidateSamples, recommended: '>= 30' },
         }
       ));
@@ -9491,8 +9491,8 @@ export const backTestAdapter = {
         `${postErrors.length} 個 forward return POST 失敗`,
         {
           issue: 'POST 落 /api/adaptive-params/{symbol}/forward-return 失敗',
-          impact: 'forward_return_history 累積唔到, Stage 1+ Stream B 數據缺失',
-          fix: '大少 10:35 fix: 加 response.ok check + UI banner 顯示, 檢查 backend 18792 port',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { failed_count: postErrors.length, sample_error: postErrors[0] },
         }
       ));
@@ -9502,8 +9502,8 @@ export const backTestAdapter = {
         `forward_return_history 累積樣本少 (${forwardReturnHistory.length} 個)`,
         {
           issue: `forwardReturnHistory.length = ${forwardReturnHistory.length} < 3`,
-          impact: 'Stage 1+ Stream B 命中率統計暫時冇意義',
-          fix: '正常, 多跑幾次 M9 累積更多 samples, 或多寫 trade journal entries',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { history_count: forwardReturnHistory.length, recommended: '>= 30' },
         }
       ));
@@ -9513,8 +9513,8 @@ export const backTestAdapter = {
         'dataWindowDays 用咗 default 1260 (4 年)',
         {
           issue: 'dataWindowDays = 1260 (default), 唔係用戶自訂',
-          impact: '可能用戶想用 2520 (8 年) 但忘記設定',
-          fix: '可調大到 2520 (8 年) 拎更多 samples',
+          impact: 'Verdict 唔可信, 唔好落單',
+          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
           context: { data_window_days: options.dataWindowDays ?? 1260 },
         }
       ));

@@ -914,3 +914,17 @@ export interface ReasonEntry {
 | J | 有機會長跌狀態 (大少 #10301/#10317) | 連續 5 日 high ≤ MA5 × (1 + 2%) | supplementary |
 
 **Status**：Module 1 (ma-alignment) done, 19/19 tests pass, TSC=0
+
+### Module Warning v1.1.0 — 2 Banner 分類 (大少 2026-08-14 11:33, Spec Sync #18)
+
+**永久 rule**:
+- Warning 永久分 2 個 category: 🔧 system (12 個, verdict 可能唔可信) + 📊 stock_state (3 個, verdict 已經準確)
+- 2 個 category 永遠 render 2 個獨立 banner (`renderWarningBanners()` 喺 `lib/warnings.mjs`)
+- 13 個 warning code 嘅 `impact`/`fix` 統一跟 `CATEGORY_DISPLAY` template
+- `issue` 保留各 module 嘅 specific context
+
+**Template 統一**:
+- system impact: `Verdict 唔可信, 唔好落單` / fix: `Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc`
+- stock_state impact: `Verdict 已經準確, 留意股票狀態` / fix: `睇其他 module 確認 / 留意 M7 alignment`
+
+對應 commit: 7ba21cc7 + 即將 push 嘅 Phase 4

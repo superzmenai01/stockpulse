@@ -53,6 +53,60 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 - ❌ WarningBanner 隱藏 (大少 11:57 永久 rule)
 - ❌ 用 string array warnings (統一用 ModuleWarning object)
 
+### Module Warning v1.1.0 — 2 Banner 分類 (大少 2026-08-14 11:33, Spec Sync #18)
+
+**大少 trigger**:「我想分開兩個警告, 一個是系統/演算法/數據等這些是會影響到正常結果的警告, 另一個是對股票狀態的提醒但前提下所有結果都是無問題和準確的」
+
+**2 個 category** (15 個 warning code 重新標記):
+- 🔧 **system** (12 個) — verdict 可能唔可信, 唔好落單:
+  - INSUFFICIENT_DATA / VERDICT_MISSING / NAN_RESULT / CACHE_INVALID / KLINE_MISSING
+  - MODULE_PARTIAL / OUTLIER_VALUE / LOW_SAMPLE_SIZE / POST_FAILED / FALLBACK_USED
+  - DATA_AGE / CONFIG_DEFAULTS
+- 📊 **stock_state** (3 個) — verdict 已經準確, 只係提示股票狀態:
+  - THRESHOLD_BREACH / CONFLICT_STATE / CACHE_EXPIRING
+
+**2 個獨立 banner** (大少 11:33 揀):
+- 頂部顯示 2 個 banner: 🔧 系統警告 (verdict 唔可信) + 📊 股票狀態 (verdict 準確)
+- 只有嗰 category 有 warning 嗰陣先 render (e.g. 只有 system → 只 render 1 個 🔧 banner)
+- 2 個 banner 獨立 toggle / Copy
+- `renderWarningBanner()` 保留 backward compat (deprecate, 內部 call `renderWarningBanners()`)
+
+**2 種 impact/fix template** (跟 `CATEGORY_DISPLAY` dict, 詳見 `lib/warnings.mjs`):
+- system impact: `Verdict 唔可信, 唔好落單`
+- system fix: `Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc`
+- stock_state impact: `Verdict 已經準確, 留意股票狀態`
+- stock_state fix: `睇其他 module 確認 / 留意 M7 alignment`
+
+**13 個 warning code 注入點統一 template** (大少 12:10 trigger):
+- 28 個 makeWarning 注入點 (`adapter.mjs`) 嘅 `impact` 同 `fix` 全部跟 template
+- `issue` 保留各 module 嘅 specific context (e.g. M1 嘅「橫行判斷信心不足, 短期均線斜率有動 / 量縮」、M8 Hurst 嘅「hurst > 0.95 極端」)
+- 凡人話: 大少見到 impact 即知 verdict 信唔信, 唔使再讀各 module 自己寫嘅 string
+- 永久 rule: 改 warning 注入點嗰陣, `issue` 必須保留 specific context, `impact`/`fix` 必須跟 template
+
+**Copy Markdown 加 category label**:
+```
+🚨 **StockPulse 警告** [🟡 Warning]
+- **Category**: 📊 **股票狀態** (verdict 已經準確)  ← v1.1.0 新加
+- **Module**: M1
+- **Code**: THRESHOLD_BREACH
+- **問題**: ...
+- **影響**: Verdict 已經準確, 留意股票狀態
+- **修復建議**: 睇其他 module 確認 / 留意 M7 alignment
+```
+
+**`formatAllWarningsForCopy()` 按 category 分組**:
+- 永遠 system 組喺前, stock_state 組喺後
+- 標題: `## 🔧 系統警告 (X 個) — verdict 可能唔可信` / `## 📊 股票狀態提醒 (Y 個) — verdict 已經準確`
+
+**永久 rule (v1.1.0 新加)**:
+- Warning 永久分 2 個 category (system / stock_state)
+- 2 個 category 永遠 render 2 個獨立 banner (唔合併)
+- 凡人話: 大少見到 🔧 系統警告 = verdict 唔可信, 唔好落單, 見到 📊 股票狀態 = verdict 已經準確, 只係狀態提示
+- 13 個 warning code 嘅 `impact`/`fix` 永久跟 CATEGORY_DISPLAY template, 唔再用各 module 自己寫
+- 改 warning 注入點嗰陣, `issue` 必須保留 specific context (唔好丟失「橫行判斷信心不足」、「Hurst > 0.95」呢啲具體訊號)
+
+對應 commit: 7ba21cc7 (Phase 1-3 infrastructure) + 即將 push 嘅 Phase 4 (統一 28 個注入點 template)
+
 ### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
 
 完整 chain: **M7(綜合) → M9(回測拎最佳設定) → M8(用最佳設定做最終判斷)**

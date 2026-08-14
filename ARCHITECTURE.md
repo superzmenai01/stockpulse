@@ -2324,3 +2324,27 @@ return = (actual_exit_price - entry_price) / entry_price
 ### Spec 永久 rule 收穫 (1 個 new rule)
 
 - **M11 整合 M9 + M10 永久 rule**: M11 嘅 data source 係 derived data (M9 forward return + M10 Trade Journal 永久 cache), 唔可以自己 cache result (因為 2 個 source 都永久保留, O(N) 重新計 OK, 唔可以 derive 完 cache 變 stale)。Spec doc §10.1 已經明記 cache policy。
+
+### Module Warning v1.1.0 — 2 Banner 分類 (大少 2026-08-14 11:33, Spec Sync #18)
+
+**Trigger**: 大少 trigger「我想分開兩個警告, 一個是系統/演算法/數據等這些是會影響到正常結果的警告, 另一個是對股票狀態的提醒但前提下所有結果都是無問題和準確的」
+
+**改動**:
+- `lib/warnings.mjs` 加 `WARNING_CATEGORIES` dict (15 個 warning code 分 system / stock_state) + `CATEGORY_DISPLAY` template
+- 加 `renderWarningBanners(warnings)` 一次過 render 2 個獨立 banner (🔧 系統 + 📊 股票狀態)
+- 2 個 category 永遠 render 2 個獨立 banner (唔合併), 只有嗰 category 有 warning 嗰陣先 render
+- `formatWarningForCopy` 加 category label, `formatAllWarningsForCopy` 按 category 分組
+- 28 個 `adapter.mjs` makeWarning 注入點嘅 `impact`/`fix` 統一跟 CATEGORY_DISPLAY template
+- `issue` 保留各 module 嘅 specific context (e.g. M1 嘅「橫行判斷信心不足」)
+
+**影響範圍**:
+- 凡人話: 大少見到 🔧 系統警告 = verdict 唔可信, 唔好落單, 見到 📊 股票狀態 = verdict 已經準確, 只係狀態提示
+- 13 個 warning code 嘅 `impact`/`fix` 永久跟 template, 唔再用各 module 自己寫
+- 改 warning 注入點嗰陣, `issue` 必須保留 specific context, `impact`/`fix` 必須跟 template
+
+**永久 rule**:
+- Warning 永久分 2 個 category (system / stock_state)
+- 2 個 category 永遠 render 2 個獨立 banner
+- 13 個 warning code 嘅 `impact`/`fix` 跟 CATEGORY_DISPLAY template
+
+對應 commit: 7ba21cc7 (Phase 1-3 infrastructure) + 即將 push 嘅 Phase 4
