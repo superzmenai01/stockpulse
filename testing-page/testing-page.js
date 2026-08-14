@@ -81,7 +81,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-13 07:23 M9 popup 註解全面化: ALGO_CACHE_BUST = '4.5.3' (M9 verdict 25 個 keyword 全部加 m9-verdict-tooltip class + data-help attribute, 8 section 全部凡人話解釋 — 跟 M7/M8 同樣 inline <style> block 嘅 hover popup 風格)
 // 大少 2026-08-13 07:46 WarningBanner expand bug fix: ALGO_CACHE_BUST = '4.5.4' (warnings.mjs 「展開 ▼」button onclick 改拎 this.parentElement.nextElementSibling (hidden list div), 之前拎 this.nextElementSibling 拎錯 Copy 全部 button, 撳咗 toggle 錯 element, list 永遠唔出 — 1 個 Info warning 嘅詳細內容完全冇辦法睇)
 // 大少 2026-08-13 10:50 M1 fix 詳細 + context 統一 precision: ALGO_CACHE_BUST = '4.5.5' (B: M1 v2.0 THRESHOLD_BREACH warning 嘅 fix message 改詳細 (解釋「唔代表演算法錯」+ 確認橫行方法 3 步 + 檢查 dataWindowDays) + C: formatWarningForCopy 對 number context value 統一 4 位小數 + 去 trailing zero (parseFloat(toFixed(4))), object 仍然 JSON.stringify)
-const ALGO_CACHE_BUST = '4.5.5';
+// 大少 2026-08-14 11:33 Warning v1.1.0 — 2 banner 分類: ALGO_CACHE_BUST = '4.6.0' (warnings.mjs 加 WARNING_CATEGORIES (15 個 code 分 system / stock_state) + CATEGORY_DISPLAY (2 種 template) + renderWarningBanners() render 2 個獨立 banner (🔧 系統 + 📊 股票狀態) + formatWarningForCopy / formatAllWarningsForCopy 加 category label, renderWarningBanner() 保留 backward compat, 凡人話: 大少一眼分到「呢個係 verdict 唔可信」定「呢個係股票狀態提示」)
+const ALGO_CACHE_BUST = '4.6.0';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -744,10 +745,11 @@ async function runAlgorithm() {
       const warnings = verdict._warnings || [];
       if (warnings.length > 0) {
         // Dynamic import warnings helper (跟 adapter 同一個 file lib)
-        const { renderWarningBanner, renderWarningCards, formatWarningForCopy, formatAllWarningsForCopy } = await import('../algorithms/AS-03-cycle-detection/lib/warnings.mjs?v=' + ALGO_CACHE_BUST);
+        // 大少 2026-08-14 11:33 v1.1.0: 改用 renderWarningBanners() render 2 個獨立 banner (🔧 系統 + 📊 股票狀態)
+        const { renderWarningBanners, renderWarningCards, formatWarningForCopy, formatAllWarningsForCopy } = await import('../algorithms/AS-03-cycle-detection/lib/warnings.mjs?v=' + ALGO_CACHE_BUST);
         // 暫存 _currentWarnings 畀 Copy button handler 用
         window._currentWarnings = warnings;
-        const bannerHTML = renderWarningBanner(warnings);
+        const bannerHTML = renderWarningBanners(warnings);
         // WarningCard 喺 verdict card 頂部 (e.g. <h3> 之前)
         // 簡單做法: prepend WarningBanner, WarningCard 由 adapter 自己 inject
         resultHTML = bannerHTML + resultHTML;

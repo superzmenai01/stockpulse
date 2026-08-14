@@ -75,6 +75,34 @@ export const WARNING_CODES_MAP: Record<WarningCode, WarningLevel> = {
 };
 
 /**
+ * 警告分類 (v1.1.0, 大少 2026-08-14 11:33 — 跟 warnings.mjs WARNING_CATEGORIES mirror)
+ *
+ * 'system' = 系統/演算法/數據問題, verdict 可能唔可信
+ * 'stock_state' = 股票狀態提醒, verdict 已經準確
+ */
+export type WarningCategory = 'system' | 'stock_state';
+
+export const WARNING_CATEGORIES_MAP: Record<WarningCode, WarningCategory> = {
+  // 🔧 System (12)
+  INSUFFICIENT_DATA: 'system',
+  VERDICT_MISSING: 'system',
+  NAN_RESULT: 'system',
+  CACHE_INVALID: 'system',
+  KLINE_MISSING: 'system',
+  MODULE_PARTIAL: 'system',
+  OUTLIER_VALUE: 'system',
+  LOW_SAMPLE_SIZE: 'system',
+  POST_FAILED: 'system',
+  FALLBACK_USED: 'system',
+  DATA_AGE: 'system',
+  CONFIG_DEFAULTS: 'system',
+  // 📊 Stock state (3)
+  THRESHOLD_BREACH: 'stock_state',
+  CONFLICT_STATE: 'stock_state',
+  CACHE_EXPIRING: 'stock_state',
+};
+
+/**
  * WarningCollector class — 收集 + dedupe + 排序
  *
  * Usage:
