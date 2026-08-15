@@ -1291,27 +1291,42 @@ function renderSynthesizedResult(verdict) {
     .join('');
 
   // Synthesized summary panel (大少 #10871 — plain language 點樣用)
+  // 大少 2026-08-15 — M7 優化 Level 1+5+6: M1 拎 cycleLabel/cyclePositionLabel/consecutiveDays,
+  //   其他 module 拎自己 detail, 唔再 generic
   const synthSummaryPanel = `
     <div class="interpretation-panel synthesized-summary">
       <strong>🎯 綜合判定：${stateLabel}（${verdict.state}）</strong>
       <p style="margin: 6px 0;">${getSynthesizedStateInterpretation(verdict.state)}</p>
       <div class="module-summary-list">
         ${moduleVerdicts.map((mv) => {
-          const modName = mv.moduleId === 'ma-alignment' ? 'MA Alignment'
-            : mv.moduleId === 'volume' ? '量价分析 (VolumePrice)'
-            : mv.moduleId === 'multi-tf' ? '多時間框架 (M5)'
-            : mv.moduleId === 'slope-momentum' ? '斜率動能 (M8)'
-            // 大少 2026-08-07 23:15 — SlopeMomentum name 暫時隱藏
+          const modName = mv.moduleId === 'ma-alignment' ? 'MA Alignment (M1)'
+            : mv.moduleId === 'volume' ? '量价分析 (VolumePrice, M5)'
+            : mv.moduleId === 'multi-tf' ? '多時間框架 (M5 Multi-TF)'
+            : mv.moduleId === 'slope-momentum' ? '斜率動能 (M8 SlopeMomentum)'
             : mv.moduleId;
           const modState = stateLabels[mv.state] || mv.state;
           const modConf = (mv.confidence * 100).toFixed(1);
-          const modDetail = mv.moduleId === 'volume'
-            ? `信號: ${mv.meta?.signal || 'N/A'}`
-            : mv.moduleId === 'multi-tf'
-            ? `consensus: ${mv.consensus?.direction || 'N/A'} (${mv.state})`
-            : mv.moduleId === 'slope-momentum'
-            ? `rules: ${mv.meta?.matchedRules?.join(', ') || 'N/A'}`
-            : `state: ${mv.state}`;
+          // Level 1+5+6: M1 拎 cycleLabel/cyclePositionLabel/consecutiveDays
+          let modDetail;
+          if (mv.moduleId === 'ma-alignment') {
+            const m = mv.meta || {};
+            const cycleLabel = m.cycleLabel || mv.state;
+            const cyclePositionLabel = m.cyclePositionLabel || '';
+            const consecutiveDays = m.consecutiveDays || 0;
+            const hasConsecutive = (m.cycle === 'decelerating_up' || m.cycle === 'decelerating_down') && consecutiveDays > 0;
+            // 凡人話 sub-scenario + cyclePosition 描述
+            const scenarioDesc = cyclePositionLabel ? `${cycleLabel} (${cyclePositionLabel})` : cycleLabel;
+            const daysDesc = hasConsecutive ? `, 連${m.cycle === 'decelerating_up' ? '跌' : '升'} ${consecutiveDays} 日` : '';
+            modDetail = `${scenarioDesc}${daysDesc}`;
+          } else if (mv.moduleId === 'volume') {
+            modDetail = `信號: ${mv.meta?.signal || 'N/A'}`;
+          } else if (mv.moduleId === 'multi-tf') {
+            modDetail = `consensus: ${mv.consensus?.direction || 'N/A'} (${mv.state})`;
+          } else if (mv.moduleId === 'slope-momentum') {
+            modDetail = `rules: ${mv.meta?.matchedRules?.join(', ') || 'N/A'}`;
+          } else {
+            modDetail = `state: ${mv.state}`;
+          }
           return `<div class="module-summary-item"><strong>${modName}</strong>: ${modState} (${modConf}%) — ${modDetail}</div>`;
         }).join('')}
       </div>
@@ -7431,8 +7446,40 @@ function decisionEngineMaxDD(klines) {
   return clampDE((atr / lastClose) * 3, 0, 0.30);
 }
 
+// 大少 2026-08-15 — M7 優化 Level 2 — M1 動態 base_weight 跟 9 個 sub-scenario
+// 凡人話: 強趨勢 (mid_stage) 應該 M1 weight 加重 (0.35), 悶市 (range_bound) 應該減 (0.15)
+// 配合 Level 3 expert rules: strong_uptrend + conf ≥ 0.8 + 全部 MA slope 同方向 → weight 加到 0.40
+// 大少 揀項 1: 動態 weight, 唔保持固定 0.25
+function getM1DynamicWeight(verdict) {
+  const cycle = verdict.meta?.cycle;
+  const cyclePosition = verdict.meta?.cyclePosition;
+  const conf = verdict.confidence;
+  const maSlopes = verdict.meta?.maSlopes || {};
+  const allSlopesSameDirection = (() => {
+    const signs = Object.values(maSlopes).map(s => s >= 0 ? 1 : -1);
+    if (signs.length === 0) return false;
+    return signs.every(s => s === signs[0]);
+  })();
+
+  // Level 3 expert rule 3: 強趨勢 high confidence override → 0.40
+  if ((cycle === 'strong_uptrend' || cycle === 'strong_downtrend') && conf >= 0.8 && allSlopesSameDirection) {
+    return 0.40;
+  }
+
+  // Level 2 動態 weight table
+  if (cycle === 'strong_uptrend' || cycle === 'strong_downtrend') return 0.35;  // mid_stage 強趨勢
+  if (cycle === 'weak_uptrend' || cycle === 'weak_downtrend') return 0.20;      // tentative 弱趨勢
+  if (cycle === 'uptrend_correction' || cycle === 'downtrend_bounce') return 0.22;  // 過渡形態
+  if (cycle === 'decelerating_up' || cycle === 'decelerating_down') return 0.18;  // late_stage 警號
+  if (cycle === 'sideways') return 0.15;  // range_bound 悶市
+  return 0.25;  // 默認
+}
+
 function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
-  const base_weight = DECISION_ENGINE_BASE_WEIGHTS[moduleId];
+  // 大少 2026-08-15 — M1 用動態 base_weight (Level 2 + Level 3 strong trend override), 其他 module 保持固定
+  const base_weight = moduleId === 'ma-alignment'
+    ? getM1DynamicWeight(verdict)
+    : DECISION_ENGINE_BASE_WEIGHTS[moduleId];
   const expected_return = decisionEngineExpectedReturn(verdict.state, verdict.confidence);
   const max_drawdown_estimate = decisionEngineMaxDD(klines);
   const sentiment_6d = decisionEngineSentiment6D(klines);
@@ -7516,7 +7563,38 @@ function decisionEngineComputeAlignment(verdicts) {
   if (verdicts.length === 0) return 0;
   const stateCount = {};
   for (const v of verdicts) stateCount[v.state] = (stateCount[v.state] || 0) + 1;
-  return Math.round((Math.max(...Object.values(stateCount)) / verdicts.length) * 1000) / 1000;
+  let alignment = Math.max(...Object.values(stateCount)) / verdicts.length;
+
+  // 大少 2026-08-15 — M7 優化 Level 4 — 2 條 cross-module alignment enrich rule
+  // Rule 1: M1 momentumScore 對齊 M1 cycle state — 矛盾 → 額外扣 alignment 5%
+  //   M1 cycle=UP 但 momentumScore<0 = 短期動能背馳
+  //   M1 cycle=DOWN 但 momentumScore>0 = 短期動能背馳
+  const maV = verdicts.find(v => v.module_id === 'ma-alignment');
+  if (maV && maV.module_specific) {
+    const m1Cycle = maV.module_specific.cycle;
+    const momentum = maV.module_specific.momentumScore || 0;
+    if ((m1Cycle === 'strong_uptrend' || m1Cycle === 'weak_uptrend' || m1Cycle === 'uptrend_correction') && momentum < 0) {
+      alignment = Math.max(0, alignment - 0.05);
+    } else if ((m1Cycle === 'strong_downtrend' || m1Cycle === 'weak_downtrend' || m1Cycle === 'downtrend_bounce') && momentum > 0) {
+      alignment = Math.max(0, alignment - 0.05);
+    }
+
+    // Rule 2: M1 volumeSignal 對齊 M5 volume verdict — 矛盾 → 額外扣 alignment 5%
+    //   M1 expanding (放量) + M5 vol ratio < 0.8 (縮量) = 量能矛盾
+    //   M1 shrinking (縮量) + M5 vol ratio > 1.2 (放量) = 量能矛盾
+    const m1VolSignal = maV.module_specific.volumeSignal;
+    const m5V = verdicts.find(v => v.module_id === 'volume');
+    if (m5V && m5V.module_specific) {
+      const m5VolRatio = m5V.module_specific.volumeTrendRatio || 1.0;
+      if (m1VolSignal === 'expanding' && m5VolRatio < 0.8) {
+        alignment = Math.max(0, alignment - 0.05);
+      } else if (m1VolSignal === 'shrinking' && m5VolRatio > 1.2) {
+        alignment = Math.max(0, alignment - 0.05);
+      }
+    }
+  }
+
+  return Math.round(alignment * 1000) / 1000;
 }
 
 function decisionEngineComputeGrade(ssi_score, alignment_score) {
@@ -7640,6 +7718,38 @@ export async function analyzeDecisionEngine(klines, options = {}) {
   if (!isFinite(ssi_score)) nanFields.push('ssi_score');
   if (!isFinite(alignment_score)) nanFields.push('alignment_score');
   if (!isFinite(grade_score)) nanFields.push('grade_score');
+
+  // 2b. 大少 2026-08-15 — M7 優化 Level 3 — 2 條 M1 expert rules override
+  //   Rule 1: M1 cycle = decelerating_up + consecutiveDays ≥ 5 → M7 自動加 TRANSITION 警號
+  //   Rule 2: M1 cycle = decelerating_down + consecutiveDays ≥ 5 → M7 自動加 TRANSITION 警號
+  //   Rule 3: M1 cycle = strong_uptrend/downtrend + conf ≥ 0.8 + 全部 MA slope 同方向 → M1 weight 加到 0.40 (已經喺 getM1DynamicWeight 做咗)
+  if (maVerdict && maVerdict.meta) {
+    const m1Cycle = maVerdict.meta.cycle;
+    const consecutiveDays = maVerdict.meta.consecutiveDays || 0;
+    if (m1Cycle === 'decelerating_up' && consecutiveDays >= 5) {
+      m7Warnings.push(makeWarning('warning', 'M7', 'CONFLICT_STATE',
+        'M7 見到 M1 到頂轉勢警號',
+        {
+          issue: `M1 cycle = ${m1Cycle} + 連跌 ${consecutiveDays} 日 (≥ 5 日, 見頂跡象, 即使其他 module 仲見 UP)`,
+          impact: 'Verdict 已經準確, 留意股票狀態',
+          fix: '睇其他 module 確認 / 留意 M7 alignment',
+          context: { m1_cycle: m1Cycle, consecutive_days: consecutiveDays, override: 'transition_alert' },
+        }
+      ));
+    }
+    if (m1Cycle === 'decelerating_down' && consecutiveDays >= 5) {
+      m7Warnings.push(makeWarning('warning', 'M7', 'CONFLICT_STATE',
+        'M7 見到 M1 到底轉勢警號',
+        {
+          issue: `M1 cycle = ${m1Cycle} + 連升 ${consecutiveDays} 日 (≥ 5 日, 見底跡象, 即使其他 module 仲見 DOWN)`,
+          impact: 'Verdict 已經準確, 留意股票狀態',
+          fix: '睇其他 module 確認 / 留意 M7 alignment',
+          context: { m1_cycle: m1Cycle, consecutive_days: consecutiveDays, override: 'transition_alert' },
+        }
+      ));
+    }
+  }
+
   if (nanFields.length > 0) {
     m7Warnings.push(makeWarning('critical', 'M7', 'NAN_RESULT',
       'M7 綜合判定計算結果 NaN',

@@ -503,3 +503,45 @@ def _compute_fetch_max_count(period):
 - ✅ M1 adapter version 2.0.0 → 2.1.0, testing page ALGO_CACHE_BUST 4.6.3 → 4.7.0, index.html ?v=2.3.53 → 2.3.54
 
 對應 commit: (即將 push, Step 1.1-1.8)
+
+---
+
+### M7 Synthesizer 優化 Level 1-6 — 全用上 M1 嘅 14 個 field (大少 2026-08-15)
+
+**凡人話解釋**: M1 v2.1.0 拎到 14 個 field (cycle, cyclePosition, consecutiveDays, maValues, maSlopes, momentumScore, volumeTrendRatio, volumeSignal, maxSpreadPct, adjustmentLog, 等), 但 M7 之前只用緊 `state` + `confidence` 2 個 field, 12 個浪費咗。M7 優化 Level 1-6 將 14 個 field 全部用上。
+
+**6 個 Level 改動**:
+
+**Level 2 — M1 動態 base_weight** (跟 9 個 sub-scenario):
+- 強趨勢 (mid_stage): 0.35
+- 弱趨勢 (tentative): 0.20
+- 過渡形態 (correction / bounce): 0.22
+- 警號 (late_stage_topping / bottoming): 0.18
+- 悶市 (range_bound): 0.15
+- 默認: 0.25
+
+**Level 3 — 3 條 M1 expert rules override** (M7 Synthesizer 自己 generate warning):
+- **Rule 1**: M1 cycle = decelerating_up + consecutiveDays ≥ 5 → M7 加 TRANSITION 警號 (見頂跡象, 即使其他 module 仲見 UP)
+- **Rule 2**: M1 cycle = decelerating_down + consecutiveDays ≥ 5 → M7 加 TRANSITION 警號 (見底跡象)
+- **Rule 3**: M1 cycle = strong_uptrend/downtrend + conf ≥ 0.8 + 全部 MA slope 同方向 → M1 weight 加到 0.40 (高信心強趨勢 super weight)
+
+**Level 4 — 2 條 cross-module alignment enrich** (扣 alignment_score):
+- **Rule A**: M1 cycle UP + momentumScore<0 → 額外扣 alignment 5% (短期動能背馳)
+- **Rule B**: M1 cycle DOWN + momentumScore>0 → 額外扣 alignment 5%
+- **Rule C**: M1 volumeSignal expanding + M5 volRatio<0.8 → 額外扣 alignment 5% (量能矛盾)
+- **Rule D**: M1 volumeSignal shrinking + M5 volRatio>1.2 → 額外扣 alignment 5%
+
+**Level 1+5+6 — M7 凡人話 reasoning enrich** (synthSummaryPanel):
+- M1 拎 cycleLabel + cyclePositionLabel + consecutiveDays, 之前係 generic state
+- 之後: 「M1 強上升趨勢 (mid_stage, 連升 N 日)」精準描述
+- 凡人話 design: M1 拎 cycle + position + consecutive + adjustment, 其他 module 拎自己 detail, 唔再係 generic「結構模糊」
+
+**永久 rule**:
+- ✅ M1 永遠拎佢 9 個 sub-scenario + cyclePosition + consecutiveDays, M7 reasoning 必須精準描述, 唔可以 generic
+- ✅ M1 動態 base_weight 跟 9 個 sub-scenario (Level 2 table), 唔可以再固定 0.25
+- ✅ M1 expert rules 5 日門檻 (consecutiveDays ≥ 5) trigger M7 TRANSITION warning, 4 日只 trigger M1 CONFLICT_STATE warning
+- ✅ Cross-module alignment enrich 永遠對 M1 momentumScore + volumeSignal 同 M4 / M5 對齊
+- ✅ M1 strong trend high confidence 永久 super weight 0.40 (Level 3 Rule 3)
+- ✅ 改 M1 cycle / cyclePosition / consecutiveDays logic 嗰陣, 必須一齊 update M7 reasoning enrich logic (永久 rule 同步)
+
+對應 commit: (即將 push)
