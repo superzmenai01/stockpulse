@@ -6272,9 +6272,36 @@ const MA_ALIGNMENT_V2_DEFAULTS = {
 };
 
 const MA_V2_CYCLE_LABELS = {
+  // 9 個 sub-scenario (大少 2026-08-15 M1 v2.1.0 — 跟 CSV spec)
+  strong_uptrend: '強上升週期',
+  weak_uptrend: '弱上升週期',
+  sideways: '橫行週期',
+  weak_downtrend: '弱下跌週期',
+  strong_downtrend: '強下跌週期',
+  uptrend_correction: '上升回調中',
+  downtrend_bounce: '下跌反彈中',
+  decelerating_up: '到頂轉勢中',
+  decelerating_down: '到底轉勢中',
+  // 向後兼容 (舊 3 個 state)
   uptrend: '上升週期',
   downtrend: '下跌週期',
-  sideways: '橫行週期',
+};
+
+const MA_V2_POSITION_LABELS = {
+  mid_stage: '趨勢中期 (主升 / 主跌段)',
+  tentative_rise: '剛開始升 (起勢)',
+  tentative_fall: '剛開始跌 (起勢)',
+  range_bound: '橫行整理中',
+  correction_at_ma20: '回調到 20 日均線',
+  bounce_in_progress: '反彈進行中',
+  late_stage_topping: '到頂轉勢中 (見頂跡象)',
+  late_stage_bottoming: '到底轉勢中 (見底跡象)',
+};
+
+const MA_V2_VOLUME_SIGNAL_LABELS = {
+  expanding: '放量',
+  shrinking: '縮量',
+  neutral: '持平',
 };
 
 function maV2Round(value, decimals) {
@@ -6427,6 +6454,119 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     }
   }
 
+  // ============ Step 5.5: 9 個 sub-scenario 細分判定 (大少 2026-08-15) ============
+  // 凡人話: 之前只 return 3 個 state, 8 個 sub-scenario 全部 miss
+  // 跟 CSV spec: 強上升 / 弱上升 / 橫行 / 弱下跌 / 強下跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢
+  // 用 MA 排列 + MA 斜率 + 成交量 + 連續日數 細分
+  //   - Priority 1 (transition, 最重要): 到頂轉勢 / 到底轉勢
+  //   - Priority 2 (強趨勢): 強上升 / 強下跌
+  //   - Priority 3 (弱趨勢): 弱上升 / 弱下跌
+  //   - Priority 4 (過渡形態): 上升回調 / 下跌反彈
+  //   - Default: 橫行
+  // 排喺 Step 5 之後係因為 Priority 2 / 3 嘅 「強上升 / 強下跌」判定需要 volumeSignal
+  const sortedPeriodsAsc2 = [...cfg.maPeriods].sort((a, b) => a - b);
+  const sortedPeriodsDesc2 = [...sortedPeriodsAsc2].reverse();
+  const isBullishArrangement = JSON.stringify(rankPeriods) === JSON.stringify(sortedPeriodsAsc2);
+  const isBearishArrangement = JSON.stringify(rankPeriods) === JSON.stringify(sortedPeriodsDesc2);
+
+  // 計最近連續跌日數 + 連續升日數 (到頂轉勢 / 到底轉勢用)
+  let consecutiveDownDays = 0;
+  for (let i = klines.length - 1; i > 0; i--) {
+    if (klines[i].close < klines[i - 1].close) {
+      consecutiveDownDays++;
+    } else {
+      break;
+    }
+  }
+  let consecutiveUpDays = 0;
+  for (let i = klines.length - 1; i > 0; i--) {
+    if (klines[i].close > klines[i - 1].close) {
+      consecutiveUpDays++;
+    } else {
+      break;
+    }
+  }
+
+  let subScenario;
+  let cyclePosition;
+
+  // 拎短期 / 長期 MA 嘅 slope (用 maValues 對比 5 日前 close 平均, 唔等 Step 6 嘅 maSlopes 因為要獨立用)
+  const calcSlopeV2 = (period) => {
+    const currentMA = maValues[`MA${period}`];
+    const pastSegment = klines.slice(-(period + 5), -5);
+    if (pastSegment.length === 0) return 0;
+    const pastMA = pastSegment.reduce((acc, k) => acc + k.close, 0) / pastSegment.length;
+    return pastMA > 0 ? (currentMA - pastMA) / pastMA : 0;
+  };
+  const slopeMA5 = calcSlopeV2(5);
+  const slopeMA10 = calcSlopeV2(10);
+  const slopeMA60 = calcSlopeV2(60);
+  const allShortSlopeNegative = slopeMA5 < 0 && slopeMA10 < 0;
+  const allShortSlopePositive = slopeMA5 > 0 && slopeMA10 > 0;
+  const longSlopePositive = slopeMA60 > 0;
+  const longSlopeNegative = slopeMA60 < 0;
+
+  // Priority 1: 到頂轉勢 (uptrend → decelerating)
+  //   條件: 短期急跌 (MA5 -3%+) + 長期仲升 (MA60 > 0) + 最近 4+ 日連跌
+  if (slopeMA5 < -0.03 && longSlopePositive && consecutiveDownDays >= 4) {
+    subScenario = 'decelerating_up';
+    cyclePosition = 'late_stage_topping';
+    adjustmentLog.push(`到頂轉勢跡象: 短期急跌 ${(slopeMA5 * 100).toFixed(2)}% + 長期均線仲升 + 連跌 ${consecutiveDownDays} 日`);
+  }
+  // Priority 1: 到底轉勢 (downtrend → decelerating)
+  //   條件: 短期急升 (MA5 +3%+) + 長期仲跌 (MA60 < 0) + 最近 4+ 日連升
+  else if (slopeMA5 > 0.03 && longSlopeNegative && consecutiveUpDays >= 4) {
+    subScenario = 'decelerating_down';
+    cyclePosition = 'late_stage_bottoming';
+    adjustmentLog.push(`到底轉勢跡象: 短期急升 ${(slopeMA5 * 100).toFixed(2)}% + 長期均線仲跌 + 連升 ${consecutiveUpDays} 日`);
+  }
+  // Priority 2: 強上升 (排列全 bull + 全部 MA 斜率正 + 放量)
+  else if (isBullishArrangement) {
+    const allSlopesPositive = cfg.maPeriods.every(p => calcSlopeV2(p) > 0);
+    if (allSlopesPositive && volumeSignal === 'expanding') {
+      subScenario = 'strong_uptrend';
+      cyclePosition = 'mid_stage';
+      adjustmentLog.push('強上升跡象: 全部均線斜率正 + 放量配合');
+    } else {
+      subScenario = 'weak_uptrend';
+      cyclePosition = 'tentative_rise';
+      adjustmentLog.push('弱上升跡象: 排列對但部分斜率 / 量能唔配合');
+    }
+  }
+  // Priority 3: 強下跌 / 弱下跌 (排列全 bear)
+  else if (isBearishArrangement) {
+    const allSlopesNegative = cfg.maPeriods.every(p => calcSlopeV2(p) < 0);
+    if (allSlopesNegative && volumeSignal === 'expanding') {
+      subScenario = 'strong_downtrend';
+      cyclePosition = 'mid_stage';
+      adjustmentLog.push('強下跌跡象: 全部均線斜率負 + 放量確認');
+    } else {
+      subScenario = 'weak_downtrend';
+      cyclePosition = 'tentative_fall';
+      adjustmentLog.push('弱下跌跡象: 排列對但部分斜率 / 量能唔配合');
+    }
+  }
+  // Priority 4: 上升回調 (排列曾經 bull, 短期急跌但長期仲升)
+  else if (allShortSlopeNegative && longSlopePositive && maxSpreadPct >= cfg.thresholdPct) {
+    subScenario = 'uptrend_correction';
+    cyclePosition = 'correction_at_ma20';
+    adjustmentLog.push('上升回調跡象: 短期均線急跌但長期均線仲升 (回調到 20 日均線)');
+  }
+  // Priority 5: 下跌反彈 (排列曾經 bear, 短期急升但長期仲跌)
+  else if (allShortSlopePositive && longSlopeNegative && maxSpreadPct >= cfg.thresholdPct) {
+    subScenario = 'downtrend_bounce';
+    cyclePosition = 'bounce_in_progress';
+    adjustmentLog.push('下跌反彈跡象: 短期均線急升但長期均線仲跌 (反彈進行中)');
+  }
+  // Default: 橫行
+  else {
+    subScenario = 'sideways';
+    cyclePosition = 'range_bound';
+  }
+
+  // 用 subScenario override 原本嘅 candidate (Step 3-4 嘅)
+  candidate = subScenario;
+
   // ============ Step 6: 均線斜率與動能 ============
   const maSlopes = {};
   let momentumScore = 0;
@@ -6448,21 +6588,32 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     }
   }
 
-  // ============ Step 7: 信心指數 (三階段調整) ============
+  // ============ Step 7: 信心指數 (三階段調整, 跟 9 個 sub-scenario) ============
+  // 7a. 基礎信心 (跟 sub-scenario)
   let baseConfidence;
-  if (candidate === 'uptrend' || candidate === 'downtrend') {
+  if (
+    candidate === 'strong_uptrend' || candidate === 'strong_downtrend' ||
+    candidate === 'uptrend_correction' || candidate === 'downtrend_bounce' ||
+    candidate === 'decelerating_up' || candidate === 'decelerating_down'
+  ) {
+    // 強趨勢 / 過渡狀態: 用 maxSpreadPct 計
     baseConfidence = Math.min(1.0, maxSpreadPct / cfg.spreadConfidenceScale);
     if (maxSpreadPct < 0.05) baseConfidence *= 0.7;
+  } else if (candidate === 'weak_uptrend' || candidate === 'weak_downtrend') {
+    // 弱趨勢: 信心打折 (基礎 0.5-0.7)
+    baseConfidence = Math.min(0.7, maxSpreadPct / cfg.spreadConfidenceScale * 0.7);
   } else {
+    // sideways
     baseConfidence = Math.max(
       cfg.sidewaysBaseConfidence,
       1.0 - Math.abs(maxSpreadPct - cfg.thresholdPct) / cfg.thresholdPct,
     );
   }
 
+  // 7b. 成交量加權調整 (跟 9 個 sub-scenario)
   let volMultiplier = 1.0;
   if (cfg.enableVolumeWeight) {
-    if (candidate === 'uptrend') {
+    if (candidate === 'strong_uptrend' || candidate === 'weak_uptrend' || candidate === 'uptrend_correction') {
       if (volumeSignal === 'expanding') {
         volMultiplier = Math.min(1.25, 1.0 + (volumeTrendRatio - 1.0) * 0.5);
         adjustmentLog.push('放量上漲，信心提升');
@@ -6470,7 +6621,7 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
         volMultiplier = Math.max(0.65, 1.0 - (1.0 - volumeTrendRatio) * 0.8);
         adjustmentLog.push('上漲縮量，信心打折');
       }
-    } else if (candidate === 'downtrend') {
+    } else if (candidate === 'strong_downtrend' || candidate === 'weak_downtrend' || candidate === 'downtrend_bounce') {
       if (volumeSignal === 'expanding') {
         volMultiplier = 1.15;
         adjustmentLog.push('放量下跌，趨勢確認');
@@ -6478,7 +6629,11 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
         volMultiplier = 0.85;
         adjustmentLog.push('下跌縮量，動能可能不足');
       }
+    } else if (candidate === 'decelerating_up' || candidate === 'decelerating_down') {
+      // 到頂 / 到底轉勢: 成交量訊號唔重要 (已經係 transition 狀態)
+      volMultiplier = 1.0;
     } else {
+      // sideways
       if (volumeSignal === 'shrinking') {
         volMultiplier = 1.15;
         adjustmentLog.push('縮量整理，橫行信號增強');
@@ -6489,13 +6644,16 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     }
   }
 
+  // 7c. 斜率動能調整 (跟 9 個 sub-scenario)
   let slopeMultiplier = 1.0;
   if (cfg.enableSlopeCheck) {
     const sortedPeriods = [...cfg.maPeriods].sort((a, b) => a - b);
     const shortPeriods = sortedPeriods.slice(0, 2);
+    const longPeriod = Math.max(...cfg.maPeriods);
     const negativeCount = cfg.maPeriods.filter(p => (maSlopes[`MA${p}`] || 0) < 0).length;
+    const positiveCount = cfg.maPeriods.filter(p => (maSlopes[`MA${p}`] || 0) > 0).length;
 
-    if (candidate === 'uptrend') {
+    if (candidate === 'strong_uptrend' || candidate === 'weak_uptrend' || candidate === 'uptrend_correction') {
       if (shortPeriods.some(p => (maSlopes[`MA${p}`] || 0) < 0)) {
         slopeMultiplier = cfg.slopeDiscountFactor;
         adjustmentLog.push('短期均線斜率為負，上升動能減弱');
@@ -6503,8 +6661,7 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
         slopeMultiplier = 0.85;
         adjustmentLog.push('部分長期均線斜率為負');
       }
-    } else if (candidate === 'downtrend') {
-      const longPeriod = Math.max(...cfg.maPeriods);
+    } else if (candidate === 'strong_downtrend' || candidate === 'weak_downtrend' || candidate === 'downtrend_bounce') {
       if ((maSlopes[`MA${longPeriod}`] || 0) > 0) {
         slopeMultiplier = 0.8;
         adjustmentLog.push('長期均線斜率轉正，下跌動能減弱');
@@ -6512,7 +6669,11 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
         slopeMultiplier = 0.9;
         adjustmentLog.push('短期均線斜率轉正，可能醞釀反彈');
       }
+    } else if (candidate === 'decelerating_up' || candidate === 'decelerating_down') {
+      // 過渡狀態: 斜率已經反映, 唔再扣分
+      slopeMultiplier = 1.0;
     } else {
+      // sideways
       const avgAbsSlope = cfg.maPeriods.reduce((acc, p) => acc + Math.abs(maSlopes[`MA${p}`] || 0), 0) / cfg.maPeriods.length;
       if (avgAbsSlope > 0.005) {
         slopeMultiplier = 0.8;
@@ -6527,11 +6688,18 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
 
   // ============ Step 8: 組裝輸出 ============
   const lastDate = klines[klines.length - 1].date;
-  const reasonText = `【週期】${MA_V2_CYCLE_LABELS[candidate]}${adjustmentLog.length > 0 ? '；' + adjustmentLog.join('；') : ''}`;
+  const reasonText = `【週期】${MA_V2_CYCLE_LABELS[candidate]} (${MA_V2_POSITION_LABELS[cyclePosition]})${adjustmentLog.length > 0 ? '；' + adjustmentLog.join('；') : ''}`;
+
+  // 連續日數 (到頂轉勢/到底轉勢用)
+  const consecutiveDays = candidate === 'decelerating_up' ? consecutiveDownDays
+    : candidate === 'decelerating_down' ? consecutiveUpDays
+    : 0;
 
   const meta = {
     cycle: candidate,
     cycleLabel: MA_V2_CYCLE_LABELS[candidate],
+    cyclePosition,
+    cyclePositionLabel: MA_V2_POSITION_LABELS[cyclePosition],
     confidence,
     baseConfidence: maV2Round(baseConfidence, 4),
     maValues: Object.fromEntries(Object.entries(maValues).map(([k, v]) => [k, maV2Round(v, 4)])),
@@ -6540,37 +6708,81 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     momentumScore: maV2Round(momentumScore, 6),
     volumeTrendRatio: maV2Round(volumeTrendRatio, 4),
     volumeSignal,
+    volumeSignalLabel: MA_V2_VOLUME_SIGNAL_LABELS[volumeSignal],
     maxSpreadPct: maV2Round(maxSpreadPct, 6),
+    consecutiveDays,
     adjustmentLog,
     reason: reasonText,
     lastDate,
     configUsed: cfg,
   };
 
-  const stateMap = { uptrend: 'UP', downtrend: 'DOWN', sideways: 'SIDEWAYS' };
+  // 9 個 sub-scenario map 返 3 個 high-level state (大少 2026-08-15 M1 v2.1.0)
+  // - 強升 / 弱升 / 上升回調 → UP (上升回調仍算上升趨勢中的修正)
+  // - 強跌 / 弱跌 / 下跌反彈 → DOWN (下跌反彈仍算下跌趨勢中的反彈)
+  // - 橫行 / 到頂轉勢 / 到底轉勢 → SIDEWAYS (transition 算過渡, 唔強烈指向一邊)
+  const stateMap = {
+    strong_uptrend: 'UP',
+    weak_uptrend: 'UP',
+    sideways: 'SIDEWAYS',
+    weak_downtrend: 'DOWN',
+    strong_downtrend: 'DOWN',
+    uptrend_correction: 'UP',
+    downtrend_bounce: 'DOWN',
+    decelerating_up: 'SIDEWAYS',
+    decelerating_down: 'SIDEWAYS',
+    uptrend: 'UP',  // 向後兼容
+    downtrend: 'DOWN',
+  };
+
   // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c fix) — M1 v2.0 MA Alignment
+  // 大少 2026-08-14 v1.1.0 (Spec Sync #18) — 統一 impact / fix 跟 CATEGORY_DISPLAY template
+  // 大少 2026-08-15 M1 v2.1.0 — 9 個 sub-scenario, FALLBACK_USED 改觸發條件 (排除上升回調 / 下跌反彈 / 過渡)
   const m1v2Warnings = [];
-  // Check cycle state = SIDEWAYS (matchedRules 0 個 fallback)
+  // Check cycle state = SIDEWAYS (matchedRules 0 個 fallback) — 但排除 uptrend_correction / downtrend_bounce / 過渡 (呢啲有 adjustmentLog)
   if (candidate === 'sideways' && adjustmentLog.length === 0) {
     m1v2Warnings.push(makeWarning('warning', 'M1', 'FALLBACK_USED',
-      'M1 v2.0 cycle = sideways 默認',
+      'M1 cycle = 橫行 默認',
       {
-        issue: 'M1 v2.0 cycle 推導結果 = sideways (無明確 rule match)',
+        issue: 'M1 cycle 推導結果 = 橫行 (無明確 sub-scenario match, 排列亂 + 短期均線斜率大)',
         impact: 'Verdict 唔可信, 唔好落單',
         fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
         context: { candidate: 'sideways', period: '1d' },
       }
     ));
   }
-  // Confidence 過低 (< 0.4)
+  // Confidence 過低 (< 0.4) — 凡人話: 算法判到但信心低, verdict 仲準, 但要睇其他 module 確認
   if (confidence != null && confidence < 0.4) {
     m1v2Warnings.push(makeWarning('warning', 'M1', 'THRESHOLD_BREACH',
-      `M1 v2.0 信心過低 (${(confidence * 100).toFixed(0)}%)`,
+      `M1 信心過低 (${(confidence * 100).toFixed(0)}%)`,
       {
-        issue: `confidence = ${confidence.toFixed(4)} < 0.4 (橫行判斷信心不足, 短期均線斜率有動 / 量縮)`,
+        issue: `confidence = ${confidence.toFixed(4)} < 0.4 (${candidate} 判斷信心不足, 短期均線斜率有動 / 量縮 / 排列亂)`,
         impact: 'Verdict 已經準確, 留意股票狀態',
         fix: '睇其他 module 確認 / 留意 M7 alignment',
-        context: { confidence },
+        context: { confidence, cycle: candidate, sub_scenario: candidate },
+      }
+    ));
+  }
+  // 到頂轉勢 / 到底轉勢特別提示 (凡人話: transition 狀態, 唔係單純趨勢)
+  if (candidate === 'decelerating_up') {
+    m1v2Warnings.push(makeWarning('warning', 'M1', 'CONFLICT_STATE',
+      'M1 見到到頂轉勢跡象',
+      {
+        issue: `到頂轉勢跡象: 短期急跌 ${(slopeMA5 * 100).toFixed(2)}% + 長期均線仲升 + 連跌 ${consecutiveDownDays} 日 (見頂訊號)`,
+        impact: 'Verdict 已經準確, 留意股票狀態',
+        fix: '睇其他 module 確認 / 留意 M7 alignment',
+        context: { sub_scenario: 'decelerating_up', consecutive_days: consecutiveDownDays, ma5_slope_pct: maV2Round(slopeMA5 * 100, 4) },
+      }
+    ));
+  }
+  if (candidate === 'decelerating_down') {
+    m1v2Warnings.push(makeWarning('warning', 'M1', 'CONFLICT_STATE',
+      'M1 見到到底轉勢跡象',
+      {
+        issue: `到底轉勢跡象: 短期急升 ${(slopeMA5 * 100).toFixed(2)}% + 長期均線仲跌 + 連升 ${consecutiveUpDays} 日 (見底訊號)`,
+        impact: 'Verdict 已經準確, 留意股票狀態',
+        fix: '睇其他 module 確認 / 留意 M7 alignment',
+        context: { sub_scenario: 'decelerating_down', consecutive_days: consecutiveUpDays, ma5_slope_pct: maV2Round(slopeMA5 * 100, 4) },
       }
     ));
   }
@@ -6578,7 +6790,7 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
   return {
     moduleId: 'ma-alignment-v2',
     timeframe: '1d',
-    state: stateMap[candidate],
+    state: stateMap[candidate] || 'SIDEWAYS',
     confidence,
     interpretation: reasonText,
     evidence: adjustmentLog.map(log => ({ type: 'adjustment', label: log, value: log, passed: true })),
@@ -6590,11 +6802,85 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
 }
 
 function renderMAAlignmentV2Result(verdict) {
+  // ===== M1 v2.1.0 — 9 個 sub-scenario 凡人話 popup 註解 (大少 2026-08-15) =====
+  // 跟 M7/M8/M9 同樣 inline style (.verdict-tooltip + position relative + cursor help + hover::after content attr(data-help) + 0.1s 即時顯示)
+  // 全凡人話, 0 英文 technical term, 0 casual 詞 (學校/老師/校長等)
+  const M1_TOOLTIPS = {
+    m1_title: '第一模組嘅目的: 用 4 條均線 (5/10/20/60 日) 嘅排列 + 斜率 + 成交量, 判斷股票而家所處嘅周期 — 共 9 個 sub-scenario',
+
+    // 9 個 sub-scenario 凡人話解釋
+    m1_strong_uptrend: '強上升: 4 條均線完美由細到大排列 (MA5 < MA10 < MA20 < MA60), 全部均線斜率向上, 配合放量確認。趨勢中期, 上升動能強',
+    m1_weak_uptrend: '弱上升: 4 條均線由細到大排列, 但部分斜率唔配合 / 量能唔夠。剛開始升 / 起勢, 信心打折',
+    m1_sideways: '橫行: 均線排列亂, 短期同長期均線距離近 (少過 2%), 冇明確方向。橫行整理中, 等突破',
+    m1_weak_downtrend: '弱下跌: 4 條均線由大到細排列, 但部分斜率唔配合 / 量能唔夠。剛開始跌 / 起勢, 信心打折',
+    m1_strong_downtrend: '強下跌: 4 條均線完美由大到細排列, 全部均線斜率向下, 配合放量確認。趨勢中期, 下跌動能強',
+    m1_uptrend_correction: '上升回調: 之前上升趨勢, 而家短期均線 (MA5/MA10) 急跌但長期均線 (MA60) 仲升緊。回調到 20 日均線附近, 仍屬上升趨勢中的修正',
+    m1_downtrend_bounce: '下跌反彈: 之前下跌趨勢, 而家短期均線 (MA5/MA10) 急升但長期均線 (MA60) 仲跌緊。反彈進行中, 仍屬下跌趨勢中的反彈',
+    m1_decelerating_up: '到頂轉勢: 之前上升趨勢, MA5 急跌 3%+ 但長期均線仲升, 連續 4+ 日連跌。見頂跡象, 上升趨勢可能見頂',
+    m1_decelerating_down: '到底轉勢: 之前下跌趨勢, MA5 急升 3%+ 但長期均線仲跌, 連續 4+ 日連升。見底跡象, 下跌趨勢可能見底',
+
+    // 8 個 cyclePosition 凡人話解釋
+    m1_mid_stage: '趨勢中期: 強趨勢 (強上升 / 強下跌) 嘅中段, 動能最猛, 通常持續 1-3 個月',
+    m1_tentative_rise: '剛起勢: 弱上升嘅起步, 信號未完全確認, 觀察多幾日',
+    m1_tentative_fall: '剛起勢: 弱下跌嘅起步, 信號未完全確認, 觀察多幾日',
+    m1_range_bound: '橫行整理: 4 條均線糾纏, 等突破方向',
+    m1_correction_at_ma20: '回調到 20 日均線: 上升趨勢中嘅正常調整, 20 日均線係關鍵支持位',
+    m1_bounce_in_progress: '反彈進行中: 下跌趨勢中嘅短暫回升, 留意長期均線仲跌緊',
+    m1_late_stage_topping: '到頂轉勢中: 上升趨勢見頂跡象 (短期急跌 + 長期仲升), 連續 4+ 日連跌',
+    m1_late_stage_bottoming: '到底轉勢中: 下跌趨勢見底跡象 (短期急升 + 長期仲跌), 連續 4+ 日連升',
+
+    // 13 個 output field 凡人話解釋
+    m1_confidence: '信心指數: 綜合 3 個維度計算 (基礎分 × 成交量加權 × 斜率加權), 範圍 0-100%。≥70% 高信心 / 40-70% 中等 / <40% 低信心',
+    m1_base_confidence: '基礎信心: 純粹睇 MA 排列 + spread 得出嘅原始信心, 之後會被成交量同斜率調整',
+    m1_ma_values: '4 條均線嘅最新值: MA5 (5 日) / MA10 (10 日) / MA20 (20 日) / MA60 (60 日), 短期均線對短期股價敏感, 長期均線對長期趨勢敏感',
+    m1_ma_ranks: '均線由大到小排序: 例如 MA5 > MA10 > MA20 > MA60 代表典型多頭 (短期均線喺長期均線上面), 排列越齊信心越高',
+    m1_ma_slopes: '各均線斜率: 對比 5 日前嘅均線值計出嘅百分比變化。正數 (↗) = 升緊, 負數 (↘) = 跌緊。短期斜率係動能領先指標',
+    m1_momentum_score: '加權動能分數: 將各均線斜率按 1/period 加權平均, 短期均線權重高。正數 = 上升動能, 負數 = 下跌動能',
+    m1_volume_trend: '近期均量 / 前期均量: > 1.2 為放量 (錢跟緊), < 0.8 為縮量 (錢退緊), 中間為持平',
+    m1_volume_signal: '成交量訊號: 從近期 / 前期均量比計出嘅標籤 (放量 / 縮量 / 持平), 用嚟判斷錢跟唔跟個走勢',
+    m1_max_spread: '均線間最大價差百分比: 4 條均線之間嘅最大距離除以最低值。> 2% 視為有方向, < 2% 強制覆寫做橫行',
+    m1_consecutive_days: '連續日數: 最近連續升 / 跌嘅日數, 到頂轉勢 / 到底轉勢嘅判定基礎 (≥ 4 日先 trigger)',
+    m1_adjustment_log: '信心指數調整記錄: 算法根據成交量 / 斜率 / 走勢強度做咗咩 discount / boost, 例如「放量上漲信心提升」、「短期斜率負上升動能減弱」',
+  };
+
+  // Inline <style> block 喺 return 嘅 <div> 開頭, 跟 M7/M8/M9 同樣 .verdict-tooltip pattern
+  const M1_TOOLTIP_STYLE = `<style>
+    .m1-verdict-tooltip { position: relative; cursor: help; border-bottom: 1px dotted #999; }
+    .m1-verdict-tooltip:hover::after {
+      content: attr(data-help);
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      background: #2c3e50; color: #fff; padding: 8px 12px; border-radius: 6px;
+      white-space: normal; width: max-content; max-width: 380px; min-width: 200px;
+      font-size: 12px; line-height: 1.5; z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      animation: fadeIn 0.1s ease-in;
+    }
+    .m1-verdict-tooltip:hover::before {
+      content: ''; position: absolute; bottom: 95%; left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: #2c3e50;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  </style>`;
+
   const meta = verdict.meta || {};
   if (!meta.cycle) {
     return `<div class="result-error">數據不足: ${meta.dataDays || 0} / ${meta.requiredLength || 70} 條</div>`;
   }
-  const cycleColor = meta.cycle === 'uptrend' ? '#26BA75' : meta.cycle === 'downtrend' ? '#EE5151' : '#F39C12';
+  // 9 個 sub-scenario 對應顏色 (大少 2026-08-15 M1 v2.1.0)
+  const CYCLE_COLOR_MAP = {
+    strong_uptrend: '#1FA960',       // 深綠 (強上升)
+    weak_uptrend: '#7DD89F',          // 淺綠 (弱上升)
+    uptrend_correction: '#A8D5BA',    // 淡綠 (上升回調)
+    sideways: '#F39C12',              // 黃 (橫行)
+    downtrend_bounce: '#F5B7B1',      // 淡紅 (下跌反彈)
+    weak_downtrend: '#F1948A',        // 淺紅 (弱下跌)
+    strong_downtrend: '#C0392B',      // 深紅 (強下跌)
+    decelerating_up: '#8E44AD',       // 紫 (到頂轉勢)
+    decelerating_down: '#2980B9',     // 藍 (到底轉勢)
+    uptrend: '#26BA75',               // 向後兼容
+    downtrend: '#EE5151',
+  };
+  const cycleColor = CYCLE_COLOR_MAP[meta.cycle] || '#F39C12';
   const confidencePct = (meta.confidence * 100).toFixed(0);
   const confidenceExplain = meta.confidence >= 0.7 ? '高信心, 信號強' : meta.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
   const cycleCode = meta.cycle.toUpperCase();
@@ -6605,51 +6891,98 @@ function renderMAAlignmentV2Result(verdict) {
   const isTypicalDown = arrangementText === 'MA60 > MA20 > MA10 > MA5';
   const arrangementLabel = isTypicalUp ? '典型多頭排列' : isTypicalDown ? '典型空頭排列' : '非典型排列';
 
-  // 📌 判斷 box 詳細解說 (plain language)
-  let interpretationDetail = '';
-  if (meta.cycle === 'uptrend') {
-    interpretationDetail = `
-      <p>📌 <strong>簡單講</strong>: 股票 4 條均線 (MA5/10/20/60) 排列係由細到大, 短期均線喺長期均線上面, 代表近期股價一直喺高位跑。短期、中期、長期均線全部向上, 趨勢確認向上。</p>
-      <p>📊 <strong>咩意思</strong>: ${arrangementLabel}, Spread ${(meta.maxSpreadPct * 100).toFixed(2)}%, 即係均線之間嘅距離大, 上升趨勢穩固。基礎信心 ${meta.baseConfidence} (純睇 MA 排列同 spread 得出)。</p>
-      <p>💡 <strong>點睇呢個結果</strong>: 可以考慮持有或喺回調時加倉, 但要留意成交量同短期均線斜率嘅變化 — 縮量升 / MA5 斜率轉負都可能係見頂警號。</p>
-    `;
-  } else if (meta.cycle === 'downtrend') {
-    interpretationDetail = `
-      <p>📌 <strong>簡單講</strong>: 股票 4 條均線排列係由大到細, 短期均線喺長期均線下面, 代表近期股價一直跑緊低位。短期、中期、長期均線全部向下, 趨勢確認向下。</p>
-      <p>📊 <strong>咩意思</strong>: ${arrangementLabel}, Spread ${(meta.maxSpreadPct * 100).toFixed(2)}%, 均線之間嘅距離大, 下跌趨勢穩固。基礎信心 ${meta.baseConfidence}。</p>
-      <p>💡 <strong>點睇呢個結果</strong>: 觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀。留意有冇縮量 (下跌動能減弱) 或長期斜率轉正 (可能見底) 嘅反彈訊號。</p>
-    `;
-  } else {
-    interpretationDetail = `
-      <p>📌 <strong>簡單講</strong>: 股票 4 條均線排列唔係典型嘅多頭或空頭 (即係交叉咗 / 距離好近), 代表近期股價冇明確方向, 喺一個範圍內上落。</p>
-      <p>📊 <strong>咩意思</strong>: ${arrangementLabel}, Spread ${(meta.maxSpreadPct * 100).toFixed(2)}%, 均線之間嘅距離細, 趨勢唔明確。橫行可能係蓄力 (等待突破) 或者轉勢 (等待方向確認)。</p>
-      <p>💡 <strong>點睇呢個結果</strong>: 等待突破方向, 唔好喺橫行期間強行入市。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機; 配合 M5 量价可以睇突破嘅真偽。</p>
-    `;
-  }
+  // Sub-scenario 嘅 tooltip key (e.g. strong_uptrend → M1_TOOLTIPS.m1_strong_uptrend)
+  const scenarioTooltipKey = `m1_${meta.cycle}`;
+  const positionTooltipKey = `m1_${meta.cyclePosition || 'range_bound'}`;
+  const hasConsecutiveDays = (meta.cycle === 'decelerating_up' || meta.cycle === 'decelerating_down') && meta.consecutiveDays > 0;
+
+  // 📌 判斷 box 詳細解說 (9 個 sub-scenario 各自嘅凡人話解 — 大少 2026-08-15 M1 v2.1.0)
+  const SCENARIO_INTERPRETATION = {
+    strong_uptrend: {
+      summary: '股票 4 條均線 (MA5/10/20/60) 完美由細到大排列, 短期均線喺長期均線上面, 全部均線斜率向上, 配合放量確認。代表近期股價一直喺高位跑, 趨勢確認強勁向上。',
+      detail: '排列典型多頭, Spread ' + (meta.maxSpreadPct * 100).toFixed(2) + '%, 即係均線之間嘅距離大, 上升趨勢穩固。基礎信心 ' + meta.baseConfidence + ' (純睇 MA 排列同 spread 得出)。',
+      advice: '可以考慮持有或喺回調時加倉, 但要留意成交量同短期均線斜率嘅變化 — 縮量升 / MA5 斜率轉負都可能係見頂警號。',
+    },
+    weak_uptrend: {
+      summary: '股票 4 條均線由細到大排列, 但部分斜率唔配合 / 量能唔夠。剛開始升 / 起勢, 信心打折, 趨勢仲未完全確認。',
+      detail: '排列對但 ' + (meta.volumeSignal === 'expanding' ? '量能唔夠' : '部分斜率偏弱') + ', Spread ' + (meta.maxSpreadPct * 100).toFixed(2) + '%, 上升動能偏弱。基礎信心 ' + meta.baseConfidence + ', 已打折。',
+      advice: '觀察多幾日, 等放量確認再入場, 唔好喺弱勢訊號時強行加倉。留意 MA5 斜率轉負 = 升勢見頂。',
+    },
+    uptrend_correction: {
+      summary: '之前上升趨勢, 而家短期均線 (MA5/MA10) 急跌但長期均線 (MA60) 仲升緊。屬於上升趨勢中的正常回調, 通常回調到 20 日均線附近會見支持。',
+      detail: '短期急跌但長期仲升, Spread ' + (meta.maxSpreadPct * 100).toFixed(2) + '%, 仍然保持上升趨勢嘅結構。基礎信心 ' + meta.baseConfidence + '。',
+      advice: '如已持有可續持, 等 MA5 跌到 MA20 附近見支持再考慮加倉。唔好見急跌就沽, 留意 M2 HL Structure 確認有冇破壞 HH/HL 結構。',
+    },
+    sideways: {
+      summary: '股票 4 條均線排列唔係典型嘅多頭或空頭 (即係交叉咗 / 距離好近), 代表近期股價冇明確方向, 喺一個範圍內上落。',
+      detail: arrangementLabel + ', Spread ' + (meta.maxSpreadPct * 100).toFixed(2) + '%, 均線之間嘅距離細, 趨勢唔明確。橫行可能係蓄力 (等待突破) 或者轉勢 (等待方向確認)。',
+      advice: '等待突破方向, 唔好喺橫行期間強行入市。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機; 配合 M5 量价可以睇突破嘅真偽。',
+    },
+    downtrend_bounce: {
+      summary: '之前下跌趨勢, 而家短期均線 (MA5/MA10) 急升但長期均線 (MA60) 仲跌緊。屬於下跌趨勢中的短暫反彈, 仍要小心。',
+      detail: '短期急升但長期仲跌, Spread ' + (meta.maxSpreadPct * 100).toFixed(2) + '%, 下跌趨勢嘅大方向仲未改變。基礎信心 ' + meta.baseConfidence + '。',
+      advice: '如已持貨可考慮喺反彈高位減倉, 唔好因為短暫反彈就以為見底。確認 M2 HL Structure 有冇破壞 LL/LH 結構, 等長期均線 (MA60) 斜率轉正先信。',
+    },
+    weak_downtrend: {
+      summary: '股票 4 條均線由大到細排列, 但部分斜率唔配合 / 量能唔夠。剛開始跌 / 起勢, 信心打折, 跌勢仲未完全確認。',
+      detail: '排列對但 ' + (meta.volumeSignal === 'expanding' ? '量能唔夠' : '部分斜率偏弱') + ', Spread ' + (meta.maxSpreadPct * 100).toFixed(2) + '%, 下跌動能偏弱。基礎信心 ' + meta.baseConfidence + ', 已打折。',
+      advice: '觀察多幾日, 等放量確認再行動, 唔好急住撈底。留意 MA5 斜率轉正 = 跌勢見底。',
+    },
+    strong_downtrend: {
+      summary: '股票 4 條均線完美由大到細排列, 短期均線喺長期均線下面, 全部均線斜率向下, 配合放量確認。代表近期股價一直跑緊低位, 趨勢確認強勁向下。',
+      detail: '排列典型空頭, Spread ' + (meta.maxSpreadPct * 100).toFixed(2) + '%, 即係均線之間嘅距離大, 下跌趨勢穩固。基礎信心 ' + meta.baseConfidence + '。',
+      advice: '觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀。留意有冇縮量 (下跌動能減弱) 或長期斜率轉正 (可能見底) 嘅反彈訊號。',
+    },
+    decelerating_up: {
+      summary: '之前上升趨勢, MA5 急跌 3%+ 但長期均線仲升, 連續 ' + (meta.consecutiveDays || 0) + ' 日連跌。見頂跡象明顯, 上升趨勢可能見頂, 等確認轉勢。',
+      detail: '短期急跌 ' + (meta.maSlopes['MA5'] * 100).toFixed(2) + '% + 長期仲升 ' + (meta.maSlopes['MA60'] * 100).toFixed(2) + '% + 連跌 ' + (meta.consecutiveDays || 0) + ' 日, 見頂訊號強。',
+      advice: '如已持貨應考慮喺反彈時減倉 / 止賺, 唔好博佢返上去。確認 M2 HL Structure 有冇破壞 HH/HL (出現 LH = 見頂確認), 同 M4 Indicators (RSI 背馳 = 見頂確認)。',
+    },
+    decelerating_down: {
+      summary: '之前下跌趨勢, MA5 急升 3%+ 但長期均線仲跌, 連續 ' + (meta.consecutiveDays || 0) + ' 日連升。見底跡象明顯, 下跌趨勢可能見底, 等確認轉勢。',
+      detail: '短期急升 ' + (meta.maSlopes['MA5'] * 100).toFixed(2) + '% + 長期仲跌 ' + (meta.maSlopes['MA60'] * 100).toFixed(2) + '% + 連升 ' + (meta.consecutiveDays || 0) + ' 日, 見底訊號強。',
+      advice: '如想撈底要等確認: M2 HL Structure 出現 HH (見底確認) + M4 Indicators RSI 唔再背馳。先小注試單, 唔好一次過 all-in。',
+    },
+  };
+
+  // 向後兼容舊 cycle (uptrend / downtrend), map 返去新 sub-scenario
+  let cycleForLookup = meta.cycle;
+  if (cycleForLookup === 'uptrend') cycleForLookup = 'strong_uptrend';
+  if (cycleForLookup === 'downtrend') cycleForLookup = 'strong_downtrend';
+
+  const interp = SCENARIO_INTERPRETATION[cycleForLookup] || SCENARIO_INTERPRETATION.sideways;
+  const interpretationDetail = `
+    <p>📌 <strong>簡單講</strong>: <span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS[scenarioTooltipKey] || ''}">${interp.summary}</span></p>
+    <p>📊 <strong>咩意思</strong>: ${interp.detail}</p>
+    <p>💡 <strong>點睇呢個結果</strong>: ${interp.advice}</p>
+  `;
 
   return `
     <div class="as03-verdict as03-module-card">
+      ${M1_TOOLTIP_STYLE}
       <div class="module-card-header">
-        <h3 class="module-header">📊 均線系統週期判斷法 v2.0 (with Volume & Slope)</h3>
+        <h3 class="module-header"><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_title}">📊 均線系統週期判斷法 v2.1.0 (9 個 sub-scenario + 成交量 + 斜率)</span></h3>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${cycleColor}">
-          <span class="state-label">${meta.cycleLabel}</span>
+          <span class="state-label"><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS[scenarioTooltipKey] || M1_TOOLTIPS.m1_sideways}">${meta.cycleLabel}</span></span>
           <span class="state-code">${cycleCode}</span>
         </div>
         <div class="confidence">
-          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-pct"><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_confidence}">${confidencePct}%</span></div>
           <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
+          <div class="summary-row"><span>週期位置:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS[positionTooltipKey] || M1_TOOLTIPS.m1_range_bound}">${meta.cyclePositionLabel || '—'}</span></strong></div>
+          ${hasConsecutiveDays ? `<div class="summary-row"><span>連續日數:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_consecutive_days}">${meta.consecutiveDays} 日</span></strong></div>` : ''}
           <div class="summary-row"><span>排列:</span> <strong>${arrangementLabel}</strong></div>
-          <div class="summary-row"><span>Spread:</span> <strong>${(meta.maxSpreadPct * 100).toFixed(2)}%</strong></div>
-          <div class="summary-row"><span>基礎信心:</span> <strong>${meta.baseConfidence}</strong></div>
+          <div class="summary-row"><span>Spread:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_max_spread}">${(meta.maxSpreadPct * 100).toFixed(2)}%</span></strong></div>
+          <div class="summary-row"><span>基礎信心:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_base_confidence}">${meta.baseConfidence}</span></strong></div>
         </div>
       </div>
 
       <div class="interpretation">
-        <strong>📌 判斷：</strong>${meta.reason}
+        <strong>📌 判斷:</strong>${meta.reason}
         ${interpretationDetail}
       </div>
 
@@ -6711,7 +7044,7 @@ ${meta.adjustmentLog.length > 0 ? '\nadjustmentLog:\n' + meta.adjustmentLog.map(
 }
 
 // ===== 詳細解讀 section =====
-// 用人話逐一解釋 verdict 每個 field 嘅意思
+// 用人話逐一解釋 verdict 每個 field 嘅意思 (大少 2026-08-15 M1 v2.1.0 — 9 個 sub-scenario + 14 個 field)
 function renderMAAlignmentV2DetailedExplanation(verdict) {
   const meta = verdict.meta;
   const confidencePct = (meta.confidence * 100).toFixed(1);
@@ -6719,44 +7052,66 @@ function renderMAAlignmentV2DetailedExplanation(verdict) {
 
   return `
     <div class="result-section">
-      <h3>📖 詳細解讀</h3>
-      <p>呢個 module 用 3 維度判斷股票所處嘅周期 (上升/下跌/橫行), 同時用 2 個維度調整信心 (成交量 + 斜率)。</p>
+      <h3>📖 詳細解讀 (M1 v2.1.0 — 9 個 sub-scenario)</h3>
+      <p>呢個 module 用 4 維度判斷股票所處嘅周期 (強升 / 弱升 / 橫行 / 弱跌 / 強跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢), 同時用 3 個維度調整信心 (成交量 + 斜率 + 走勢強度)。</p>
       <ul>
-        <li><strong>cycle</strong>: ${meta.cycle} (${meta.cycleLabel}) — 而家股票所處嘅周期</li>
+        <li><strong>cycle</strong> (9 個 sub-scenario): ${meta.cycle} (${meta.cycleLabel}) — 而家股票所處嘅周期</li>
+        <li><strong>cyclePosition</strong> (8 個位置): ${meta.cyclePosition || '—'} (${meta.cyclePositionLabel || '—'}) — 周期嘅邊個階段</li>
+        <li><strong>consecutiveDays</strong>: ${meta.consecutiveDays || 0} 日 — 最近連續升 / 跌嘅日數 (到頂轉勢 / 到底轉勢判定基礎)</li>
         <li><strong>confidence</strong>: ${confidencePct}% — 綜合信心指數, base × volume × slope 三階段調整後</li>
         <li><strong>baseConfidence</strong>: ${baseConfidencePct}% — 純粹睇 MA 排列 + spread 嘅基礎信心</li>
         <li><strong>maValues</strong>: ${Object.entries(meta.maValues).map(([k, v]) => `${k}=${v}`).join(', ')} — 4 條均線嘅最新值</li>
-        <li><strong>maRanks</strong>: [${meta.maRanks.join(' > ')}] — 均線由大到小嘅排序, 順序排列 = 典型多頭/空頭</li>
+        <li><strong>maRanks</strong>: [${meta.maRanks.join(' > ')}] — 均線由大到小嘅排序, 順序排列 = 典型多頭 / 空頭</li>
         <li><strong>maSlopes</strong>: ${Object.entries(meta.maSlopes).map(([k, v]) => `${k}=${(v * 100).toFixed(2)}%`).join(', ')} — 各均線斜率 (正 = 升, 負 = 跌)</li>
         <li><strong>momentumScore</strong>: ${meta.momentumScore} — 加權動能分數, 短期 MA 權重高</li>
         <li><strong>volumeTrendRatio</strong>: ${meta.volumeTrendRatio} — 近期均量 / 前期均量, &gt; 1.2 為放量, &lt; 0.8 為縮量</li>
-        <li><strong>volumeSignal</strong>: ${meta.volumeSignal === 'expanding' ? '放量' : meta.volumeSignal === 'shrinking' ? '縮量' : '持平'} — 量能訊號</li>
+        <li><strong>volumeSignal</strong>: ${meta.volumeSignalLabel || meta.volumeSignal} — 量能訊號</li>
         <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比, &lt; 2% 強制覆寫做橫行</li>
         <li><strong>adjustmentLog</strong>: ${meta.adjustmentLog.length > 0 ? meta.adjustmentLog.join('；') : '(無調整)'} — 信心指數調整記錄</li>
         <li><strong>reason</strong>: ${meta.reason} — 綜合判斷理由</li>
         <li><strong>lastDate</strong>: ${meta.lastDate} — 數據截止日期</li>
+      </ul>
+      <h4 style="margin-top:12px;">9 個 sub-scenario 速查</h4>
+      <ul>
+        <li><strong>強上升</strong> (strong_uptrend): MA 完美多頭排列 + 全部斜率正 + 放量 → mid_stage</li>
+        <li><strong>弱上升</strong> (weak_uptrend): MA 多頭排列但部分斜率 / 量能唔配合 → tentative_rise</li>
+        <li><strong>上升回調</strong> (uptrend_correction): 短期急跌但長期仲升 → correction_at_ma20</li>
+        <li><strong>橫行</strong> (sideways): 排列亂 + spread &lt; 2% → range_bound</li>
+        <li><strong>下跌反彈</strong> (downtrend_bounce): 短期急升但長期仲跌 → bounce_in_progress</li>
+        <li><strong>弱下跌</strong> (weak_downtrend): MA 空頭排列但部分斜率 / 量能唔配合 → tentative_fall</li>
+        <li><strong>強下跌</strong> (strong_downtrend): MA 完美空頭排列 + 全部斜率負 + 放量 → mid_stage</li>
+        <li><strong>到頂轉勢</strong> (decelerating_up): MA5 急跌 3%+ + 長期仲升 + 連跌 4+ 日 → late_stage_topping</li>
+        <li><strong>到底轉勢</strong> (decelerating_down): MA5 急升 3%+ + 長期仲跌 + 連升 4+ 日 → late_stage_bottoming</li>
       </ul>
     </div>
   `;
 }
 
 // ===== 策略建議 section =====
-// 按 cycle state 各自建議
+// 按 9 個 sub-scenario 各自建議 (大少 2026-08-15 M1 v2.1.0)
 function renderMAAlignmentV2StrategyAdvice(verdict) {
   const meta = verdict.meta;
   let advice = '';
-  if (meta.cycle === 'uptrend' && meta.confidence >= 0.7) {
-    advice = '<p>🟢 <strong>上升趨勢確認</strong> — 可考慮持有 / 逢回調加倉, 留意 <code>maSlopes[MA5]</code> 唔好轉負。</p>';
-  } else if (meta.cycle === 'uptrend' && meta.confidence < 0.5) {
-    advice = '<p>🟡 <strong>上升動能減弱</strong> — 留意見頂警號 (縮量 / 短期斜率轉負), 收緊止蝕位, 等待 <code>maSlopes[MA5]</code> 確認方向。</p>';
-  } else if (meta.cycle === 'downtrend' && meta.confidence >= 0.7) {
-    advice = '<p>🔴 <strong>下跌趨勢確認</strong> — 觀望 / 減倉, 等 <code>maSlopes[MA60]</code> 轉正先考慮撈底, 唔好接刀。</p>';
-  } else if (meta.cycle === 'downtrend' && meta.confidence < 0.5) {
-    advice = '<p>🟡 <strong>下跌動能減弱</strong> — 留意反彈機會 (縮量 / 長期斜率轉正), 但要 confirm 結構先信, 等 M2 HL Structure HH 確認。</p>';
-  } else if (meta.cycle === 'sideways' && meta.confidence >= 0.7) {
-    advice = '<p>🟡 <strong>橫行確認</strong> — 等待突破方向, 配合 M6 Volatility Squeeze 訊號捕捉突破, 同時留意量能變化 (放量 = 可能突破)。</p>';
+  if (meta.cycle === 'strong_uptrend') {
+    advice = '<p>🟢 <strong>強上升趨勢確認</strong> — 可考慮持有 / 逢回調加倉, 留意 <code>maSlopes[MA5]</code> 唔好轉負, 確認放量跟進。</p>';
+  } else if (meta.cycle === 'weak_uptrend') {
+    advice = '<p>🟡 <strong>弱上升動能</strong> — 觀察多幾日, 等放量確認再入場。留意 MA5 斜率轉負 = 升勢見頂警號。</p>';
+  } else if (meta.cycle === 'uptrend_correction') {
+    advice = '<p>🟢 <strong>上升回調中</strong> — 如已持有可續持, 等 MA5 跌到 MA20 附近見支持再考慮加倉。留意 M2 HL Structure 確認有冇破壞 HH / HL 結構。</p>';
+  } else if (meta.cycle === 'sideways') {
+    advice = '<p>🟡 <strong>橫行整理</strong> — 等待突破方向, 配合 M6 Volatility Squeeze 訊號捕捉突破時機, 留意量能變化 (放量 = 可能突破)。</p>';
+  } else if (meta.cycle === 'downtrend_bounce') {
+    advice = '<p>🔴 <strong>下跌反彈中</strong> — 如已持貨可考慮喺反彈高位減倉, 唔好因為短暫反彈就以為見底。確認 M2 HL Structure 有冇破壞 LL / LH 結構。</p>';
+  } else if (meta.cycle === 'weak_downtrend') {
+    advice = '<p>🟡 <strong>弱下跌動能</strong> — 觀察多幾日, 等放量確認再行動, 唔好急住撈底。留意 MA5 斜率轉正 = 跌勢見底警號。</p>';
+  } else if (meta.cycle === 'strong_downtrend') {
+    advice = '<p>🔴 <strong>強下跌趨勢確認</strong> — 觀望 / 減倉, 等 <code>maSlopes[MA60]</code> 轉正先考慮撈底, 唔好接刀。</p>';
+  } else if (meta.cycle === 'decelerating_up') {
+    advice = '<p>🟣 <strong>到頂轉勢跡象</strong> — 如已持貨應考慮喺反彈時減倉 / 止賺, 唔好博佢返上去。確認 M2 HL Structure (LH = 見頂確認) + M4 Indicators RSI 背馳。</p>';
+  } else if (meta.cycle === 'decelerating_down') {
+    advice = '<p>🔵 <strong>到底轉勢跡象</strong> — 如想撈底要等確認: M2 HL Structure 出現 HH (見底確認) + M4 Indicators RSI 唔再背馳。先小注試單, 唔好一次過 all-in。</p>';
   } else {
-    advice = '<p>🟡 <strong>結構模糊</strong> — 信心不足, 唔好落大注, 等待 M2/M3 結構確認, 或者再多睇幾日。</p>';
+    advice = '<p>🟡 <strong>結構模糊</strong> — 信心不足, 唔好落大注, 等待 M2 / M3 結構確認, 或者再多睇幾日。</p>';
   }
 
   return `
@@ -6768,22 +7123,24 @@ function renderMAAlignmentV2StrategyAdvice(verdict) {
 }
 
 // ===== 點用點睇 section =====
-// 10 步 step-by-step guide 教 user 點睇呢個結果
+// 12 步 step-by-step guide 教 user 點睇呢個結果 (大少 2026-08-15 M1 v2.1.0 — 加 9 個 sub-scenario 解讀)
 function renderMAAlignmentV2UsageGuide(verdict) {
   const meta = verdict.meta;
   return `
     <div class="result-section">
-      <h3>💡 點用點睇 (10 步 step-by-step)</h3>
+      <h3>💡 點用點睇 (12 步 step-by-step)</h3>
       <ol>
-        <li>睇頂部 <code>state-pill</code> 同 <code>信心指數 %</code> 知大方向同信心</li>
-        <li>對比 <code>confidence</code> (綜合) 同 <code>基礎信心</code> — 差越大, 信心調整越多</li>
-        <li>睇 <code>📌 判斷</code> box 嘅 <code>reason</code> 知 algorithm 點解咁判</li>
+        <li>睇頂部 <code>state-pill</code> 嘅 9 個 sub-scenario 標籤 + <code>週期位置</code> 知邊個 sub-scenario + 邊個 stage</li>
+        <li>睇 <code>信心指數 %</code> 同 <code>高 / 中 / 低信心</code> 標籤 — 信心 ≥ 70% 為高信心, 40-70% 中等, &lt; 40% 低</li>
+        <li>對比 <code>confidence</code> (綜合) 同 <code>基礎信心</code> — 差越大, 信心調整越多 (縮量 / 斜率負 = 打折)</li>
+        <li>睇 <code>📌 判斷</code> box 嘅 <code>reason</code> 知 algorithm 點解咁判 (含 sub-scenario + cyclePosition)</li>
         <li>確認 <code>均線詳細</code> 入面 4 條 MA 嘅值同斜率方向 (↗ 升 / ↘ 跌)</li>
         <li>睇 <code>maSlopes[MA5]</code> 嘅正負 — 短期 MA 斜率係上升動能領先指標</li>
         <li>睇 <code>maSlopes[MA60]</code> 嘅正負 — 長期 MA 斜率係大方向指標</li>
         <li>睇 <code>成交量分析</code> — 近期/前期比 + 訊號 (放量跟 = 真升, 縮量升 = 假升)</li>
         <li>睇 <code>調整記錄</code> 知做咗咩 discount / boost (放量/縮量/斜率)</li>
-        <li>對比 M2 HL Structure — 確認峰谷結構 (HH/HL = 上升, LH/LL = 下跌)</li>
+        <li><strong>9 個 sub-scenario 解讀</strong>: 強升 / 弱升 / 上升回調 = UP; 強跌 / 弱跌 / 下跌反彈 = DOWN; 橫行 / 到頂 / 到底 = SIDEWAYS (transition)</li>
+        <li>對比 M2 HL Structure — 確認峰谷結構 (HH/HL = 上升, LH/LL = 下跌), 上升回調 / 下跌反彈 / 到頂 / 到底 尤其重要</li>
         <li>結合多個 module 結果 (M3 Trendline + M4 Indicators + M5 量价 + M6 波動率) 做最終決策</li>
       </ol>
     </div>
@@ -6792,19 +7149,33 @@ function renderMAAlignmentV2UsageGuide(verdict) {
 
 function getMAAlignmentV2Help() {
   return `
-    <h3>第一模組 v2.0 — 均線系統週期判斷法 (加咗成交量同斜率)</h3>
-    <p>用 4 條均線 (5/10/20/60 日) 嘅排列同斜率, 加埋成交量確認, 判斷股票而家係咩週期</p>
-    <h4>3 種週期狀態</h4>
+    <h3>第一模組 v2.1.0 — 均線系統週期判斷法 (9 個 sub-scenario)</h3>
+    <p>用 4 條均線 (5/10/20/60 日) 嘅排列 + 斜率 + 成交量, 判斷股票而家係咩週期, 共 9 個 sub-scenario</p>
+    <h4>9 個 sub-scenario</h4>
     <ul>
-      <li><strong>上升週期</strong> — 均線由細到大排好 + 距離 ≥ 2%</li>
-      <li><strong>下跌週期</strong> — 均線由大到細排好 + 距離 ≥ 2%</li>
-      <li><strong>橫行週期</strong> — 其他情況, 或者距離少過 2% 強制當橫行</li>
+      <li><strong>強上升</strong> (strong_uptrend) — MA 完美多頭排列 + 全部斜率正 + 放量 → mid_stage</li>
+      <li><strong>弱上升</strong> (weak_uptrend) — MA 多頭排列但部分斜率 / 量能唔配合 → tentative_rise</li>
+      <li><strong>上升回調</strong> (uptrend_correction) — 短期急跌但長期仲升 → correction_at_ma20</li>
+      <li><strong>橫行</strong> (sideways) — 排列亂 + spread &lt; 2% → range_bound</li>
+      <li><strong>下跌反彈</strong> (downtrend_bounce) — 短期急升但長期仲跌 → bounce_in_progress</li>
+      <li><strong>弱下跌</strong> (weak_downtrend) — MA 空頭排列但部分斜率 / 量能唔配合 → tentative_fall</li>
+      <li><strong>強下跌</strong> (strong_downtrend) — MA 完美空頭排列 + 全部斜率負 + 放量 → mid_stage</li>
+      <li><strong>到頂轉勢</strong> (decelerating_up) — MA5 急跌 3%+ + 長期仲升 + 連跌 4+ 日 → late_stage_topping</li>
+      <li><strong>到底轉勢</strong> (decelerating_down) — MA5 急升 3%+ + 長期仲跌 + 連升 4+ 日 → late_stage_bottoming</li>
     </ul>
+    <h4>判定優先級</h4>
+    <ol>
+      <li>到頂 / 到底轉勢 (Priority 1, 最重要, transition 訊號)</li>
+      <li>強上升 / 強下跌 (Priority 2, 排列 + 斜率 + 放量全部配合)</li>
+      <li>弱上升 / 弱下跌 (Priority 3, 排列對但部分唔配合)</li>
+      <li>上升回調 / 下跌反彈 (Priority 4, 短長期分裂)</li>
+      <li>橫行 (Default, 排列亂)</li>
+    </ol>
     <h4>信心分數 = 基礎 × 成交量 × 斜率</h4>
     <ul>
-      <li><strong>基礎分</strong> (0.3-1.0): 由距離除 0.10 計, 距離少過 5% 額外乘 0.7</li>
-      <li><strong>成交量</strong> (0.65-1.25): 升 + 放量 1.25, 升 + 縮量 0.65, 跌 + 放量 1.15 等</li>
-      <li><strong>斜率</strong> (0.7-1.0): 升 + 短期斜率跌緊 0.7, 跌 + 長期斜率升緊 0.8 等</li>
+      <li><strong>基礎分</strong> (0.3-1.0): 強趨勢用 maxSpreadPct / 0.10, 弱趨勢打折 0.7, 橫行用 0.3 + spread offset</li>
+      <li><strong>成交量</strong> (0.65-1.25): 升 + 放量 1.25, 升 + 縮量 0.65, 跌 + 放量 1.15, 過渡 1.0</li>
+      <li><strong>斜率</strong> (0.7-1.0): 升 + 短期斜率負 0.7, 跌 + 長期斜率正 0.8, 過渡 1.0</li>
     </ul>
   `;
 }
@@ -6894,9 +7265,9 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
 // 凡人話: 睇均線排列 + 成交量 + 斜率, 判斷上升/橫行/下跌週期
 export const maAlignmentV2Adapter = {
   id: 'AS-03-MA',
-  name: '均線系統週期判斷法 (加咗成交量同斜率)',
-  version: '2.0.0',
-  description: '睇均線嘅排列加埋成交量同斜率, 判斷股票而家係上升、橫行定下跌週期',
+  name: '均線系統週期判斷法 (9 個 sub-scenario + 成交量 + 斜率)',
+  version: '2.1.0',
+  description: '睇均線嘅排列加埋成交量同斜率, 判斷股票而家係咩週期 — 共 9 個 sub-scenario (強升 / 弱升 / 橫行 / 弱跌 / 強跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢)',
   inputs: [
     // 股票代碼 (大少 #10400 — testing page 統一 auto-complete, 跟首頁 StockSearch UX)
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
