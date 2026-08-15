@@ -1618,6 +1618,81 @@ function renderSynthesizedResult(verdict) {
 }
 
 function renderMAResult(verdict) {
+  // ===== ZMEN v1.0 — 凡人話 popup + 9 個 sub-scenario 顏色 + 14 個 field enrich (大少 2026-08-15) =====
+  // 跟 M1 v2.1.0 同樣 inline style, 但用 .zmen-verdict-tooltip (testing page 入面 zmen 同 M1 唔同 module)
+  // 全凡人話, 0 英文 technical term, 0 casual 詞 (學校/老師/校長)
+  const ZMEN_V21_TOOLTIPS = {
+    zmen_title: 'Zmen 均算法 v1.0 — 保留 Layer 1 (10 條 rule A-J) + 加 Layer 2 (9 個 sub-scenario enrich), 凡人話對齊 M1 v2.1.0, 大少可以同 M1 view 對比',
+
+    // 9 個 sub-scenario 凡人話解釋
+    zmen_strong_uptrend: '強上升: Zmen 10 條 rule 中觸發強升 rule (A 連續 5 日 MA5 > MA60 等), 配合 Layer 2 全部 MA 同方向, 典型多頭排列確認',
+    zmen_weak_uptrend: '弱上升: Zmen 觸發部分升 rule (F 升勢調整等), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折',
+    zmen_sideways: '橫行: Zmen 觸發 C/D rule (橫行向下 / 向上), Layer 2 MA 排列亂, 短中期 MA 交叉, 冇明確方向',
+    zmen_weak_downtrend: '弱下跌: Zmen 觸發部分跌 rule (G 跌勢調整等), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折',
+    zmen_strong_downtrend: '強下跌: Zmen 觸發強跌 rule (B 連續 5 日 MA5 < MA60 等), 配合 Layer 2 全部 MA 同方向, 典型空頭排列確認',
+    zmen_uptrend_correction: '上升回調: Zmen 觸發 F rule (升勢調整向下) + Layer 2 短期 MA 急跌但長期仲升, 屬於上升趨勢中嘅正常回調',
+    zmen_downtrend_bounce: '下跌反彈: Zmen 觸發 G rule (跌勢調整向上) + Layer 2 短期 MA 急升但長期仲跌, 屬於下跌趨勢中嘅短暫反彈',
+    zmen_decelerating_up: '到頂轉勢: Zmen 觸發 H-reverse-down rule (升勢轉跌勢) + Layer 2 短期 MA 急跌 3%+ + 連跌 4+ 日, 見頂跡象明顯',
+    zmen_decelerating_down: '到底轉勢: Zmen 觸發 H-reverse-up rule (跌勢轉升勢) + Layer 2 短期 MA 急升 3%+ + 連升 4+ 日, 見底跡象明顯',
+
+    // 8 個 cyclePosition 凡人話解釋
+    zmen_mid_stage: '趨勢中期: 強趨勢 (強升 / 強跌) 嘅中段, 動能最猛, 通常持續 1-3 個月',
+    zmen_tentative_rise: '剛起勢: 弱上升嘅起步, 信號未完全確認, 觀察多幾日',
+    zmen_tentative_fall: '剛起勢: 弱下跌嘅起步, 信號未完全確認, 觀察多幾日',
+    zmen_range_bound: '橫行整理: 4 條 MA 糾纏, 等突破方向',
+    zmen_correction_at_ma20: '回調中: 上升趨勢中嘅正常調整, 短期均線急跌但長期仲升',
+    zmen_bounce_in_progress: '反彈進行中: 下跌趨勢中嘅短暫回升, 留意長期均線仲跌緊',
+    zmen_late_stage_topping: '到頂轉勢中: 上升趨勢見頂跡象 (短期急跌 + 長期仲升), 連續 4+ 日連跌',
+    zmen_late_stage_bottoming: '到底轉勢中: 下跌趨勢見底跡象 (短期急升 + 長期仲跌), 連續 4+ 日連升',
+
+    // 14 個 output field 凡人話解釋
+    zmen_cycle: 'Zmen Layer 2 sub-scenario (9 個之一), 跟 M1 v2.1.0 對齊, 大少可以同 M1 拎同一 sub-scenario 對比 cycle 風格 vs spec 風格',
+    zmen_cycle_position: '周期位置: 細分 9 個 sub-scenario 喺周期嘅邊個階段 (中期 / 剛起勢 / 橫行整理 / 回調中 / 反彈中 / 見頂 / 見底)',
+    zmen_consecutive_days: '連續日數: 最近連續升 / 跌嘅日數, 到頂轉勢 / 到底轉勢嘅判定基礎 (≥ 4 日先 trigger)',
+    zmen_confidence: '信心指數: Zmen Layer 1 + Layer 2 綜合 (10 條 rule 強弱 + Layer 2 細分), 範圍 0-100%, ≥70% 高信心 / 40-70% 中等 / <40% 低信心',
+    zmen_base_confidence: '基礎信心: 純粹睇 10 條 rule 強弱嘅基礎信心, 之後會被 Layer 2 sub-scenario 細分調整',
+    zmen_ma_values: '3 條 MA 嘅最新值: MA5 (5 日) / MA10 (10 日) / MA60 (60 日), Zmen 用 3 條唔係 4 條 (M1 加 MA20)',
+    zmen_ma_ranks: '均線由大到小排序: 例如 MA5 > MA10 > MA60 代表典型多頭 (短期均線喺長期均線上面), 排列越齊信心越高',
+    zmen_ma_slopes: '各均線斜率: 對比 5 日前嘅均線值計出嘅百分比變化。正數 = 升緊, 負數 = 跌緊',
+    zmen_momentum_score: '加權動能分數: 將各均線斜率按 1/period 加權平均, 短期 MA 權重高',
+    zmen_volume_trend: '近期均量 / 前期均量: Zmen 暫時 neutral (zmen algorithm 主要睇 MA 唔睇 volume)',
+    zmen_volume_signal: '成交量訊號: Zmen 暫時持平 (Zmen 10 條 rule 集中睇 MA 唔睇 volume 量能)',
+    zmen_max_spread: '均線間最大價差百分比: 3 條 MA 之間嘅最大距離除以最低值, > 2% 視為有方向',
+    zmen_adjustment_log: 'Layer 2 調整記錄: sub-scenario 細分依據 (e.g. 短期 MA 急跌 + 連跌 4 日 → 到頂轉勢跡象)',
+  };
+
+  // Inline <style> block 喺 return 嘅 <div> 開頭, 跟 M1 v2.1.0 同樣 .verdict-tooltip pattern
+  const ZMEN_V21_TOOLTIP_STYLE = `<style>
+    .zmen-verdict-tooltip { position: relative; cursor: help; border-bottom: 1px dotted #999; }
+    .zmen-verdict-tooltip:hover::after {
+      content: attr(data-help);
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      background: #2c3e50; color: #fff; padding: 8px 12px; border-radius: 6px;
+      white-space: normal; width: max-content; max-width: 380px; min-width: 200px;
+      font-size: 12px; line-height: 1.5; z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      animation: fadeIn 0.1s ease-in;
+    }
+    .zmen-verdict-tooltip:hover::before {
+      content: ''; position: absolute; bottom: 95%; left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: #2c3e50;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  </style>`;
+
+  // 9 個 sub-scenario 對應顏色 (跟 M1 v2.1.0 同樣)
+  const ZMEN_SCENARIO_COLOR_MAP = {
+    strong_uptrend: '#1FA960',     // 深綠
+    weak_uptrend: '#7DD89F',        // 淺綠
+    uptrend_correction: '#A8D5BA',  // 淡綠
+    sideways: '#faad14',            // 黃 (zmen 保留 4 個 state 顏色)
+    downtrend_bounce: '#F5B7B1',    // 淡紅
+    weak_downtrend: '#F1948A',      // 淺紅
+    strong_downtrend: '#C0392B',    // 深紅
+    decelerating_up: '#8E44AD',     // 紫
+    decelerating_down: '#2980B9',   // 藍
+  };
+
   const stateColors = {
     UP: '#52c41a',
     DOWN: '#ff4d4f',
@@ -1631,7 +1706,19 @@ function renderMAResult(verdict) {
     TRANSITION: '轉折',
   };
 
-  const color = stateColors[verdict.state] || '#666';
+  // 大少 2026-08-15 — Zmen v1.0 — Layer 1 保留 + Layer 2 凡人話 enrich
+  // Cycle pill: 用 Layer 2 sub-scenario 顏色 (9 個), fallback Layer 1 4 個 state 顏色
+  const layer2Cycle = verdict.meta?.cycle;
+  const layer2CyclePosition = verdict.meta?.cyclePosition;
+  const layer2ConsecutiveDays = verdict.meta?.consecutiveDays || 0;
+  const layer2CycleLabel = verdict.meta?.cycleLabel || '';
+  const layer2CyclePositionLabel = verdict.meta?.cyclePositionLabel || '';
+  const scenarioTooltipKey = `zmen_${layer2Cycle || 'sideways'}`;
+  const positionTooltipKey = `zmen_${layer2CyclePosition || 'range_bound'}`;
+  const hasConsecutiveDays = (layer2Cycle === 'decelerating_up' || layer2Cycle === 'decelerating_down') && layer2ConsecutiveDays > 0;
+
+  // 顏色優先 Layer 2 sub-scenario, fallback Layer 1 4 個 state
+  const cycleColor = ZMEN_SCENARIO_COLOR_MAP[layer2Cycle] || stateColors[verdict.state] || '#666';
   const stateLabel = stateLabels[verdict.state] || verdict.state;
   const confidencePct = (verdict.confidence * 100).toFixed(1);
   const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 信號強' : verdict.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
@@ -1650,48 +1737,94 @@ function renderMAResult(verdict) {
         return `<li class="rule-${strengthClass}"><strong>${rid}</strong> — ${ev ? ev.label : ''} <small>(${strengthClass})</small></li>`;
       }).join('');
 
-  // 📌 解讀 box 詳細解說 (plain language)
-  const interpretationDetail = verdict.state === 'UP' ? `
-    <p>📌 <strong>簡單講</strong>: 10 條 rule 中觸發咗 ${matchedRules.length} 條上升相關 rule (e.g. 連續 5 日 MA5 > MA60), 典型上升趨勢訊號。</p>
-    <p>📊 <strong>咩意思</strong>: MA5 喺 ${verdict.meta.latestMA5}, MA10 喺 ${verdict.meta.latestMA10}, MA60 喺 ${verdict.meta.latestMA60}, 短期均線喺長期均線上面, 上升趨勢確認。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 上升趨勢確認, 可考慮持有 / 逢回調加倉。留意 H rule (7 日反轉) 同 F rule (升勢調整) 嘅見頂警號。</p>
-  ` : verdict.state === 'DOWN' ? `
-    <p>📌 <strong>簡單講</strong>: 10 條 rule 中觸發咗 ${matchedRules.length} 條下跌相關 rule, 典型下跌趨勢訊號。</p>
-    <p>📊 <strong>咩意思</strong>: MA5 喺 ${verdict.meta.latestMA5}, MA10 喺 ${verdict.meta.latestMA10}, MA60 喺 ${verdict.meta.latestMA60}, 短期均線喺長期均線下面, 下跌趨勢確認。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 下跌趨勢確認, 觀望 / 減倉。留意 H rule (7 日反轉) 同 G rule (跌勢調整) 嘅見底警號。</p>
-  ` : verdict.state === 'TRANSITION' ? `
-    <p>📌 <strong>簡單講</strong>: 觸發 H rule (7 日反轉), 短期均線同長期均線嘅位置出現反轉, 趨勢可能即將改變方向。</p>
-    <p>📊 <strong>咩意思</strong>: 短期內由上升轉下跌, 或由下跌轉上升, 屬於高風險高回報嘅轉折點。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 等待方向確認, 唔好搶跑。等新趨勢確認 + 量能配合再入市。</p>
-  ` : `
-    <p>📌 <strong>簡單講</strong>: 10 條 rule 中只觸發咗 C/D/G 等橫行 rule, 冇明確方向, 股票喺一個範圍內運行。</p>
-    <p>📊 <strong>咩意思</strong>: MA5 ${verdict.meta.latestMA5}, MA10 ${verdict.meta.latestMA10}, MA60 ${verdict.meta.latestMA60}, 均線交叉或距離近, 結構混亂。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 橫行結構, 等待方向確認。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機。</p>
+  // 📌 凡人話 9 個 sub-scenario 解讀 (大少 2026-08-15 Zmen v1.0)
+  // Layer 1 (Zmen 4 個 state) + Layer 2 (9 個 sub-scenario) 兩個 layer 各自解讀, 大少可以睇到 cycle 風格 vs spec 風格 嘅分別
+  const ZMEN_SCENARIO_INTERPRETATION = {
+    strong_uptrend: {
+      summary: `Zmen Layer 1 觸發強升 rule (A 連續 5 日 MA5 > MA60), 配合 Layer 2 全部 MA 同方向, 典型多頭排列確認。10 條 rule 中觸發咗 ${matchedRules.length} 條上升相關 rule, 上升趨勢確認。`,
+      detail: `MA5 喺 ${verdict.meta.latestMA5}, MA10 喺 ${verdict.meta.latestMA10}, MA60 喺 ${verdict.meta.latestMA60}, 短期均線喺長期均線上面, 上升趨勢穩固。Layer 2 9 個 sub-scenario 中, 強上升代表趨勢中期 (mid_stage), 動能最強。`,
+      advice: '可考慮持有 / 逢回調加倉, 留意 H rule (7 日反轉) 同 F rule (升勢調整) 嘅見頂警號。',
+    },
+    weak_uptrend: {
+      summary: `Zmen Layer 1 觸發部分升 rule (F 升勢調整向下), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折。10 條 rule 觸發 ${matchedRules.length} 條。`,
+      detail: '排列對但部分斜率 / 量能唔配合, 剛起勢升 (tentative_rise), 上升動能偏弱。',
+      advice: '觀察多幾日, 等放量確認再入場。留意 MA5 斜率轉負 = 升勢見頂。',
+    },
+    uptrend_correction: {
+      summary: 'Zmen Layer 1 觸發 F rule (升勢調整向下), 配合 Layer 2 短期 MA 急跌但長期仲升, 屬於上升趨勢中嘅正常回調。',
+      detail: '短期 MA 急跌但長期仲升, 回調到 20 日均線附近, 仍保持上升趨勢結構。',
+      advice: '如已持有可續持, 等 MA5 跌到 MA20 附近見支持再考慮加倉。留意 M2 HL Structure 確認有冇破壞 HH / HL 結構。',
+    },
+    sideways: {
+      summary: `Zmen Layer 1 只觸發 C/D/G 等橫行 rule, Layer 2 MA 排列亂, 短中期 MA 交叉, 冇明確方向。10 條 rule 觸發 ${matchedRules.length} 條。`,
+      detail: `MA5 ${verdict.meta.latestMA5}, MA10 ${verdict.meta.latestMA10}, MA60 ${verdict.meta.latestMA60}, 均線交叉或距離近, 結構混亂, 橫行整理中 (range_bound)。`,
+      advice: '等待突破方向, 唔好喺橫行期間強行入市。配合 M6 Volatility Squeeze 訊號可以捕捉突破時機。',
+    },
+    downtrend_bounce: {
+      summary: 'Zmen Layer 1 觸發 G rule (跌勢調整向上), 配合 Layer 2 短期 MA 急升但長期仲跌, 屬於下跌趨勢中嘅短暫反彈。',
+      detail: '短期 MA 急升但長期仲跌, 反彈進行中 (bounce_in_progress), 大方向未改變。',
+      advice: '如已持貨可考慮喺反彈高位減倉, 確認 M2 HL Structure 有冇破壞 LL / LH 結構, 等長期均線斜率轉正先信。',
+    },
+    weak_downtrend: {
+      summary: `Zmen Layer 1 觸發部分跌 rule (G 跌勢調整向上), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折。10 條 rule 觸發 ${matchedRules.length} 條。`,
+      detail: '排列對但部分斜率 / 量能唔配合, 剛起勢跌 (tentative_fall), 下跌動能偏弱。',
+      advice: '觀察多幾日, 等放量確認再行動, 唔好急住撈底。留意 MA5 斜率轉正 = 跌勢見底。',
+    },
+    strong_downtrend: {
+      summary: `Zmen Layer 1 觸發強跌 rule (B 連續 5 日 MA5 < MA60), 配合 Layer 2 全部 MA 同方向, 典型空頭排列確認。10 條 rule 觸發 ${matchedRules.length} 條。`,
+      detail: `MA5 喺 ${verdict.meta.latestMA5}, MA10 喺 ${verdict.meta.latestMA10}, MA60 喺 ${verdict.meta.latestMA60}, 短期均線喺長期均線下面, 下跌趨勢穩固。Layer 2 9 個 sub-scenario 中, 強下跌代表趨勢中期 (mid_stage), 動能最強。`,
+      advice: '觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀。留意有冇縮量 (下跌動能減弱) 或長期斜率轉正 (可能見底) 嘅反彈訊號。',
+    },
+    decelerating_up: {
+      summary: `Zmen Layer 1 觸發 H-reverse-down rule (升勢轉跌勢), 配合 Layer 2 短期 MA 急跌 3%+ + 連跌 ${layer2ConsecutiveDays} 日, 見頂跡象明顯。10 條 rule 觸發 ${matchedRules.length} 條。`,
+      detail: `短期 MA 急跌 ${((verdict.meta.maSlopes?.MA5 || 0) * 100).toFixed(2)}% + 長期 MA 仲升 + 連跌 ${layer2ConsecutiveDays} 日, 到頂轉勢中 (late_stage_topping), 上升趨勢可能見頂。`,
+      advice: '如已持貨應考慮喺反彈時減倉 / 止賺, 唔好博佢返上去。確認 M2 HL Structure (LH = 見頂確認) + M4 Indicators RSI 背馳。',
+    },
+    decelerating_down: {
+      summary: `Zmen Layer 1 觸發 H-reverse-up rule (跌勢轉升勢), 配合 Layer 2 短期 MA 急升 3%+ + 連升 ${layer2ConsecutiveDays} 日, 見底跡象明顯。10 條 rule 觸發 ${matchedRules.length} 條。`,
+      detail: `短期 MA 急升 ${((verdict.meta.maSlopes?.MA5 || 0) * 100).toFixed(2)}% + 長期 MA 仲跌 + 連升 ${layer2ConsecutiveDays} 日, 到底轉勢中 (late_stage_bottoming), 下跌趨勢可能見底。`,
+      advice: '如想撈底要等確認: M2 HL Structure 出現 HH (見底確認) + M4 Indicators RSI 唔再背馳。先小注試單, 唔好一次過 all-in。',
+    },
+  };
+
+  // 向後兼容舊 cycle (uptrend / downtrend), map 返去新 sub-scenario
+  let cycleForLookup = layer2Cycle;
+  if (cycleForLookup === 'uptrend') cycleForLookup = 'strong_uptrend';
+  if (cycleForLookup === 'downtrend') cycleForLookup = 'strong_downtrend';
+
+  const interp = ZMEN_SCENARIO_INTERPRETATION[cycleForLookup] || ZMEN_SCENARIO_INTERPRETATION.sideways;
+  const interpretationDetail = `
+    <p>📌 <strong>簡單講</strong>: <span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS[scenarioTooltipKey] || ''}">${interp.summary}</span></p>
+    <p>📊 <strong>咩意思</strong>: ${interp.detail}</p>
+    <p>💡 <strong>點睇呢個結果</strong>: ${interp.advice}</p>
   `;
 
   return `
     <div class="as03-verdict as03-module-card">
+      ${ZMEN_V21_TOOLTIP_STYLE}
       <div class="module-card-header">
-        <h4>📐 zmen均算法 (v0.3.0, 舊 M1 抽出獨立)</h4>
+        <h4 class="module-header"><span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS.zmen_title}">📐 zmen均算法 v1.0 (保留 Layer 1 + 加 Layer 2, 9 個 sub-scenario + 14 個 field)</span></h4>
       </div>
       <div class="verdict-header">
-        <div class="state-pill" style="background: ${color}">
-          <span class="state-label">${stateLabel}</span>
-          <span class="state-code">${verdict.state}</span>
+        <div class="state-pill" style="background: ${cycleColor}">
+          <span class="state-label"><span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS[scenarioTooltipKey] || ZMEN_V21_TOOLTIPS.zmen_sideways}">${layer2CycleLabel || stateLabel}</span></span>
+          <span class="state-code">${(layer2Cycle || verdict.state || '').toUpperCase()}</span>
         </div>
         <div class="confidence">
-          <div class="conf-pct">${confidencePct}%</div>
+          <div class="conf-pct"><span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS.zmen_confidence}">${confidencePct}%</span></div>
           <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
+          <div class="summary-row"><span>週期位置:</span> <strong><span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS[positionTooltipKey] || ZMEN_V21_TOOLTIPS.zmen_range_bound}">${layer2CyclePositionLabel || '—'}</span></strong></div>
+          ${hasConsecutiveDays ? `<div class="summary-row"><span>連續日數:</span> <strong><span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS.zmen_consecutive_days}">${layer2ConsecutiveDays} 日</span></strong></div>` : ''}
           <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
-          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong><span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS.zmen_base_confidence}">${verdict.meta.dataDays}</span></strong></div>
           <div class="summary-row"><span>Matched Rules:</span> <strong>${matchedRules.length}</strong></div>
         </div>
       </div>
 
       <div class="interpretation">
-        <strong>📌 解讀：</strong>${verdict.interpretation}
+        <strong>📌 判斷:</strong>${verdict.interpretation}
         ${interpretationDetail}
       </div>
 
@@ -1744,21 +1877,41 @@ function renderDetailedExplanationMA(verdict) {
 
   return `
     <div class="detailed-explanation">
-      <h4>📖 詳細解讀 (10 條 rule 點解讀)</h4>
+      <h4>📖 詳細解讀 (Zmen v1.0 — Layer 1 10 條 rule + Layer 2 9 個 sub-scenario + 14 個 field)</h4>
+      <p>呢個 module 用 <strong>Layer 1 (10 條 rule A-J)</strong> 判定 4 個週期 state (UP/DOWN/SIDEWAYS/TRANSITION), 再用 <strong>Layer 2 (5 個判定優先級)</strong> 拎 9 個 sub-scenario enrich, 跟 M1 v2.1.0 對齊。</p>
       <table class="explain-table">
-        <tr><td class="field-name">📊 state (週期類型)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '上升勢 (A/F rule 主導)' : verdict.state === 'DOWN' ? '下跌勢 (B/G rule 主導)' : verdict.state === 'SIDEWAYS' ? '橫行 (C/D rule 主導)' : '轉折 (H rule 觸發 — 7 日內反轉)'}</td></tr>
+        <tr><td class="field-name">📊 Layer 1 state (4 個週期)</td><td><strong>${verdict.state}</strong> — ${verdict.state === 'UP' ? '上升勢 (A/F rule 主導)' : verdict.state === 'DOWN' ? '下跌勢 (B/G rule 主導)' : verdict.state === 'SIDEWAYS' ? '橫行 (C/D rule 主導)' : '轉折 (H rule 觸發 — 7 日內反轉)'}</td></tr>
+        <tr><td class="field-name">🎯 Layer 2 sub-scenario (9 個細分)</td><td><strong>${verdict.meta.cycle || '—'}</strong> (${verdict.meta.cycleLabel || '—'}) — 跟 M1 v2.1.0 對齊</td></tr>
+        <tr><td class="field-name">📍 Layer 2 cyclePosition (8 個 stage)</td><td><strong>${verdict.meta.cyclePosition || '—'}</strong> (${verdict.meta.cyclePositionLabel || '—'})</td></tr>
+        <tr><td class="field-name">🔁 連續日數</td><td>${verdict.meta.consecutiveDays || 0} 日 (到頂/到底轉勢先有)</td></tr>
         <tr><td class="field-name">🎯 confidence (信心指數 ${confidencePct}%)</td><td>${confidencePct >= 70 ? '🟢 高信心 — 判定可靠' : confidencePct >= 50 ? '🟡 中信心 — 有參考價值' : '🔴 低信心 — 信唔過'}</td></tr>
         <tr><td class="field-name">📐 觸發 rule (${matchedRules.length} 條)</td><td>${matchedRules.length === 0 ? '無 rule 觸發,預設 SIDEWAYS' : matchedRules.map(r => `<strong>${r}</strong> — ${ruleExplain[r] || r}`).join(' / ')}</td></tr>
         <tr><td class="field-name">📈 MA5</td><td>${verdict.meta.latestMA5 || 'N/A'} (5 日平均線,短期趨勢)</td></tr>
         <tr><td class="field-name">📈 MA10</td><td>${verdict.meta.latestMA10 || 'N/A'} (10 日平均線,中短期)</td></tr>
         <tr><td class="field-name">📈 MA60</td><td>${verdict.meta.latestMA60 || 'N/A'} (60 日平均線,中長期趨勢)</td></tr>
+        <tr><td class="field-name">📈 maSlopes</td><td>${Object.entries(verdict.meta.maSlopes || {}).map(([k, v]) => `${k}=${(v * 100).toFixed(2)}%`).join(', ') || 'N/A'} (各 MA 斜率)</td></tr>
+        <tr><td class="field-name">⚡ momentumScore</td><td>${verdict.meta.momentumScore || 'N/A'} (加權動能分數)</td></tr>
+        <tr><td class="field-name">📏 maxSpreadPct</td><td>${((verdict.meta.maxSpreadPct || 0) * 100).toFixed(2)}% (均線間最大價差)</td></tr>
+        <tr><td class="field-name">📝 adjustmentLog</td><td>${(verdict.meta.adjustmentLog || []).join(' / ') || '(無 Layer 2 調整)'}</td></tr>
         <tr><td class="field-name">📅 數據日數</td><td>${verdict.meta.dataDays} 日</td></tr>
         <tr><td class="field-name">⏰ 時間週期</td><td>${verdict.timeframe}</td></tr>
-        <tr><td class="field-name">🔧 連續日數</td><td>${verdict.meta.configUsed?.consecutiveDays || 5} 日 (A/B/F/G 用)</td></tr>
+        <tr><td class="field-name">🔧 連續日數 (config)</td><td>${verdict.meta.configUsed?.consecutiveDays || 5} 日 (A/B/F/G 用)</td></tr>
         <tr><td class="field-name">🔧 反轉窗口</td><td>${verdict.meta.configUsed?.reversalWindowDays || 7} 日 (H rule 用)</td></tr>
         <tr><td class="field-name">🔧 觸發門檻</td><td>${((verdict.meta.configUsed?.chanceThresholdPct || 0.02) * 100).toFixed(1)}% (I/J rule 用)</td></tr>
         <tr><td class="field-name">💪 Rule 強度</td><td>${matchedRules.length > 0 ? (matchedRules.some(r => r.startsWith('H') || ['A','B'].includes(r)) ? '強 (A/B/H)' : matchedRules.some(r => ['I','J'].includes(r)) ? '弱 (I/J)' : '中 (C/D/F/G)') : '無'}</td></tr>
       </table>
+      <h4 style="margin-top:12px;">9 個 sub-scenario 速查 (Layer 2)</h4>
+      <ul>
+        <li><strong>強上升</strong> (strong_uptrend) — 強升 rule (A) + 全部 MA 同方向 → mid_stage</li>
+        <li><strong>弱上升</strong> (weak_uptrend) — 部分升 rule (F) + 短中期 MA 同方向 → tentative_rise</li>
+        <li><strong>上升回調</strong> (uptrend_correction) — F rule + 短期急跌但長期仲升 → correction_at_ma20</li>
+        <li><strong>橫行</strong> (sideways) — C/D rule + 排列亂 → range_bound</li>
+        <li><strong>下跌反彈</strong> (downtrend_bounce) — G rule + 短期急升但長期仲跌 → bounce_in_progress</li>
+        <li><strong>弱下跌</strong> (weak_downtrend) — 部分跌 rule (G) + 短中期 MA 同方向 → tentative_fall</li>
+        <li><strong>強下跌</strong> (strong_downtrend) — 強跌 rule (B) + 全部 MA 同方向 → mid_stage</li>
+        <li><strong>到頂轉勢</strong> (decelerating_up) — H-reverse-down + 短期急跌 3%+ + 連跌 4+ 日 → late_stage_topping</li>
+        <li><strong>到底轉勢</strong> (decelerating_down) — H-reverse-up + 短期急升 3%+ + 連升 4+ 日 → late_stage_bottoming</li>
+      </ul>
     </div>
   `;
 }
@@ -1770,53 +1923,28 @@ function renderStrategyAdviceMA(verdict) {
   const isLowConf = verdict.confidence < 0.5;
   const matchedRules = verdict.meta?.matchedRules || [];
 
-  let stateAdvice = '';
-  if (verdict.state === 'UP') {
-    stateAdvice = `
-      <div class="strategy-up">
-        <h4>🟢 上升勢 (A/F rule 主導) · 策略建議</h4>
-        <p><strong>基本動作:</strong>順勢持倉,慢慢加倉</p>
-        <p><strong>訊號確認:</strong>A rule (連續 5 日 MA5 > MA60) 觸發,代表中期趨勢向上</p>
-        <p><strong>風險管理:</strong>留意 F rule (升勢調整 — MA5 < MA10 但仍 > MA60),呢個係見頂警號,出現就要收緊止損</p>
-        <p><strong>止損位:</strong>最近 5 日 low 跌穿 MA5 × 0.98 (I rule 失效),即係要留意</p>
-        <p><strong>進場策略:</strong>等回調到 MA5/MA10 附近再反彈,低吸</p>
-        <p><strong>特別注意:</strong>如果 H-reverse-down rule 都觸發,代表 7 日內由升轉跌,要小心</p>
-      </div>
-    `;
-  } else if (verdict.state === 'DOWN') {
-    stateAdvice = `
-      <div class="strategy-down">
-        <h4>🔴 下跌勢 (B/G rule 主導) · 策略建議</h4>
-        <p><strong>基本動作:</strong>避開 / 考慮減倉</p>
-        <p><strong>訊號確認:</strong>B rule (連續 5 日 MA5 < MA60) 觸發,代表中期趨勢向下</p>
-      <p><strong>風險管理:</strong>留意 G rule (跌勢調整 — MA5 > MA10 但仍 < MA60),可能見底</p>
-      <p><strong>止損位:</strong>最近 5 日 high 升穿 MA5 × 1.02 (J rule 失效)</p>
-      <p><strong>進場策略:</strong>反彈到 MA5/MA10 附近再回落,做空</p>
-      <p><strong>特別注意:</strong>如果 H-reverse-up rule 都觸發,代表 7 日內由跌轉升</p>
-      </div>
-    `;
-  } else if (verdict.state === 'SIDEWAYS') {
-    stateAdvice = `
-      <div class="strategy-sideways">
-        <h4>🟡 橫行 (C/D rule 主導) · 策略建議</h4>
-        <p><strong>基本動作:</strong>等方向,等 MA5 升穿/跌穿 MA60 確認</p>
-        <p><strong>訊號確認:</strong>C rule (橫行向下) 或 D rule (橫行向上) 觸發,代表 5 日內出現過矛盾</p>
-        <p><strong>進場策略:</strong>唔好喺橫行中間進場,等 MA5 突破 MA60 先做</p>
-        <p><strong>觀察重點:</strong>留意 H-reverse rule,如果出現就係轉勢先兆</p>
-      </div>
-    `;
-  } else { // TRANSITION
-    stateAdvice = `
-      <div class="strategy-transition">
-        <h4>🟣 轉折 (H rule 觸發) · 策略建議</h4>
-        <p><strong>基本動作:</strong>暫時 hold,等 7 日內反轉確認</p>
-        <p><strong>訊號確認:</strong>H-reverse-up 或 H-reverse-down 觸發,代表 7 日內有 1-3 日新方向</p>
-        <p><strong>進場策略:</strong>暫時唔好落新單,等下個確認 signal</p>
-        <p><strong>觀察重點:</strong>睇新方向會唔會延續,如果連續 5 日都同方向就變 UP/DOWN state</p>
-        <p><strong>風險:</strong>轉折失敗可能係假突破,要小心</p>
-      </div>
-    `;
-  }
+  // 大少 2026-08-15 — Zmen v1.0 — 凡人話 strategy advice 對應 9 個 sub-scenario (跟 M1 v2.1.0 同樣 style)
+  // 唔再用 4 個 state 嘅 fallback advice (因為 9 個 sub-scenario 已經覆蓋)
+  const layer2Cycle = verdict.meta?.cycle;
+  const layer2ConsecutiveDays = verdict.meta?.consecutiveDays || 0;
+  const ZMEN_V10_STRATEGY_ADVICE = {
+    strong_uptrend: `<div class="strategy-strong-up"><h4>🟢 強上升 (Layer 1 強升 rule + Layer 2 全部 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>順勢持倉, 可考慮持有 / 逢回調加倉</p><p><strong>訊號確認:</strong>A rule (連續 5 日 MA5 > MA60) + Layer 2 全部 MA 同方向, 典型多頭排列確認</p><p><strong>風險管理:</strong>留意 H-reverse-down (7 日內由升轉跌), 呢個係見頂警號</p><p><strong>止損位:</strong>最近 5 日 low 跌穿 MA5 × 0.98 (I rule 失效)</p><p><strong>進場策略:</strong>等回調到 MA5/MA10 附近再反彈, 低吸</p></div>`,
+    weak_uptrend: `<div class="strategy-weak-up"><h4>🟡 弱上升 (Layer 1 部分升 rule + Layer 2 短中期 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等放量確認再入場</p><p><strong>訊號確認:</strong>部分升 rule 觸發 (F 升勢調整), 上升動能偏弱</p><p><strong>風險管理:</strong>留意 MA5 斜率轉負 = 升勢見頂警號</p><p><strong>止損位:</strong>MA5 跌穿 MA10 + 連續 2 日 (Layer 2 弱上升失效)</p><p><strong>進場策略:</strong>等放量確認先入場, 唔好強行加倉</p></div>`,
+    uptrend_correction: `<div class="strategy-correction"><h4>🟢 上升回調中 (Layer 1 F rule + Layer 2 短期急跌但長期仲升) · 策略建議</h4><p><strong>基本動作:</strong>如已持有可續持, 等 MA5 跌到 MA20 附近見支持再考慮加倉</p><p><strong>訊號確認:</strong>F rule (升勢調整向下) + 短期 MA 急跌但長期仲升, 屬於上升趨勢中嘅正常回調</p><p><strong>風險管理:</strong>確認 M2 HL Structure 有冇破壞 HH / HL 結構, 破壞就唔再係上升回調</p><p><strong>止損位:</strong>MA5 跌穿 MA60 + 連續 3 日 (Layer 2 回調失效)</p><p><strong>進場策略:</strong>等 MA5 跌到 MA20 附近見支持再加倉, 唔好見急跌就沽</p></div>`,
+    sideways: `<div class="strategy-sideways"><h4>🟡 橫行 (Layer 1 C/D rule + Layer 2 排列亂) · 策略建議</h4><p><strong>基本動作:</strong>等待突破方向, 唔好喺橫行期間強行入市</p><p><strong>訊號確認:</strong>C/D rule 觸發, Layer 2 MA 排列亂, 短中期 MA 交叉, 冇明確方向</p><p><strong>風險管理:</strong>配合 M6 Volatility Squeeze 訊號可以捕捉突破時機</p><p><strong>進場策略:</strong>等 MA5 突破 MA60 先做 (向上 = 升 / 向下 = 跌)</p><p><strong>觀察重點:</strong>留意 H-reverse rule, 出現就係轉勢先兆</p></div>`,
+    downtrend_bounce: `<div class="strategy-bounce"><h4>🔴 下跌反彈中 (Layer 1 G rule + Layer 2 短期急升但長期仲跌) · 策略建議</h4><p><strong>基本動作:</strong>如已持貨可考慮喺反彈高位減倉</p><p><strong>訊號確認:</strong>G rule (跌勢調整向上) + 短期 MA 急升但長期仲跌, 屬於下跌趨勢中嘅短暫反彈</p><p><strong>風險管理:</strong>確認 M2 HL Structure 有冇破壞 LL / LH 結構, 唔好因為短暫反彈就以為見底</p><p><strong>止損位:</strong>MA5 升穿 MA60 + 連續 3 日 (Layer 2 反彈失效)</p><p><strong>進場策略:</strong>等長期均線 (MA60) 斜率轉正先信, 唔好撈底</p></div>`,
+    weak_downtrend: `<div class="strategy-weak-down"><h4>🟡 弱下跌 (Layer 1 部分跌 rule + Layer 2 短中期 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等放量確認再行動, 唔好急住撈底</p><p><strong>訊號確認:</strong>部分跌 rule 觸發 (G 跌勢調整), 下跌動能偏弱</p><p><strong>風險管理:</strong>留意 MA5 斜率轉正 = 跌勢見底警號</p><p><strong>止損位:</strong>MA5 升穿 MA10 + 連續 2 日 (Layer 2 弱下跌失效)</p><p><strong>進場策略:</strong>等放量確認先行動, 唔好撈底</p></div>`,
+    strong_downtrend: `<div class="strategy-strong-down"><h4>🔴 強下跌 (Layer 1 強跌 rule + Layer 2 全部 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀</p><p><strong>訊號確認:</strong>B rule (連續 5 日 MA5 < MA60) + Layer 2 全部 MA 同方向, 典型空頭排列確認</p><p><strong>風險管理:</strong>留意 H-reverse-up (7 日內由跌轉升), 呢個係見底警號</p><p><strong>止損位:</strong>最近 5 日 high 升穿 MA5 × 1.02 (J rule 失效)</p><p><strong>進場策略:</strong>反彈到 MA5/MA10 附近再回落, 做空</p></div>`,
+    decelerating_up: `<div class="strategy-dec-up"><h4>🟣 到頂轉勢中 (Layer 1 H-reverse-down + Layer 2 連跌 ${layer2ConsecutiveDays} 日) · 策略建議</h4><p><strong>基本動作:</strong>如已持貨應考慮喺反彈時減倉 / 止賺, 唔好博佢返上去</p><p><strong>訊號確認:</strong>H-reverse-down rule (升勢轉跌勢) + 短期 MA 急跌 3%+ + 連跌 ${layer2ConsecutiveDays} 日, 見頂跡象明顯</p><p><strong>風險管理:</strong>確認 M2 HL Structure (LH = 見頂確認) + M4 Indicators RSI 背馳</p><p><strong>止損位:</strong>短期 MA5 升穿 MA10 + 連續 2 日 (Layer 2 到頂失效)</p><p><strong>進場策略:</strong>等確認見頂後先做空, 唔好搶跑</p></div>`,
+    decelerating_down: `<div class="strategy-dec-down"><h4>🔵 到底轉勢中 (Layer 1 H-reverse-up + Layer 2 連升 ${layer2ConsecutiveDays} 日) · 策略建議</h4><p><strong>基本動作:</strong>如想撈底要等確認: M2 HL Structure 出現 HH (見底確認) + M4 Indicators RSI 唔再背馳</p><p><strong>訊號確認:</strong>H-reverse-up rule (跌勢轉升勢) + 短期 MA 急升 3%+ + 連升 ${layer2ConsecutiveDays} 日, 見底跡象明顯</p><p><strong>風險管理:</strong>先小注試單, 唔好一次過 all-in</p><p><strong>止損位:</strong>短期 MA5 跌穿 MA10 + 連續 2 日 (Layer 2 到底失效)</p><p><strong>進場策略:</strong>等確認見底後先撈底, 唔好搶跑</p></div>`,
+  };
+
+  // 向後兼容舊 cycle (uptrend / downtrend), map 返去新 sub-scenario
+  let cycleForAdvice = layer2Cycle;
+  if (cycleForAdvice === 'uptrend') cycleForAdvice = 'strong_uptrend';
+  if (cycleForAdvice === 'downtrend') cycleForAdvice = 'strong_downtrend';
+
+  const stateAdvice = ZMEN_V10_STRATEGY_ADVICE[cycleForAdvice] || ZMEN_V10_STRATEGY_ADVICE.sideways;
 
   let confidenceNote = '';
   if (isHighConf) {
@@ -1838,19 +1966,24 @@ function renderStrategyAdviceMA(verdict) {
 }
 
 // ===== 點用 + 點睇 guide section (MA alignment) =====
+// 大少 2026-08-15 — Zmen v1.0 — 凡人話 12 步 step-by-step guide (跟 M1 v2.1.0 同樣 style)
 function renderUsageGuideMA(verdict) {
   return `
     <div class="usage-guide">
-      <h4>💡 點用呢個結果 (點睇)</h4>
+      <h4>💡 點用呢個結果 (12 步 step-by-step)</h4>
       <ol>
-        <li><strong>先睇 state 同信心</strong> — 個大色塊 (綠=UP / 紅=DOWN / 橙=SIDEWAYS / 紫=TRANSITION) 同信心百分比,呢個係最概要嘅判斷</li>
-        <li><strong>睇「觸發 rule」嗰行</strong> — 例如「A」= 強烈上升,「H-reverse-down」= 7 日內由升轉跌。每條 rule 都有具體意思,睇「📖 詳細解讀」section</li>
-        <li><strong>睇 chart 上面嘅 MA 線</strong> — chart 會 render MA5/MA10/MA20 三條線,呢個 module 嘅判定建基於呢啲線。睇線嘅相對位置 (MA5 喺 MA10 上面 = 短期強)</li>
-        <li><strong>睇 MA 值嗰 3 個 box</strong> — MA5/MA10/MA60 嘅實際數值,比較當前價同呢 3 條線嘅距離</li>
-        <li><strong>信心 &lt; 50% 唔好落單</strong> — 寧願等下一個更明顯信號</li>
-        <li><strong>配合其他 module 一齊睇</strong> — 揀 AS-03 (umbrella) 同時跑 7 個 module,compare 唔同 module 嘅判斷</li>
-        <li><strong>短期 vs 中期</strong> — MA5/MA10 係短期,MA60 係中期,呢個 module 主要睇中期趨勢</li>
-        <li><strong>回測用 100+ 日 K 線</strong> — 預設 100 日夠用,加長可攞更穩 verdict</li>
+        <li>睇頂部 <code>state-pill</code> 嘅 9 個 sub-scenario 標籤 + <code>週期位置</code> 知邊個 sub-scenario + 邊個 stage</li>
+        <li>睇 <code>信心指數 %</code> 同 <code>高 / 中 / 低信心</code> 標籤 — 信心 ≥ 70% 為高信心, 40-70% 中等, &lt; 40% 低</li>
+        <li>對比 <code>confidence</code> (綜合) 同 <code>基礎信心</code> — 差越大, Layer 2 細分調整越多</li>
+        <li>睇 <code>📌 判斷</code> box 嘅 <code>reason</code> 知 algorithm 點解咁判 (含 sub-scenario + cyclePosition)</li>
+        <li>確認 <code>均線詳細</code> 入面 3 條 MA 嘅值同斜率方向 (↗ 升 / ↘ 跌)</li>
+        <li>睇 <code>maSlopes[MA5]</code> 嘅正負 — 短期 MA 斜率係上升動能領先指標</li>
+        <li>睇 <code>maSlopes[MA60]</code> 嘅正負 — 長期 MA 斜率係大方向指標</li>
+        <li>睇 <code>momentumScore</code> — 加權動能分數, 短期 MA 權重高</li>
+        <li>睇 <code>調整記錄</code> 知 Layer 2 做咗咩 sub-scenario 細分 (e.g. 短期急跌 + 連跌 4 日 → 到頂轉勢)</li>
+        <li><strong>9 個 sub-scenario 解讀</strong>: 強升 / 弱升 / 上升回調 = UP; 強跌 / 弱跌 / 下跌反彈 = DOWN; 橫行 / 到頂 / 到底 = SIDEWAYS (transition)</li>
+        <li>對比 M1 (M1 同 zmen 拎 9 個 sub-scenario 對比, 睇 cycle 風格 vs spec 風格 一致性)</li>
+        <li>結合多個 module 結果 (M3 Trendline + M4 Indicators + M5 量价 + M6 波動率) 做最終決策</li>
       </ol>
       <p class="caveat">⚠️ 呢個 module 係輔助工具,唔係 100% 準。永遠配合基本面 / 消息面 / 風險管理一齊用,唔好單靠一個 algorithm 落單。</p>
     </div>
@@ -7542,7 +7675,65 @@ export const maAlignmentV2Adapter = {
 // 2026-08-08 09:13 — zmen均算法 (舊 M1 v0.3.0 抽離獨立)
 //   舊 M1 嘅 v0.3.0 邏輯保留, 用 zmenMAAdapter named export 暴露
 //   testing page 嘅 zmen均算法 entry 繼續用頂層 default
+//   大少 2026-08-15 — zmen v1.0: 改用 zmenMAAdapter 命名 export (testing page 拎呢個 adapter 拎到 renderResult 凡人話 layout)
 // =====================================================================
+
+// zmen 凡人話 help (跟 M1 v2.1.0 對齊, 9 個 sub-scenario + Priority 1-5)
+function getZmenV10Help() {
+  return `
+    <h3>zmen均算法 v1.0 — 保留 Layer 1 (10 條 rule) + 加 Layer 2 (9 個 sub-scenario)</h3>
+    <p>用 3 條均線 (5/10/60 日) 嘅 10 條 rule A-J 判定 4 個週期 state (UP/DOWN/SIDEWAYS/TRANSITION), 再用 5 個判定優先級 enrich 9 個 sub-scenario (跟 M1 v2.1.0 對齊)。</p>
+    <h4>9 個 sub-scenario (Layer 2)</h4>
+    <ul>
+      <li><strong>強上升</strong> (strong_uptrend) — 強升 rule (A) + 全部 MA 同方向 → mid_stage</li>
+      <li><strong>弱上升</strong> (weak_uptrend) — 部分升 rule (F) + 短中期 MA 同方向 → tentative_rise</li>
+      <li><strong>上升回調</strong> (uptrend_correction) — F rule + 短期急跌但長期仲升 → correction_at_ma20</li>
+      <li><strong>橫行</strong> (sideways) — C/D rule + 排列亂 → range_bound</li>
+      <li><strong>下跌反彈</strong> (downtrend_bounce) — G rule + 短期急升但長期仲跌 → bounce_in_progress</li>
+      <li><strong>弱下跌</strong> (weak_downtrend) — 部分跌 rule (G) + 短中期 MA 同方向 → tentative_fall</li>
+      <li><strong>強下跌</strong> (strong_downtrend) — 強跌 rule (B) + 全部 MA 同方向 → mid_stage</li>
+      <li><strong>到頂轉勢</strong> (decelerating_up) — H-reverse-down + 短期急跌 3%+ + 連跌 4+ 日 → late_stage_topping</li>
+      <li><strong>到底轉勢</strong> (decelerating_down) — H-reverse-up + 短期急升 3%+ + 連升 4+ 日 → late_stage_bottoming</li>
+    </ul>
+    <h4>判定優先級</h4>
+    <ol>
+      <li>到頂 / 到底轉勢 (Priority 1, 最重要, transition 訊號)</li>
+      <li>強上升 / 強下跌 (Priority 2, 排列 + 斜率全部配合)</li>
+      <li>弱上升 / 弱下跌 (Priority 3, 排列對但部分唔配合)</li>
+      <li>上升回調 / 下跌反彈 (Priority 4, 短長期分裂)</li>
+      <li>橫行 (Default, 排列亂)</li>
+    </ol>
+    <h4>Layer 1 4 個 state (保留 zmen v0.3.0)</h4>
+    <ul>
+      <li><strong>UP</strong> (H/A/F rule 主導) — 上升勢</li>
+      <li><strong>DOWN</strong> (B/G rule 主導) — 下跌勢</li>
+      <li><strong>SIDEWAYS</strong> (C/D rule 主導) — 橫行</li>
+      <li><strong>TRANSITION</strong> (H-reverse rule 觸發) — 7 日內反轉</li>
+    </ul>
+    <h4>凡人話 warning 注入 (跟 Spec Sync #18 CATEGORY_DISPLAY template)</h4>
+    <ul>
+      <li><strong>FALLBACK_USED</strong> (🔧 系統) — 10 條 rule 全部 fail, fallback SIDEWAYS</li>
+      <li><strong>THRESHOLD_BREACH</strong> (📊 股票狀態) — confidence &lt; 0.4 (信心過低)</li>
+      <li><strong>CONFLICT_STATE</strong> (📊 股票狀態) — Layer 2 到頂/到底轉勢 (見頂/見底訊號)</li>
+    </ul>
+    <h4>凡人話對比 — Zmen 同 M1</h4>
+    <p>Zmen (cycle 風格) 同 M1 (docx spec 風格) 兩個 module 拎到 9 個 sub-scenario 之後, 大少可以 testing page 同時睇 M1 + zmen 兩個 view, 對比 cycle 風格 vs spec 風格嘅一致性。</p>
+  `;
+}
+
+export const zmenMAAdapter = {
+  id: 'AS-03',
+  name: 'zmen均算法 v1.0 (Layer 1 + Layer 2)',
+  version: '1.0.0',
+  description: '大少 cycle 風格嘅均線演算法, 保留 Layer 1 (10 條 rule A-J + 4 個 state) + 加 Layer 2 (9 個 sub-scenario + 14 個 field enrich), 跟 M1 v2.1.0 對齊',
+  inputs: [
+    { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
+    { key: 'dataWindowDays', label: '回顧天數 (K 線)', type: 'number', default: 1260, min: 60, max: 1260 },
+  ],
+  analyze: runMAAlignment,
+  renderResult: renderMAResult,
+  getHelp: getZmenV10Help,
+};
 
 // =====================================================================
 // 大少 2026-08-08 12:30 — Sprint 1 sub-task 1.4 — M7 Synthesizer adapter

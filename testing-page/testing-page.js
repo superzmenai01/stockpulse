@@ -99,13 +99,10 @@ const REGISTRY = [
   // 大少 2026-08-08 09:13: implementation file 改叫 zmen-ma-alignment.ts
   {
     id: 'AS-03',
-    displayName: 'zmen均算法',  // 大少 2026-08-08 09:50: 舊 M1 改名 + 抽離 7 個 modules
+    displayName: 'zmen均算法 v1.0',  // 大少 2026-08-08 09:50: 舊 M1 改名 + 抽離 7 個 modules; 2026-08-15 v1.0: 保留 Layer 1 + 加 Layer 2
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    // 預設 = 頂層 exports (向後兼容 ma-alignment v0.3.0 adapter 嘅 analyze 函數, 留俾 zmen均算法)
-    // 大少 #10859 — module toggle (enableVolumePrice) 由 AS-03 entry 入面嘅 checkbox 控制
-    //   唔再獨立 expose AS-03-VP dropdown
-    // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏, Stage 1 done 最後先做返
+    adapterExport: 'zmenMAAdapter',  // 大少 2026-08-15 zmen v1.0: 改用命名 export, 拎到 renderResult 凡人話 layout
   },
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
   // M1: 均線系統週期判斷法 v2.0 (with Volume & Slope 擴展)
