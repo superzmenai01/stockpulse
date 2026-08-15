@@ -545,3 +545,36 @@ def _compute_fetch_max_count(period):
 - ✅ 改 M1 cycle / cyclePosition / consecutiveDays logic 嗰陣, 必須一齊 update M7 reasoning enrich logic (永久 rule 同步)
 
 對應 commit: (即將 push)
+
+---
+
+### zmen 均算法 v1.0 — 保留 Layer 1 + 加 Layer 2 (大少 2026-08-15)
+
+**凡人話解釋**: 大少 trigger「保留 zmen 判斷邏輯 + 加 M1 嘅 9 個 sub-scenario enrich」。Zmen v1.0 用雙層 architecture: Layer 1 保留 v0.3.0 嘅 10 條 rule A-J + 4 個 state, Layer 2 加 M1 v2.1.0 嘅 9 個 sub-scenario enrich (用 zmen 自己 3 條 MA 數據 derive, 唔覆蓋 Layer 1)。
+
+**Layer 1 (zmen v0.3.0 保留 100%)**:
+- 10 條 rule A-J 全部保留
+- 4 個 state (H/B/A,F/C,D,G + TRANSITION) 保留
+- Warning 注入 (INSUFFICIENT_DATA / NAN_RESULT / FALLBACK_USED) 保留
+- Backward compat 100% — M7 / M8 chain 拎 zmen state 唔受影響
+
+**Layer 2 (新加 M1 v2.1.0 enrich)**:
+- **9 個 sub-scenario** (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢), 跟 M1 對齊
+- **5 個判定優先級** (跟 M1 Priority 1-5): 到頂/到底轉勢 (短期 MA 急變 3%+ + 連續 4+ 日) → 強趨勢 (全部 MA 同方向) → 弱趨勢 (排列對但部分唔配合) → 上升回調/下跌反彈 (短長期分裂) → 橫行 (排列亂)
+- **14 個 output field** (對齊 M1 v2.1.0): cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog
+- **凡人話 warning 注入** (跟 Spec Sync #18 CATEGORY_DISPLAY template): THRESHOLD_BREACH (信心 < 0.4) / CONFLICT_STATE (到頂/到底轉勢, stock_state category)
+
+**凡人話 example — 騰訊 (00700)**:
+- Layer 1: state = UP, conf 90%, matchedRules = [A, F, I, J] (10 條 rule 觸發 4 條上升相關)
+- Layer 2: subScenario = decelerating_up (到頂轉勢中), cyclePosition = late_stage_topping, consecutiveDays = 4
+- Warning: CONFLICT_STATE (Layer 2 觸發)
+- 凡人話: Zmen Layer 1 話仲係升 (大少 cycle 風格), 但 Layer 2 拎 zmen 自己 MA 數據見到頂跡象, 兩個 layer 對比大少可以睇到 cycle 風格 + spec 風格 嘅分別
+
+**永久 rule**:
+- ✅ Zmen v1.0 Layer 1 (10 條 rule + 4 個 state) 永久保留, backward compat 100%
+- ✅ Zmen v1.0 Layer 2 (9 個 sub-scenario) 用 zmen 自己 3 條 MA (MA5/MA10/MA60) derive, 唔覆蓋 Layer 1
+- ✅ Zmen Layer 2 同 M1 v2.1.0 嘅 9 個 sub-scenario 名對齊 (凡人話 UX 一致), 兩個 module 獨立 derive
+- ✅ M7 / M8 chain 拎 zmen state 仲係 Layer 1 嘅 4 個 state (H/B/A,F/C,D,G/TRANSITION), Layer 2 純粹 enrich zmen 自己 verdict 嘅 meta
+- ✅ 改 Layer 1 10 條 rule 嗰陣, 必須一齊 update Layer 2 嘅 9 個 sub-scenario 規則 (永久 rule 同步)
+
+對應 commit: (即將 push)

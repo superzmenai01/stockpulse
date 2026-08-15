@@ -427,6 +427,78 @@ async function runMAAlignment(klines, options = {}) {
   // Step 5: Confidence derivation
   const confidence = deriveConfidence(matchedRules);
 
+  // =============================================================
+  // 大少 2026-08-15 — zmen 均算法 v1.0 — Layer 2: 9 個 sub-scenario enrich
+  // 凡人話: 保留 Layer 1 4 個 state 唔變, 加 Layer 2 拎 9 個 sub-scenario 細分
+  //         (跟 M1 v2.1.0 對齊, 用 zmen 自己 3 條 MA 數據 derive)
+  // =============================================================
+  const layer2 = deriveZmenSubScenario(ma5History, ma10History, ma60History, recent);
+
+  // 計 maValues / maRanks / maSlopes (zmen 3 條 MA)
+  const maValues = {
+    MA5: round(ma5History[ma5History.length - 1], 4),
+    MA10: round(ma10History[ma10History.length - 1], 4),
+    MA60: round(ma60History[ma60History.length - 1], 4),
+  };
+  // zmen maRanks: 短到長
+  const maKeys = ['MA5', 'MA10', 'MA60'];
+  const maRanksByValue = [...maKeys].sort((a, b) => maValues[b] - maValues[a]);
+  const rankPeriods = maRanksByValue.map(k => parseInt(k.replace('MA', ''), 10));
+  const sortedPeriodsAsc = [5, 10, 60];
+  const sortedPeriodsDesc = [60, 10, 5];
+  let maRanks;
+  if (JSON.stringify(rankPeriods) === JSON.stringify(sortedPeriodsAsc)) {
+    maRanks = ['MA5', 'MA10', 'MA60'];
+  } else if (JSON.stringify(rankPeriods) === JSON.stringify(sortedPeriodsDesc)) {
+    maRanks = ['MA60', 'MA10', 'MA5'];
+  } else {
+    maRanks = maRanksByValue;
+  }
+
+  // maSlopes (zmen 3 條 MA 嘅 5 日前 vs 而家)
+  const calcSlopeMeta = (maArr) => {
+    if (maArr.length < 6) return 0;
+    const cur = maArr[maArr.length - 1];
+    const past = maArr[maArr.length - 6];
+    return past > 0 ? (cur - past) / past : 0;
+  };
+  const maSlopes = {
+    MA5: round(calcSlopeMeta(ma5History), 6),
+    MA10: round(calcSlopeMeta(ma10History), 6),
+    MA60: round(calcSlopeMeta(ma60History), 6),
+  };
+
+  // 計 maValues 之間嘅 maxSpreadPct
+  const maValList = Object.values(maValues);
+  const maxMAVal = Math.max(...maValList);
+  const minMAVal = Math.min(...maValList);
+  const maxSpreadPct = minMAVal > 0 ? round((maxMAVal - minMAVal) / minMAVal, 6) : 0;
+
+  // momentumScore (zmen 3 條 MA 加權平均, 短期權重高)
+  const totalWeight = 1 / 5 + 1 / 10 + 1 / 60;
+  const momentumScore = round(
+    (maSlopes.MA5 * (1 / 5) + maSlopes.MA10 * (1 / 10) + maSlopes.MA60 * (1 / 60)) / totalWeight,
+    6
+  );
+
+  // Zmen 暫時冇 volume 同 high/low 細分, 用 neutral 兜底
+  // 之後可加 volume field (zmen 入面有 last5Klines, 可計)
+  const volumeTrendRatio = 1.0;
+  const volumeSignal = 'neutral';
+  const volumeSignalLabel = '持平';
+  const adjustmentLog = layer2.subScenario === 'sideways' && matchedRules.length === 0
+    ? ['Layer 1 10 條 rule 全部 fail + Layer 2 排列亂, 默認橫行']
+    : (layer2.subScenario === 'decelerating_up'
+        ? [`Layer 2 到頂轉勢跡象: 短期 MA5 急跌 ${(maSlopes.MA5 * 100).toFixed(2)}% + 長期 MA 仲升 + 連跌 ${layer2.consecutiveDays} 日`]
+        : (layer2.subScenario === 'decelerating_down'
+            ? [`Layer 2 到底轉勢跡象: 短期 MA5 急升 ${(maSlopes.MA5 * 100).toFixed(2)}% + 長期 MA 仲跌 + 連升 ${layer2.consecutiveDays} 日`]
+            : (layer2.subScenario.startsWith('strong_')
+                ? ['Layer 2 強趨勢跡象: 全部 MA 同方向 + 短期 MA 上/下穿長期']
+                : (layer2.subScenario === 'sideways'
+                    ? ['Layer 2 排列亂 + 短中期 MA 交叉, 默認橫行']
+                    : ['Layer 2 sub-scenario: ' + (ZMEN_SUB_SCENARIO_LABELS[layer2.subScenario] || layer2.subScenario)]))));
+
+
   // Build verdict
   const interpretation = matchedRules.length > 0
     ? matchedRules.map((r) => r.label).join('；')
@@ -485,6 +557,43 @@ async function runMAAlignment(klines, options = {}) {
       }
     ));
   }
+
+  // 大少 2026-08-15 — zmen v1.0 Layer 2: 凡人話 warning 注入 (跟 Spec Sync #18 CATEGORY_DISPLAY template)
+  //   THRESHOLD_BREACH (stock_state): Layer 2 信心過低
+  //   CONFLICT_STATE (stock_state): Layer 2 到頂/到底轉勢 (唔覆蓋 Layer 1, 只係 enrich warning)
+  if (confidence != null && confidence < 0.4) {
+    m1Warnings.push(makeWarning('warning', 'M1', 'THRESHOLD_BREACH',
+      `zmen 信心過低 (${(confidence * 100).toFixed(0)}%)`,
+      {
+        issue: `Layer 1 confidence = ${confidence.toFixed(4)} < 0.4 (${state} 判斷信心不足)`,
+        impact: 'Verdict 已經準確, 留意股票狀態',
+        fix: '睇其他 module 確認 / 留意 M7 alignment',
+        context: { confidence, layer1_state: state, layer2_sub_scenario: layer2.subScenario },
+      }
+    ));
+  }
+  if (layer2.subScenario === 'decelerating_up') {
+    m1Warnings.push(makeWarning('warning', 'M1', 'CONFLICT_STATE',
+      'zmen Layer 2 見到頂轉勢跡象',
+      {
+        issue: `Layer 2 到頂轉勢跡象: 短期 MA5 急跌 ${(maSlopes.MA5 * 100).toFixed(2)}% + 長期 MA 仲升 + 連跌 ${layer2.consecutiveDays} 日 (見頂訊號)`,
+        impact: 'Verdict 已經準確, 留意股票狀態',
+        fix: '睇其他 module 確認 / 留意 M7 alignment',
+        context: { layer2_sub_scenario: 'decelerating_up', consecutive_days: layer2.consecutiveDays, ma5_slope_pct: round(maSlopes.MA5 * 100, 4) },
+      }
+    ));
+  }
+  if (layer2.subScenario === 'decelerating_down') {
+    m1Warnings.push(makeWarning('warning', 'M1', 'CONFLICT_STATE',
+      'zmen Layer 2 見到底轉勢跡象',
+      {
+        issue: `Layer 2 到底轉勢跡象: 短期 MA5 急升 ${(maSlopes.MA5 * 100).toFixed(2)}% + 長期 MA 仲跌 + 連升 ${layer2.consecutiveDays} 日 (見底訊號)`,
+        impact: 'Verdict 已經準確, 留意股票狀態',
+        fix: '睇其他 module 確認 / 留意 M7 alignment',
+        context: { layer2_sub_scenario: 'decelerating_down', consecutive_days: layer2.consecutiveDays, ma5_slope_pct: round(maSlopes.MA5 * 100, 4) },
+      }
+    ));
+  }
   // 大少 2026-08-14 23:15 — 永久 rule: 移除 CONFIG_DEFAULTS trigger (因為 testing page 默認 1260, user 永遠唔再「冇自訂」呢個 state, warning 已經多餘)
   // 之前: if (cfg.dataWindowDays === 100) → trigger CONFIG_DEFAULTS warning
   // 之後: 永遠唔 trigger (user 喺 testing page 自己揀 default = 1260, 唔需要 system 提)
@@ -499,6 +608,7 @@ async function runMAAlignment(klines, options = {}) {
     warnings: m1Warnings,  // Backward compat: 保留舊 `warnings` field
     _warnings: m1Warnings,  // 大少 2026-08-11 v1.0.0: 統一 `_warnings` for WarningBanner
     meta: {
+      // Layer 1 (zmen v0.3.0 保留, backward compat 100%)
       matchedRules: matchedRules.map((r) => r.id),
       ruleLabels: matchedRules.map((r) => r.label),
       latestMA5: round(ma5History[ma5History.length - 1], 4),
@@ -506,6 +616,22 @@ async function runMAAlignment(klines, options = {}) {
       latestMA60: round(ma60History[ma60History.length - 1], 4),
       dataDays: recent.length,
       configUsed: cfg,
+      // 大少 2026-08-15 — zmen v1.0 Layer 2 enrich (9 個 sub-scenario + 14 個 field)
+      // 凡人話: 跟 M1 v2.1.0 對齊, 14 個 field 全部用上
+      cycle: layer2.subScenario,  // 9 個 sub-scenario 之一
+      cycleLabel: ZMEN_SUB_SCENARIO_LABELS[layer2.subScenario] || '橫行',
+      cyclePosition: layer2.cyclePosition,  // 8 個 cyclePosition 之一
+      cyclePositionLabel: ZMEN_POSITION_LABELS[layer2.cyclePosition] || '橫行整理中',
+      consecutiveDays: layer2.consecutiveDays,
+      maValues,
+      maRanks,
+      maSlopes,
+      momentumScore,
+      maxSpreadPct,
+      volumeTrendRatio,
+      volumeSignal,
+      volumeSignalLabel,
+      adjustmentLog,
     },
     timestamp: Date.now(),
   };
@@ -1197,6 +1323,119 @@ function avgClose(klines, endIdx, period) {
   const slice = klines.slice(startIdx, endIdx + 1);
   const sum = slice.reduce((acc, k) => acc + k.close, 0);
   return sum / slice.length;
+}
+
+// 大少 2026-08-15 — zmen 均算法 v1.0 — Layer 2: 9 個 sub-scenario labels 字典 (凡人話, 跟 M1 v2.1.0 對齊)
+// 用 zmen 自己 3 條 MA (MA5/MA10/MA60) 嘅數據 enrich, 唔覆蓋 Layer 1 嘅 4 個 state
+const ZMEN_SUB_SCENARIO_LABELS = {
+  strong_uptrend: '強上升趨勢',
+  weak_uptrend: '弱上升趨勢',
+  sideways: '橫行',
+  weak_downtrend: '弱下跌趨勢',
+  strong_downtrend: '強下跌趨勢',
+  uptrend_correction: '上升回調中',
+  downtrend_bounce: '下跌反彈中',
+  decelerating_up: '到頂轉勢中',
+  decelerating_down: '到底轉勢中',
+};
+
+const ZMEN_POSITION_LABELS = {
+  mid_stage: '趨勢中期 (主升 / 主跌段)',
+  tentative_rise: '剛起勢 (剛開始升)',
+  tentative_fall: '剛起勢 (剛開始跌)',
+  range_bound: '橫行整理中',
+  correction_at_ma20: '回調中 (短期均線急跌但長期仲升)',
+  bounce_in_progress: '反彈中 (短期均線急升但長期仲跌)',
+  late_stage_topping: '到頂轉勢中 (見頂跡象)',
+  late_stage_bottoming: '到底轉勢中 (見底跡象)',
+};
+
+// 大少 2026-08-15 — Zmen v1.0 Layer 2: 9 個 sub-scenario 規則, 用 zmen 自己 MA 數據 derive
+// 凡人話: 保留 Layer 1 嘅 4 個 state, 加 Layer 2 拎 sub-scenario 細分 (9 個, 跟 M1 v2.1.0 對齊)
+// 5 個判定優先級 (跟 M1 Priority 1-5):
+//   Priority 1: 到頂/到底轉勢 (短期 MA 急變 + 長期 MA 同方向 + 連續 4+ 日)
+//   Priority 2: 強升/強跌 (全部 MA 同方向 + 量能配合)
+//   Priority 3: 弱升/弱跌 (排列對但部分唔配合)
+//   Priority 4: 上升回調/下跌反彈 (短長期分裂)
+//   Default: 橫行
+function deriveZmenSubScenario(ma5History, ma10History, ma60History, klines) {
+  if (ma5History.length < 5 || klines.length < 5) {
+    return { subScenario: 'sideways', cyclePosition: 'range_bound', consecutiveDays: 0 };
+  }
+
+  // 計連續升 / 跌日數 (用 close 唔係 MA, 同 M1 一致)
+  let consecutiveDownDays = 0;
+  for (let i = klines.length - 1; i > 0; i--) {
+    if (klines[i].close < klines[i - 1].close) consecutiveDownDays++;
+    else break;
+  }
+  let consecutiveUpDays = 0;
+  for (let i = klines.length - 1; i > 0; i--) {
+    if (klines[i].close > klines[i - 1].close) consecutiveUpDays++;
+    else break;
+  }
+
+  // 拎 5 日前 vs 而家嘅 MA slope (對比 5 日前嘅 MA 值, 同 M1 一致)
+  const calcSlopeZmen = (maArr) => {
+    if (maArr.length < 6) return 0;
+    const cur = maArr[maArr.length - 1];
+    const past = maArr[maArr.length - 6];
+    return past > 0 ? (cur - past) / past : 0;
+  };
+  const slopeMA5 = calcSlopeZmen(ma5History);
+  const slopeMA10 = calcSlopeZmen(ma10History);
+  const slopeMA60 = calcSlopeZmen(ma60History);
+
+  const allShortSlopeNegative = slopeMA5 < 0 && slopeMA10 < 0;
+  const allShortSlopePositive = slopeMA5 > 0 && slopeMA10 > 0;
+  const longSlopePositive = slopeMA60 > 0;
+  const longSlopeNegative = slopeMA60 < 0;
+
+  // 排 MA 短 / 中 / 長期方向
+  const allMASameDirection = (() => {
+    const signs = [slopeMA5, slopeMA10, slopeMA60].map(s => s >= 0 ? 1 : -1);
+    return signs.every(s => s === signs[0]);
+  })();
+
+  // 排 MA 短中長期位置 (zmen 用 MA5/10/60, 唔同 M1 用 MA5/10/20/60)
+  // zmen 嘅 MA10 當作中期 (M1 嘅 MA20)
+  const shortAboveLong = ma5History[ma5History.length - 1] > ma60History[ma60History.length - 1];
+  const shortAboveMid = ma5History[ma5History.length - 1] > ma10History[ma10History.length - 1];
+
+  // Priority 1: 到頂轉勢 (zmen 風格 — 短期 MA 急跌 3%+ + 長期 MA 仲升 + 連跌 4+ 日)
+  if (slopeMA5 < -0.03 && longSlopePositive && consecutiveDownDays >= 4) {
+    return { subScenario: 'decelerating_up', cyclePosition: 'late_stage_topping', consecutiveDays: consecutiveDownDays };
+  }
+  // Priority 1: 到底轉勢 (zmen 風格 — 短期 MA 急升 3%+ + 長期 MA 仲跌 + 連升 4+ 日)
+  if (slopeMA5 > 0.03 && longSlopeNegative && consecutiveUpDays >= 4) {
+    return { subScenario: 'decelerating_down', cyclePosition: 'late_stage_bottoming', consecutiveDays: consecutiveUpDays };
+  }
+  // Priority 2: 強上升 (全部 MA 同方向 + 短期上穿長期)
+  if (allMASameDirection && slopeMA5 > 0 && shortAboveLong && shortAboveMid) {
+    return { subScenario: 'strong_uptrend', cyclePosition: 'mid_stage', consecutiveDays: 0 };
+  }
+  // Priority 2: 強下跌 (全部 MA 同方向 + 短期下穿長期)
+  if (allMASameDirection && slopeMA5 < 0 && !shortAboveLong && !shortAboveMid) {
+    return { subScenario: 'strong_downtrend', cyclePosition: 'mid_stage', consecutiveDays: 0 };
+  }
+  // Priority 3: 弱上升 (短期上穿長期但部分 MA 唔配合)
+  if (shortAboveLong && slopeMA5 > 0) {
+    return { subScenario: 'weak_uptrend', cyclePosition: 'tentative_rise', consecutiveDays: 0 };
+  }
+  // Priority 3: 弱下跌 (短期下穿長期但部分 MA 唔配合)
+  if (!shortAboveLong && slopeMA5 < 0) {
+    return { subScenario: 'weak_downtrend', cyclePosition: 'tentative_fall', consecutiveDays: 0 };
+  }
+  // Priority 4: 上升回調 (短期急跌但長期仲升 — 短長期分裂)
+  if (allShortSlopeNegative && longSlopePositive) {
+    return { subScenario: 'uptrend_correction', cyclePosition: 'correction_at_ma20', consecutiveDays: 0 };
+  }
+  // Priority 4: 下跌反彈 (短期急升但長期仲跌 — 短長期分裂)
+  if (allShortSlopePositive && longSlopeNegative) {
+    return { subScenario: 'downtrend_bounce', cyclePosition: 'bounce_in_progress', consecutiveDays: 0 };
+  }
+  // Default: 橫行
+  return { subScenario: 'sideways', cyclePosition: 'range_bound', consecutiveDays: 0 };
 }
 
 function deriveState(rules) {
