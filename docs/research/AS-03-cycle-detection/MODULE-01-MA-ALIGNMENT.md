@@ -388,8 +388,65 @@ confidence = ROUND(confidence, 4);
 
 | Date | Version | 改動 | Commit |
 |------|---------|------|--------|
+| 2026-08-15 | v2.1.0 | **9 個 sub-scenario extend** (大少 2026-08-15 揀項甲): 加 Step 5.5 9 個 sub-scenario 細分判定 (強上升 / 弱上升 / 橫行 / 弱下跌 / 強下跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 轉勢 → Priority 2 強趨勢 → Priority 3 弱趨勢 → Priority 4 過渡形態 → Default 橫行) + 14 個 output field (加 cyclePosition / cyclePositionLabel / consecutiveDays / volumeSignalLabel) + 9 個 sub-scenario 凡人話 popup 註解 (跟 M7/M8/M9 同樣 .m1-verdict-tooltip inline style) + 凡人話 12 步 step-by-step guide + 凡人話 strategy advice 對應 9 個 scenario + stateMap 9 個 sub-scenario map 返 3 個 high-level state + warning 注入 (FALLBACK_USED / THRESHOLD_BREACH / CONFLICT_STATE 跟 Spec Sync #18 template) | TBD |
 | 2026-08-08 | v2.0.0 | 全新 module, 跟 docx Kimi v2.0 spec, 3 cycles + volume + slope 兩維度擴展 | TBD |
 | 2026-08-08 | — | 舊 v0.3.0 (10 rules A-J) 抽離做 zmen均算法 獨立算法 | `861bd921` |
 | 2026-08-08 | — | 舊 M1 文件 rename ma-alignment → zmen-ma-alignment | `861bd921` |
 | 2026-08-04 | v0.3.0 | 舊 M1: 大少 A-J 10 條 rule-based 算法 (#10332) | `840c405d` |
 | 2026-08-03 | v0.2.0 | Kimi 13 個算法 (已 drop) | — |
+
+## 14. Step 5.5: 9 個 sub-scenario 細分判定 (v2.1.0, 大少 2026-08-15 揀項甲)
+
+**凡人話解釋**: 之前 v2.0 只 return 3 個 cycle state (uptrend / downtrend / sideways), 8 個 sub-scenario 全部判錯, 包括「強上升」、「強下跌」、「上升回調」、「下跌反彈」、「到頂轉勢」、「到底轉勢」、「弱上升」、「弱下跌」。v2.1.0 extend 做 9 個 sub-scenario, 用 MA 排列 + MA 斜率 + 成交量 + 連續日數 細分, 排喺 Step 5 (成交量訊號) 之後, 改名 Step 5.5。
+
+**判定優先級** (跟 CSV spec):
+
+| Priority | 細分狀態 | 凡人話解釋 | 判定條件 |
+|----------|---------|-----------|----------|
+| 1 | 到頂轉勢 (decelerating_up) | 見頂跡象 | MA5 急跌 3%+ + MA60 仲升 + 連跌 4+ 日 |
+| 1 | 到底轉勢 (decelerating_down) | 見底跡象 | MA5 急升 3%+ + MA60 仲跌 + 連升 4+ 日 |
+| 2 | 強上升 (strong_uptrend) | 趨勢中期, 上升動能強 | MA 完美多頭排列 + 全部 MA 斜率正 + 放量 |
+| 2 | 強下跌 (strong_downtrend) | 趨勢中期, 下跌動能強 | MA 完美空頭排列 + 全部 MA 斜率負 + 放量 |
+| 3 | 弱上升 (weak_uptrend) | 剛起勢升, 信心打折 | MA 多頭排列但部分斜率 / 量能唔配合 |
+| 3 | 弱下跌 (weak_downtrend) | 剛起勢跌, 信心打折 | MA 空頭排列但部分斜率 / 量能唔配合 |
+| 4 | 上升回調 (uptrend_correction) | 仍屬上升趨勢中的修正 | 短期均線急跌但長期均線仲升 + spread ≥ 2% |
+| 4 | 下跌反彈 (downtrend_bounce) | 仍屬下跌趨勢中的反彈 | 短期均線急升但長期均線仲跌 + spread ≥ 2% |
+| 5 (Default) | 橫行 (sideways) | 冇明確方向, 等突破 | 排列亂 + spread < 2% |
+
+**8 個 cyclePosition** (跟 CSV spec):
+
+| cyclePosition | 凡人話解釋 |
+|---------------|-----------|
+| mid_stage | 趨勢中期 (主升 / 主跌段) |
+| tentative_rise | 剛起勢 (剛開始升) |
+| tentative_fall | 剛起勢 (剛開始跌) |
+| range_bound | 橫行整理中 |
+| correction_at_ma20 | 回調到 20 日均線 |
+| bounce_in_progress | 反彈進行中 |
+| late_stage_topping | 到頂轉勢中 (見頂跡象) |
+| late_stage_bottoming | 到底轉勢中 (見底跡象) |
+
+**stateMap 對齊 3 個 high-level state** (Synthesizer 跟其他 module 對齊):
+
+| sub-scenario | high-level state |
+|--------------|------------------|
+| strong_uptrend / weak_uptrend / uptrend_correction | UP |
+| strong_downtrend / weak_downtrend / downtrend_bounce | DOWN |
+| sideways / decelerating_up / decelerating_down | SIDEWAYS |
+
+**凡人話**: 上升回調中仍算上升趨勢 (UP), 下跌反彈中仍算下跌趨勢 (DOWN), 到頂 / 到底轉勢算過渡 (SIDEWAYS), 唔強烈指向一邊。
+
+## 15. v2.1.0 永久 Rule (大少 2026-08-15 揀項甲)
+
+- ✅ **9 個 sub-scenario 判定排喺 Step 5 之後** (改名 Step 5.5), 因為 Priority 2 / 3 嘅「強上升 / 強下跌」判定需要 volumeSignal, 而 volumeSignal 喺 Step 5 先計算
+- ✅ **判定優先級 5 級** (Priority 1 轉勢 → Priority 2 強趨勢 → Priority 3 弱趨勢 → Priority 4 過渡形態 → Default 橫行), Priority 1 trigger 條件最嚴格 (短期急變 3%+ + 連續 4+ 日), 永遠 Priority 1 優先
+- ✅ **9 個 sub-scenario 凡人話 popup 註解** (跟 M7/M8/M9 同 .m1-verdict-tooltip inline style): 9 個 scenario key + 8 個 cyclePosition key + 14 個 field key, 全部凡人話, 0 英文 technical term
+- ✅ **凡人話 strategy advice 對應 9 個 scenario** (1 個 scenario 1 個建議), 唔再用「結構模糊」fallback (因為 9 個 scenario 已經覆蓋)
+- ✅ **凡人話 12 步 step-by-step guide** (對應 12 個睇 verdict 嘅 step, 包含 9 個 sub-scenario 解讀 step)
+- ✅ **warning 注入 3 個 code** (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state]), impact / fix 跟 Spec Sync #18 CATEGORY_DISPLAY template, issue 保留 specific context (e.g. 短期均線斜率有動 / 量縮 / 排列亂)
+- ✅ **CONFLICT_STATE warning 只 trigger 喺 decelerating_up / decelerating_down** (transition 狀態), 其他 scenario 唔 trigger (因為唔係 conflict 訊號)
+- ✅ **Testing page 凡人話 layout**: 9 個 sub-scenario 各自一個顏色 (強升深綠 / 弱升淺綠 / 上升回調淡綠 / 橫行黃 / 下跌反彈淡紅 / 弱跌淺紅 / 強跌深紅 / 到頂紫 / 到底藍), 凡人話 cycleLabel / cyclePositionLabel 永遠顯示
+- ✅ **consecutiveDays 顯示條件**: 只有 decelerating_up / decelerating_down 先顯示 (其他 scenario 0 日冇意思)
+- ✅ **凡人話 warning context precision 統一**: number value 統一 4 位小數 + 去 trailing zero (parseFloat(v.toFixed(4))), object 仍然 JSON.stringify
+- ✅ **30 隻 stock comprehensive test** (10 港科技 + 10 港金融地產公用 + 10 港其他行業), 9 個 sub-scenario 觸發 8 個, 剩「強上升」+「到底轉勢」2 個 scenario 0 隻 (大市悶市合理)
+- ✅ **M1 v2.1.0 adapter version 2.0.0 → 2.1.0**, testing page ALGO_CACHE_BUST 4.6.3 → 4.7.0, index.html ?v=2.3.53 → 2.3.54

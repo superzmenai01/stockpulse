@@ -476,3 +476,30 @@ def _compute_fetch_max_count(period):
 **Maintainer**: 大少 (zmen)  
 **Created**: 2026-08-06 (OpenClaw handover)  
 **Version**: 1.0
+
+---
+
+### M1 v2.1.0 — 9 個 sub-scenario extend (大少 2026-08-15 揀項甲)
+
+**凡人話解釋**: M1 (均線系統週期判斷法) 之前 v2.0 只識判 3 個 state (上升 / 下跌 / 橫行), 8 個 sub-scenario 全部判錯。v2.1.0 extend 做 9 個 sub-scenario, 每個 sub-scenario 有凡人話 popup 註解, 凡人話 strategy advice, 同凡人話 step-by-step guide。
+
+**9 個 sub-scenario** (跟 CSV spec, 5 個判定優先級):
+- **Priority 1 轉勢** (最重要, transition 訊號): 到頂轉勢 (decelerating_up) / 到底轉勢 (decelerating_down)
+- **Priority 2 強趨勢** (排列 + 斜率 + 放量全部配合): 強上升 (strong_uptrend) / 強下跌 (strong_downtrend)
+- **Priority 3 弱趨勢** (排列對但部分唔配合): 弱上升 (weak_uptrend) / 弱下跌 (weak_downtrend)
+- **Priority 4 過渡形態** (短長期分裂): 上升回調 (uptrend_correction) / 下跌反彈 (downtrend_bounce)
+- **Default 橫行** (排列亂): sideways
+
+**永久 rule**:
+- ✅ 9 個 sub-scenario 判定排喺 Step 5 之後, 改名 Step 5.5 (因為 Priority 2 / 3 嘅判定需要 volumeSignal)
+- ✅ Priority 1 trigger 條件最嚴格 (短期急變 3%+ + 連續 4+ 日), 永遠 Priority 1 優先
+- ✅ 9 個 sub-scenario 凡人話 popup 註解 (跟 M7/M8/M9 同 .m1-verdict-tooltip inline style)
+- ✅ 凡人話 strategy advice 對應 9 個 scenario (1 個 scenario 1 個建議)
+- ✅ 凡人話 12 步 step-by-step guide (包含 9 個 sub-scenario 解讀 step)
+- ✅ warning 注入 3 個 code (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state]), impact/fix 跟 Spec Sync #18 CATEGORY_DISPLAY template, issue 保留 specific context
+- ✅ CONFLICT_STATE warning 只 trigger 喺 decelerating_up / decelerating_down (transition 狀態)
+- ✅ Testing page 凡人話 layout: 9 個 sub-scenario 各自一個顏色, cycleLabel / cyclePositionLabel 永遠顯示
+- ✅ consecutiveDays 顯示條件: 只有 decelerating_up / decelerating_down 先顯示
+- ✅ M1 adapter version 2.0.0 → 2.1.0, testing page ALGO_CACHE_BUST 4.6.3 → 4.7.0, index.html ?v=2.3.53 → 2.3.54
+
+對應 commit: (即將 push, Step 1.1-1.8)
