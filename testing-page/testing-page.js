@@ -664,6 +664,7 @@ async function runAlgorithm() {
     const code = currentOptions.code;
     const period = currentOptions.period || '1d';
     const count = currentOptions.dataWindowDays || 1260;
+    const klineUrl = `${BACKEND_URL}/api/kline?code=${encodeURIComponent(code)}&period=${period}&count=${count}`;
     const klineResp = await fetch(klineUrl);
 
     if (!klineResp.ok) {
