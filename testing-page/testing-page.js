@@ -88,7 +88,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-19 ZigZag 加 M1: ALGO_CACHE_BUST = '4.8.0' (M1 算法加 ZigZag 5% threshold 過濾 noise, ma-alignment.ts 加 calculateZigZag function + ZigZagPoint interface + 4 個新 meta field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), adapter.mjs renderChartOverlay 加紫色 ZigZag line series, testing page 加啟用 checkbox + threshold 輸入控制, 凡人話: 大少 trigger「缺 ZigZag 重要指標, 用 5% 過濾 noise」, 跟 StockPulse 首頁 ChartContainer.tsx 同一個 algorithm)
 // 大少 2026-08-19 09:10 加 visible debug panel + detailed explanation 4 個 ZigZag field: ALGO_CACHE_BUST = '4.8.2' (testing page 喺 chart 下面 auto-render 黑色 debug 區域 dump chart state (verdict meta keys / maV2LineSeries keys / zigzagEnabled / zigzag series exists / zigzagPoints length), 順便 renderMAAlignmentV2DetailedExplanation 加 4 個 ZigZag field display (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), 大少唔使去 console 拎 window.currentChartRefs 直接睇 page debug panel 就得)
 // 大少 2026-08-19 09:40 加深綠色 close extension line: ALGO_CACHE_BUST = '4.8.3' (大少 trigger 紫色 ZigZag 拎到嘅 peak/trough 之後, 想加多一條深綠色線 (#2E7D32) 由最後 ZigZag point 連去 K 線最後 close, 即時見到趨勢延續, 凡人話警告: 呢段深綠色線唔代表 algorithm 確認到轉向, 只係 visualize, 順便 testing page debug panel 加 close extension series 顯示狀態 + K線最後 close value/date)
-const ALGO_CACHE_BUST = '4.8.3';
+// 大少 2026-08-19 09:45 fix debug panel new Date(invalid).toISOString() RangeError: ALGO_CACHE_BUST = '4.8.4' (debug panel 用 try/catch + isNaN 拎 K 線最後日期, 避免 klines 嘅 timestamp / date field 拎到 invalid string 拋 RangeError: Invalid time value 喺 Date.toISOString())
+const ALGO_CACHE_BUST = '4.8.4';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -805,7 +806,21 @@ async function runAlgorithm() {
     const metaKeys = verdict.meta ? Object.keys(verdict.meta) : [];
     const lastKlineDebug = klines && klines.length > 0 ? klines[klines.length - 1] : null;
     const lastCloseDebug = lastKlineDebug ? lastKlineDebug.close : null;
-    const lastDateDebug = lastKlineDebug ? new Date(lastKlineDebug.timestamp || lastKlineDebug.date).toISOString().split('T')[0] : '(missing)';
+    // 大少 2026-08-19 09:45 — 用 try/catch safe 拎 K 線最後日期, 避免 new Date(invalid).toISOString() 拋 RangeError
+    // (klines 嘅 timestamp / date field 可能係 string "2026-08-19T00:00:00" 或 ms number, 但都有機會拎到 invalid)
+    let lastDateDebug = '(missing)';
+    if (lastKlineDebug) {
+      try {
+        const d = new Date(lastKlineDebug.timestamp || lastKlineDebug.date);
+        if (!isNaN(d.getTime())) {
+          lastDateDebug = d.toISOString().split('T')[0];
+        } else {
+          lastDateDebug = '(invalid)';
+        }
+      } catch (e) {
+        lastDateDebug = '(invalid)';
+      }
+    }
     debugPanel.innerHTML = `<strong style="color:#9cdcfe;">🔧 Chart Debug (大少唔使去 console, 直接睇呢度)</strong>
 
 <strong style="color:#dcdcaa;">verdict.meta keys (${metaKeys.length}):</strong> ${metaKeys.join(', ')}
