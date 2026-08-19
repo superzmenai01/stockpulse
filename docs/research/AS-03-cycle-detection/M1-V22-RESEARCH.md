@@ -270,6 +270,36 @@
 - 改 ZigZag 拎 peaks/troughs 邏輯 → 大少拎 stock 例子 (≥ 3 隻) verify 先改
 - 加 ZigZag 做 sub-scenario trigger (e.g. 上傾回調 trigger 用 ZigZag peak 確認) → 大少拎 stock 例子 (≥ 3 隻) verify 先改
 
+### ZigZag 紫色 line 唔 render bug 永久 fix (大少 2026-08-19 09:15 trigger — 「看不到zagzig線」+「主動加console.log」+ 開 Browser)
+
+> **凡人話解釋**: 大少撳完 M1 撳跑算法, K 線圖只見到 4 條 MA 線 (紅/青/橙/藍), 冇紫色 ZigZag line。debug panel (commit c72bdf3d 加) 拎到 evidence: `chartRefs.maV2LineSeries keys (4): ma5, ma10, ma20, ma60` (冇 zigzag), `verdict.meta.zigzagPoints length: 160 個` (有 data)。
+
+**Root cause**:
+- klines 從 backend `/api/kline` 拎, 個 field 唔一定叫 `date` (有時叫 `timestamp` / `time`)
+- `calculateZigZag` 之前直接用 `klines[i].date` 拎會拎到 undefined
+- 之後 `dateToTime(p.date)` 拎 `p.date` (undefined) → return null
+- `.filter(p => p.time != null)` 過濾晒所有 160 個 points
+- `zigzagSeries.length = 0`, `addLineSeries` 永遠唔 render
+- 順便: `lastSwingHigh` / `lastSwingLow.date` 拎不到 (顯示 'undefined 收 497.8')
+
+**Fix** (commit `7567fe99`):
+- 加 `_zigzagNormalizeDate(k)` helper, 拎 `k.date / k.timestamp / k.time` fallback chain
+- 5 個 `klines[...].date` 用法 (line 1491, 1513, 1536, 1554, 1581, 1596) 全部改用 `_zigzagNormalizeDate(...)`
+- 紫色 ZigZag line 而家 render 出嚟, 跟 MA 線一齊顯示
+- `lastSwingHigh.date` 拎到 2026-08-05, `lastSwingLow.date` 拎到 (雖然 `lastSwingLow` 拎到嘅係最尾個 low point 嘅 date, 跟 M1 v2.1.0 永久 rule 解讀一致)
+
+**永久 rule** (改 algorithm 嗰陣):
+- 拎 raw kline data 永遠用 fallback chain (`date / timestamp / time`), 唔好假設 backend 一個叫 `date`
+- 寫個 helper function (`_zigzagNormalizeDate` / `_maNormalizeTime`) 集中拎取, 唔好喺 5+ 個地方重複 fallback chain
+- 改 chart overlay 之後, testing page auto-render 黑色 debug 區域 dump chart state (verdict meta keys / maV2LineSeries keys / zigzagEnabled / zigzag series exists), 大少唔使去 console 拎
+- Debug panel 永久 rule: 改 chart overlay 之後都要 auto-dump state 落 page (大少唔識去 console, 直接睇 page debug panel)
+
+**對應 commit**:
+- `a280882d` feat(m1-zigzag): M1 v2.0 加 ZigZag 5% threshold 過濾 noise (初次 port calculateZigZag)
+- `2c3e11ac` fix(m1-zigzag): 加 console.log + window.* assignment 方便大少 debug (但大少去錯地方拎 console)
+- `c72bdf3d` fix(m1-zigzag-debug): 加 visible debug panel + 4 個 ZigZag field display (大少唔使去 console)
+- `7567fe99` fix(m1-zigzag): 紫色 ZigZag line 唔 render root cause fix (_zigzagNormalizeDate helper)
+
 ### 對應 commit
 
 - 即將 push (ZigZag 3 步 plan 完成)
