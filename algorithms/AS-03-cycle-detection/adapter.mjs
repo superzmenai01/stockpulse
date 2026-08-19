@@ -7591,6 +7591,10 @@ function renderMAAlignmentV2DetailedExplanation(verdict) {
         <li><strong>maRanks</strong>: [${meta.maRanks.join(' > ')}] — 均線由大到小嘅排序, 順序排列 = 典型多頭 / 空頭</li>
         <li><strong>maSlopes</strong>: ${Object.entries(meta.maSlopes).map(([k, v]) => `${k}=${(v * 100).toFixed(2)}%`).join(', ')} — 各均線斜率 (正 = 升, 負 = 跌)</li>
         <li><strong>momentumScore</strong>: ${meta.momentumScore} — 加權動能分數, 短期 MA 權重高</li>
+        <li><strong>zigzagPoints</strong>: ${meta.zigzagPoints ? meta.zigzagPoints.length : 0} 個 — ZigZag 轉向點總數 (5% threshold 過濾 noise, 拎畀 chart 紫色折線用)</li>
+        <li><strong>lastSwingHigh</strong>: ${meta.lastSwingHigh ? `${meta.lastSwingHigh.date} 收 ${meta.lastSwingHigh.value}` : '—'} — 最近一個山頂 (ZigZag 拎到嘅 peak)</li>
+        <li><strong>lastSwingLow</strong>: ${meta.lastSwingLow ? `${meta.lastSwingLow.date} 收 ${meta.lastSwingLow.value}` : '—'} — 最近一個山谷 (ZigZag 拎到嘅 trough)</li>
+        <li><strong>zigzagThreshold</strong>: ${meta.zigzagThreshold}% — ZigZag 過濾 noise 門檻, 大少可手調 (1-20%, 預設 5%)</li>
         <li><strong>volumeTrendRatio</strong>: ${meta.volumeTrendRatio} — 近期均量 / 前期均量, &gt; 1.2 為放量, &lt; 0.8 為縮量</li>
         <li><strong>volumeSignal</strong>: ${meta.volumeSignalLabel || meta.volumeSignal} — 量能訊號</li>
         <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比, &lt; 2% 強制覆寫做橫行</li>

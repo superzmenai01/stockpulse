@@ -86,8 +86,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-14 14:44 Popup 用語專業化: ALGO_CACHE_BUST = '4.6.2' (M7 grade tooltip 改「學校評分制」做「Grade 評分制」+ 跟美股標普評級同 standard credit rating 邏輯, 凡人話: 大少見到「學校」呢啲 casual 詞覺得唔專業, 改用 standard financial industry 用語)
 // 大少 2026-08-14 23:15 dataWindowDays 默認 100 → 1260 + 移除 CONFIG_DEFAULTS trigger: ALGO_CACHE_BUST = '4.6.3' (testing page 默認值 100 → 1260, M1 v0.3.0 zmen + M9 移除 CONFIG_DEFAULTS trigger 因為 default 永遠等於 trigger 條件, warning 永遠 trigger 變廢話, 凡人話: 大少撳跑 zmen / M9 唔再見到 CONFIG_DEFAULTS 呢個廢話 warning, 跟住揀項 1 嘅 M9 auto-calibrate dataWindowDays 拎出嚟做 follow-up sprint)
 // 大少 2026-08-19 ZigZag 加 M1: ALGO_CACHE_BUST = '4.8.0' (M1 算法加 ZigZag 5% threshold 過濾 noise, ma-alignment.ts 加 calculateZigZag function + ZigZagPoint interface + 4 個新 meta field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), adapter.mjs renderChartOverlay 加紫色 ZigZag line series, testing page 加啟用 checkbox + threshold 輸入控制, 凡人話: 大少 trigger「缺 ZigZag 重要指標, 用 5% 過濾 noise」, 跟 StockPulse 首頁 ChartContainer.tsx 同一個 algorithm)
-// 大少 2026-08-19 08:45 加 console.log + window.* assignment: ALGO_CACHE_BUST = '4.8.1' (adapter.mjs renderMAAlignmentV2ChartOverlay 加 4 條 console.log 拎 ZigZag series state + testing page 拎 verdict/chartRefs/klines/adapter 放 window (大少可以喺 console 拎 `window.currentChartRefs.maV2LineSeries` verify))
-const ALGO_CACHE_BUST = '4.8.1';
+// 大少 2026-08-19 09:10 加 visible debug panel + detailed explanation 4 個 ZigZag field: ALGO_CACHE_BUST = '4.8.2' (testing page 喺 chart 下面 auto-render 黑色 debug 區域 dump chart state (verdict meta keys / maV2LineSeries keys / zigzagEnabled / zigzag series exists / zigzagPoints length), 順便 renderMAAlignmentV2DetailedExplanation 加 4 個 ZigZag field display (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), 大少唔使去 console 拎 window.currentChartRefs 直接睇 page debug panel 就得)
+const ALGO_CACHE_BUST = '4.8.2';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -790,6 +790,42 @@ async function runAlgorithm() {
       } catch (err) {
         console.warn('[renderChartOverlay] failed:', err);
       }
+    }
+
+    // 大少 2026-08-19 08:50 — 喺 chart 下面 auto-render debug 區域, 拎 chartRefs + verdict meta 嘅 state
+    // (大少唔識去 console 拎 window.currentChartRefs, 直接 dump 落 page 等大少睇得到)
+    // 永久 rule: 改 chart overlay 之後, debug 區域自動顯示 series 數量同 verdict meta keys
+    const debugPanel = document.createElement('pre');
+    debugPanel.id = 'chart-debug-panel';
+    debugPanel.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:14px;margin-top:14px;border-radius:6px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;';
+    const maV2Keys = Object.keys(chartRefs.maV2LineSeries || {});
+    const hasZigzag = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzag);
+    const metaKeys = verdict.meta ? Object.keys(verdict.meta) : [];
+    debugPanel.innerHTML = `<strong style="color:#9cdcfe;">🔧 Chart Debug (大少唔使去 console, 直接睇呢度)</strong>
+
+<strong style="color:#dcdcaa;">verdict.meta keys (${metaKeys.length}):</strong> ${metaKeys.join(', ')}
+
+<strong style="color:#dcdcaa;">chartRefs.maV2LineSeries keys (${maV2Keys.length}):</strong> ${maV2Keys.join(', ') || '(空)'}
+
+<strong style="color:#dcdcaa;">chartRefs.zigzagEnabled:</strong> ${chartRefs.zigzagEnabled === false ? '❌ false' : '✅ true (預設)'}
+
+<strong style="color:#dcdcaa;">zigzag series:</strong> ${hasZigzag ? '✅ 已 add 落 chart' : '❌ 冇 add 落 chart'}
+
+<strong style="color:#dcdcaa;">verdict.meta.zigzagPoints length:</strong> ${verdict.meta?.zigzagPoints?.length || 0} 個
+
+<strong style="color:#dcdcaa;">verdict.meta.zigzagThreshold:</strong> ${verdict.meta?.zigzagThreshold || '(missing)'}%
+
+<strong style="color:#dcdcaa;">verdict.meta.lastSwingHigh:</strong> ${verdict.meta?.lastSwingHigh ? JSON.stringify(verdict.meta.lastSwingHigh) : '(null)'}
+
+<strong style="color:#dcdcaa;">verdict.meta.lastSwingLow:</strong> ${verdict.meta?.lastSwingLow ? JSON.stringify(verdict.meta.lastSwingLow) : '(null)'}
+
+<em style="color:#608b4e;">// 想拎 raw data 可以喺 DevTools console 跑: window.currentChartRefs / window.currentVerdict</em>`;
+    const chartContainer = document.getElementById('chart-container');
+    if (chartContainer && chartContainer.parentElement) {
+      // 移除舊 debug panel (避免連跑幾次疊)
+      const oldPanel = document.getElementById('chart-debug-panel');
+      if (oldPanel) oldPanel.remove();
+      chartContainer.parentElement.appendChild(debugPanel);
     }
   } catch (err) {
     runStatus.innerHTML = `❌ ${err.message}`;  // err.message 已經係中文 user-friendly
