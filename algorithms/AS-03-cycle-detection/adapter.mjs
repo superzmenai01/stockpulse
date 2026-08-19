@@ -7789,6 +7789,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
   // 紫色 line 區分 MA 四條 (紅/青/橙/藍)
   // 大少 2026-08-19 — 由 testing page 嘅 zigzag-enabled checkbox 控制
   const zigzagEnabled = chartRefs.zigzagEnabled !== false;  // 預設 true
+  console.log('[M1 v2.0] renderMAAlignmentV2ChartOverlay: zigzagEnabled =', zigzagEnabled, '| verdict.meta.zigzagPoints =', verdict.meta?.zigzagPoints?.length, '個');
   if (zigzagEnabled) {
     try {
       if (verdict.meta && Array.isArray(verdict.meta.zigzagPoints) && verdict.meta.zigzagPoints.length >= 2) {
@@ -7813,7 +7814,12 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           });
           s.setData(zigzagSeries);
           chartRefs.maV2LineSeries.zigzag = s;
+          console.log('[M1 v2.0] ✅ 紫色 ZigZag line series added:', zigzagSeries.length, '個 points, color: #9C27B0');
+        } else {
+          console.warn('[M1 v2.0] ⚠️ ZigZag series.length < 2, 唔 render');
         }
+      } else {
+        console.warn('[M1 v2.0] ⚠️ verdict.meta.zigzagPoints 唔啱 (length:', verdict.meta?.zigzagPoints?.length, ')');
       }
     } catch (e) {
       console.error(`[renderMAAlignmentV2ChartOverlay] ZigZag addLineSeries 失敗:`, e);

@@ -86,7 +86,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-14 14:44 Popup 用語專業化: ALGO_CACHE_BUST = '4.6.2' (M7 grade tooltip 改「學校評分制」做「Grade 評分制」+ 跟美股標普評級同 standard credit rating 邏輯, 凡人話: 大少見到「學校」呢啲 casual 詞覺得唔專業, 改用 standard financial industry 用語)
 // 大少 2026-08-14 23:15 dataWindowDays 默認 100 → 1260 + 移除 CONFIG_DEFAULTS trigger: ALGO_CACHE_BUST = '4.6.3' (testing page 默認值 100 → 1260, M1 v0.3.0 zmen + M9 移除 CONFIG_DEFAULTS trigger 因為 default 永遠等於 trigger 條件, warning 永遠 trigger 變廢話, 凡人話: 大少撳跑 zmen / M9 唔再見到 CONFIG_DEFAULTS 呢個廢話 warning, 跟住揀項 1 嘅 M9 auto-calibrate dataWindowDays 拎出嚟做 follow-up sprint)
 // 大少 2026-08-19 ZigZag 加 M1: ALGO_CACHE_BUST = '4.8.0' (M1 算法加 ZigZag 5% threshold 過濾 noise, ma-alignment.ts 加 calculateZigZag function + ZigZagPoint interface + 4 個新 meta field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), adapter.mjs renderChartOverlay 加紫色 ZigZag line series, testing page 加啟用 checkbox + threshold 輸入控制, 凡人話: 大少 trigger「缺 ZigZag 重要指標, 用 5% 過濾 noise」, 跟 StockPulse 首頁 ChartContainer.tsx 同一個 algorithm)
-const ALGO_CACHE_BUST = '4.8.0';
+// 大少 2026-08-19 08:45 加 console.log + window.* assignment: ALGO_CACHE_BUST = '4.8.1' (adapter.mjs renderMAAlignmentV2ChartOverlay 加 4 條 console.log 拎 ZigZag series state + testing page 拎 verdict/chartRefs/klines/adapter 放 window (大少可以喺 console 拎 `window.currentChartRefs.maV2LineSeries` verify))
+const ALGO_CACHE_BUST = '4.8.1';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -778,6 +779,11 @@ async function runAlgorithm() {
     lastVerdict = verdict;
     lastKlines = klines;
     lastChartRefs = chartRefs;
+    // 大少 2026-08-19 08:45 — 拎 verdict/chartRefs 放 window, 大少可以喺 console 拎
+    window.currentVerdict = verdict;
+    window.currentKlines = klines;
+    window.currentChartRefs = chartRefs;
+    window.currentAdapter = currentAdapter;
     if (currentAdapter.renderChartOverlay) {
       try {
         currentAdapter.renderChartOverlay(verdict, klines, chartRefs);
