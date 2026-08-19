@@ -1407,7 +1407,7 @@ if (currentAdapter.renderChartOverlay) {
 
 | 編號 | Module | 檔案 | Version | 3 Sections | Status |
 |------|--------|------|---------|-----------|--------|
-| 01 | **均線系統週期判斷法 v2.0** (with Volume & Slope) | `modules/ma-alignment.ts` | **v2.0.0** | ✅ | ✅ Production — 大少 2026-08-08 09:13 跟 docx Kimi v2.0 spec 全新做, 3 cycles + 13 fields + 三階段信心調整 + 4 條 MA overlay (5/10/20/60, 大少 2026-08-08 09:50) |
+| 01 | **均線系統週期判斷法 v2.1.0** (with Volume & Slope + 9 個 sub-scenario) | `modules/ma-alignment.ts` | **v2.1.0 (Spec Sync #19, 2026-08-15)** | ✅ | ✅ Production — **v2.1.0 升級** (大少 2026-08-15 06:20 trigger 揀項甲): v2.0 3 個 cycle state + 9 個 sub-scenario 細分 (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 弱升/弱跌 → Priority 4 上升回調/下跌反彈 → Default 橫行) + 14 個 output field (cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog) + 29 個凡人話 popup 註解 (跟 M7/M8/M9 一致 inline style) + 凡人話 12 步 step-by-step guide + Warning 注入 3 個 code (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state]). v2.0.0 3 cycles + 13 fields + 三階段信心調整 + 4 條 MA overlay (5/10/20/60, 大少 2026-08-08 09:50) + 凡人話 UX (大少 2026-08-08 10:28). **v2.2 待大少逐條 review 9 個 sub-scenario trigger 條件** (大少 2026-08-16 19:21 永久 rule, spec doc M1-V22-RESEARCH.md). |
 | 02 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
 | 03 | Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
 | 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ | ✅ Production (RSI + MACD + Bollinger + 背馳 + 衰竭) |
@@ -1416,7 +1416,7 @@ if (currentAdapter.renderChartOverlay) {
 | 07 | **終極綜合判定** (Synthesizer — M7) | `modules/synthesizer.ts` | **v1.0.0 (Sprint 1 done, 2026-08-08 13:30)** | ✅ | ✅ **Sprint 1 done (大少 2026-08-08 13:30 Plan A 拆返 M7+M8)**: M7 Synthesizer 邏輯 (SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位) + 6 個 modules standard verdict interface + 64 個 tests + synthesizerAdapter + testing page enable (commits `e96f673f` `4b8b64fe` `f991d9db` `2acab95d` `e96f673f` 重 commit) |
 | 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` | **v2.0.0 (Sprint 2 收官, 2026-08-09 13:15)** | ✅ | ✅ **Sprint 2 收官 (大少 16:55 8 commits + 13:15 2.9 spec doc final + 4 fix commits)**: 8 個 finalAction 決策樹 (2.1) + Trading card adaptive (2.2) + 短期走勢 9 scenarios (2.3) + 人話詳細解讀 LLM hook (2.4) + 5 個 adaptive params auto-calibrate (2.5) + L2 JSON file cache (2.6) + 10 隻 demo 股票 tests (2.7) + 4 個 SVG chart + 「🔄 重新校準」按鈕 (2.8) + 2.9 spec doc final (Spec Sync #7) + **Bug 1 fix** (testing page race condition, `da32c4db`) + **Bug 2 fix** (M8 kelly override 落 Synthesizer `applyAdaptiveParamsToSynthesizer` + KELLY_NUMERIC_MAP const, `639e6d70`) + **Bug 3+4 fix** (version 1.0.0 → 2.0.0 + testing page .mjs cache bust sync 永久 rule 加 ALGO_CACHE_BUST const, `d61d96d6`). 728 assertions pass (682 node + 46 python). |
 | **09** | **回測驗證** (Back Test — M9, 時光機驗證官) | `modules/back-test.ts` | **v0.6.0 (Sprint 3 done, 2026-08-08 23:55) + Spec Sync #8 (2026-08-10 5 個 fix commits)** | ✅ | ✅ **Sprint 3 done (大少 22:28 啟動, 23:55 收官, 7 commits 9.1-9.7)**: Replay engine (9.1) + Coarse grid 9 + Fine tune ±20% top 5 (9.2) + Walk-Forward CV 3 folds rolling (9.3) + Per-symbol optimal cache 30 日 + Forward return 永久 (9.4) + Testing page entry 09 (9.5) + HK.00700 pilot + spec + ROADMAP (9.6) + M9 UI 升級: 3 SVG (Kelly pie + Walk-Forward bar + Forward return scatter) + 6 色標 + 永遠 full show 過往判決 + 大少話你知 box (4 scenario LLM hook) + 2 個 button (重新校準 + 立即套用 M8) (9.7). 776 assertions pass (730 node + 46 python, +48 新 tests: 17+16+13+15=61 pytest 包括 9.4 optimal/forward return cache). **Spec Sync #8 (2026-08-10, 5 fix commits 大少 8 月 10 號確認)** — **Bug 1** (`788ccab7`) M9 forward return POST silent fail fix + UI 紅色 error banner (#EE5151) 顯示「❌ M9 數據 POST 失敗, 請重試」 — **Bug 2** (`ea75ebd1`) debug log 移去 `normalizedKlines` 之後避免 raw timestamp crash — **Spec 編號** (`ffaa7593`) Trade Journal 編號 M10 → J (跟 ROADMAP 新 5 modules table) — **Walk-Forward tune gate fix** (`01aed775`) `numFolds 3 → 1` + `tuneRatio 0.67 → 0.6` 過 HLStructure 99 bar gate (1 fold tune 756 + validate 504,兩段都過 ≥ 99 bars) — **UX 升級** (`6bd4e2d3`) UI label 動態化 (跟 `folds.length`) + `dataWindowDays` default 252 → 1260 解決 0 validate samples 問題 (testing page HK.00700 80 → 81 個真實樣本). Browser verify: HK.00700 「81 個真實樣本」+ dynamic label 「1 段滾動交叉驗證」+ forward return 5 個 POST 全部 200 OK. |
-| **獨立** | **zmen均算法** (舊 M1 抽出, 唔加編號) | `modules/zmen-ma-alignment.ts` | v0.3.0 | ✅ | ⭐ **獨立算法** — 大少 2026-08-08 08:47 將舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 唔屬於 AS-03 7 個 modules 計算 |
+| **獨立** | **zmen均算法 v1.0** (Layer 1 + Layer 2) | `modules/zmen-ma-alignment.ts` | **v1.0 (Spec Sync #20, 2026-08-15)** | ✅ | ⭐ **獨立算法 v1.0 雙層 architecture** (大少 2026-08-15 trigger「保留 zmen 判斷邏輯 + 加 M1 嘅 9 個 sub-scenario enrich」): **Layer 1** 保留 v0.3.0 嘅 10 條 rule A-J + 4 個 state (H/B/A,F/C,D,G + TRANSITION) 100% backward compat (大少 22:28 永久 rule) + **Layer 2** 加 M1 v2.1.0 嘅 9 個 sub-scenario enrich (用 zmen 自己 3 條 MA data derive, 唔覆蓋 Layer 1) + 14 個 output field 對齊 M1 v2.1.0 + 凡人話 warning 注入 2 個 code (THRESHOLD_BREACH / CONFLICT_STATE). M7/M8 chain 拎 zmen state 仲係 Layer 1 嘅 4 個 state, Layer 2 純粹 enrich zmen 自己 verdict 嘅 meta. 對應 commit `402cb29b` (zmen v1.0) + `97f29791` (zmen UX). 大少 2026-08-08 08:47 將舊 M1 改名 + 抽離 7 個 modules, 排去 dropdown 最後, 唔屬於 AS-03 7 個 modules 計算. |
 | ⏸️ Deferred (舊 M5) | Multi-TF (日/週/月) | `modules/multi-tf.ts` | v1.0.0 | — | ⏸️ Deferred — 大少 2026-08-09 14:16 揀 A drop 呢個 task, Stage 2+ 重新 plan |
 | ⏸️ Deferred (舊 M8) | SlopeMomentum 斜率動能 | `modules/slope-momentum.ts` | v1.0.0 | — | ⏸️ Deferred — 大少 2026-08-09 14:16 揀 A drop 呢個 task, Stage 2+ 重新 plan |
 
@@ -1687,6 +1687,7 @@ Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except 
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
+| 2026-08-19 11:42 | **大少 11:42 trigger「Update stockPulse」: ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動 + 4 個 fix commits (Spec Sync #20)** | `082090e8` + `415ce5f5` + `138dede5` + `402cb29b` + `97f29791` + `9f72b113` + `c72bdf3d` + `7567fe99` + `ca5ebe7d` + `77f595e5` + `d519037a` + `72ac75ba` + `79e026b6` + `1a2de578` + `07d824b5` + `ba98ac98` + (本 commit) | ARCHITECTURE §11 (M1 row v2.0.0 → v2.1.0 + 9 個 sub-scenario + 14 fields + 29 個凡人話 popup) + (zmen row v0.3.0 → v1.0 Layer 1 + Layer 2 雙層) + §15.16 新 (ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動), §14 (本 row); M1-V22-RESEARCH.md (永久 rule ZigZag sequence 號碼 + renderDebugPanel 抽出去 + lightweight-charts v4 setMarkers 永久 rule + 改 chart overlay debug panel auto-update 永久 rule); testing-page.js ALGO_CACHE_BUST '4.7.0' → '4.10.0' + dropdown 把 zmen 排最尾 (72ac75ba) + chart 預設 zoom 半年 (79e026b6) + 3 個 date display fix fallback chain (1a2de578) + renderDebugPanel 抽出去 (07d824b5); testing-page/index.html ?v=2.3.55 → 2.3.64 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 v2.1.0 9 個 sub-scenario + 14 fields + 凡人話 UX 082090e8 + M7 Level 1-6 138dede5 + zmen Layer 1+2 402cb29b + M9 popup 註解全面化 9f72b113 + ZigZag 點順序號碼 setMarkers 07d824b5) |
 | 2026-08-08 23:55 | **大少 23:55 + 大少「Update Stockpulse」24:00 觸發: Sprint 3 收官 (9.1-9.7) + i18n 繁體人話 (commit 72a892a7) + Spec Sync #5** | `f2c0a8d8` + `72a892a7` + (本 commit) | ARCHITECTURE §11 (Module 進度表 row 09 = M9 v0.6.0 + Spec 連結表 row 9 = MODULE-09-BACK-TEST.md), §14 (本 row + 上 1 row 22:28 9.6 補登); README §AS03 模組表 row 09 M9 v0.6.0 + Sprint 3 mention + 776 assertions; PROJECT_SPEC §Module 結構 (8 done + 1 獨立 + 2 hidden, Stage 1 + Sprint 3 收官), §Testing page (加 09 — AS-03-BT entry 排 [8]); API §Adaptive Params API (8 endpoints: 4 舊 M8 + 4 新 M9); testing-page.js REGISTRY (加 `09 — AS-03-BT` entry 排 [8], zmen均算法 變 [9]) |
 | 2026-08-09 13:15 | **大少 13:15 揀 A: Spec Sync #7 (Sprint 2 收官 + 4 followup bugs 全部 done)** | `da32c4db` + `639e6d70` + `d61d96d6` + (本 commit) | ARCHITECTURE §11 (M8 row v2.3.0 → v2.0.0 + 4 fix commits list) + Spec 連結表 row 8 (M8 spec 連結 v2.0.0 + 4 fix commits) + §15.4 4 bugs 改 "ALL FIXED" + §15.8 新 (Sprint 2 收官 + Spec Sync #7), §14 (本 row); README §AS03 模組表 (M8 v2.0.0 + Bug 1+2+3+4 fix mention) + §近期重要更新 (13:15 Sprint 2 收官 + 4 fixes); PROJECT_SPEC §Module 結構 row 08 (M8 v2.0.0 + 2.9 spec doc final + 4 fix commits); testing-page.js ALGO_CACHE_BUST '1.8.0' → '2.0.0' + .mjs cache bust 永久 rule 應用; testing-page/index.html ?v=2.3.4 → ?v=2.3.5 (HTML cache bust sync 永久 rule 應用) |
 | 2026-08-09 10:57 | **大少 10:57 揀 A: M9 Pilot 4 個 followup bugs 全部 defer 落 Stage 1+ 處理, Pilot 收官優先 + Spec Sync #6** | `bdbdb120` + `6b71affc` + `7099a6a3` + `7d8ba649` + `94c4a885` + `f2c0a8d8` + `72a892a7` + (本 commit) | ARCHITECTURE §11 (M9 v0.6.0 + Pilot 收官 10:02) + §15 (新 — M9 Pilot 收官 + 1w fix + apply-to-m8 + 4 followup bugs), §14 (本 row); README §AS03 模組表 (M9 Pilot 收官 + Top 3 + Apply to M8), §近期重要更新 (10:02 Pilot 收官 + 09:29 1w fix); PROJECT_SPEC §Module 結構 row 09 (Pilot 收官 + Apply to M8 + 1w fix) + §Module 結構 指示 (10:57 defer 4 bugs); API §K-line API (1w period 永久 fix) + §Adaptive Params API (apply-to-m8 workflow note); testing-page.js 4 個 followup bugs (待 Stage 1+) |
@@ -2348,3 +2349,62 @@ return = (actual_exit_price - entry_price) / entry_price
 - 13 個 warning code 嘅 `impact`/`fix` 跟 CATEGORY_DISPLAY template
 
 對應 commit: 7ba21cc7 (Phase 1-3 infrastructure) + 即將 push 嘅 Phase 4
+
+## §15.16 — ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動 (大少 2026-08-15 ~ 19 確認, Spec Sync #20) [2026-08-19]
+
+### 大少 2026-08-15 06:20 trigger: M1 v2.1.0 — 加 9 個 sub-scenario + Volume + Slope 完整凡人話 UX
+
+- 9 個 sub-scenario 細分 (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢)
+- 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 弱升/弱跌 → Priority 4 上升回調/下跌反彈 → Default 橫行)
+- 14 個 output field: cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog
+- 29 個凡人話 popup 註解 (M1 専用, 凡人話 plain language, 跟 M7/M8/M9 一致 inline style)
+- 凡人話 12 步 step-by-step guide (包含 9 個 sub-scenario 解讀 step)
+- Warning 注入 3 個 code (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state])
+- M1 adapter version 2.0.0 → 2.1.0
+
+對應 commit: `082090e8` (M1 v2.1.0) + `415ce5f5` (Spec Sync #19)
+
+### 大少 2026-08-15: M7 Synthesizer Level 1-6 優化 + zmen v1.0 雙層 architecture
+
+- **M7 Level 1+5+6** — 凡人話 reasoning enrich (M1 拎 cycleLabel + cyclePositionLabel + consecutiveDays 精準描述, 唔再 generic)
+- **M7 Level 2** — M1 動態 base_weight 跟 9 個 sub-scenario (強趨勢 0.35 / 弱趨勢 0.20 / 過渡 0.22 / 警號 0.18 / 悶市 0.15)
+- **M7 Level 3** — 3 條 M1 expert rules override (consecutiveDays ≥ 5 → TRANSITION warning, high conf + 全部 MA slope 同方向 → M1 weight 0.40)
+- **M7 Level 4** — 4 條 cross-module alignment enrich (Rule A/B/C/D 對齊 alignment_score)
+- **zmen v1.0** — 雙層 architecture (Layer 1 保留 v0.3.0 10 條 rule A-J 100% backward compat + Layer 2 加 M1 9 個 sub-scenario enrich, 14 個 output field 對齊 M1)
+- 對應 commit: `138dede5` (M7) + `402cb29b` (zmen v1.0) + `97f29791` (zmen UX)
+
+### 大少 2026-08-18 ~ 19: ZigZag 點順序號碼 + 4 個 fix commits + 3 個 date fix + UX 改動
+
+- **ZigZag 紫色 + 深綠色 close extension** (`c72bdf3d` + `7567fe99` + `ca5ebe7d` + `77f595e5` + `d519037a`): 紫色 (#9C27B0) ZigZag 線 + 深綠色 (#2E7D32, 1.5px) close extension 連去今日收市價
+- **3 個 date display fix** (`1a2de578`): 拎 raw kline data 永遠用 `_zigzagNormalizeDate` / `_getKlineDateForDebug` fallback chain (`date / timestamp / time`)
+- **Dropdown 把 zmen 排最尾** (`72ac75ba`): zmen 永遠排 M11 BTL 之後, 7 個 modules + M8/M9/M11 排前面跟編號順序
+- **Chart 預設 zoom 半年** (`79e026b6`): chart 預設 zoom 落去最近半年 (~126 個交易日), data 仍然係 1260 日 (5 年) 全部喺度
+- **ZigZag 點順序號碼 (1, 2, 3, ...)** (`07d824b5`): 紫色 ZigZag 161 個 points 倒序排, 號碼 2-162 + 深綠色 close extension point 號碼 1 (今日 close), 大少可以 option toggle 顯示/隱藏 (預設 false 關閉) + 「只顯示最近 N 個」spinbutton (預設 30, 因為 161 個 marker 會太擠)
+
+### ZigZag sequence 永久 rule (大少 2026-08-19 11:15 + 11:45 fix v2)
+
+- ✅ **ZigZag 點順序號碼由新到舊 1-N**: 1 號 = 今日 close (深綠色), 2-N+1 號 = 紫色 ZigZag points 倒序
+- ✅ **Toggle 預設 false 關閉** (避免畫面太擠)
+- ✅ **「只顯示最近 N 個」spinbutton 預設 30, min 5, max 162** (因為 161 個 marker 全部顯示會太擠)
+- ✅ **純 visual label 唔影響 algorithm 邏輯** (大少教學 / annotation 用)
+- ✅ **永久用 lightweight-charts v4.2.3 native `setMarkers()` API** (testing page 行緊 v4.2.3, 唔好用 v5 `createSeriesMarkers` plugin — v4 冇 plugin API, 永遠 skip; `setMarkers()` v4 同 v5 都有, 向後兼容)
+- ✅ **Debug panel 永遠 auto-update** (大少 09:15 永久 rule 衍生) — 改 chart overlay 之後, testing page 黑色 debug 區域 dump chart state, 唔可以淨係 create 一次就唔再 update
+- ✅ **改 chart overlay 之後, 同時 update 抽出去嘅 `renderDebugPanel()` function** (避免後續 toggle / re-render 嘅時候 panel 入面 text 仲係舊 state)
+
+### Chart UX 永久 rule (大少 2026-08-19 10:00 ~ 10:15)
+
+- ✅ **Dropdown 排位永久 rule** (10:00): zmen 永遠排最尾 (M11 BTL 之後), 7 個 modules + M8/M9/M11 排前面跟編號順序
+- ✅ **Chart 預設 zoom 半年永久 rule** (10:10): chart 預設 zoom 落去最近半年 (~126 個交易日), data 仍然係 1260 日 (5 年) 全部喺度, 大少可以人手 pan/zoom 返去看全部 5 年
+- ✅ **Date fallback chain 永久 rule** (10:15): 拎 raw kline data 永遠用 `_zigzagNormalizeDate` / `_getKlineDateForDebug` fallback chain (`date / timestamp / time`), 唔好直接拎 `.date` 或 `.timestamp`, 統一抽 1 個 helper 唔好喺 5+ 個地方重複 fallback chain
+- ✅ **Adapter.mjs 拎 klines 拎 `lastDate` / `lastSwingDate` 全部用 `_zigzagNormalizeDate` fallback chain**
+
+### Cache bust
+- `ALGO_CACHE_BUST` 4.7.0 → 4.10.0
+- `?v=2.3.55` → 2.3.64 (testing-page.js 多次 cache bust sync)
+
+### Verify evidence (HK.00700, M1 v2.1.0 + ZigZag 5% + sequence N=30)
+- Debug panel 顯示: `ZigZag sequence 號碼 toggle: ✅ 開 (顯示最近 30 個)` + `ZigZag sequence markers plugin: ✅ 已 create (拎出畀 toggle handler 用)`
+- Chart 入面紫色 ZigZag 線 + 紫色號碼 (14, 16, 12, 10, 8 等倒序排) + 深綠色 收市延伸 (Close Ext.) 446.20 線 + 1 號深綠色 marker
+- 改 spinbutton 拎唔同 N (5) 都 work
+- 截圖: `docs/research/AS-03-cycle-detection/screenshots/m1-zigzag-sequence-verify-2026-08-19.jpg`
+- Spec doc: `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` (大少 v2.2 research, 永久記錄 sub-scenario review + ZigZag 永久 rule)
