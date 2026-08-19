@@ -90,7 +90,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-19 09:40 加深綠色 close extension line: ALGO_CACHE_BUST = '4.8.3' (大少 trigger 紫色 ZigZag 拎到嘅 peak/trough 之後, 想加多一條深綠色線 (#2E7D32) 由最後 ZigZag point 連去 K 線最後 close, 即時見到趨勢延續, 凡人話警告: 呢段深綠色線唔代表 algorithm 確認到轉向, 只係 visualize, 順便 testing page debug panel 加 close extension series 顯示狀態 + K線最後 close value/date)
 // 大少 2026-08-19 09:45 fix debug panel new Date(invalid).toISOString() RangeError: ALGO_CACHE_BUST = '4.8.4' (debug panel 用 try/catch + isNaN 拎 K 線最後日期, 避免 klines 嘅 timestamp / date field 拎到 invalid string 拋 RangeError: Invalid time value 喺 Date.toISOString())
 // 大少 2026-08-19 10:00 dropdown 把 zmen 排最尾: ALGO_CACHE_BUST = '4.8.5' (REGISTRY array 內 zmen 均算法 entry 由排第 1 改去排最尾 (M11 BTL 之後), 純 visual 排位, ID/displayName/adapterExport 全部唔改, 大少 trigger「在算法 Dropdown List 裡把 zmen 的算法排在最後」, 改返 2026-08-11 21:32 嘅「排最頂」永久 rule)
-const ALGO_CACHE_BUST = '4.8.5';
+// 大少 2026-08-19 10:10 chart 預設 zoom 落去最近半年: ALGO_CACHE_BUST = '4.8.6' (testing page renderChart 喺 fitContent() 之後 setTimeout(50ms) 調用 setVisibleLogicalRange 將預設 visible range 設為最近 126 個交易日 ≈ 半年, data 仍然係 1260 日 (5 年) 全部 喺度, 大少可以人手 pan/zoom 返去看全部 5 年, 大少 trigger「圖表預設顯示 1260 日全圖很難看到細節, 想要預設 zoom 落去半年」)
+const ALGO_CACHE_BUST = '4.8.6';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -966,6 +967,20 @@ function renderChart(klines, code, period) {
   volumeSeries.setData(volumeData);
 
   chart.timeScale().fitContent();
+
+  // 凡人話: 大少 2026-08-19 10:10 trigger — chart 預設 zoom 落去最近半年 (~126 個交易日 ≈ 6 個月)
+  // 但 data 仍然係 1260 日 (5 年) 全部 喺度, 大少可以人手 pan/zoom 返去看全部 5 年, data 唔受影響
+  // setTimeout 確保 chart 完成 initial fitContent() 之後先 set range, 避免 race condition
+  // (直接 setVisibleLogicalRange 有時喺 fitContent 仲未完成嗰陣會被覆蓋)
+  // DEFAULT_VISIBLE_BARS = 126 ≈ 252 / 2 半年 (252 個交易日 = 1 年)
+  const totalBars = candleData.length;
+  const DEFAULT_VISIBLE_BARS = 126;  // 半年
+  setTimeout(() => {
+    chart.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, totalBars - DEFAULT_VISIBLE_BARS),
+      to: totalBars,
+    });
+  }, 50);
 
   chartInstance = chart;
   console.log(`[Chart] rendered ${candleData.length} bars for ${code} (${period})`);
