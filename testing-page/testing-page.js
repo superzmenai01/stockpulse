@@ -94,7 +94,11 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-19 10:15 fix 2 個 minor display issue: ALGO_CACHE_BUST = '4.8.7' (adapter.mjs calculateZigZag line 1608 直接拎 klines[].date 改用 _zigzagNormalizeDate fallback chain, fix verdict.meta.lastSwingLow.date 拎唔到 (顯示 {"value":436} 冇 date field 嘅 root cause) + testing-page.js debug panel K 線最後 date 拎取加 _getKlineDateForDebug helper (跟 _zigzagNormalizeDate 同樣 fallback chain), fix 「K線最後 close @ (invalid)」拎唔到 date 嘅 issue, 凡人話: 之前直接拎 klines[].date 或 klines[].timestamp, klines 個 field 唔一定叫 date (有時叫 timestamp / time), fallback chain 拎到 valid date)
 // 大少 2026-08-19 11:15 ZigZag 點順序號碼 (1, 2, 3, ...): ALGO_CACHE_BUST = '4.9.0' (adapter.mjs renderMAAlignmentV2ChartOverlay 加 ZigZag 點順序號碼 marker (1 號=今日 close 深綠色, 2 號=紫色最後 1 個, 倒序排), 拎 LightweightCharts.createSeriesMarkers 畀 candle series 加 marker, testing page 加 toggle checkbox 「顯示 ZigZag 點順序號碼」+ spinbutton 「顯示最近 N 個」(預設 30, 紫色 161 個 + 深綠色 1 個 = 162 個全部顯示會太擠), 大少 trigger「每個點加順序號碼, 由最新開始, 包括最後嗰條綠色線, 要 option toggle」)
 // 大少 2026-08-19 11:45 ZigZag 點順序號碼 fix v2: ALGO_CACHE_BUST = '4.10.0' (改用 lightweight-charts v4.2.3 native candleSeries.setMarkers() API 而唔係 v5 LightweightCharts.createSeriesMarkers plugin, 因為 testing page CDN 行緊 v4.2.3 唔 support v5 plugin API, 永遠 skip; setMarkers() v4 同 v5 都有, 向後兼容; 同時抽 renderDebugPanel() function 出去, 畀 runAlgorithm + reRenderZigZagSequence() 都 call, 因為之前 debug panel 喺 runAlgorithm create 一次之後永遠唔再 update, toggle 切 sequence 嗰陣 panel 入面 text 仲係舊 state)
-const ALGO_CACHE_BUST = '4.10.0';
+// 大少 2026-08-19 16:30 之字斜率 Stage 1 framework: ALGO_CACHE_BUST = '4.11.0' (adapter.mjs 加 calcZigZagSlope 函數 (用之字最後 2 個 confirmed point 計斜率, Solution A 加 extended lastToToday 處理甩尾), analyzeMAAlignmentV2 meta 加 zigzagSlope field, 凡人話 display 加 prevToLast + lastToToday 雙斜率, 凡人話: 大少 trigger「用之字第 1 點 → 第 2 點計斜率」核心框架, 唔郁 trigger logic (Stage 2 先郁))
+// 大少 2026-08-19 16:43 修正 2 個 UI bug: ALGO_CACHE_BUST = '4.12.0' (Bug 1: ZigZag sequence marker 全部用 position: 'inBar' 錯, 改 high type → aboveBar (Peak 號碼喺上) + low type → belowBar (Trough 號碼喺下) + 1 號 (close) → aboveBar; Bug 2: setVisibleLogicalRange 嗰陣 v4.2.3 會清 marker state 導致 50ms race condition, 50ms 後再 set 返一次確保 persist, 大少 reload verify)
+// 大少 2026-08-19 17:00 MA 線獨立 toggle 即時生效: ALGO_CACHE_BUST = '4.13.0' (testing-page/index.html 加 4 個 MA checkbox (MA5/MA10/MA20/MA60 顏色 chip 對齊 line color), testing-page.js 加 4 個 change handler 用 lineSeries.applyOptions({ visible }) 即時切換, 唔需要 re-create series 或 re-call renderChartOverlay, 凡人話: 大少撳 MA5 → 紅色線即時消失 / 出現, 注意只 cover M1 v2.0 (maV2LineSeries), zmen v0.3.0 用 maLineSeries 唔 cover)
+// 大少 2026-08-19 17:05 MA toggle UI 改善: ALGO_CACHE_BUST = '4.14.0' (MA toggle div 從 inputs section 搬到 chart-section 上面 (#ma-toggle-bar 用淺灰背景 + padding), 凡人話: 大少 trigger「放喺圖表上邊方便使用」; MA10 預設 unchecked (其他 MA 維持 checked), 凡人話: 大少 trigger「MA10 預設冇 Take」)
+const ALGO_CACHE_BUST = '4.14.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -940,6 +944,17 @@ function renderChart(klines, code, period) {
       from: Math.max(0, totalBars - DEFAULT_VISIBLE_BARS),
       to: totalBars,
     });
+    // 大少 2026-08-19 16:43 fix — v4.2.3 setVisibleLogicalRange 嗰陣會清 marker state
+    // (凡人話: chart fit 落半年範圍嗰陣, 啱啱落嘅 sequence 號碼 marker 會跟住丟失)
+    // 50ms 後再 set 返一次, 確保 persist
+    setTimeout(() => {
+      if (chartRefs.zigzagSequenceMarkers && chartRefs.candleSeries && typeof chartRefs.candleSeries.setMarkers === 'function') {
+        try {
+          chartRefs.candleSeries.setMarkers(chartRefs.zigzagSequenceMarkers.markers);
+          console.log('[Chart] 🛠️ re-set markers after setVisibleLogicalRange (確保 persist)');
+        } catch (e) { /* ignore */ }
+      }
+    }, 50);
   }, 50);
 
   chartInstance = chart;
@@ -1107,6 +1122,29 @@ if (zigzagSequenceMaxCountEl) {
     }
   });
 }
+
+// 大少 2026-08-19 17:00 trigger — MA 線獨立 toggle 即時生效
+// 凡人話: 撳 MA5 checkbox → 紅色 MA5 線即時消失 / 出現, 唔需要撳「跑算法」
+// 用 lightweight-charts v4 嘅 lineSeries.applyOptions({ visible: false }) 即時切換
+// 唔需要 re-create series, 唔需要 re-call renderChartOverlay
+// 注意: 只 support M1 v2.0 (用 maV2LineSeries), zmen v0.3.0 用 maLineSeries 唔 cover
+const maToggleEls = document.querySelectorAll('.ma-toggle');
+maToggleEls.forEach((el) => {
+  el.addEventListener('change', (e) => {
+    const maKey = e.target.dataset.maKey;  // 'ma5' | 'ma10' | 'ma20' | 'ma60'
+    const visible = e.target.checked;
+    if (lastChartRefs && lastChartRefs.maV2LineSeries && lastChartRefs.maV2LineSeries[maKey]) {
+      try {
+        lastChartRefs.maV2LineSeries[maKey].applyOptions({ visible });
+        console.log(`[MA toggle] ${maKey} → visible=${visible}`);
+      } catch (err) {
+        console.warn(`[MA toggle] ${maKey} applyOptions failed:`, err);
+      }
+    } else {
+      console.log(`[MA toggle] ${maKey} series 唔存在 (可能未跑 M1 v2.0 算法)`);
+    }
+  });
+});
 
 // =============================================================
 // 大少 2026-08-11 20:55 — A 改善: 「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + handler

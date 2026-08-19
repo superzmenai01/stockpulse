@@ -82,6 +82,27 @@
               撳完「跑算法」之後, 嗰隻股票嘅 K 線圖會自動顯示喺呢度。
             </p>
           </div>
+          <!-- 大少 2026-08-19 17:05 trigger — MA 線獨立 toggle 放喺圖表上邊 (即時生效) -->
+          <div id="ma-toggle-bar" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
+            <span style="color:#666;margin-right:8px;">MA 線:</span>
+            <label style="margin-right:12px;cursor:pointer;">
+              <input type="checkbox" class="ma-toggle" data-ma-key="ma5" checked style="vertical-align:middle;">
+              <span style="color:#FF6B6B;font-weight:600;">MA5</span>
+            </label>
+            <label style="margin-right:12px;cursor:pointer;">
+              <input type="checkbox" class="ma-toggle" data-ma-key="ma10" style="vertical-align:middle;">
+              <span style="color:#4ECDC4;font-weight:600;">MA10</span>
+            </label>
+            <label style="margin-right:12px;cursor:pointer;">
+              <input type="checkbox" class="ma-toggle" data-ma-key="ma20" checked style="vertical-align:middle;">
+              <span style="color:#FFA500;font-weight:600;">MA20</span>
+            </label>
+            <label style="margin-right:12px;cursor:pointer;">
+              <input type="checkbox" class="ma-toggle" data-ma-key="ma60" checked style="vertical-align:middle;">
+              <span style="color:#45B7D1;font-weight:600;">MA60</span>
+            </label>
+            <span style="color:#999;font-size:12px;margin-left:4px;">(撳即時生效, 唔需要跑算法)</span>
+          </div>
           <div id="chart-container"></div>
         </section>
       </main>
@@ -96,6 +117,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.64"></script>
+  <script type="module" src="testing-page.js?v=2.3.68"></script>
 </body>
 </html>

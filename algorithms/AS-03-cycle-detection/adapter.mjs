@@ -1620,6 +1620,82 @@ function calculateZigZag(klines, thresholdPercent = 5) {
   return result;
 }
 
+/**
+ * 大少 2026-08-19 — 之字斜率計算 (凡人話: 用真實轉向點計斜率)
+ * 
+ * 核心: 用之字最後 2 個 confirmed point 計斜率
+ * 凡人話原因: 之字拎到嘅係 5% threshold 確認嘅真實轉向, 避開 MA 斜率嘅 noise
+ * 
+ * Evidence:
+ * - 太古 (6/23 trough 81.1 → 8/13 peak 101.7, 51 日): +25.40% / 51 日 = 強升
+ *   v2.0 MA5 斜率淨拎 +1.30% / 日 判 weak_uptrend conf 49% (錯晒)
+ * - 騰訊 (8/5 trough 497.8 → 8/19 peak 543, 9 日): +9.07% / 9 日 (雖然 evidence 拎到 -1.41% 因為用 trough 同 peak 反方向)
+ * 
+ * Solution A — 雙斜率:
+ * - prevToLast: 最後 2 個 confirmed point (主要訊號, 反映轉向間距)
+ * - lastToToday: 最後 point + 今日 close (extended, 處理 lag tail 甩尾)
+ * 
+ * @param zigzagPoints - calculateZigZag 拎到嘅轉向點 array [{date, value, type}]
+ * @param klines - K 線數據 (用最後一條拎今日 close)
+ * @returns {ok, prevToLast, lastToToday, reason}
+ */
+function calcZigZagSlope(zigzagPoints, klines) {
+  if (!zigzagPoints || zigzagPoints.length < 2) {
+    return { ok: false, reason: '之字 point 太少 (< 2)' };
+  }
+
+  // 拎最後 2 個 confirmed point (大少 plan: 之字第 1 點 → 第 2 點)
+  const last = zigzagPoints[zigzagPoints.length - 1];
+  const prev = zigzagPoints[zigzagPoints.length - 2];
+
+  // 計日數 (大少 evidence: 太古 51 日, 騰訊 9 日 — 曆日計)
+  const lastDate = new Date(last.date);
+  const prevDate = new Date(prev.date);
+  const days = (lastDate - prevDate) / 86400000;
+  if (days <= 0 || !Number.isFinite(days)) {
+    return { ok: false, reason: '日期無效 (倒置或缺失)' };
+  }
+
+  // 計升跌 (大少 evidence: 太古 +25.40%, 騰訊 -1.41%)
+  const changePct = ((last.value - prev.value) / prev.value) * 100;
+  const dailySlope = changePct / days;
+
+  // 拎今日 close (Solution A: 處理 lag tail 甩尾)
+  let extendedSlope = null;
+  if (klines && klines.length > 0) {
+    const lastKline = klines[klines.length - 1];
+    const todayDate = lastKline.date || _zigzagNormalizeDate(lastKline);
+    const todayClose = lastKline.close;
+    if (todayDate && Number.isFinite(todayClose)) {
+      const todayDateParsed = new Date(todayDate);
+      const lastToTodayDays = (todayDateParsed - lastDate) / 86400000;
+      if (lastToTodayDays > 0 && lastToTodayDays < 60) {
+        const extChangePct = ((todayClose - last.value) / last.value) * 100;
+        const extDailySlope = extChangePct / lastToTodayDays;
+        extendedSlope = {
+          from: { date: last.date, value: last.value, type: last.type },
+          to: { date: todayDate, value: todayClose, type: 'today' },
+          changePct: maV2Round(extChangePct, 4),
+          days: maV2Round(lastToTodayDays, 2),
+          dailySlope: maV2Round(extDailySlope, 6),
+        };
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    prevToLast: {
+      from: { date: prev.date, value: maV2Round(prev.value, 4), type: prev.type },
+      to: { date: last.date, value: maV2Round(last.value, 4), type: last.type },
+      changePct: maV2Round(changePct, 4),
+      days: maV2Round(days, 2),
+      dailySlope: maV2Round(dailySlope, 6),
+    },
+    lastToToday: extendedSlope,
+  };
+}
+
 // ===== Render result (HTML string for testing page) =====
 //
 // 大少 #10846 — 支援兩種 verdict shape:
@@ -7265,6 +7341,9 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     lastSwingHigh: lastHigh ? { date: lastHigh.date, value: lastHigh.value } : null,
     lastSwingLow: lastLow ? { date: lastLow.date, value: lastLow.value } : null,
     zigzagThreshold,
+    // 大少 2026-08-19 — 之字斜率 (Stage 1: 加 framework field, 唔郁 trigger)
+    // 凡人話: 用之字最後 2 個 confirmed point 計斜率, 取代 v2.0 MA5 斜率 (Stage 2 先郁 trigger)
+    zigzagSlope: calcZigZagSlope(zigzagPoints, klines),
     adjustmentLog,
     reason: reasonText,
     lastDate,
@@ -7622,6 +7701,14 @@ function renderMAAlignmentV2DetailedExplanation(verdict) {
         <li><strong>lastSwingHigh</strong>: ${meta.lastSwingHigh ? `${meta.lastSwingHigh.date} 收 ${meta.lastSwingHigh.value}` : '—'} — 最近一個山頂 (ZigZag 拎到嘅 peak)</li>
         <li><strong>lastSwingLow</strong>: ${meta.lastSwingLow ? `${meta.lastSwingLow.date} 收 ${meta.lastSwingLow.value}` : '—'} — 最近一個山谷 (ZigZag 拎到嘅 trough)</li>
         <li><strong>zigzagThreshold</strong>: ${meta.zigzagThreshold}% — ZigZag 過濾 noise 門檻, 大少可手調 (1-20%, 預設 5%)</li>
+        <li><strong>zigzagSlope</strong> (大少 2026-08-19 Stage 1): ${
+          meta.zigzagSlope && meta.zigzagSlope.ok
+            ? `<br/>　　prevToLast: ${meta.zigzagSlope.prevToLast.from.date} ${meta.zigzagSlope.prevToLast.from.type} 收 ${meta.zigzagSlope.prevToLast.from.value} → ${meta.zigzagSlope.prevToLast.to.date} ${meta.zigzagSlope.prevToLast.to.type} 收 ${meta.zigzagSlope.prevToLast.to.value} = <strong>${meta.zigzagSlope.prevToLast.changePct >= 0 ? '+' : ''}${meta.zigzagSlope.prevToLast.changePct}%</strong> / ${meta.zigzagSlope.prevToLast.days} 日 = <strong>${meta.zigzagSlope.prevToLast.dailySlope >= 0 ? '+' : ''}${meta.zigzagSlope.prevToLast.dailySlope}%/日</strong>` +
+              (meta.zigzagSlope.lastToToday
+                ? `<br/>　　lastToToday: ${meta.zigzagSlope.lastToToday.from.date} ${meta.zigzagSlope.lastToToday.from.type} 收 ${meta.zigzagSlope.lastToToday.from.value} → ${meta.zigzagSlope.lastToToday.to.date} 收 ${meta.zigzagSlope.lastToToday.to.value} = <strong>${meta.zigzagSlope.lastToToday.changePct >= 0 ? '+' : ''}${meta.zigzagSlope.lastToToday.changePct}%</strong> / ${meta.zigzagSlope.lastToToday.days} 日 = <strong>${meta.zigzagSlope.lastToToday.dailySlope >= 0 ? '+' : ''}${meta.zigzagSlope.lastToToday.dailySlope}%/日</strong> (extended, 處理甩尾)`
+                : '')
+            : `<em style="color:#888;">${meta.zigzagSlope ? meta.zigzagSlope.reason : '(未計算)'}</em>`
+        } — 凡人話: 用之字第 1 點 → 第 2 點計斜率, 取代 v2.0 MA5 斜率 (Stage 2 先郁 trigger)</li>
         <li><strong>volumeTrendRatio</strong>: ${meta.volumeTrendRatio} — 近期均量 / 前期均量, &gt; 1.2 為放量, &lt; 0.8 為縮量</li>
         <li><strong>volumeSignal</strong>: ${meta.volumeSignalLabel || meta.volumeSignal} — 量能訊號</li>
         <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比, &lt; 2% 強制覆寫做橫行</li>
@@ -7895,10 +7982,14 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             try {
               // 紫色 ZigZag 161 個 points 倒序排, 號碼 2-162
               // verdict.meta.zigzagPoints 已經係 chronological (舊→新), 倒返轉就係「新→舊」
+              // 大少 2026-08-19 16:43 fix — Peak 號碼擺 aboveBar, Trough 號碼擺 belowBar (原本全部 inBar 錯)
+              // 凡人話: high type point (Peak / 山頂) 號碼喺 K 線上面, low type point (Trough / 山谷) 號碼喺 K 線下面
               const reversedZigzag = [...zigzagSeries].reverse();
+              const reversedZigzagPoints = [...verdict.meta.zigzagPoints].reverse();  // 對齊 type
               const purpleMarkers = reversedZigzag.map((p, idx) => ({
                 time: p.time,
-                position: 'inBar',  // 紫色點 inBar 避免 legend 撞 legend 標記
+                // high → aboveBar (Peak 號碼喺上面), low → belowBar (Trough 號碼喺下面)
+                position: reversedZigzagPoints[idx].type === 'high' ? 'aboveBar' : 'belowBar',
                 color: '#9C27B0',   // 紫色字
                 shape: 'circle',
                 text: String(idx + 2),  // 1=close, 2=紫色最後 1 個, 3=倒數第 2 個, ...
@@ -7906,9 +7997,10 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               }));
 
               // 深綠色 close extension point 號碼 1
+              // 大少 2026-08-19 16:43 fix — 1 號 (今日 close) 擺 aboveBar, 跟 Peak 一樣
               const greenMarkers = greenMarkerTime != null ? [{
                 time: greenMarkerTime,
-                position: 'inBar',
+                position: 'aboveBar',  // close 通常接近 high, 擺上面清楚啲
                 color: '#2E7D32',  // 深綠色字
                 shape: 'circle',
                 text: '1',
