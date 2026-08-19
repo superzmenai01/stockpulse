@@ -92,7 +92,9 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-19 10:00 dropdown 把 zmen 排最尾: ALGO_CACHE_BUST = '4.8.5' (REGISTRY array 內 zmen 均算法 entry 由排第 1 改去排最尾 (M11 BTL 之後), 純 visual 排位, ID/displayName/adapterExport 全部唔改, 大少 trigger「在算法 Dropdown List 裡把 zmen 的算法排在最後」, 改返 2026-08-11 21:32 嘅「排最頂」永久 rule)
 // 大少 2026-08-19 10:10 chart 預設 zoom 落去最近半年: ALGO_CACHE_BUST = '4.8.6' (testing page renderChart 喺 fitContent() 之後 setTimeout(50ms) 調用 setVisibleLogicalRange 將預設 visible range 設為最近 126 個交易日 ≈ 半年, data 仍然係 1260 日 (5 年) 全部 喺度, 大少可以人手 pan/zoom 返去看全部 5 年, 大少 trigger「圖表預設顯示 1260 日全圖很難看到細節, 想要預設 zoom 落去半年」)
 // 大少 2026-08-19 10:15 fix 2 個 minor display issue: ALGO_CACHE_BUST = '4.8.7' (adapter.mjs calculateZigZag line 1608 直接拎 klines[].date 改用 _zigzagNormalizeDate fallback chain, fix verdict.meta.lastSwingLow.date 拎唔到 (顯示 {"value":436} 冇 date field 嘅 root cause) + testing-page.js debug panel K 線最後 date 拎取加 _getKlineDateForDebug helper (跟 _zigzagNormalizeDate 同樣 fallback chain), fix 「K線最後 close @ (invalid)」拎唔到 date 嘅 issue, 凡人話: 之前直接拎 klines[].date 或 klines[].timestamp, klines 個 field 唔一定叫 date (有時叫 timestamp / time), fallback chain 拎到 valid date)
-const ALGO_CACHE_BUST = '4.8.7';
+// 大少 2026-08-19 11:15 ZigZag 點順序號碼 (1, 2, 3, ...): ALGO_CACHE_BUST = '4.9.0' (adapter.mjs renderMAAlignmentV2ChartOverlay 加 ZigZag 點順序號碼 marker (1 號=今日 close 深綠色, 2 號=紫色最後 1 個, 倒序排), 拎 LightweightCharts.createSeriesMarkers 畀 candle series 加 marker, testing page 加 toggle checkbox 「顯示 ZigZag 點順序號碼」+ spinbutton 「顯示最近 N 個」(預設 30, 紫色 161 個 + 深綠色 1 個 = 162 個全部顯示會太擠), 大少 trigger「每個點加順序號碼, 由最新開始, 包括最後嗰條綠色線, 要 option toggle」)
+// 大少 2026-08-19 11:45 ZigZag 點順序號碼 fix v2: ALGO_CACHE_BUST = '4.10.0' (改用 lightweight-charts v4.2.3 native candleSeries.setMarkers() API 而唔係 v5 LightweightCharts.createSeriesMarkers plugin, 因為 testing page CDN 行緊 v4.2.3 唔 support v5 plugin API, 永遠 skip; setMarkers() v4 同 v5 都有, 向後兼容; 同時抽 renderDebugPanel() function 出去, 畀 runAlgorithm + reRenderZigZagSequence() 都 call, 因為之前 debug panel 喺 runAlgorithm create 一次之後永遠唔再 update, toggle 切 sequence 嗰陣 panel 入面 text 仲係舊 state)
+const ALGO_CACHE_BUST = '4.10.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -229,6 +231,11 @@ let currentAdapter = null;
 let currentOptions = {};
 // 大少 2026-08-19 trigger — ZigZag toggle state
 let zigzagEnabled = true;
+// 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 toggle state
+// showZigzagSequence: boolean, 大少可以 option toggle 顯示/隱藏 (預設 false 唔顯示, 避免畫面太擠)
+// zigzagSequenceMaxCount: number, 只顯示最近 N 個 marker (預設 30, 紫色 ZigZag 161 個 + 深綠色 close 1 個 = 162 個全部顯示會太擠)
+let showZigzagSequence = false;
+let zigzagSequenceMaxCount = 30;
 let lastVerdict = null;
 let lastKlines = null;
 let lastChartRefs = null;
@@ -786,6 +793,9 @@ async function runAlgorithm() {
     lastVerdict = verdict;
     lastKlines = klines;
     lastChartRefs = chartRefs;
+    // 大少 2026-08-19 11:15 — pass ZigZag sequence state 畀 renderChartOverlay
+    chartRefs.showZigzagSequence = showZigzagSequence;
+    chartRefs.zigzagSequenceMaxCount = zigzagSequenceMaxCount;
     // 大少 2026-08-19 08:45 — 拎 verdict/chartRefs 放 window, 大少可以喺 console 拎
     window.currentVerdict = verdict;
     window.currentKlines = klines;
@@ -802,82 +812,9 @@ async function runAlgorithm() {
     // 大少 2026-08-19 08:50 — 喺 chart 下面 auto-render debug 區域, 拎 chartRefs + verdict meta 嘅 state
     // (大少唔識去 console 拎 window.currentChartRefs, 直接 dump 落 page 等大少睇得到)
     // 永久 rule: 改 chart overlay 之後, debug 區域自動顯示 series 數量同 verdict meta keys
-    const debugPanel = document.createElement('pre');
-    debugPanel.id = 'chart-debug-panel';
-    debugPanel.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:14px;margin-top:14px;border-radius:6px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;';
-    const maV2Keys = Object.keys(chartRefs.maV2LineSeries || {});
-    const hasZigzag = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzag);
-    const hasZigzagExt = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzagExtension);
-    const metaKeys = verdict.meta ? Object.keys(verdict.meta) : [];
-    const lastKlineDebug = klines && klines.length > 0 ? klines[klines.length - 1] : null;
-    const lastCloseDebug = lastKlineDebug ? lastKlineDebug.close : null;
-    // 大少 2026-08-19 10:15 — 用 fallback chain 拎 K 線最後日期 (跟 adapter.mjs _zigzagNormalizeDate 一樣邏輯)
-    // 之前直接拎 lastKlineDebug.timestamp || lastKlineDebug.date, 但 klines 個 field 唔一定叫 date/timestamp (有時叫 time),
-    // 拎唔到時 fallback '(invalid)', 但其實拎 timestamp / time 已經可以拎到 valid date
-    // 拎 k.date → k.timestamp (number / ISO string) → k.time (number / ISO string) fallback chain,
-    // 拎到 valid date 就 return "YYYY-MM-DD" 格式
-    function _getKlineDateForDebug(k) {
-      if (!k) return null;
-      if (k.date) return k.date;
-      if (k.timestamp) {
-        const t = typeof k.timestamp === 'number' ? k.timestamp : Date.parse(k.timestamp);
-        if (Number.isFinite(t)) {
-          return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
-        }
-      }
-      if (k.time) {
-        const t = typeof k.time === 'number' ? k.time : Date.parse(k.time);
-        if (Number.isFinite(t)) {
-          return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
-        }
-      }
-      return null;
-    }
-    // 大少 2026-08-19 09:45 — try/catch safe handle, 避免 new Date(invalid).toISOString() 拋 RangeError
-    let lastDateDebug = '(missing)';
-    if (lastKlineDebug) {
-      try {
-        const isoDate = _getKlineDateForDebug(lastKlineDebug);
-        if (isoDate) {
-          // isoDate 已經係 "YYYY-MM-DD" 格式, 直接用
-          lastDateDebug = isoDate;
-        } else {
-          lastDateDebug = '(invalid)';
-        }
-      } catch (e) {
-        lastDateDebug = '(invalid)';
-      }
-    }
-    debugPanel.innerHTML = `<strong style="color:#9cdcfe;">🔧 Chart Debug (大少唔使去 console, 直接睇呢度)</strong>
-
-<strong style="color:#dcdcaa;">verdict.meta keys (${metaKeys.length}):</strong> ${metaKeys.join(', ')}
-
-<strong style="color:#dcdcaa;">chartRefs.maV2LineSeries keys (${maV2Keys.length}):</strong> ${maV2Keys.join(', ') || '(空)'}
-
-<strong style="color:#dcdcaa;">chartRefs.zigzagEnabled:</strong> ${chartRefs.zigzagEnabled === false ? '❌ false' : '✅ true (預設)'}
-
-<strong style="color:#dcdcaa;">紫色 ZigZag series:</strong> ${hasZigzag ? '✅ 已 add 落 chart' : '❌ 冇 add 落 chart'}
-
-<strong style="color:#dcdcaa;">深綠色 close extension series:</strong> ${hasZigzagExt ? '✅ 已 add (連去收市價)' : '❌ 冇 add'}
-
-<strong style="color:#dcdcaa;">verdict.meta.zigzagPoints length:</strong> ${verdict.meta?.zigzagPoints?.length || 0} 個
-
-<strong style="color:#dcdcaa;">verdict.meta.zigzagThreshold:</strong> ${verdict.meta?.zigzagThreshold || '(missing)'}%
-
-<strong style="color:#dcdcaa;">verdict.meta.lastSwingHigh:</strong> ${verdict.meta?.lastSwingHigh ? JSON.stringify(verdict.meta.lastSwingHigh) : '(null)'}
-
-<strong style="color:#dcdcaa;">verdict.meta.lastSwingLow:</strong> ${verdict.meta?.lastSwingLow ? JSON.stringify(verdict.meta.lastSwingLow) : '(null)'}
-
-<strong style="color:#dcdcaa;">K線最後 close:</strong> ${lastCloseDebug || '(missing)'} @ ${lastDateDebug}
-
-<em style="color:#608b4e;">// 想拎 raw data 可以喺 DevTools console 跑: window.currentChartRefs / window.currentVerdict</em>`;
-    const chartContainer = document.getElementById('chart-container');
-    if (chartContainer && chartContainer.parentElement) {
-      // 移除舊 debug panel (避免連跑幾次疊)
-      const oldPanel = document.getElementById('chart-debug-panel');
-      if (oldPanel) oldPanel.remove();
-      chartContainer.parentElement.appendChild(debugPanel);
-    }
+    // 大少 2026-08-19 11:35 — 抽 function 出去 (renderDebugPanel), 畀 reRenderZigZagSequence() 都可以 call,
+    // 因為之前 debug panel 喺 runAlgorithm create 一次之後永遠唔再 update, toggle 切 sequence 嗰陣 panel 入面 text 仲係舊 state
+    renderDebugPanel(chartRefs, verdict, klines);
   } catch (err) {
     runStatus.innerHTML = `❌ ${err.message}`;  // err.message 已經係中文 user-friendly
     resultPanel.innerHTML = `<pre style="color: red; background: #fff2f0; padding: 12px; border-radius: 4px;">${err.stack || err.message}</pre>`;
@@ -1035,6 +972,138 @@ if (zigzagEnabledEl) {
       // 通知 overlay 拎新嘅 enabled state
       lastChartRefs.zigzagEnabled = zigzagEnabled;
       currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
+    }
+  });
+}
+
+// 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 toggle handler
+// 撳 checkbox 即時 re-render chart overlay, 改 max count 即時 update marker
+function reRenderZigZagSequence() {
+  if (lastVerdict && lastKlines && lastChartRefs && currentAdapter && currentAdapter.renderChartOverlay) {
+    // 清返 zigzag series + extension series (因為 sequence marker 跟佢哋一齊)
+    ['maV2LineSeries', 'maLineSeries'].forEach(key => {
+      if (lastChartRefs[key]) {
+        if (lastChartRefs[key].zigzag) {
+          try { lastChartRefs.chart.removeSeries(lastChartRefs[key].zigzag); } catch (e) { /* ignore */ }
+          lastChartRefs[key].zigzag = null;
+        }
+        if (lastChartRefs[key].zigzagExtension) {
+          try { lastChartRefs.chart.removeSeries(lastChartRefs[key].zigzagExtension); } catch (e) { /* ignore */ }
+          lastChartRefs[key].zigzagExtension = null;
+        }
+      }
+    });
+    // 清返之前嘅 sequence marker plugin
+    if (lastChartRefs.zigzagSequenceMarkers) {
+      try { lastChartRefs.zigzagSequenceMarkers.setMarkers([]); } catch (e) { /* ignore */ }
+      lastChartRefs.zigzagSequenceMarkers = null;
+    }
+    // 通知 overlay 拎新嘅 sequence state
+    lastChartRefs.zigzagEnabled = zigzagEnabled;
+    lastChartRefs.showZigzagSequence = showZigzagSequence;
+    lastChartRefs.zigzagSequenceMaxCount = zigzagSequenceMaxCount;
+    currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
+    // 大少 2026-08-19 11:35 — re-render debug panel 拎新 state (e.g. ZigZag sequence toggle, zigzagSequenceMarkers handle)
+    renderDebugPanel(lastChartRefs, lastVerdict, lastKlines);
+  }
+}
+
+// ===== renderDebugPanel — 抽出去畀 runAlgorithm + reRenderZigZagSequence 都用 (大少 2026-08-19 11:35) =====
+// 凡人話: 拎 chart overlay 最新 state (紫色 ZigZag / 深綠色 extension / ZigZag sequence toggle) 顯示喺黑色 debug 區域
+// 之前 inline 喺 runAlgorithm 入面, 但 reRenderZigZagSequence 跑完之後 panel 永遠唔更新
+function renderDebugPanel(chartRefs, verdict, klines) {
+  const debugPanel = document.createElement('pre');
+  debugPanel.id = 'chart-debug-panel';
+  debugPanel.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:14px;margin-top:14px;border-radius:6px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;';
+  const maV2Keys = Object.keys(chartRefs.maV2LineSeries || {});
+  const hasZigzag = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzag);
+  const hasZigzagExt = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzagExtension);
+  const metaKeys = verdict.meta ? Object.keys(verdict.meta) : [];
+  const lastKlineDebug = klines && klines.length > 0 ? klines[klines.length - 1] : null;
+  const lastCloseDebug = lastKlineDebug ? lastKlineDebug.close : null;
+  // 大少 2026-08-19 10:15 — 用 fallback chain 拎 K 線最後日期 (跟 adapter.mjs _zigzagNormalizeDate 一樣邏輯)
+  // 拎 k.date → k.timestamp (number / ISO string) → k.time (number / ISO string) fallback chain,
+  // 拎到 valid date 就 return "YYYY-MM-DD" 格式
+  function _getKlineDateForDebug(k) {
+    if (!k) return null;
+    if (k.date) return k.date;
+    if (k.timestamp) {
+      const t = typeof k.timestamp === 'number' ? k.timestamp : Date.parse(k.timestamp);
+      if (Number.isFinite(t)) {
+        return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
+      }
+    }
+    if (k.time) {
+      const t = typeof k.time === 'number' ? k.time : Date.parse(k.time);
+      if (Number.isFinite(t)) {
+        return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
+      }
+    }
+    return null;
+  }
+  // 大少 2026-08-19 09:45 — try/catch safe handle, 避免 new Date(invalid).toISOString() 拋 RangeError
+  let lastDateDebug = '(missing)';
+  if (lastKlineDebug) {
+    try {
+      const isoDate = _getKlineDateForDebug(lastKlineDebug);
+      if (isoDate) {
+        lastDateDebug = isoDate;
+      } else {
+        lastDateDebug = '(invalid)';
+      }
+    } catch (e) {
+      lastDateDebug = '(invalid)';
+    }
+  }
+  debugPanel.innerHTML = `<strong style="color:#9cdcfe;">🔧 Chart Debug (大少唔使去 console, 直接睇呢度)</strong>
+
+<strong style="color:#dcdcaa;">verdict.meta keys (${metaKeys.length}):</strong> ${metaKeys.join(', ')}
+
+<strong style="color:#dcdcaa;">chartRefs.maV2LineSeries keys (${maV2Keys.length}):</strong> ${maV2Keys.join(', ') || '(空)'}
+
+<strong style="color:#dcdcaa;">chartRefs.zigzagEnabled:</strong> ${chartRefs.zigzagEnabled === false ? '❌ false' : '✅ true (預設)'}
+
+<strong style="color:#dcdcaa;">紫色 ZigZag series:</strong> ${hasZigzag ? '✅ 已 add 落 chart' : '❌ 冇 add 落 chart'}
+
+<strong style="color:#dcdcaa;">深綠色 close extension series:</strong> ${hasZigzagExt ? '✅ 已 add (連去收市價)' : '❌ 冇 add'}
+
+<strong style="color:#dcdcaa;">ZigZag sequence 號碼 toggle:</strong> ${chartRefs.showZigzagSequence === true ? `✅ 開 (顯示最近 ${chartRefs.zigzagSequenceMaxCount || 30} 個)` : '❌ 關 (預設)'}
+
+<strong style="color:#dcdcaa;">ZigZag sequence markers plugin:</strong> ${chartRefs.zigzagSequenceMarkers ? '✅ 已 create (拎出畀 toggle handler 用)' : '❌ 冇 create (toggle off)'}
+
+<strong style="color:#dcdcaa;">verdict.meta.zigzagPoints length:</strong> ${verdict.meta?.zigzagPoints?.length || 0} 個
+
+<strong style="color:#dcdcaa;">verdict.meta.zigzagThreshold:</strong> ${verdict.meta?.zigzagThreshold || '(missing)'}%
+
+<strong style="color:#dcdcaa;">verdict.meta.lastSwingHigh:</strong> ${verdict.meta?.lastSwingHigh ? JSON.stringify(verdict.meta.lastSwingHigh) : '(null)'}
+
+<strong style="color:#dcdcaa;">verdict.meta.lastSwingLow:</strong> ${verdict.meta?.lastSwingLow ? JSON.stringify(verdict.meta.lastSwingLow) : '(null)'}
+
+<strong style="color:#dcdcaa;">K線最後 close:</strong> ${lastCloseDebug || '(missing)'} @ ${lastDateDebug}
+
+<em style="color:#608b4e;">// 想拎 raw data 可以喺 DevTools console 跑: window.currentChartRefs / window.currentVerdict</em>`;
+  const chartContainer = document.getElementById('chart-container');
+  if (chartContainer && chartContainer.parentElement) {
+    // 移除舊 debug panel (避免連跑幾次疊)
+    const oldPanel = document.getElementById('chart-debug-panel');
+    if (oldPanel) oldPanel.remove();
+    chartContainer.parentElement.appendChild(debugPanel);
+  }
+}
+const zigzagSequenceEnabledEl = document.getElementById('zigzag-sequence-enabled');
+if (zigzagSequenceEnabledEl) {
+  zigzagSequenceEnabledEl.addEventListener('change', (e) => {
+    showZigzagSequence = e.target.checked;
+    reRenderZigZagSequence();
+  });
+}
+const zigzagSequenceMaxCountEl = document.getElementById('zigzag-sequence-max-count');
+if (zigzagSequenceMaxCountEl) {
+  zigzagSequenceMaxCountEl.addEventListener('change', (e) => {
+    const v = parseInt(e.target.value, 10);
+    if (Number.isFinite(v) && v >= 5 && v <= 162) {
+      zigzagSequenceMaxCount = v;
+      reRenderZigZagSequence();
     }
   });
 }

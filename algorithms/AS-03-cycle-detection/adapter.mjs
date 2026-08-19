@@ -7855,6 +7855,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           //   大少想紫色線最後接多一段深綠色線, 由最後 ZigZag point 連去今日 close, 即時見到趨勢延續
           // 凡人話警告: 呢段深綠色線**唔代表 algorithm 確認到轉向**, 只係 visualize 趨勢連貫
           // 用深綠色 (#2E7D32) — 對比紫色, 唔撞任何 MA 線, 綠色有「現在 / 最新」嘅意思
+          let greenMarkerTime = null;  // 大少 2026-08-19 11:15 — sequence 號碼 1 用
           if (klines && klines.length > 0) {
             const lastKline = klines[klines.length - 1];
             const lastClose = lastKline.close;
@@ -7872,10 +7873,64 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               });
               sExt.setData(extSeries);
               chartRefs.maV2LineSeries.zigzagExtension = sExt;
+              greenMarkerTime = lastDate;  // 記低 嚟做 sequence 號碼 1
               console.log('[M1 v2.0] ✅ 深綠色 close extension series added: 連去', lastClose, '@', lastDate);
             } else {
               console.log('[M1 v2.0] ℹ️ close extension skip: lastDate 或 lastClose 無效, 或已同 ZigZag 最後 point 重疊');
             }
+          }
+
+          // ============ 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 (1, 2, 3, ...) ============
+          // 凡人話: 喺紫色 ZigZag 每個 point + 深綠色 close point 加順序號碼 label
+          //   號碼由新到舊: 1=今日 close (深綠色) → 2=紫色最後 1 個 → 3=紫色倒數第 2 個 → ... → N+1=紫色最舊
+          //   大少可以 option toggle 顯示/隱藏, 同時設定「只顯示最近 N 個」(預設 30, 因為 161 個 marker 會太擠)
+          // 凡人話警告: 純 visual label, 唔影響 algorithm 邏輯, 大少教學 / annotation 嗰陣方便對應「轉勢 5 號位」
+          //
+          // 大少 2026-08-19 11:45 — 改用 lightweight-charts v4.2.3 native setMarkers() API (testing page CDN version)
+          // 原本用 LightweightCharts.createSeriesMarkers (v5 plugin API), 但 testing page 行緊 v4.2.3 唔 support, 永遠 skip
+          // setMarkers() v4 同 v5 都有, 永久用呢個, 向後兼容
+          const showZigzagSequence = chartRefs.showZigzagSequence === true;  // 預設 false (toggle off)
+          const zigzagSequenceMaxCount = Number.isFinite(chartRefs.zigzagSequenceMaxCount) ? chartRefs.zigzagSequenceMaxCount : 30;
+          if (showZigzagSequence && typeof LightweightCharts !== 'undefined' && chartRefs.candleSeries && typeof chartRefs.candleSeries.setMarkers === 'function') {
+            try {
+              // 紫色 ZigZag 161 個 points 倒序排, 號碼 2-162
+              // verdict.meta.zigzagPoints 已經係 chronological (舊→新), 倒返轉就係「新→舊」
+              const reversedZigzag = [...zigzagSeries].reverse();
+              const purpleMarkers = reversedZigzag.map((p, idx) => ({
+                time: p.time,
+                position: 'inBar',  // 紫色點 inBar 避免 legend 撞 legend 標記
+                color: '#9C27B0',   // 紫色字
+                shape: 'circle',
+                text: String(idx + 2),  // 1=close, 2=紫色最後 1 個, 3=倒數第 2 個, ...
+                size: 1,
+              }));
+
+              // 深綠色 close extension point 號碼 1
+              const greenMarkers = greenMarkerTime != null ? [{
+                time: greenMarkerTime,
+                position: 'inBar',
+                color: '#2E7D32',  // 深綠色字
+                shape: 'circle',
+                text: '1',
+                size: 1,
+              }] : [];
+
+              // 合併: 1 號 (close, 深綠) 排最前, 之後紫色倒序 2-N+1
+              const allMarkers = [...greenMarkers, ...purpleMarkers];
+
+              // 只顯示最近 N 個 (預設 30), 因為 161 個 marker 會太擠
+              const visibleMarkers = allMarkers.slice(0, zigzagSequenceMaxCount);
+
+              // 用 v4 native setMarkers() (永久 rule: testing page 行 v4.2.3, 唔好假設 v5 plugin API)
+              chartRefs.candleSeries.setMarkers(visibleMarkers);
+              // 拎出 handle 畀 toggle handler 用 (統一 set 一個 truthy value 表示「已 set」, 因為 setMarkers 冇 return handle)
+              chartRefs.zigzagSequenceMarkers = { markers: visibleMarkers, setMarkers: (m) => chartRefs.candleSeries.setMarkers(m) };
+              console.log('[M1 v2.0] ✅ ZigZag sequence markers set:', visibleMarkers.length, '個 (max:', zigzagSequenceMaxCount, ', 紫色:', purpleMarkers.length, '+ 深綠色:', greenMarkers.length, ')');
+            } catch (e) {
+              console.error('[M1 v2.0] ❌ ZigZag sequence markers 失敗:', e);
+            }
+          } else {
+            console.log('[M1 v2.0] ℹ️ ZigZag sequence markers skip: showZigzagSequence =', showZigzagSequence, ', candleSeries.setMarkers =', typeof (chartRefs.candleSeries?.setMarkers));
           }
         } else {
           console.warn('[M1 v2.0] ⚠️ ZigZag series.length < 2, 唔 render');
