@@ -85,7 +85,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-14 12:10 Warning v1.1.0 — 統一 13 個 warning 注入點 template: ALGO_CACHE_BUST = '4.6.1' (adapter.mjs 28 個 makeWarning 注入點嘅 impact 同 fix 統一跟 CATEGORY_DISPLAY template, system 「Verdict 唔可信, 唔好落單」/ 「Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc」, stock_state 「Verdict 已經準確, 留意股票狀態」/ 「睇其他 module 確認 / 留意 M7 alignment」, issue 保留各 module 嘅 specific context, 凡人話: 大少見到 impact 即知 verdict 信唔信, 唔使再讀各 module 自己寫嘅 string)
 // 大少 2026-08-14 14:44 Popup 用語專業化: ALGO_CACHE_BUST = '4.6.2' (M7 grade tooltip 改「學校評分制」做「Grade 評分制」+ 跟美股標普評級同 standard credit rating 邏輯, 凡人話: 大少見到「學校」呢啲 casual 詞覺得唔專業, 改用 standard financial industry 用語)
 // 大少 2026-08-14 23:15 dataWindowDays 默認 100 → 1260 + 移除 CONFIG_DEFAULTS trigger: ALGO_CACHE_BUST = '4.6.3' (testing page 默認值 100 → 1260, M1 v0.3.0 zmen + M9 移除 CONFIG_DEFAULTS trigger 因為 default 永遠等於 trigger 條件, warning 永遠 trigger 變廢話, 凡人話: 大少撳跑 zmen / M9 唔再見到 CONFIG_DEFAULTS 呢個廢話 warning, 跟住揀項 1 嘅 M9 auto-calibrate dataWindowDays 拎出嚟做 follow-up sprint)
-const ALGO_CACHE_BUST = '4.7.0';
+// 大少 2026-08-19 ZigZag 加 M1: ALGO_CACHE_BUST = '4.8.0' (M1 算法加 ZigZag 5% threshold 過濾 noise, ma-alignment.ts 加 calculateZigZag function + ZigZagPoint interface + 4 個新 meta field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), adapter.mjs renderChartOverlay 加紫色 ZigZag line series, testing page 加啟用 checkbox + threshold 輸入控制, 凡人話: 大少 trigger「缺 ZigZag 重要指標, 用 5% 過濾 noise」, 跟 StockPulse 首頁 ChartContainer.tsx 同一個 algorithm)
+const ALGO_CACHE_BUST = '4.8.0';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -218,6 +219,11 @@ const REGISTRY = [
 
 let currentAdapter = null;
 let currentOptions = {};
+// 大少 2026-08-19 trigger — ZigZag toggle state
+let zigzagEnabled = true;
+let lastVerdict = null;
+let lastKlines = null;
+let lastChartRefs = null;
 
 // ===== DOM refs =====
 
@@ -768,6 +774,10 @@ async function runAlgorithm() {
 
     // 5. 2026-08-07 — Adapter 自己嘅 chart overlay (peaks/troughs markers + 箱體線 + pattern alert)
     // Generic contract: 每個 algorithm 自己決定點 render 自己嘅 verdict 喺 chart 上面
+    // 大少 2026-08-19 — save state 畀 ZigZag toggle 用
+    lastVerdict = verdict;
+    lastKlines = klines;
+    lastChartRefs = chartRefs;
     if (currentAdapter.renderChartOverlay) {
       try {
         currentAdapter.renderChartOverlay(verdict, klines, chartRefs);
@@ -900,6 +910,27 @@ function renderChart(klines, code, period) {
 
 algorithmSelect.addEventListener('change', onAlgorithmChange);
 runBtn.addEventListener('click', runAlgorithm);
+
+// 大少 2026-08-19 trigger — ZigZag toggle handler
+// 撳啟用/停用即時 re-render chart overlay
+const zigzagEnabledEl = document.getElementById('zigzag-enabled');
+if (zigzagEnabledEl) {
+  zigzagEnabledEl.addEventListener('change', (e) => {
+    zigzagEnabled = e.target.checked;
+    if (lastVerdict && lastKlines && lastChartRefs && currentAdapter && currentAdapter.renderChartOverlay) {
+      // M1 v2.0 用 maV2LineSeries, zmen 用 maLineSeries — 兩邊都清
+      ['maV2LineSeries', 'maLineSeries'].forEach(key => {
+        if (lastChartRefs[key] && lastChartRefs[key].zigzag) {
+          try { lastChartRefs.chart.removeSeries(lastChartRefs[key].zigzag); } catch (e) { /* ignore */ }
+          lastChartRefs[key].zigzag = null;
+        }
+      });
+      // 通知 overlay 拎新嘅 enabled state
+      lastChartRefs.zigzagEnabled = zigzagEnabled;
+      currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
+    }
+  });
+}
 
 // =============================================================
 // 大少 2026-08-11 20:55 — A 改善: 「🚀 跑完整鏈條 (M7→M9→M8)」按鈕 + handler

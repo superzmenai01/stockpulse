@@ -43,6 +43,17 @@
           <form id="inputs-form" onsubmit="return false;"></form>
           <button id="run-btn" class="primary-btn">跑算法</button>
           <button id="run-full-chain-btn" class="primary-btn" style="background:linear-gradient(90deg,#722ed1,#1890ff);margin-left:8px;" title="自動跑 M7(綜合) → M9(回測,拎最佳設定) → M8(最終判斷用最佳設定)">🚀 跑完整鏈條 (M7→M9→M8)</button>
+          <!-- 大少 2026-08-19 trigger — ZigZag 控制 (啟用 + threshold) -->
+          <div id="zigzag-controls" style="display:inline-block;margin-left:12px;font-size:13px;">
+            <label style="margin-right:8px;cursor:pointer;">
+              <input type="checkbox" id="zigzag-enabled" checked style="vertical-align:middle;">
+              啟用 ZigZag
+            </label>
+            <label style="margin-right:8px;">
+              Threshold %: <input type="number" id="zigzag-threshold" value="5" min="1" max="20" step="0.5" style="width:60px;">
+            </label>
+            <span style="color:#999;font-size:12px;">(改完撳「跑算法」應用新 threshold)</span>
+          </div>
           <div id="run-status" class="run-status"></div>
         </section>
 
@@ -74,6 +85,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.54"></script>
+  <script type="module" src="testing-page.js?v=2.3.55"></script>
 </body>
 </html>

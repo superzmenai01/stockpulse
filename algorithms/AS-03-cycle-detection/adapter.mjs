@@ -1466,6 +1466,135 @@ function round(value, decimals) {
   return Math.round(value * factor) / factor;
 }
 
+// =============================================================
+// 大少 2026-08-19 — ZigZag 計算 (從 StockPulse ChartContainer.tsx 移植)
+// 凡人話: 拎重要峰谷 (5% threshold 過濾 noise), 唔睇每日小波動
+// 5% = 100蚊股票要升/跌 5蚊先算 peak/trough
+// 比 MA 距離 / 斜率更穩定, 唔會被日穿 / 微升打斷
+// Spec doc: docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
+// Source: web/src/components/chart/ChartContainer.tsx line 288
+// =============================================================
+/**
+ * ZigZag 轉向點識別
+ * @param klines K線數據 (要有 date, high, low, close field)
+ * @param thresholdPercent 轉向阈值 (預設 5%)
+ * @returns 轉向點數組 [{date, value, type: 'high' | 'low'}]
+ */
+function calculateZigZag(klines, thresholdPercent = 5) {
+  if (!klines || klines.length < 2) return [];
+
+  const result = [];
+  const threshold = thresholdPercent / 100;
+
+  // ZigZag 永遠從第一支 K 線嘅 low 開始
+  result.push({
+    date: klines[0].date,
+    value: klines[0].low,
+    type: 'low',
+  });
+
+  let lastSwingHigh = klines[0].high;
+  let lastSwingLow = klines[0].low;
+  let lastSwingIdx = 0;
+  let inUptrend = klines[1].close > klines[0].close;
+
+  // 找到第一個顯著高/低點
+  for (let i = 1; i < klines.length; i++) {
+    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh;
+    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow;
+
+    if (inUptrend) {
+      if (klines[i].high > lastSwingHigh) {
+        lastSwingHigh = klines[i].high;
+        lastSwingLow = klines[i].low;
+        lastSwingIdx = i;
+      }
+      if (changeFromHigh <= -threshold) {
+        result.push({
+          date: klines[lastSwingIdx].date,
+          value: lastSwingHigh,
+          type: 'high',
+        });
+        inUptrend = false;
+        lastSwingLow = klines[i].low;
+        lastSwingHigh = klines[i].high;
+        lastSwingIdx = i;
+        break;
+      }
+    } else {
+      if (klines[i].low < lastSwingLow) {
+        lastSwingLow = klines[i].low;
+        lastSwingHigh = klines[i].high;
+        lastSwingIdx = i;
+      }
+      if (changeFromLow >= threshold) {
+        result.push({
+          date: klines[lastSwingIdx].date,
+          value: lastSwingLow,
+          type: 'low',
+        });
+        inUptrend = true;
+        lastSwingLow = klines[i].low;
+        lastSwingHigh = klines[i].high;
+        lastSwingIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (result.length <= 1) return result;
+
+  // 繼續追蹤轉向點
+  for (let i = lastSwingIdx + 1; i < klines.length; i++) {
+    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh;
+    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow;
+
+    if (inUptrend) {
+      if (klines[i].high > lastSwingHigh) {
+        lastSwingHigh = klines[i].high;
+        lastSwingIdx = i;
+      }
+      if (changeFromHigh <= -threshold) {
+        result.push({
+          date: klines[lastSwingIdx].date,
+          value: lastSwingHigh,
+          type: 'high',
+        });
+        inUptrend = false;
+        lastSwingLow = klines[i].low;
+        lastSwingIdx = i;
+      }
+    } else {
+      if (klines[i].low < lastSwingLow) {
+        lastSwingLow = klines[i].low;
+        lastSwingIdx = i;
+      }
+      if (changeFromLow >= threshold) {
+        result.push({
+          date: klines[lastSwingIdx].date,
+          value: lastSwingLow,
+          type: 'low',
+        });
+        inUptrend = true;
+        lastSwingHigh = klines[i].high;
+        lastSwingIdx = i;
+      }
+    }
+  }
+
+  // 添加最後一個有效轉向點
+  const lastDate = klines[lastSwingIdx].date;
+  if (result[result.length - 1].date !== lastDate) {
+    result.push({
+      date: lastDate,
+      value: inUptrend ? lastSwingHigh : lastSwingLow,
+      type: inUptrend ? 'high' : 'low',
+    });
+  }
+
+  return result;
+}
+
 // ===== Render result (HTML string for testing page) =====
 //
 // 大少 #10846 — 支援兩種 verdict shape:
@@ -7082,6 +7211,12 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     : candidate === 'decelerating_down' ? consecutiveUpDays
     : 0;
 
+  // 大少 2026-08-19 trigger — ZigZag 5% threshold 過濾 noise (拎畀 chart overlay 用)
+  const zigzagThreshold = 5;  // 預設 5%, 大少可手調
+  const zigzagPoints = calculateZigZag(klines, zigzagThreshold);
+  const lastHigh = [...zigzagPoints].reverse().find(p => p.type === 'high') || null;
+  const lastLow = [...zigzagPoints].reverse().find(p => p.type === 'low') || null;
+
   const meta = {
     cycle: candidate,
     cycleLabel: MA_V2_CYCLE_LABELS[candidate],
@@ -7098,6 +7233,11 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
     volumeSignalLabel: MA_V2_VOLUME_SIGNAL_LABELS[volumeSignal],
     maxSpreadPct: maV2Round(maxSpreadPct, 6),
     consecutiveDays,
+    // 大少 2026-08-19 trigger — ZigZag 數據 (拎畀 chart overlay + 凡人話解釋用)
+    zigzagPoints,
+    lastSwingHigh: lastHigh ? { date: lastHigh.date, value: lastHigh.value } : null,
+    lastSwingLow: lastLow ? { date: lastLow.date, value: lastLow.value } : null,
+    zigzagThreshold,
     adjustmentLog,
     reason: reasonText,
     lastDate,
@@ -7641,6 +7781,42 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
       chartRefs.maV2LineSeries[`ma${period}`] = s;
     } catch (e) {
       console.error(`[renderMAAlignmentV2ChartOverlay] MA${period} addLineSeries 失敗:`, e);
+    }
+  }
+
+  // ============ 大少 2026-08-19 trigger — ZigZag 折線 (5% threshold 過濾 noise) ============
+  // 凡人話: 用峰谷拎出重要轉向點, 中間唔畫, 只連 peaks 同 troughs
+  // 紫色 line 區分 MA 四條 (紅/青/橙/藍)
+  // 大少 2026-08-19 — 由 testing page 嘅 zigzag-enabled checkbox 控制
+  const zigzagEnabled = chartRefs.zigzagEnabled !== false;  // 預設 true
+  if (zigzagEnabled) {
+    try {
+      if (verdict.meta && Array.isArray(verdict.meta.zigzagPoints) && verdict.meta.zigzagPoints.length >= 2) {
+        const dateToTime = (d) => {
+          if (typeof d === 'number') return d > 1e12 ? Math.floor(d / 1000) : d;
+          if (typeof d === 'string') return Math.floor(new Date(d).getTime() / 1000);
+          return null;
+        };
+        const zigzagSeries = verdict.meta.zigzagPoints
+          .map(p => ({ time: dateToTime(p.date), value: p.value }))
+          .filter(p => p.time != null && Number.isFinite(p.value))
+          .sort((a, b) => a.time - b.time);
+
+        if (zigzagSeries.length >= 2) {
+          const s = chart.addLineSeries({
+            color: '#9C27B0',  // 紫色
+            lineWidth: 2,
+            title: `ZigZag (${verdict.meta.zigzagThreshold || 5}%)`,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            lineStyle: 0,  // 實線 (跟 StockPulse ChartContainer 一樣)
+          });
+          s.setData(zigzagSeries);
+          chartRefs.maV2LineSeries.zigzag = s;
+        }
+      }
+    } catch (e) {
+      console.error(`[renderMAAlignmentV2ChartOverlay] ZigZag addLineSeries 失敗:`, e);
     }
   }
 }
