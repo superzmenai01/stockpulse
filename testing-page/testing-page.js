@@ -89,25 +89,10 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-19 09:10 加 visible debug panel + detailed explanation 4 個 ZigZag field: ALGO_CACHE_BUST = '4.8.2' (testing page 喺 chart 下面 auto-render 黑色 debug 區域 dump chart state (verdict meta keys / maV2LineSeries keys / zigzagEnabled / zigzag series exists / zigzagPoints length), 順便 renderMAAlignmentV2DetailedExplanation 加 4 個 ZigZag field display (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), 大少唔使去 console 拎 window.currentChartRefs 直接睇 page debug panel 就得)
 // 大少 2026-08-19 09:40 加深綠色 close extension line: ALGO_CACHE_BUST = '4.8.3' (大少 trigger 紫色 ZigZag 拎到嘅 peak/trough 之後, 想加多一條深綠色線 (#2E7D32) 由最後 ZigZag point 連去 K 線最後 close, 即時見到趨勢延續, 凡人話警告: 呢段深綠色線唔代表 algorithm 確認到轉向, 只係 visualize, 順便 testing page debug panel 加 close extension series 顯示狀態 + K線最後 close value/date)
 // 大少 2026-08-19 09:45 fix debug panel new Date(invalid).toISOString() RangeError: ALGO_CACHE_BUST = '4.8.4' (debug panel 用 try/catch + isNaN 拎 K 線最後日期, 避免 klines 嘅 timestamp / date field 拎到 invalid string 拋 RangeError: Invalid time value 喺 Date.toISOString())
-const ALGO_CACHE_BUST = '4.8.4';
+// 大少 2026-08-19 10:00 dropdown 把 zmen 排最尾: ALGO_CACHE_BUST = '4.8.5' (REGISTRY array 內 zmen 均算法 entry 由排第 1 改去排最尾 (M11 BTL 之後), 純 visual 排位, ID/displayName/adapterExport 全部唔改, 大少 trigger「在算法 Dropdown List 裡把 zmen 的算法排在最後」, 改返 2026-08-11 21:32 嘅「排最頂」永久 rule)
+const ALGO_CACHE_BUST = '4.8.5';
 
 const REGISTRY = [
-  // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
-  // 之前排位: M1-M6 → M7 → M9 → zmen → M8 → M11
-  // 大少 trigger:「Dropdown List 裡把 zmen 均算法放到最上」
-  // 理由: zmen 均算法係大少自己想出嚟嘅 cycle 風格算法, 大少最熟, 排最頂方便 default 揀
-  // ID/displayName 唔改 (純 visual 排位)
-  // ---- 獨立算法 (舊 M1 v0.3.0 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
-  // 大少 2026-08-08 08:47:「zmen 均算法」係大少自己想出嚟嘅算法, 從 7 個 modules 抽離
-  // 大少 2026-08-08 09:50: 改名「zmen均算法」→「zmen均算法」(算法 vs 算去 typo 修正)
-  // 大少 2026-08-08 09:13: implementation file 改叫 zmen-ma-alignment.ts
-  {
-    id: 'AS-03',
-    displayName: 'zmen均算法 v1.0',  // 大少 2026-08-08 09:50: 舊 M1 改名 + 抽離 7 個 modules; 2026-08-15 v1.0: 保留 Layer 1 + 加 Layer 2
-    folder: 'AS-03-cycle-detection',
-    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
-    adapterExport: 'zmenMAAdapter',  // 大少 2026-08-15 zmen v1.0: 改用命名 export, 拎到 renderResult 凡人話 layout
-  },
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
   // M1: 均線系統週期判斷法 v2.0 (with Volume & Slope 擴展)
   //   大少 2026-08-08 09:13 指示: 跟 docx Kimi v2.0 spec 做全新 implementation
@@ -213,6 +198,24 @@ const REGISTRY = [
     folder: 'AS-03-cycle-detection',
     adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
     adapterExport: 'backtestTimelineAdapter',
+  },
+  // ---- 獨立算法 (舊 M1 v0.3.0 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
+  // 大少 2026-08-19 10:00 — zmen 均算法搬去最尾 (排喺 M11 BTL 之後)
+  // 之前排位 (2026-08-11 21:32 永久 rule): zmen 排最頂 (排名 1)
+  // 大少 trigger 2026-08-19 10:00:「在算法 Dropdown List 裡把 zmen 的算法排在最後」
+  // 理由: 改返之前「排最頂」嘅決定, zmen 排最尾, AS-03 7 個 modules + M11 排前面
+  // ID/displayName 唔改 (純 visual 排位, adapterExport 都唔改)
+  // ---- 獨立算法 (舊 M1 v0.3.0 抽出, 唔屬於 AS-03 7 個 modules 之一) ----
+  // 大少 2026-08-08 08:47:「zmen 均算法」係大少自己想出嚟嘅算法, 從 7 個 modules 抽離
+  // 大少 2026-08-08 09:50: 改名「zmen均算法」→「zmen均算法」(算法 vs 算去 typo 修正)
+  // 大少 2026-08-08 09:13: implementation file 改叫 zmen-ma-alignment.ts
+  // 大少 2026-08-15 zmen v1.0: 保留 Layer 1 (10 條 rule) + 加 Layer 2 (9 個 sub-scenario)
+  {
+    id: 'AS-03',
+    displayName: 'zmen均算法 v1.0',  // 大少 2026-08-08 09:50: 舊 M1 改名 + 抽離 7 個 modules; 2026-08-15 v1.0: 保留 Layer 1 + 加 Layer 2
+    folder: 'AS-03-cycle-detection',
+    adapterPath: '../algorithms/AS-03-cycle-detection/adapter.mjs',
+    adapterExport: 'zmenMAAdapter',  // 大少 2026-08-15 zmen v1.0: 改用命名 export, 拎到 renderResult 凡人話 layout
   },
   // 將來加新 algorithm:
   // { id: 'AS-04', folder: '...', adapterPath: '...' },
