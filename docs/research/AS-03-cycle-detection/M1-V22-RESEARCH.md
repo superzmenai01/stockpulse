@@ -381,3 +381,66 @@
 **Last Updated**: 2026-08-18 06:36 (大少 trigger #10: 例出 9 個 sub-scenario 簡單算法)  
 **Status**: 🚧 Research doc, 等大少逐條 review 指示
 
+
+---
+
+## 🆕 大少 2026-08-19 Trigger — ZigZag 點順序號碼 (純 visual label, 唔影響 algorithm)
+
+### 大少 trigger (2026-08-19 11:15)
+> 「仲有一項想加的, 在 zigzag 每一個點加上一個順序號碼, 這個是 option 可以選擇睇吾睇, 號號排序方式從最新的開始, 要抱括最後那條錄色線。以 00700 為例, 第一個點是現在的的 close, 要寫上 1 字, 第二點是上一個最底位, 第三點是上一個最高位, 第四點是上一個最底位, 如此類推」
+
+### 凡人話解釋
+喺紫色 ZigZag 每個 point + 深綠色 close extension point 加順序號碼 label:
+- **1 號 = 今日 close (深綠色 #2E7D32)**
+- **2 號 = 紫色 ZigZag 最後 1 個 (最接近今日嘅 peak/trough)**
+- **3 號 = 紫色 ZigZag 倒數第 2 個**
+- ... 一直倒序排
+- **N+1 號 = 紫色 ZigZag 最舊 1 個**
+
+大少可以 option toggle 顯示/隱藏 (預設 false 關閉), 同時設定「只顯示最近 N 個」spinbutton (預設 30, 因為 161 個 marker 會太擠)。
+
+### 凡人話警告
+- **純 visual label, 唔影響 algorithm 邏輯** — 大少教學 / annotation 嗰陣方便對應「轉勢 5 號位」
+
+### Implementation (commit `07d824b5`)
+
+1. **adapter.mjs renderMAAlignmentV2ChartOverlay** (line 7883 之後):
+   - 紫色 ZigZag 161 個 points 倒序排, 號碼 2-162
+   - 深綠色 close extension point 號碼 1
+   - 用 lightweight-charts v4.2.3 native `candleSeries.setMarkers()` API (永久 rule: testing page 行 v4.2.3, 唔好用 v5 `LightweightCharts.createSeriesMarkers` plugin)
+   - `chartRefs.zigzagSequenceMarkers` 拎出 handle 畀 toggle handler 用 (wrapper object 因為 setMarkers() v4 冇 return handle)
+
+2. **testing-page/index.html** 加 2 個新 UI controls:
+   - 「顯示 ZigZag 點順序號碼」checkbox (`#zigzag-sequence-enabled`, 預設 false 關閉)
+   - 「顯示最近 N 個」spinbutton (`#zigzag-sequence-max-count`, 預設 30, min 5, max 162)
+
+3. **testing-page.js**:
+   - 加 `let showZigzagSequence = false` + `let zigzagSequenceMaxCount = 30` state
+   - 加 `reRenderZigZagSequence()` function (清 zigzag + extension series + 清 marker + re-render overlay)
+   - 加 2 個 change handler
+   - runAlgorithm 入面 chartRefs pass `showZigzagSequence` + `zigzagSequenceMaxCount`
+   - **抽 `renderDebugPanel()` function 出去, runAlgorithm + reRenderZigZagSequence 都 call** (debug panel 之前喺 runAlgorithm create 一次之後永遠唔再 update, toggle 切 sequence 嗰陣 panel 入面 text 仲係舊 state — 違反大少 09:15 永久 rule「改 chart overlay 之後, testing page auto-render 黑色 debug 區域 dump chart state」)
+   - Debug panel 加 `ZigZag sequence 號碼 toggle` + `ZigZag sequence markers plugin` 顯示
+
+### 永久 rule (大少 2026-08-19 11:15 + 11:45)
+
+- ✅ **ZigZag 點順序號碼由新到舊 1-N**: 1 號 = 今日 close (深綠色), 2-N+1 號 = 紫色 ZigZag points 倒序
+- ✅ **Toggle 預設 false 關閉** (避免畫面太擠), 大少可以 option 開
+- ✅ **「只顯示最近 N 個」spinbutton 預設 30, min 5, max 162** (因為 161 個 marker 全部顯示會太擠)
+- ✅ **純 visual label 唔影響 algorithm 邏輯** (大少教學 / annotation 用)
+- ✅ **永久用 lightweight-charts v4.2.3 native `setMarkers()` API** (testing page 行緊 v4.2.3, 唔好用 v5 `createSeriesMarkers` plugin — v4 冇 plugin API, 永遠 skip; `setMarkers()` v4 同 v5 都有, 向後兼容)
+- ✅ **Debug panel 永遠 auto-update** (大少 09:15 永久 rule 衍生) — 改 chart overlay 之後, testing page 黑色 debug 區域 dump chart state, 唔可以淨係 create 一次就唔再 update
+- ✅ **改 chart overlay 之後, 同時 update 抽出去嘅 `renderDebugPanel()` function** (避免後續 toggle / re-render 嘅時候 panel 入面 text 仲係舊 state)
+
+### 凡人話 hint (UI)
+- 個 UI text 寫住「(1 號=今日 close, 2 號=紫色最後 1 個, 倒序排)」, 大少一眼就明點排序
+
+### Cache bust
+- `ALGO_CACHE_BUST` 4.9.0 → 4.10.0
+- `?v=2.3.62` → 2.3.64 (testing-page.js renderDebugPanel + handler)
+
+### Verify evidence (HK.00700, M1 v2.0 + ZigZag 5%, N=30)
+- Debug panel 顯示: `ZigZag sequence 號碼 toggle: ✅ 開 (顯示最近 30 個)` + `ZigZag sequence markers plugin: ✅ 已 create (拎出畀 toggle handler 用)`
+- Chart 入面紫色 ZigZag 線 + 紫色號碼 (14, 16, 12, 10, 8 等倒序排) + 深綠色 收市延伸 (Close Ext.) 446.20 線 + 1 號深綠色 marker
+- 改 spinbutton 拎唔同 N (5) 都 work
+- 截圖: `docs/research/AS-03-cycle-detection/screenshots/m1-zigzag-sequence-verify-2026-08-19.jpg`
