@@ -7830,17 +7830,48 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           .sort((a, b) => a.time - b.time);
 
         if (zigzagSeries.length >= 2) {
+          // ============ 大少 2026-08-19 09:40 trigger — 紫色 ZigZag 折線 (原本 peak/trough) ============
+          // 凡人話: 用 ZigZag algorithm 拎出嚟嘅 peaks/troughs, 紫色線 (#9C27B0) 代表「確認咗嘅轉向點」
+          // 跟 StockPulse ChartContainer 一樣, 唔加 peak/trough 箭嘴 marker
           const s = chart.addLineSeries({
             color: '#9C27B0',  // 紫色
             lineWidth: 2,
             title: `ZigZag (${verdict.meta.zigzagThreshold || 5}%)`,
             priceLineVisible: false,
             lastValueVisible: true,
-            lineStyle: 0,  // 實線 (跟 StockPulse ChartContainer 一樣)
+            lineStyle: 0,  // 實線
           });
           s.setData(zigzagSeries);
           chartRefs.maV2LineSeries.zigzag = s;
           console.log('[M1 v2.0] ✅ 紫色 ZigZag line series added:', zigzagSeries.length, '個 points, color: #9C27B0');
+
+          // ============ 大少 2026-08-19 09:40 trigger — 深綠色 close extension 線 (連去今日收市) ============
+          // 凡人話: 紫色 ZigZag 拎到嘅係「確認咗嘅轉向點」, 但 K 線仲有最新嘅 close 仲未確認到下一個 peak/trough
+          //   大少想紫色線最後接多一段深綠色線, 由最後 ZigZag point 連去今日 close, 即時見到趨勢延續
+          // 凡人話警告: 呢段深綠色線**唔代表 algorithm 確認到轉向**, 只係 visualize 趨勢連貫
+          // 用深綠色 (#2E7D32) — 對比紫色, 唔撞任何 MA 線, 綠色有「現在 / 最新」嘅意思
+          if (klines && klines.length > 0) {
+            const lastKline = klines[klines.length - 1];
+            const lastClose = lastKline.close;
+            const lastDate = dateToTime(_zigzagNormalizeDate(lastKline));
+            const lastZigzagPoint = zigzagSeries[zigzagSeries.length - 1];
+            if (lastDate != null && Number.isFinite(lastClose) && lastZigzagPoint && lastZigzagPoint.time !== lastDate) {
+              const extSeries = [lastZigzagPoint, { time: lastDate, value: lastClose }];
+              const sExt = chart.addLineSeries({
+                color: '#2E7D32',  // 深綠色
+                lineWidth: 1.5,
+                title: '收市延伸 (Close Ext.)',
+                priceLineVisible: false,
+                lastValueVisible: true,
+                lineStyle: 0,  // 實線
+              });
+              sExt.setData(extSeries);
+              chartRefs.maV2LineSeries.zigzagExtension = sExt;
+              console.log('[M1 v2.0] ✅ 深綠色 close extension series added: 連去', lastClose, '@', lastDate);
+            } else {
+              console.log('[M1 v2.0] ℹ️ close extension skip: lastDate 或 lastClose 無效, 或已同 ZigZag 最後 point 重疊');
+            }
+          }
         } else {
           console.warn('[M1 v2.0] ⚠️ ZigZag series.length < 2, 唔 render');
         }

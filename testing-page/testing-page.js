@@ -87,7 +87,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-14 23:15 dataWindowDays 默認 100 → 1260 + 移除 CONFIG_DEFAULTS trigger: ALGO_CACHE_BUST = '4.6.3' (testing page 默認值 100 → 1260, M1 v0.3.0 zmen + M9 移除 CONFIG_DEFAULTS trigger 因為 default 永遠等於 trigger 條件, warning 永遠 trigger 變廢話, 凡人話: 大少撳跑 zmen / M9 唔再見到 CONFIG_DEFAULTS 呢個廢話 warning, 跟住揀項 1 嘅 M9 auto-calibrate dataWindowDays 拎出嚟做 follow-up sprint)
 // 大少 2026-08-19 ZigZag 加 M1: ALGO_CACHE_BUST = '4.8.0' (M1 算法加 ZigZag 5% threshold 過濾 noise, ma-alignment.ts 加 calculateZigZag function + ZigZagPoint interface + 4 個新 meta field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), adapter.mjs renderChartOverlay 加紫色 ZigZag line series, testing page 加啟用 checkbox + threshold 輸入控制, 凡人話: 大少 trigger「缺 ZigZag 重要指標, 用 5% 過濾 noise」, 跟 StockPulse 首頁 ChartContainer.tsx 同一個 algorithm)
 // 大少 2026-08-19 09:10 加 visible debug panel + detailed explanation 4 個 ZigZag field: ALGO_CACHE_BUST = '4.8.2' (testing page 喺 chart 下面 auto-render 黑色 debug 區域 dump chart state (verdict meta keys / maV2LineSeries keys / zigzagEnabled / zigzag series exists / zigzagPoints length), 順便 renderMAAlignmentV2DetailedExplanation 加 4 個 ZigZag field display (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold), 大少唔使去 console 拎 window.currentChartRefs 直接睇 page debug panel 就得)
-const ALGO_CACHE_BUST = '4.8.2';
+// 大少 2026-08-19 09:40 加深綠色 close extension line: ALGO_CACHE_BUST = '4.8.3' (大少 trigger 紫色 ZigZag 拎到嘅 peak/trough 之後, 想加多一條深綠色線 (#2E7D32) 由最後 ZigZag point 連去 K 線最後 close, 即時見到趨勢延續, 凡人話警告: 呢段深綠色線唔代表 algorithm 確認到轉向, 只係 visualize, 順便 testing page debug panel 加 close extension series 顯示狀態 + K線最後 close value/date)
+const ALGO_CACHE_BUST = '4.8.3';
 
 const REGISTRY = [
   // ---- 大少 2026-08-11 21:32 — zmen 均算法搬去最頂 (排名 1) ----
@@ -800,7 +801,11 @@ async function runAlgorithm() {
     debugPanel.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:14px;margin-top:14px;border-radius:6px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;';
     const maV2Keys = Object.keys(chartRefs.maV2LineSeries || {});
     const hasZigzag = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzag);
+    const hasZigzagExt = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzagExtension);
     const metaKeys = verdict.meta ? Object.keys(verdict.meta) : [];
+    const lastKlineDebug = klines && klines.length > 0 ? klines[klines.length - 1] : null;
+    const lastCloseDebug = lastKlineDebug ? lastKlineDebug.close : null;
+    const lastDateDebug = lastKlineDebug ? new Date(lastKlineDebug.timestamp || lastKlineDebug.date).toISOString().split('T')[0] : '(missing)';
     debugPanel.innerHTML = `<strong style="color:#9cdcfe;">🔧 Chart Debug (大少唔使去 console, 直接睇呢度)</strong>
 
 <strong style="color:#dcdcaa;">verdict.meta keys (${metaKeys.length}):</strong> ${metaKeys.join(', ')}
@@ -809,7 +814,9 @@ async function runAlgorithm() {
 
 <strong style="color:#dcdcaa;">chartRefs.zigzagEnabled:</strong> ${chartRefs.zigzagEnabled === false ? '❌ false' : '✅ true (預設)'}
 
-<strong style="color:#dcdcaa;">zigzag series:</strong> ${hasZigzag ? '✅ 已 add 落 chart' : '❌ 冇 add 落 chart'}
+<strong style="color:#dcdcaa;">紫色 ZigZag series:</strong> ${hasZigzag ? '✅ 已 add 落 chart' : '❌ 冇 add 落 chart'}
+
+<strong style="color:#dcdcaa;">深綠色 close extension series:</strong> ${hasZigzagExt ? '✅ 已 add (連去收市價)' : '❌ 冇 add'}
 
 <strong style="color:#dcdcaa;">verdict.meta.zigzagPoints length:</strong> ${verdict.meta?.zigzagPoints?.length || 0} 個
 
@@ -818,6 +825,8 @@ async function runAlgorithm() {
 <strong style="color:#dcdcaa;">verdict.meta.lastSwingHigh:</strong> ${verdict.meta?.lastSwingHigh ? JSON.stringify(verdict.meta.lastSwingHigh) : '(null)'}
 
 <strong style="color:#dcdcaa;">verdict.meta.lastSwingLow:</strong> ${verdict.meta?.lastSwingLow ? JSON.stringify(verdict.meta.lastSwingLow) : '(null)'}
+
+<strong style="color:#dcdcaa;">K線最後 close:</strong> ${lastCloseDebug || '(missing)'} @ ${lastDateDebug}
 
 <em style="color:#608b4e;">// 想拎 raw data 可以喺 DevTools console 跑: window.currentChartRefs / window.currentVerdict</em>`;
     const chartContainer = document.getElementById('chart-container');
