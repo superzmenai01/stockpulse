@@ -1473,10 +1473,32 @@ function round(value, decimals) {
 // 比 MA 距離 / 斜率更穩定, 唔會被日穿 / 微升打斷
 // Spec doc: docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
 // Source: web/src/components/chart/ChartContainer.tsx line 288
+// 大少 2026-08-19 09:15 — klines 拎取 date 改用 fallback chain (date / timestamp)
+//   凡人話: klines 從 backend API 拎, 個 field 唔一定叫 date (有時叫 timestamp / time),
+//   之前直接用 klines[i].date 拎會拎到 undefined, 紫色 ZigZag line 因為 time 全 null 唔 render
+//   Fix: 加 _zigzagNormalizeDate helper, 拎 k.date / k.timestamp / k.time fallback chain
 // =============================================================
+function _zigzagNormalizeDate(k) {
+  if (!k) return null;
+  if (k.date) return k.date;
+  if (k.timestamp) {
+    const t = typeof k.timestamp === 'number' ? k.timestamp : Date.parse(k.timestamp);
+    if (Number.isFinite(t)) {
+      return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
+    }
+  }
+  if (k.time) {
+    const t = typeof k.time === 'number' ? k.time : Date.parse(k.time);
+    if (Number.isFinite(t)) {
+      return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
+    }
+  }
+  return null;
+}
+
 /**
  * ZigZag 轉向點識別
- * @param klines K線數據 (要有 date, high, low, close field)
+ * @param klines K線數據 (要有 date / timestamp + high, low, close field)
  * @param thresholdPercent 轉向阈值 (預設 5%)
  * @returns 轉向點數組 [{date, value, type: 'high' | 'low'}]
  */
@@ -1488,7 +1510,7 @@ function calculateZigZag(klines, thresholdPercent = 5) {
 
   // ZigZag 永遠從第一支 K 線嘅 low 開始
   result.push({
-    date: klines[0].date,
+    date: _zigzagNormalizeDate(klines[0]),
     value: klines[0].low,
     type: 'low',
   });
@@ -1511,7 +1533,7 @@ function calculateZigZag(klines, thresholdPercent = 5) {
       }
       if (changeFromHigh <= -threshold) {
         result.push({
-          date: klines[lastSwingIdx].date,
+          date: _zigzagNormalizeDate(klines[lastSwingIdx]),
           value: lastSwingHigh,
           type: 'high',
         });
@@ -1529,7 +1551,7 @@ function calculateZigZag(klines, thresholdPercent = 5) {
       }
       if (changeFromLow >= threshold) {
         result.push({
-          date: klines[lastSwingIdx].date,
+          date: _zigzagNormalizeDate(klines[lastSwingIdx]),
           value: lastSwingLow,
           type: 'low',
         });
@@ -1556,7 +1578,7 @@ function calculateZigZag(klines, thresholdPercent = 5) {
       }
       if (changeFromHigh <= -threshold) {
         result.push({
-          date: klines[lastSwingIdx].date,
+          date: _zigzagNormalizeDate(klines[lastSwingIdx]),
           value: lastSwingHigh,
           type: 'high',
         });
@@ -1571,7 +1593,7 @@ function calculateZigZag(klines, thresholdPercent = 5) {
       }
       if (changeFromLow >= threshold) {
         result.push({
-          date: klines[lastSwingIdx].date,
+          date: _zigzagNormalizeDate(klines[lastSwingIdx]),
           value: lastSwingLow,
           type: 'low',
         });
