@@ -1605,7 +1605,10 @@ function calculateZigZag(klines, thresholdPercent = 5) {
   }
 
   // 添加最後一個有效轉向點
-  const lastDate = klines[lastSwingIdx].date;
+  // 大少 2026-08-19 10:15 — 用 _zigzagNormalizeDate fallback chain, 唔好直接拎 klines[].date
+  // (klines 個 date field 唔一定叫 date, 之前直接 .date 拎會拎到 undefined,
+  //  導致 verdict.meta.lastSwingLow.date 拎唔到, 凡人話解讀顯示 「undefined 收 436」)
+  const lastDate = _zigzagNormalizeDate(klines[lastSwingIdx]);
   if (result[result.length - 1].date !== lastDate) {
     result.push({
       date: lastDate,
@@ -7225,7 +7228,9 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
   confidence = maV2Round(confidence, 4);
 
   // ============ Step 8: 組裝輸出 ============
-  const lastDate = klines[klines.length - 1].date;
+  // 大少 2026-08-19 10:15 — 用 _zigzagNormalizeDate fallback chain, 唔好直接拎 klines[].date
+  // (klines 個 date field 唔一定叫 date, 之前直接 .date 拎會拎到 undefined, 導致 verdict.meta.lastDate 拎唔到)
+  const lastDate = _zigzagNormalizeDate(klines[klines.length - 1]);
   const reasonText = `【週期】${MA_V2_CYCLE_LABELS[candidate]} (${MA_V2_POSITION_LABELS[cyclePosition]})${adjustmentLog.length > 0 ? '；' + adjustmentLog.join('；') : ''}`;
 
   // 連續日數 (到頂轉勢/到底轉勢用)

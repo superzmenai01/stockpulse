@@ -91,7 +91,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-19 09:45 fix debug panel new Date(invalid).toISOString() RangeError: ALGO_CACHE_BUST = '4.8.4' (debug panel 用 try/catch + isNaN 拎 K 線最後日期, 避免 klines 嘅 timestamp / date field 拎到 invalid string 拋 RangeError: Invalid time value 喺 Date.toISOString())
 // 大少 2026-08-19 10:00 dropdown 把 zmen 排最尾: ALGO_CACHE_BUST = '4.8.5' (REGISTRY array 內 zmen 均算法 entry 由排第 1 改去排最尾 (M11 BTL 之後), 純 visual 排位, ID/displayName/adapterExport 全部唔改, 大少 trigger「在算法 Dropdown List 裡把 zmen 的算法排在最後」, 改返 2026-08-11 21:32 嘅「排最頂」永久 rule)
 // 大少 2026-08-19 10:10 chart 預設 zoom 落去最近半年: ALGO_CACHE_BUST = '4.8.6' (testing page renderChart 喺 fitContent() 之後 setTimeout(50ms) 調用 setVisibleLogicalRange 將預設 visible range 設為最近 126 個交易日 ≈ 半年, data 仍然係 1260 日 (5 年) 全部 喺度, 大少可以人手 pan/zoom 返去看全部 5 年, 大少 trigger「圖表預設顯示 1260 日全圖很難看到細節, 想要預設 zoom 落去半年」)
-const ALGO_CACHE_BUST = '4.8.6';
+// 大少 2026-08-19 10:15 fix 2 個 minor display issue: ALGO_CACHE_BUST = '4.8.7' (adapter.mjs calculateZigZag line 1608 直接拎 klines[].date 改用 _zigzagNormalizeDate fallback chain, fix verdict.meta.lastSwingLow.date 拎唔到 (顯示 {"value":436} 冇 date field 嘅 root cause) + testing-page.js debug panel K 線最後 date 拎取加 _getKlineDateForDebug helper (跟 _zigzagNormalizeDate 同樣 fallback chain), fix 「K線最後 close @ (invalid)」拎唔到 date 嘅 issue, 凡人話: 之前直接拎 klines[].date 或 klines[].timestamp, klines 個 field 唔一定叫 date (有時叫 timestamp / time), fallback chain 拎到 valid date)
+const ALGO_CACHE_BUST = '4.8.7';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -810,14 +811,36 @@ async function runAlgorithm() {
     const metaKeys = verdict.meta ? Object.keys(verdict.meta) : [];
     const lastKlineDebug = klines && klines.length > 0 ? klines[klines.length - 1] : null;
     const lastCloseDebug = lastKlineDebug ? lastKlineDebug.close : null;
-    // 大少 2026-08-19 09:45 — 用 try/catch safe 拎 K 線最後日期, 避免 new Date(invalid).toISOString() 拋 RangeError
-    // (klines 嘅 timestamp / date field 可能係 string "2026-08-19T00:00:00" 或 ms number, 但都有機會拎到 invalid)
+    // 大少 2026-08-19 10:15 — 用 fallback chain 拎 K 線最後日期 (跟 adapter.mjs _zigzagNormalizeDate 一樣邏輯)
+    // 之前直接拎 lastKlineDebug.timestamp || lastKlineDebug.date, 但 klines 個 field 唔一定叫 date/timestamp (有時叫 time),
+    // 拎唔到時 fallback '(invalid)', 但其實拎 timestamp / time 已經可以拎到 valid date
+    // 拎 k.date → k.timestamp (number / ISO string) → k.time (number / ISO string) fallback chain,
+    // 拎到 valid date 就 return "YYYY-MM-DD" 格式
+    function _getKlineDateForDebug(k) {
+      if (!k) return null;
+      if (k.date) return k.date;
+      if (k.timestamp) {
+        const t = typeof k.timestamp === 'number' ? k.timestamp : Date.parse(k.timestamp);
+        if (Number.isFinite(t)) {
+          return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
+        }
+      }
+      if (k.time) {
+        const t = typeof k.time === 'number' ? k.time : Date.parse(k.time);
+        if (Number.isFinite(t)) {
+          return new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0];
+        }
+      }
+      return null;
+    }
+    // 大少 2026-08-19 09:45 — try/catch safe handle, 避免 new Date(invalid).toISOString() 拋 RangeError
     let lastDateDebug = '(missing)';
     if (lastKlineDebug) {
       try {
-        const d = new Date(lastKlineDebug.timestamp || lastKlineDebug.date);
-        if (!isNaN(d.getTime())) {
-          lastDateDebug = d.toISOString().split('T')[0];
+        const isoDate = _getKlineDateForDebug(lastKlineDebug);
+        if (isoDate) {
+          // isoDate 已經係 "YYYY-MM-DD" 格式, 直接用
+          lastDateDebug = isoDate;
         } else {
           lastDateDebug = '(invalid)';
         }
