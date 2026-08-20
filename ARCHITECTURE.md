@@ -3009,3 +3009,32 @@ M5 VolumePrice:
 ### 對應 commit
 - `feat(zigzag-lookback): lookback 參數手動可調 (5-100 日, 預設 20, 自動儲存)` — testing-page.js 加 ~40 行 (LS_KEY_LOOKBACK + 4 個 const + 2 個 helper + 2 個 handler + 初始化同步) + testing-page/index.html 自動 mode 顯示區改 (加 input + reset 掣) + cache bust 4.28.0 → 4.29.0 / ?v=2.3.83 → 2.3.84 — 本 commit
 - `docs(spec-sync-34): ZigZag lookback 參數手動可調 — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.26 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「Lookback 預設 20 日, 範圍 5-100」+「跟 Spec Sync #31 config input onChange handler pattern」
+
+## §15.27 — ZigZag lookback 永遠顯示 (manual mode 都見到, 大少 2026-08-21 00:31 trigger「當轉成手動輸入時就不見了"最近 日波動率"」, Spec Sync #35) [2026-08-21]
+
+### 大少 00:31 trigger
+大少 trigger 講「當轉成手動輸入時就不見了"最近 日波動率"」, 因為之前 Spec Sync #34 將 lookback input 內嵌喺 auto mode 顯示區 (`#zigzag-auto-display`) 入面, 切 manual mode 嗰陣 `autoDisplay.style.display = 'none'` 將整個 auto display (包括 lookback input) 隱藏埋, 大少 manual mode 嗰陣就睇唔到「最近 日波動率」reference 用途嘅 text。
+
+### Fix
+- **`testing-page/index.html`** layout 改: 抽 lookback row 出嚟做獨立行 (`#zigzag-lookback-row`) 永遠顯示, 自動 mode 顯示區唔再包 lookback input
+  - 新 row 內容: `「最近 [N] 日波動率 × 2.5 (5-100) [重置為 20]」`
+- **`testing-page/testing-page.js`** 加 `applyLookbackEditable()` helper:
+  - `getThresholdMode() === 'auto'` → `lookbackEl.disabled = false` + `resetBtn.disabled = false` (可改)
+  - `getThresholdMode() === 'manual'` → `lookbackEl.disabled = true` + `resetBtn.disabled = true` (顯示但 disabled, 做大少 reference)
+- `initThresholdModeUI()` page load 嗰陣 call (確保初始狀態對)
+- Mode 切換 handler 嗰度 call (切換嗰陣 toggle)
+- Reset auto 掣 handler 嗰度 call (切返 auto 嗰陣 toggle)
+
+### Cache bust
+- ALGO_CACHE_BUST 4.29.0 → 4.30.0
+- ?v=2.3.84 → 2.3.85
+
+### 永久 rule 收接
+- ✅ **Lookback row 永遠顯示** (永久 rule): 跟 Spec Sync #32 chart-control layout 永久 rule 一致, 跟 chart 互動嘅 control/status 永遠排喺 chart-section 入面
+- ✅ **Auto mode 可改 + Manual mode 顯示但 disabled** (永久 rule): 跟 Spec Sync #31 onChange handler pattern 延伸, display 跟 mode 切可編輯狀態
+- ✅ **切 mode 即時 toggle** (永久 rule): `applyLookbackEditable()` 喺 3 個地方 call (init / mode 切 / reset auto), 確保狀態同步
+- ✅ **套用: 之後其他 algorithm config 加 display 都跟呢個 pattern** (永久 rule): auto + manual mode 都見到 display, 只係 manual mode 顯示但 disabled
+
+### 對應 commit
+- `fix(zigzag-lookback-visible): Lookback 永遠顯示 (manual mode 都見到)` — testing-page/index.html layout 改 (抽 lookback row 出嚟做獨立行) + testing-page.js 加 `applyLookbackEditable()` helper + 3 個地方 call (init / mode 切 / reset auto) + cache bust 4.29.0 → 4.30.0 / ?v=2.3.84 → 2.3.85 — 本 commit
+- `docs(spec-sync-35): Lookback 永遠顯示 — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.27 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「Lookback row 永遠顯示」+「Auto mode 可改, Manual mode 顯示但 disabled」
