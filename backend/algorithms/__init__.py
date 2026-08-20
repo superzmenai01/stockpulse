@@ -20,10 +20,11 @@ Framework contract:
 from .base import Algorithm, Verdict, KLine
 from .registry import register, get_algorithm, list_algorithms
 
-# Import algorithms 觸發 register (zigzag 係第一個, M1 ma_alignment 係第二個, M2 hl_structure 係第三個, 之後加 M3/M4 喺呢度加)
+# Import algorithms 觸發 register (zigzag 係第一個, M1 ma_alignment 係第二個, M2 hl_structure 係第三個, M3 trendline 係第四個, 之後加 M4/M5 喺呢度加)
 from .zigzag import ZigZagAlgorithm  # noqa: F401  (import 觸發 register)
 from .ma_alignment import MAAlignmentV2Algorithm  # noqa: F401  (Phase 2 大少 2026-08-20 20:05)
 from .hl_structure import HLStructureAlgorithm  # noqa: F401  (Phase 3 大少 2026-08-20 20:35)
+from .trendline import TrendlineAlgorithm  # noqa: F401  (Phase 4 大少 2026-08-20 20:50)
 
 __all__ = [
     "Algorithm",
@@ -35,4 +36,5 @@ __all__ = [
     "ZigZagAlgorithm",
     "MAAlignmentV2Algorithm",
     "HLStructureAlgorithm",
+    "TrendlineAlgorithm",
 ]
