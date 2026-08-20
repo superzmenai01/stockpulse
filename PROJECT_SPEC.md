@@ -575,6 +575,13 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - pytest 163/163 PASS (ZigZag 11 + M1 9 + existing 143)
 - 凡人話: 一個 source of truth, 之後加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
 
+**Phase 3 done (2026-08-20)**:
+- **Phase 3** (M2 HL Structure 高低點結構法) v0.1.0: `backend/algorithms/hl_structure/`
+- M2 自己 derive peaks/troughs 拎 klines, **唔需要** caller inject (ZigZag dependency)
+- pytest 173/173 PASS (M2 10 + existing 163)
+- 5 隻 stock comprehensive test + cap 圖: HK.00700 騰訊 / HK.00005 匯豐 / US.AAPL / US.MSFT / US.GOOGL
+- 凡人話: M2 拎 frontend 337 行 (analyzeHLStructure + 4 個 helper) 換 1 個 backend fetch stub, frontend 3 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
+
 **Backup tag + 還原方法** (大少 2026-08-20 18:39 永久 rule):
 - Tag: `pre-zigzag-backend-refactor-2026-08-20` (annotated)
 - Backup folder: `backups/zigzag-frontend-2026-08-20/` (852K, 8 個 file)

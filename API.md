@@ -623,6 +623,48 @@ Backend algorithm framework — 統一 algorithm 入口, frontend call backend �
 }
 ```
 
+**Response (hl_structure example, HK.00005):**
+```json
+{
+  "ok": true,
+  "algorithm": "hl_structure",
+  "version": "0.1.0",
+  "symbol": "HK.00005",
+  "period": "1d",
+  "klines_count": 258,
+  "meta": {
+    "symbol": "HK.00005",
+    "cycle": "uptrend",
+    "cycle_label": "上升週期",
+    "confidence": 0.8,
+    "base_confidence": 0.85,
+    "peaks": [
+      { "date": "2026-07-15", "close": 165.0, "high": 168.0, "low": 161.0, "index": 220, "weight": 0.85 }
+    ],
+    "troughs": [
+      { "date": "2026-08-06", "close": 159.3, "high": 161.0, "low": 158.0, "index": 240, "weight": 0.78 }
+    ],
+    "peak_trend": "rising",
+    "trough_trend": "rising",
+    "structure_score": 0.75,
+    "weighted_structure_score": 0.75,
+    "box_boundary": null,
+    "pattern_alert": "none",
+    "latest_extreme": { "type": "trough", "date": "2026-08-06", "close": 159.3, "index": 240, "days_ago": 9 },
+    "price_position": "between",
+    "adaptive_window": 7,
+    "effective_tolerance": 0.015,
+    "adjustment_log": [],
+    "reason": "判定: 上升",
+    "last_date": "2026-08-15"
+  },
+  "points": [],
+  "warnings": []
+}
+```
+
+**Phase 3 — hl_structure (M2)**: 18 步算法 (跟 `modules/hl-structure.ts` 1:1 port), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (cycle / cycle_label / peaks / troughs / box_boundary / pattern_alert / price_position), 唔需要 caller inject dependency。
+
 **Caller inject pattern**: M1 跑嗰陣 backend 自動跑 ZigZag 落同一份 klines + inject `zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSource` 落 M1 options, M1 唔需要知道 backend 有 ZigZag。
 
 **Algorithm ABC contract** (`backend/algorithms/base.py`):

@@ -339,6 +339,12 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   - **Phase 2** (M1 MA Alignment) v2.0.0 — `backend/algorithms/ma_alignment/`
   - Frontend `adapter.mjs` + `ChartContainer.tsx` + `ElliottWaveTestPage.tsx` 拎走 1000+ 行 duplicated logic, 換 fetch backend stub
   - pytest 163/163 PASS (ZigZag 11 + M1 9 + existing 143)
+- **Phase 3 done (2026-08-20)**:
+  - **Phase 3** (M2 HL Structure 高低點結構法) v0.1.0 — `backend/algorithms/hl_structure/`
+  - M2 自己 derive peaks/troughs 拎 klines, **唔需要** caller inject (ZigZag dependency)
+  - Frontend `adapter.mjs` 拎走 M2 `analyzeHLStructure` 367 行 + 4 個 helper 87 行, 換 fetch backend stub
+  - 3 個 frontend render function (`renderHLStructureResult` / `renderHLStructureChartOverlay` / `getHLStructureHelp`) 拎 `verdict.X` → `verdict.meta.X` 拎 backend 兼容 shape
+  - pytest 173/173 PASS (M2 10 + existing 163)
 - **凡人話:** 一個 source of truth, 之後 algorithm 加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
 
 ### ⚙️ Settings Page

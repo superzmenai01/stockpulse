@@ -1687,6 +1687,7 @@ Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except 
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
+| 2026-08-20 20:42 | **大少 2026-08-20 20:35 trigger「搬M2加測試」, Phase 3 — M2 HL Structure (高低點結構法) 搬去 Python done (Spec Sync #22)** | Phase 3 commit (`feat(backend-algorithm-m2): Phase 3 — HL Structure 搬去 Python` — backend `hl_structure/algorithm.py` 25.8KB port 18 步算法 + 4 個 helper + 10 pytest + frontend `adapter.mjs` 拎走 367 行 frontend + 換 fetch backend stub + 3 個 render function 拎 `verdict.X` → `verdict.meta.X` + 5 張 stock screenshot) + Spec Sync #22 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §15.18 新 (Phase 3 M2 backend port + 5 隻 stock verify + 永久 rule 應用), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection 加 M2 v0.1.0 status); PROJECT_SPEC §AS-03 (Backend Algorithm Framework subsection 加 M2 detail + caller inject 唔需要嘅 note); API §🐍 Algorithm Backend API (加 `hl_structure` schema); testing-page.js frontend call site 唔改 (`hlStructureAdapter.analyze` 已經 fetch backend); adapter.mjs (M2 `analyzeHLStructure` 拎走 367 行 + 4 個 helper 拎走 87 行 + backend stub 加 35 行 + 3 個 render function 拎 `verdict.X` → `verdict.meta.X`); backend `hl_structure/algorithm.py` 1:1 port `modules/hl-structure.ts` 18 步算法 |
 | 2026-08-20 20:18 | **大少 2026-08-20 19:50 trigger「最終想把所有演算法搬去 backend」, Phase 1 (ZigZag framework) + Phase 2 (M1 MA Alignment 搬去 Python) done (Spec Sync #21)** | Phase 1 commit (`feat(backend-algorithm-framework): Phase 1 + ZigZag v1.0.0 + frontend migration` — 8 backend file + 4 frontend file + 11 pytest pass) + Phase 2 commit (`feat(backend-algorithm-ma-alignment): M1 v2.0.0 Python port + 9 tests pass` — 5 backend file + frontend `adapter.mjs` 拎走 1081 行) + Spec Sync #21 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §11 (Module 進度表 row 01 加 "Phase 2 backend Python v1.0.0" + 加 "獨立 backend — ZigZag v1.0.0" row) + §15.17 新 (Backend Algorithm Framework + Phase 1+2 + 5 個 new rule + backup tag 還原方法), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection); PROJECT_SPEC §AS-03 (加 Backend Algorithm Framework subsection + 5 個 new rule); API §🧠 Algorithm Backend API 新章節 (`/api/algorithms/list`, `/health`, `/run`); `.gitignore` 加 `backups/` (852K 唔 commit); testing-page.js ALGO_CACHE_BUST '4.10.0' → '4.18.0' + M1 跑 backend override logic; testing-page/index.html ?v=2.3.64 → 2.3.72 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 `analyzeMAAlignmentV2` 1081 行拎走 + 換 fetch backend stub + restore 3 個 render function by backup); ChartContainer.tsx + ElliottWaveTestPage.tsx (ZigZag 152 行拎走 + fetch backend stub) |
 | 2026-08-19 11:42 | **大少 11:42 trigger「Update stockPulse」: ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動 + 4 個 fix commits (Spec Sync #20)** | `082090e8` + `415ce5f5` + `138dede5` + `402cb29b` + `97f29791` + `9f72b113` + `c72bdf3d` + `7567fe99` + `ca5ebe7d` + `77f595e5` + `d519037a` + `72ac75ba` + `79e026b6` + `1a2de578` + `07d824b5` + `ba98ac98` + (本 commit) | ARCHITECTURE §11 (M1 row v2.0.0 → v2.1.0 + 9 個 sub-scenario + 14 fields + 29 個凡人話 popup) + (zmen row v0.3.0 → v1.0 Layer 1 + Layer 2 雙層) + §15.16 新 (ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動), §14 (本 row); M1-V22-RESEARCH.md (永久 rule ZigZag sequence 號碼 + renderDebugPanel 抽出去 + lightweight-charts v4 setMarkers 永久 rule + 改 chart overlay debug panel auto-update 永久 rule); testing-page.js ALGO_CACHE_BUST '4.7.0' → '4.10.0' + dropdown 把 zmen 排最尾 (72ac75ba) + chart 預設 zoom 半年 (79e026b6) + 3 個 date display fix fallback chain (1a2de578) + renderDebugPanel 抽出去 (07d824b5); testing-page/index.html ?v=2.3.55 → 2.3.64 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 v2.1.0 9 個 sub-scenario + 14 fields + 凡人話 UX 082090e8 + M7 Level 1-6 138dede5 + zmen Layer 1+2 402cb29b + M9 popup 註解全面化 9f72b113 + ZigZag 點順序號碼 setMarkers 07d824b5) |
 | 2026-08-08 23:55 | **大少 23:55 + 大少「Update Stockpulse」24:00 觸發: Sprint 3 收官 (9.1-9.7) + i18n 繁體人話 (commit 72a892a7) + Spec Sync #5** | `f2c0a8d8` + `72a892a7` + (本 commit) | ARCHITECTURE §11 (Module 進度表 row 09 = M9 v0.6.0 + Spec 連結表 row 9 = MODULE-09-BACK-TEST.md), §14 (本 row + 上 1 row 22:28 9.6 補登); README §AS03 模組表 row 09 M9 v0.6.0 + Sprint 3 mention + 776 assertions; PROJECT_SPEC §Module 結構 (8 done + 1 獨立 + 2 hidden, Stage 1 + Sprint 3 收官), §Testing page (加 09 — AS-03-BT entry 排 [8]); API §Adaptive Params API (8 endpoints: 4 舊 M8 + 4 新 M9); testing-page.js REGISTRY (加 `09 — AS-03-BT` entry 排 [8], zmen均算法 變 [9]) |
@@ -2489,3 +2490,54 @@ return = (actual_exit_price - entry_price) / entry_price
 - **還原方法**: 詳見 `backups/zigzag-frontend-2026-08-20/RESTORE.md` (4 個 scenario A/B/C/D)
 - **.gitignore 加 `backups/`**: backup folder 唔 commit 入 git history (852K binary), tag 同 spec doc 已經記錄備份存在
 - **Apply 條件**: Phase 3+ 做之前必須確認 backup 仲喺度 (`git tag -l pre-zigzag-backend-refactor-2026-08-20` + folder 存在)
+
+## §15.18 — Phase 3 — M2 HL Structure 搬去 Python (大少 2026-08-20 20:35 trigger, Spec Sync #22) [2026-08-20]
+
+### 大少 2026-08-20 20:35 trigger
+「搬M2加測試」, 大少啟動 M2 HL Structure (高低點結構法) → Python backend migration。
+
+### 凡人話點解 M2 唔需要 caller inject
+- M1 caller inject ZigZag (M1 algorithm 需要 zigzagPoints / lastSwingHigh / lastSwingLow 落 options)
+- M2 自己 derive peaks/troughs 拎 klines (Step 3 識別原始極值點), **唔需要** ZigZag dependency
+- M2 algorithm 拎 backend 拎 verdict 之後直接返 frontend 兼容 shape 喺 `verdict.meta.*`, 唔需要 runner inject
+
+### Phase 3 設計決策
+- **Algorithm ABC contract** (跟 Phase 1 framework 永久 rule): `Algorithm.run(klines, options) → Verdict`
+- **Caller inject pattern** (Phase 2 永久 rule, M2 唔需要 trigger, 但 framework 保留畀之後 M3+ 用)
+- **Frontend `analyze` 變 fetch backend stub** (跟 M1 pattern, 拎走 367 行 frontend + 4 個 helper)
+- **3 個 frontend render function 拎 `verdict.X` → `verdict.meta.X`**: 因為 backend verdict 拎 frontend 兼容 shape 喺 `meta.*`, frontend render 拎 `meta.*` 拎 backend verdict 對齊
+- **M2 frontend default 300 日** (2026-08-07 永久 rule, 對齊 backend `data_window_days=300`)
+
+### Phase 3 Implementation done
+
+**Backend (5 個 file)**:
+- `backend/algorithms/hl_structure/algorithm.py` (25.8KB, 1:1 port frontend `analyzeHLStructure` 18 步算法 + 4 個 helper)
+- `backend/algorithms/hl_structure/config.py` (`DEFAULT_HL_STRUCTURE_CONFIG` dict, 19 個 field)
+- `backend/algorithms/hl_structure/__init__.py`
+- `backend/algorithms/__init__.py` import `HLStructureAlgorithm` v0.1.0
+- `backend/tests/test_hl_structure.py` (10 tests: registry / uptrend / downtrend / sideways / insufficient data / flat data / verdict shape / peaks-troughs shape / pattern alert / adaptive window)
+
+**Frontend migration** (1 個 file):
+- `algorithms/AS-03-cycle-detection/adapter.mjs`: 拎走 `analyzeHLStructure` (367 行, line 3903-4269) + 4 個 helper (line 3815-3901, 87 行), 換 `async fetch backend` stub (35 行), 3 個 render function 拎 `verdict.X` → `verdict.meta.X` (跟 M1 pattern)
+
+### Verify evidence (Phase 3, 2026-08-20)
+- **pytest 173/173 PASS** (10 個新 M2 + 163 個 existing, +10 從 Phase 2 嘅 163)
+- **backend curl `/api/algorithms/run?algo=hl_structure` 5 隻 stock 全部 verdict 完整**:
+  - HK.00700 騰訊 — sideways 0.30 (3 peaks + 3 troughs)
+  - HK.00005 匯豐 — uptrend 0.80 (3 peaks + 3 troughs, 唯一一隻 uptrend)
+  - US.AAPL — sideways 0.30 (3 peaks + 3 troughs)
+  - US.MSFT — sideways 0.30 (3 peaks + 3 troughs)
+  - US.GOOGL — sideways 0.30 (3 peaks + 3 troughs)
+- **撳跑掣 backend 5-20ms** (K 線 cache 暖咗), 0 crash 0 warning 注入
+- **5 隻 stock screenshot 拎到** (fullPage, ~360KB each, 位置: `docs/research/AS-03-cycle-detection/screenshots/m2-comprehensive-verify-2026-08-20/`)
+
+### Spec 永久 rule 收穫 (Phase 3 拎到嘅 / 應用嘅)
+- ✅ **Algorithm ABC contract** 對 M2 應用 (Phase 1 永久 rule): `Algorithm.run(klines, options) → Verdict`
+- ✅ **Caller inject pattern** (Phase 2 永久 rule) — M2 唔需要 trigger 但 framework 保留
+- ✅ **Frontend `analyze` 變 fetch backend stub** (Phase 2 永久 rule, M2 跟 M1 pattern)
+- ✅ **Frontend render function 拎 `verdict.meta.*`** (Phase 2 永久 rule, M2 跟 M1 pattern)
+- ✅ **pytest 寫每個新 algorithm** (永久 rule, M2 10 tests)
+
+### 對應 commit (Phase 3)
+- `feat(backend-algorithm-m2): Phase 3 — HL Structure 搬去 Python` — backend port + frontend migration + 10 pytest + 5 張 screenshot
+- `docs(spec-sync-22): Phase 3 M2 backend framework — 4 份 spec doc 永久 rule 同步` — 本 commit
