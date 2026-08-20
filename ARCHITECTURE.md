@@ -1201,8 +1201,8 @@ AS-03 係 StockPulse 第一個完全實裝嘅 stock analysis algorithm (Module 1
     ├─ Module 1: ma-alignment (v0.3.0 ✅ DONE — 19/19 tests pass)
     ├─ Module 2: hl-structure (v0.1.0 ✅ DONE)
     ├─ Module 3: trendline (v0.1.0 ✅ DONE frontend + Phase 4 backend Python v0.1.0, Spec Sync #23)
-    ├─ Module 4: indicators (⏳ TBD)
-    └─ Module 5: volume OBV (⏳ TBD — 等新 Model)
+    ├─ Module 4: indicators (v1.0.0 ✅ DONE frontend + Phase 5 backend Python v1.0.0, Spec Sync #24)
+    └─ Module 5: volume_price (v2.0.0 ✅ DONE frontend + Phase 6 backend Python v2.0.0, Spec Sync #24)
 ```
 
 ### Module 1: ma-alignment 嘅 10 條算法 (A-J)
@@ -1410,8 +1410,8 @@ if (currentAdapter.renderChartOverlay) {
 | 01 | **均線系統週期判斷法 v2.1.0** (with Volume & Slope + 9 個 sub-scenario) | `modules/ma-alignment.ts` | **v2.1.0 (Spec Sync #19, 2026-08-15)** | ✅ | ✅ Production — **v2.1.0 升級** (大少 2026-08-15 06:20 trigger 揀項甲): v2.0 3 個 cycle state + 9 個 sub-scenario 細分 (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 弱升/弱跌 → Priority 4 上升回調/下跌反彈 → Default 橫行) + 14 個 output field (cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog) + 29 個凡人話 popup 註解 (跟 M7/M8/M9 一致 inline style) + 凡人話 12 步 step-by-step guide + Warning 注入 3 個 code (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state]). v2.0.0 3 cycles + 13 fields + 三階段信心調整 + 4 條 MA overlay (5/10/20/60, 大少 2026-08-08 09:50) + 凡人話 UX (大少 2026-08-08 10:28). **v2.2 待大少逐條 review 9 個 sub-scenario trigger 條件** (大少 2026-08-16 19:21 永久 rule, spec doc M1-V22-RESEARCH.md). |
 | 02 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
 | 03 | Trendline 趨勢線法 | `modules/trendline.ts` + `backend/algorithms/trendline/` | v0.1.0 (frontend) + **v0.1.0 (Phase 4 backend Python, Spec Sync #23, 2026-08-20)** | ✅ | ✅ Production — **v0.1.0 backend Python port** (大少 2026-08-20 20:50 trigger「搬M3加測試」): backend `trendline/algorithm.py` 27.3KB port frontend algorithm + 7 個 helper, 10 pytest pass, frontend `adapter.mjs` 拎走 506 行 `analyzeTrendline` + 7 個 helper, 換 fetch backend stub (34 行), 4 個 render function (`renderTrendlineResult` / `renderTrendlineRuleExplain` / `renderTrendlineChartOverlay` / `getTrendlineHelp`) 拎 `verdict.X` → `verdict.meta.X`, 5 隻 stock verify (HK.00700 騰訊 SIDEWAYS 0.65 / HK.00005 匯豐 UP 0.90 / US.AAPL SIDEWAYS 0.70 / US.MSFT UP 0.90 / US.GOOGL SIDEWAYS 0.65). Algorithm ABC contract 對 M3 應用 (Phase 1 永久 rule), caller inject pattern 唔需要 (M3 同 M2 一樣 standalone, framework 保留), frontend render 拎 `verdict.meta.*` (Phase 2 永久 rule). |
-| 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ | ✅ Production (RSI + MACD + Bollinger + 背馳 + 衰竭) |
-| 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | v2.0.0 | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) |
+| 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` + `backend/algorithms/indicators/` | v1.0.0 (frontend) + **v1.0.0 (Phase 5 backend Python, Spec Sync #24, 2026-08-20)** | ✅ | ✅ Production — **v1.0.0 backend Python port** (大少 2026-08-20 21:10 trigger「Phase 5+6 連做」): backend `indicators/algorithm.py` 27.9KB port frontend 9 步算法 + 9 個 helper, 10 pytest pass, frontend `adapter.mjs` 拎走 566 行 `analyzeIndicators` + 9 個 helper, 換 fetch backend stub (34 行), 4 個 render function (`renderIndicatorsResult` / `renderIndicatorsChartOverlay` / `getIndicatorsHelp` / `indicatorsAdapter`) 拎 `verdict.X` → `verdict.meta.X`, 5 隻 stock verify (HK.00700 騰訊 SIDEWAYS 0.00 hold / HK.00005 匯豐 SIDEWAYS 0.00 hold / US.AAPL SIDEWAYS 0.30 hold / US.MSFT SIDEWAYS 0.00 hold / US.GOOGL SIDEWAYS 0.00 hold). Algorithm ABC contract 對 M4 應用 (Phase 1 永久 rule), caller inject pattern 唔需要 (M4 同 M2+M3 一樣 standalone, framework 保留), frontend render 拎 `verdict.meta.*` (Phase 2 永久 rule). |
+| 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` + `backend/algorithms/volume_price/` | v2.0.0 (frontend) + **v2.0.0 (Phase 6 backend Python, Spec Sync #24, 2026-08-20)** | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) — **v2.0.0 backend Python port** (大少 2026-08-20 21:10 trigger「Phase 5+6 連做」): backend `volume_price/algorithm.py` 28.4KB port frontend 14 步算法 + 15 rules V1-V15 (ATR + VWAP + Vol Percentile + 加權 OBV (Tanh) + 4 模式突破 + 假突破 + 回調健康度 + ATR 動態分箱 + 滾動量价相關 + 體制 + 規則引擎), 11 pytest pass, frontend `adapter.mjs` 拎走 ~993 行 `analyzeVolumePrice` + helper, 換 fetch backend stub (34 行), 4 個 render function (`renderVolumeResult` / `renderVolumeRuleExplain` / `renderVolumeChartOverlay` / `getVolumeHelp`) 拎 `verdict.X` → `verdict.meta.X`, 5 隻 stock verify (HK.00700 騰訊 SIDEWAYS 0.30 NEUTRAL 5 rules 觸發 / HK.00005 匯豐 SIDEWAYS 0.30 NEUTRAL 6 rules 觸發 / US.AAPL SIDEWAYS 0.30 NEUTRAL 4 rules 觸發 / US.MSFT SIDEWAYS 0.30 NEUTRAL 5 rules 觸發 / US.GOOGL SIDEWAYS 0.30 NEUTRAL 5 rules 觸發). Algorithm ABC contract 對 M5 應用 (Phase 1 永久 rule), caller inject pattern 唔需要 (M5 同 M2+M3+M4 一樣 standalone, framework 保留), frontend render 拎 `verdict.meta.*` (Phase 2 永久 rule). |
 | 06 | **Volatility 波動率收縮擴張** | `modules/volatility.ts` | **v1.0.0** | ✅ | ✅ Production (全新, 12 rules S1-S12, 5 setups, 3 failure modes) |
 | 07 | **終極綜合判定** (Synthesizer — M7) | `modules/synthesizer.ts` | **v1.0.0 (Sprint 1 done, 2026-08-08 13:30)** | ✅ | ✅ **Sprint 1 done (大少 2026-08-08 13:30 Plan A 拆返 M7+M8)**: M7 Synthesizer 邏輯 (SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位) + 6 個 modules standard verdict interface + 64 個 tests + synthesizerAdapter + testing page enable (commits `e96f673f` `4b8b64fe` `f991d9db` `2acab95d` `e96f673f` 重 commit) |
 | 08 | **終極綜合判斷引擎** (Decision Engine — M8) | `modules/decision-engine.ts` | **v2.0.0 (Sprint 2 收官, 2026-08-09 13:15)** | ✅ | ✅ **Sprint 2 收官 (大少 16:55 8 commits + 13:15 2.9 spec doc final + 4 fix commits)**: 8 個 finalAction 決策樹 (2.1) + Trading card adaptive (2.2) + 短期走勢 9 scenarios (2.3) + 人話詳細解讀 LLM hook (2.4) + 5 個 adaptive params auto-calibrate (2.5) + L2 JSON file cache (2.6) + 10 隻 demo 股票 tests (2.7) + 4 個 SVG chart + 「🔄 重新校準」按鈕 (2.8) + 2.9 spec doc final (Spec Sync #7) + **Bug 1 fix** (testing page race condition, `da32c4db`) + **Bug 2 fix** (M8 kelly override 落 Synthesizer `applyAdaptiveParamsToSynthesizer` + KELLY_NUMERIC_MAP const, `639e6d70`) + **Bug 3+4 fix** (version 1.0.0 → 2.0.0 + testing page .mjs cache bust sync 永久 rule 加 ALGO_CACHE_BUST const, `d61d96d6`). 728 assertions pass (682 node + 46 python). |
@@ -1687,6 +1687,7 @@ Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except 
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
+| 2026-08-20 21:30 | **大少 2026-08-20 21:10 trigger「Phase 5+6 — 連做 M4 + M5」, Phase 5 (M4 Indicators 動能背馳與衰竭) + Phase 6 (M5 VolumePrice 量价確認) 搬去 Python done (Spec Sync #24)** | Phase 5+6 commit (`feat(backend-algorithm-m4-m5): Phase 5+6 — Indicators + VolumePrice 搬去 Python` — backend `indicators/algorithm.py` 27.9KB port M4 9 步算法 + 11 helper + 10 pytest + backend `volume_price/algorithm.py` 28.4KB port M5 14 步算法 + 15 rules V1-V15 + 11 pytest + frontend `adapter.mjs` 拎走 ~1559 行 frontend (M4 566 + M5 ~993) + 換 2 個 fetch backend stub + 8 個 render function 拎 `verdict.X` → `verdict.meta.X` + 5 隻 stock verify 兩個 module) + Spec Sync #24 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §15.20 新 (Phase 5+6 M4+M5 backend port + 5 隻 stock verify + 永久 rule 應用 + combined feat commit 永久 rule), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection 加 M4 v1.0.0 + M5 v2.0.0 status); PROJECT_SPEC §AS-03 (Backend Algorithm Framework subsection 加 M4+M5 detail); API §🐍 Algorithm Backend API (加 `indicators` + `volume_price` schema); testing-page.js frontend call site 唔改 (`indicatorsAdapter.analyze` + `volumePriceAdapter.analyze` 已經 fetch backend); adapter.mjs (M4 `analyzeIndicators` 拎走 566 行 + 9 個 helper + backend stub 加 34 行 + 4 個 render function 拎 `verdict.X` → `verdict.meta.X`; M5 `analyzeVolumePrice` 拎走 ~993 行 + helper + backend stub 加 34 行 + 4 個 render function 拎 `verdict.X` → `verdict.meta.X`); backend `indicators/algorithm.py` 1:1 port `modules/indicators.ts` 9 步算法 (RSI + MACD + 背馳 + 衰竭); backend `volume_price/algorithm.py` 1:1 port `modules/volume.ts` 14 步算法 (15 rules V1-V15) |
 | 2026-08-20 20:50 | **大少 2026-08-20 20:50 trigger「搬M3加測試」, Phase 4 — M3 Trendline (趨勢線法) 搬去 Python done (Spec Sync #23)** | Phase 4 commit (`feat(backend-algorithm-m3): Phase 4 — Trendline 搬去 Python` — backend `trendline/algorithm.py` 27.3KB port frontend algorithm + 7 個 helper + 10 pytest + frontend `adapter.mjs` 拎走 506 行 frontend + 換 fetch backend stub + 4 個 render function 拎 `verdict.X` → `verdict.meta.X` + 5 隻 stock verify) + Spec Sync #23 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §15.19 新 (Phase 4 M3 backend port + 5 隻 stock verify + 永久 rule 應用 + line number shift fix pattern), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection 加 M3 v0.1.0 status); PROJECT_SPEC §AS-03 (Backend Algorithm Framework subsection 加 M3 detail + caller inject 唔需要嘅 note); API §🐍 Algorithm Backend API (加 `trendline` schema); testing-page.js frontend call site 唔改 (`trendlineAdapter.analyze` 已經 fetch backend); adapter.mjs (M3 `analyzeTrendline` 拎走 506 行 + 7 個 helper + backend stub 加 34 行 + 4 個 render function 拎 `verdict.X` → `verdict.meta.X`); backend `trendline/algorithm.py` 1:1 port `modules/trendline.ts` 算法 |
 | 2026-08-20 20:42 | **大少 2026-08-20 20:35 trigger「搬M2加測試」, Phase 3 — M2 HL Structure (高低點結構法) 搬去 Python done (Spec Sync #22)** | Phase 3 commit (`feat(backend-algorithm-m2): Phase 3 — HL Structure 搬去 Python` — backend `hl_structure/algorithm.py` 25.8KB port 18 步算法 + 4 個 helper + 10 pytest + frontend `adapter.mjs` 拎走 367 行 frontend + 換 fetch backend stub + 3 個 render function 拎 `verdict.X` → `verdict.meta.X` + 5 張 stock screenshot) + Spec Sync #22 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §15.18 新 (Phase 3 M2 backend port + 5 隻 stock verify + 永久 rule 應用), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection 加 M2 v0.1.0 status); PROJECT_SPEC §AS-03 (Backend Algorithm Framework subsection 加 M2 detail + caller inject 唔需要嘅 note); API §🐍 Algorithm Backend API (加 `hl_structure` schema); testing-page.js frontend call site 唔改 (`hlStructureAdapter.analyze` 已經 fetch backend); adapter.mjs (M2 `analyzeHLStructure` 拎走 367 行 + 4 個 helper 拎走 87 行 + backend stub 加 35 行 + 3 個 render function 拎 `verdict.X` → `verdict.meta.X`); backend `hl_structure/algorithm.py` 1:1 port `modules/hl-structure.ts` 18 步算法 |
 | 2026-08-20 20:18 | **大少 2026-08-20 19:50 trigger「最終想把所有演算法搬去 backend」, Phase 1 (ZigZag framework) + Phase 2 (M1 MA Alignment 搬去 Python) done (Spec Sync #21)** | Phase 1 commit (`feat(backend-algorithm-framework): Phase 1 + ZigZag v1.0.0 + frontend migration` — 8 backend file + 4 frontend file + 11 pytest pass) + Phase 2 commit (`feat(backend-algorithm-ma-alignment): M1 v2.0.0 Python port + 9 tests pass` — 5 backend file + frontend `adapter.mjs` 拎走 1081 行) + Spec Sync #21 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §11 (Module 進度表 row 01 加 "Phase 2 backend Python v1.0.0" + 加 "獨立 backend — ZigZag v1.0.0" row) + §15.17 新 (Backend Algorithm Framework + Phase 1+2 + 5 個 new rule + backup tag 還原方法), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection); PROJECT_SPEC §AS-03 (加 Backend Algorithm Framework subsection + 5 個 new rule); API §🧠 Algorithm Backend API 新章節 (`/api/algorithms/list`, `/health`, `/run`); `.gitignore` 加 `backups/` (852K 唔 commit); testing-page.js ALGO_CACHE_BUST '4.10.0' → '4.18.0' + M1 跑 backend override logic; testing-page/index.html ?v=2.3.64 → 2.3.72 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 `analyzeMAAlignmentV2` 1081 行拎走 + 換 fetch backend stub + restore 3 個 render function by backup); ChartContainer.tsx + ElliottWaveTestPage.tsx (ZigZag 152 行拎走 + fetch backend stub) |
@@ -2594,3 +2595,75 @@ return = (actual_exit_price - entry_price) / entry_price
 ### 對應 commit (Phase 4)
 - `feat(backend-algorithm-m3): Phase 4 — Trendline 搬去 Python` — backend port + frontend migration + 10 pytest + 5 隻 stock verify
 - `docs(spec-sync-23): Phase 4 M3 backend framework — 4 份 spec doc 永久 rule 同步` — 本 commit
+
+## §15.20 — Phase 5+6 — M4 Indicators + M5 VolumePrice 搬去 Python (大少 2026-08-20 21:10 trigger, Spec Sync #24) [2026-08-20]
+
+### 大少 2026-08-20 21:10 trigger
+「Phase 5+6 — 連做 M4 + M5」, 大少啟動 M4 Indicators (動能背馳與衰竭) + M5 VolumePrice (量价確認) 連做 Python backend migration, 跟返 Phase 3+4 pattern。
+
+### 凡人話點解 M4 同 M5 都唔需要 caller inject
+- M4 自己 derive RSI + MACD 拎 closes (無依賴其他 algorithm 嘅 output)
+- M5 自己 derive OBV + VWAP + 突破模式 拎 klines (無依賴其他 algorithm 嘅 output)
+- 兩個 module 拎 backend 拎 verdict 之後直接返 frontend 兼容 shape 喺 `verdict.meta.*`, 唔需要 runner inject
+- 凡人話: M4 + M5 同 M2 + M3 一樣係 standalone algorithm, 唔需要依賴其他 algorithm
+
+### Phase 5+6 設計決策
+- **Algorithm ABC contract** (跟 Phase 1+3+4 framework 永久 rule): `Algorithm.run(klines, options) → Verdict`
+- **Caller inject pattern** (Phase 2 永久 rule, M4 + M5 同 M2 + M3 唔需要 trigger, framework 保留畀之後 M6+ 用)
+- **Frontend `analyze` 變 fetch backend stub** (跟 M1+M2+M3 pattern, M4 拎走 566 行 frontend + 9 個 helper, M5 拎走 ~993 行 frontend + helper)
+- **8 個 frontend render function 拎 `verdict.X` → `verdict.meta.X`** (M4 4 個 + M5 4 個, 跟 M1+M2+M3 pattern)
+- **M4 + M5 frontend default 100 日** (2026-08-07 永久 rule, 對齊 backend `data_window_days=100`)
+- **Combined feat commit 永久 rule** (大少 21:10 trigger 連做, 1 個 spec sync + 1 個 feat commit 包晒 M4+M5, 而唔係分 2 個 phase)
+
+### Phase 5+6 Implementation done
+
+**Backend (10 個 file, 2 個 module)**:
+
+M4 Indicators:
+- `backend/algorithms/indicators/algorithm.py` (27.9KB, 1:1 port frontend `analyzeIndicators` 9 步算法 + 9 個 helper, RSI Wilder + EMA + MACD + 局部極值 + 背馳檢測 + 衰竭分數 + 交易訊號 + 勝率估算 + 歷史機會 + 信心指數)
+- `backend/algorithms/indicators/config.py` (`DEFAULT_INDICATORS_CONFIG` dict, 8 個 field)
+- `backend/algorithms/indicators/__init__.py`
+- `backend/algorithms/__init__.py` import `IndicatorsAlgorithm` v1.0.0
+- `backend/tests/test_indicators.py` (10 tests: registry / uptrend / downtrend / sideways / insufficient data / verdict shape / RSI-MACD computed / divergence detection / signal threshold / matched rules format)
+
+M5 VolumePrice:
+- `backend/algorithms/volume_price/algorithm.py` (28.4KB, 1:1 port frontend `analyzeVolumePrice` 14 步算法 + 15 rules V1-V15, ATR + VWAP + Vol Percentile + 加權 OBV (Tanh) + 4 模式突破 + 假突破 + 回調健康度 + ATR 動態分箱 + 滾動量价相關 + 體制 + 規則引擎)
+- `backend/algorithms/volume_price/config.py` (`DEFAULT_VOLUME_PRICE_CONFIG` dict, 8 個 field)
+- `backend/algorithms/volume_price/__init__.py`
+- `backend/algorithms/__init__.py` import `VolumePriceAlgorithm` v2.0.0
+- `backend/tests/test_volume_price.py` (11 tests: registry / uptrend / downtrend / sideways / insufficient data / verdict shape / V1-V15 rules / breakout patterns / OBV analysis / state priority / matched rules format)
+
+**Frontend migration** (1 個 file):
+- `algorithms/AS-03-cycle-detection/adapter.mjs`: 拎走 M4 `analyzeIndicators` + 9 個 helper (566 行, line 4804-5369) + M5 `analyzeVolumePrice` + helper (~993 行, line 2171-2757), 換 2 個 `async fetch backend` stub (各 34 行), 8 個 render function (M4 4 個 + M5 4 個) 拎 `verdict.X` → `verdict.meta.X` (跟 M1+M2+M3 pattern)
+
+### Verify evidence (Phase 5+6, 2026-08-20)
+- **pytest 204/204 PASS** (10 個新 M4 + 11 個新 M5 + 183 個 existing, +21 從 Phase 4 嘅 183)
+- **backend curl `/api/algorithms/run?algo=indicators` 5 隻 stock 全部 verdict 完整**:
+  - HK.00700 騰訊 — SIDEWAYS 0.00 hold (RSI 44.4, MACD -4.32, 6 個 evidence)
+  - HK.00005 匯豐 — SIDEWAYS 0.00 hold (RSI 53.8, MACD -0.65, 6 個 evidence)
+  - US.AAPL — SIDEWAYS 0.30 hold (RSI 53.9, MACD -0.74, 6 個 evidence)
+  - US.MSFT — SIDEWAYS 0.00 hold (RSI 63.4, MACD -1.78, 6 個 evidence)
+  - US.GOOGL — SIDEWAYS 0.00 hold (RSI 46.5, MACD -0.56, 6 個 evidence)
+- **backend curl `/api/algorithms/run?algo=volume_price` 5 隻 stock 全部 verdict 完整**:
+  - HK.00700 騰訊 — SIDEWAYS 0.30 NEUTRAL (V1+V3+V7+V8+V14 觸發, 5 個 evidence, regime=neutral)
+  - HK.00005 匯豐 — SIDEWAYS 0.30 NEUTRAL (V1+V2+V3+V7+V8+V13 觸發, 6 個 evidence, regime=neutral)
+  - US.AAPL — SIDEWAYS 0.30 NEUTRAL (V1+V2+V3+V8 觸發, 4 個 evidence)
+  - US.MSFT — SIDEWAYS 0.30 NEUTRAL (V1+V2+V3+V6+V8 觸發, 5 個 evidence)
+  - US.GOOGL — SIDEWAYS 0.30 NEUTRAL (V1+V2+V3+V8+V13 觸發, 5 個 evidence)
+- **撳跑掣 backend 5-20ms** (K 線 cache 暖咗), 0 crash 0 warning 注入
+- **Frontend render function 拎 `verdict.meta.*` 對齊 backend shape** (script 自動 transform 8 個 render function)
+
+### Spec 永久 rule 收穫 (Phase 5+6 拎到嘅 / 應用嘅)
+- ✅ **Algorithm ABC contract** 對 M4 + M5 應用 (Phase 1 永久 rule): `Algorithm.run(klines, options) → Verdict`
+- ✅ **Caller inject pattern** (Phase 2 永久 rule) — M4 + M5 同 M2 + M3 一樣唔需要 trigger, framework 保留
+- ✅ **Frontend `analyze` 變 fetch backend stub** (Phase 2 永久 rule, M4 + M5 跟 M1+M2+M3 pattern)
+- ✅ **Frontend render function 拎 `verdict.meta.*`** (Phase 2 永久 rule, M4 + M5 共 8 個 render function 跟 M1+M2+M3 同 pattern)
+- ✅ **pytest 寫每個新 algorithm** (永久 rule, M4 10 tests + M5 11 tests)
+- ✅ **凡人話 line number shift fix pattern** (Phase 4 教訓): 用 string search 而唔係 hardcode line number, 拎走後再 grep 確認範圍, 之後 migration 通用 pattern
+- ✅ **Combined feat commit 永久 rule** (大少 21:10 trigger「連做」): 同一 trigger 嘅多個 module 用 1 個 feat commit (例如 Phase 5+6 = 1 個 commit), 唔好分拆, 但 spec sync 仍然 1 個獨立 commit
+- ✅ **Backend register pattern 永久 rule** (Phase 5 fix 教訓): `register(instance)` 而唔係 `register("name", cls)`, 1 個 argument
+- ✅ **Backend port 流程永久 rule**: source file → algorithm.py (1:1 port) → config.py → __init__.py → __init__ import → tests → pytest pass → frontend migration → 5 stock verify
+
+### 對應 commit (Phase 5+6)
+- `feat(backend-algorithm-m4-m5): Phase 5+6 — Indicators + VolumePrice 搬去 Python` — backend port + frontend migration + 21 pytest + 5 隻 stock verify
+- `docs(spec-sync-24): Phase 5+6 M4+M5 backend framework — 4 份 spec doc 永久 rule 同步` — 本 commit

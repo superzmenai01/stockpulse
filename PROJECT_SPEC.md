@@ -589,6 +589,18 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - 5 隻 stock verify: HK.00700 騰訊 SIDEWAYS 0.65 / HK.00005 匯豐 UP 0.90 / US.AAPL SIDEWAYS 0.70 / US.MSFT UP 0.90 / US.GOOGL SIDEWAYS 0.65
 - 凡人話: M3 拎 frontend 506 行 (analyzeTrendline + 7 個 helper) 換 1 個 backend fetch stub, frontend 4 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
 
+**Phase 5+6 done (2026-08-20, 大少 21:10 trigger「連做」)**:
+- **Phase 5** (M4 Indicators 動能背馳與衰竭) v1.0.0: `backend/algorithms/indicators/`
+- **Phase 6** (M5 VolumePrice 量价確認) v2.0.0: `backend/algorithms/volume_price/`
+- M4 + M5 都係 standalone algorithm, 自己 derive RSI/MACD/OBV/VWAP 拎 klines, **唔需要** caller inject
+- pytest 204/204 PASS (M4 10 + M5 11 + existing 183)
+- 5 隻 stock verify: M4 全部 SIDEWAYS + hold; M5 全部 SIDEWAYS + NEUTRAL (4-6 rules V1-V15 觸發)
+- 凡人話: M4 拎 frontend 566 行 (analyzeIndicators + 9 個 helper) + M5 拎 frontend ~993 行 (analyzeVolumePrice + helper) 換 2 個 backend fetch stub, frontend 8 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
+- **Combined feat commit 永久 rule** (大少 21:10 trigger「連做」): 同一 trigger 嘅多個 module 用 1 個 feat commit (例如 Phase 5+6 = 1 個 commit), 唔好分拆, 但 spec sync 仍然 1 個獨立 commit
+- **凡人話 line number shift fix pattern** (Phase 4 教訓, 大少 2026-08-20 20:50): 用 string search 而唔係 hardcode line number, 拎走後再 grep 確認範圍, 之後 migration 通用 pattern
+- **Backend register pattern 永久 rule** (Phase 5 fix 教訓): `register(instance)` 而唔係 `register("name", cls)`, 1 個 argument
+- **Backend port 流程永久 rule**: source file → algorithm.py (1:1 port) → config.py → __init__.py → __init__ import → tests → pytest pass → frontend migration → 5 stock verify
+
 **凡人話 line number shift fix pattern** (Phase 4 教訓, 大少 2026-08-20 20:50): 拎走舊 function 之前必須重新 grep 實際 line 位置, hardcode 舊 line number 一定錯 (Phase 3 之後 + 506 行 shift 嘅 fix 教訓)。
 
 **Backup tag + 還原方法** (大少 2026-08-20 18:39 永久 rule):

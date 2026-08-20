@@ -698,6 +698,81 @@ Backend algorithm framework — 統一 algorithm 入口, frontend call backend �
 
 **Phase 4 — trendline (M3)**: 線性回歸趨勢線法 (跟 `modules/trendline.ts` 1:1 port), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycle_label / confidence / interpretation / evidence), 唔需要 caller inject dependency。support line / resistance line / channel 全部 backend derive 拎 klines 線性回歸計。
 
+**Response (indicators example, HK.00700):**
+```json
+{
+  "ok": true,
+  "algorithm": "indicators",
+  "version": "1.0.0",
+  "symbol": "HK.00700",
+  "period": "1d",
+  "klines_count": 300,
+  "meta": {
+    "moduleId": "indicators",
+    "timeframe": "1d",
+    "state": "SIDEWAYS",
+    "cycleLabel": "動能中性",
+    "confidence": 0.0,
+    "interpretation": "動能視角: 動能中性",
+    "evidence": [
+      { "type": "rsi", "label": "RSI(14)", "value": 44.4, "threshold": "30 / 70", "passed": true },
+      { "type": "macd", "label": "MACD 柱狀體", "value": -4.3154, "threshold": "0", "passed": false },
+      { "type": "macd-state", "label": "MACD 動能狀態", "value": "bearish_decelerating", "passed": true },
+      { "type": "rsi-trend", "label": "RSI 5 日趨勢", "value": "falling", "passed": true },
+      { "type": "divergence", "label": "背馳數量", "value": 0, "passed": false },
+      { "type": "exhaustion", "label": "衰竭分數", "value": 0.0, "threshold": 0.6, "passed": false }
+    ],
+    "divergence": { "rsiDivergences": [], "macdDivergences": [], "totalCount": 0 },
+    "momentumState": { "rsi": 44.4, "macd": -4.3154, "rsiTrend": "falling", "macdTrend": "falling", "macdState": "bearish_decelerating", "isOverbought": false, "isOversold": false },
+    "signal": { "type": "hold", "strength": 0.0, "action": "觀望", "reasons": [] },
+    "winProbability": 0.5,
+    "exhaustionScore": 0.0
+  },
+  "points": [],
+  "warnings": []
+}
+```
+
+**Response (volume_price example, HK.00700):**
+```json
+{
+  "ok": true,
+  "algorithm": "volume_price",
+  "version": "2.0.0",
+  "symbol": "HK.00700",
+  "period": "1d",
+  "klines_count": 300,
+  "meta": {
+    "moduleId": "volume",
+    "timeframe": "1d",
+    "state": "SIDEWAYS",
+    "cycleLabel": "資金觀望",
+    "confidence": 0.3,
+    "interpretation": "暫無明確成交量買入模式",
+    "evidence": [
+      { "type": "rule-V1", "label": "ATR 波動充足", "value": "V1", "passed": true },
+      { "type": "rule-V3", "label": "成交量百分位正常", "value": "V3", "passed": true },
+      { "type": "rule-V7", "label": "加權 OBV 下跌", "value": "V7", "passed": true },
+      { "type": "rule-V8", "label": "OBV 與價格同向", "value": "V8", "passed": true },
+      { "type": "rule-V14", "label": "拋售拋壓", "value": "V14", "passed": true }
+    ],
+    "cycle": "sideways",
+    "signal": "NEUTRAL",
+    "buyTimingScore": 0.3,
+    "winProbability": 0.4,
+    "volumeRegime": "neutral",
+    "matchedRules": ["V1", "V3", "V7", "V8", "V14"],
+    "rulesFired": 5
+  },
+  "points": [],
+  "warnings": []
+}
+```
+
+**Phase 5 — indicators (M4)**: RSI Wilder + MACD 動能背馳與衰竭檢測法 (跟 `modules/indicators.ts` 1:1 port), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycleLabel / confidence / evidence / divergence / momentumState / signal / winProbability / rsiSeries / macdSeries), 唔需要 caller inject dependency。
+
+**Phase 6 — volume_price (M5)**: 成交量價格行為確認法 (跟 `modules/volume.ts` 1:1 port, 15 rules V1-V15), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycleLabel / confidence / signal / buyTimingScore / winProbability / volumeRegime / matchedRules / breakoutStatus / obvAnalysis), 唔需要 caller inject dependency。
+
 **Caller inject pattern**: M1 跑嗰陣 backend 自動跑 ZigZag 落同一份 klines + inject `zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSource` 落 M1 options, M1 唔需要知道 backend 有 ZigZag。
 
 **Algorithm ABC contract** (`backend/algorithms/base.py`):
