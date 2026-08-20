@@ -6725,343 +6725,102 @@ export const decisionEngineAdapter = {
   //  ⚠️ Cross-ref: modules/decision-engine.ts, modules/cycle-synthesizer.ts,
   //                build/decision-engine.bundle.js (computeMA patch)
   // ============================================================================
+  //  M8 Decision Engine 主入口 — decisionEngineAdapter.analyze (Phase 10 backend port)
+  //
+  //  目的: 拎 M7 SynthesizerVerdict + 6 個 module standard verdict + M9 optimal params →
+  //        8 個 finalAction 決策樹 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) +
+  //        Trading card 4 個 fields + 短期走勢 9 個 scenarios + LLM hook interpretation
+  //
+  //  Phase 10 永久 rule (大少 2026-08-20 22:08):
+  //    - 拎走 frontend decisionEngineAdapter.analyze chain (340 行)
+  //    - 換 1 個 fetch backend /api/algorithms/run?algo=decision_engine stub
+  //    - Backend M8 algorithm 拎 synthesize 拎 M7 verdict + 6 個 module standard verdict + M9 optimal params → final_action
+  //    - Frontend analyze 包返 backend verdict 拎 frontend shape (final_action / trading_card / short_term_forecast / optimal_data / _warnings top-level)
+  //    - Render 拎 backend verdict.optimal_data 拎 M9 optimal params (永久 rule chain M9→M8)
+  //    - Phase 10 簡化版拎 swing mode 8 個 finalAction, frontend position mode 拎 cycle_synthesizer 拎唔到 (Phase 11 follow-up)
+  //
+  //  ⚠️ Cross-ref: backend/algorithms/decision_engine/algorithm.py, backend/services/algorithm_runner.py
+  //                (Phase 10 backend port done, frontend chain 拎走)
+  // ============================================================================
   analyze: async (klines, options = {}) => {
-    // 0. 大少 2026-08-11 — 中長線/短炒 雙策略分流
-    const strategyMode = options.strategyMode === 'swing' ? 'swing' : 'position';  // 預設中長線
-
-    // 1. 跑 6 個 modules → M7 SynthesizerVerdict (reuse analyzeDecisionEngine 上面嘅 implementation)
-    const synthResult = await analyzeDecisionEngine(klines, options);
-
-    // 1b. 大少 19:06 — 拎 m1Verdict (新 M1 v2.0) + zmenVerdict (舊 M1 v0.3.0) 畀 cycle synthesizer
-    //   兩者都已經喺 synthResult.module_cycle_verdicts 入面:
-    //     maVerdict  = new M1 v2.0 (analyzeMAAlignmentV2) → 做 m1Verdict
-    //     但舊 M1 v0.3.0 (runMAAlignment) 要另外跑
-    let m1Verdict = null;
-    let zmenVerdict = null;
-    try {
-      // m1 = 新 M1 v2.0 (來自 analyzeDecisionEngine 嘅 maVerdict)
-      const maVerdictRaw = synthResult.module_cycle_verdicts?.maVerdict;
-      if (maVerdictRaw) {
-        m1Verdict = {
-          state: maVerdictRaw.state,
-          confidence: maVerdictRaw.confidence,
-          interpretation: maVerdictRaw.interpretation,
-          meta: {
-            matchedRules: maVerdictRaw.meta?.matchedRules || [],
-            ruleLabels: maVerdictRaw.meta?.ruleLabels || [],
-            dataDays: maVerdictRaw.meta?.dataDays,
-            source: 'AS-03-MA v2.0',
-          },
-          timestamp: maVerdictRaw.timestamp || Date.now(),
-        };
-      }
-      // zmen = 舊 M1 v0.3.0 (runMAAlignment)
-      const zmenRaw = await runMAAlignment(klines || [], options);
-      zmenVerdict = {
-        state: zmenRaw.state,
-        confidence: zmenRaw.confidence,
-        interpretation: zmenRaw.interpretation,
-        meta: {
-          matchedRules: zmenRaw.meta?.matchedRules || [],
-          ruleLabels: zmenRaw.meta?.ruleLabels || [],
-          dataDays: zmenRaw.meta?.dataDays,
-          source: 'zmen均算法 v0.3.0',
-        },
-        timestamp: zmenRaw.timestamp || Date.now(),
-      };
-    } catch (e) {
-      console.warn('[decisionEngineAdapter] m1/zmen verdict 拎取失敗, position mode 會 fallback:', e);
-    }
-
-    // klineCloses (cycle synthesizer trigger 計算用)
-    const klineCloses = (klines || []).map(k => k.close).reverse();  // 變 [0]=今日, [n-1]=最舊
-
-    // 2. 動態 import 從 .bundle.js (esbuild 已 build, browser-compatible)
-    //   大少 2026-08-08 18:40 fix: testing page 喺瀏覽器跑 fetch 唔到 .ts file,
-    //   改用 esbuild bundle 嘅 ESM .js
-    //   大少 2026-08-11 fix: 加 ?v=3.6.1 query string (MA trigger 永久 false bug fix + hardcoded template 中文化)
-    const { DecisionEngine, calibrateAdaptiveParams, applyAdaptiveParamsToSynthesizer, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js?v=3.6.1');
-
-    // 3. 2.6 — L2 cache: 試讀 cache (7 日內 valid 就用 cache, 否則重新 calibrate)
     const symbol = options.symbol || options.code || 'unknown';
-    let adaptiveParams = null;
-    let cacheInfo = null;
-    let useCache = false;
-    let optimalData = null;  // 大少 2026-08-11 22:05 — 拎 M9 optimal cache 嘅 data (kelly/rsiWeight/ssiWeights/validation/folds_count)
+
+    console.log(`[decisionEngineAdapter] start analyze ${symbol} (Phase 10: fetch backend stub)`);
+
+    // Phase 10 永久 rule: 拎走 frontend chain (import bundle + 拎 cache + calibrate + 拎 M1/zmen + applyAdaptiveParams + decide)
+    // 換 1 個 fetch backend /api/algorithms/run?algo=decision_engine call
+    let resp;
     try {
-      const cacheResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`);
-      if (cacheResp.ok) {
-        const data = await cacheResp.json();
-        if (data && data.params && data.valid) {
-          adaptiveParams = data.params;
-          cacheInfo = data;
-          useCache = true;
-        }
-      }
-      // 大少 2026-08-11 22:05 — 拎 M9 optimal cache (30 日 expiry, 用嚟做 banner + M9 summary sub-section)
-      // 改善 3 修 bug: 之前 banner 拎 `cacheInfo.last_calibrated` (params cache, M8 自己 calibrate) 但寫住「由 M9 cache 嚟」, 邏輯錯
-      // 改善 1 拎 optimal data 做 summary sub-section render
-      try {
-        const optimalResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/back-test`);
-        if (optimalResp.ok) {
-          optimalData = await optimalResp.json();
-        }
-        // 404 (冇 optimal) → optimalData = null, banner fallback 顯示「未跑過 M9」
-      } catch (e) {
-        console.warn('[M8 Decision Engine] M9 optimal cache fetch failed:', e);
-      }
+      resp = await fetch(`http://localhost:18792/api/algorithms/run?algo=decision_engine&symbol=${encodeURIComponent(symbol)}&period=1d&data_window_days=${options.dataWindowDays ?? 1260}`);
     } catch (e) {
-      // Backend 唔 work, fallback 去 calibrate
-      console.warn('[M8 Decision Engine] Cache fetch failed, fallback to fresh calibrate:', e);
+      console.error('[decisionEngineAdapter] fetch backend failed:', e);
+      return {
+        ok: false,
+        symbol,
+        algorithm: 'decision_engine',
+        version: '2.0.0',
+        period: '1d',
+        klines_count: (klines || []).length,
+        points: [],
+        meta: { error: 'Backend fetch failed: ' + e.message },
+        warnings: [
+          makeWarning('critical', 'M8', 'POST_FAILED',
+            'Fetch backend /api/algorithms/run failed (Phase 10 backend stub)',
+            { issue: 'Backend fetch exception: ' + e.message, impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { error: e.message, symbol } }
+          ),
+        ],
+        error: e.message,
+        timestamp: Date.now(),
+      };
     }
 
-    // 4. 如果冇 cache 或過期, 重新 calibrate
-    if (!useCache) {
-      const sentiment6DHistory = synthResult.module_verdicts.map(mv => mv.sentiment_6d);
-      adaptiveParams = calibrateAdaptiveParams(klines || [], sentiment6DHistory);
-      // Save 落 cache (background, 唔阻 analyze)
-      try {
-        await postJSON(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}`, adaptiveParams);
-      } catch (e) {
-        console.warn('[M8 Decision Engine] Cache save failed:', e);
-      }
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      console.error(`[decisionEngineAdapter] backend resp not ok: ${resp.status} ${errText}`);
+      return {
+        ok: false,
+        symbol,
+        algorithm: 'decision_engine',
+        version: '2.0.0',
+        period: '1d',
+        klines_count: (klines || []).length,
+        points: [],
+        meta: { error: `Backend HTTP ${resp.status}: ${errText}` },
+        warnings: [
+          makeWarning('critical', 'M8', 'POST_FAILED',
+            `Backend HTTP ${resp.status}`,
+            { issue: 'Backend response not ok', impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { http_status: resp.status, symbol } }
+          ),
+        ],
+        error: errText,
+        timestamp: Date.now(),
+      };
     }
 
-    // 5. apply adaptive params 落 M7 synthesizer (影響 SSI weight)
-    const synthResultWithParams = applyAdaptiveParamsToSynthesizer(synthResult, adaptiveParams);
+    const verdict = await resp.json();
+    console.log(`[decisionEngineAdapter] backend verdict: ok=${verdict.ok}, final_action=${verdict.meta?.final_action}, klines_count=${verdict.klines_count}`);
 
-    // 6. Market data — 部分由 adaptive params 衍生
-    const currentPrice = (klines && klines.length > 0) ? klines[klines.length - 1].close : 0;
-    const consecutiveUpDays = computeConsecutiveUpDays(klines);
-    const marketData = {
-      currentPrice,
-      consecutiveUpDays,
-      squeezeDetected: detectSqueeze(klines),                       // 2.5 從 M6 volatility 衍生
-      fakeBreakoutDetected: detectFakeBreakout(klines),             // 2.5 從 M3 + M5 衍生
-      maTrendlineTransition: detectMATLTransition(klines),          // 2.5 從 M1 + M3 衍生
-    };
-
-    // 7. 大少 19:06 — 中長線/短炒 雙策略分流
-    //   'position' → eng.decidePosition() 中長線 (cycle synth + 5 個 trigger)
-    //   'swing'    → eng.decide()        短炒 (原本 8 個最終動作, backward compat)
-    const eng = new DecisionEngine();
-    let decisionVerdict;
-    if (strategyMode === 'position' && m1Verdict && zmenVerdict && klineCloses.length >= 20) {
-      decisionVerdict = await eng.decidePosition({
-        synthesizerVerdict: synthResultWithParams,
-        moduleVerdicts: synthResultWithParams.module_verdicts,
-        marketData,
-        strategyMode: 'position',
-        m1Verdict,
-        zmenVerdict,
-        klineCloses,
-      });
-    } else {
-      decisionVerdict = await eng.decide({
-        synthesizerVerdict: synthResultWithParams,
-        marketData,
-        strategyMode: 'swing',
-      });
-    }
-
-    // 8. 合併 synth + decision + adaptive params + 雙策略 input (保留所有 trace + 供 render 用)
-    // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a) — M8 Decision Engine
-    // 警告注入:
-    //   🔴 VERDICT_MISSING: cycle_synthesizer 係 null (position mode fallback)
-    //   🔴 NAN_RESULT: meta.ma5 OR meta.ma20 係 null
-    //   🟡 THRESHOLD_BREACH: 5 個 MA trigger 全部 false (slow market, 1+ 日無 trigger)
-    //   🔴 CACHE_INVALID: adaptive_params 計算失敗
-    //   🔵 CACHE_EXPIRING: L2 cache 超過 5 日 (7 日內將過期)
-    //   🔵 CONFIG_DEFAULTS: strategyMode 用咗 default 'position'
-    // 收集 M1-M7 嘅 _warnings (propagation)
-    const m8Warnings = [];
-    // Collect from synthResultWithParams (M7 已經 collect M1-M6 嘅 warnings)
-    if (synthResultWithParams?._warnings && Array.isArray(synthResultWithParams._warnings)) {
-      m8Warnings.push(...synthResultWithParams._warnings);
-    }
-    // Collect from m1Verdict (可能 module_cycle_verdicts 入面 maVerdict 有 _warnings)
-    if (m1Verdict?._warnings) m8Warnings.push(...m1Verdict._warnings);
-    // Collect from zmen verdict
-    // (zmen 嚟自 runMAAlignment, 之後可以加 zmen._warnings)
-    // M8 自己 generate
-    const cycleSynth = decisionVerdict?.cycle_synthesizer;
-    if (strategyMode === 'position' && !cycleSynth) {
-      m8Warnings.push(makeWarning('critical', 'M8', 'VERDICT_MISSING',
-        '中長線 cycle_synthesizer 拎唔到 (position mode fallback)',
-        {
-          issue: 'cycle_synthesizer = null (m1Verdict / zmenVerdict / klineCloses 缺少)',
-          impact: '5 個 MA trigger 全部 fallback false, 中長線 verdict 唔可用',
-          fix: '檢查 kline count 足唔足 (≥ 20), m1Verdict/zmenVerdict 有冇正常 compute',
-          context: { strategy_mode: strategyMode, m1Verdict: !!m1Verdict, zmenVerdict: !!zmenVerdict, kline_count: klineCloses.length },
-        }
-      ));
-    }
-    // NAN check on meta.ma5 / meta.ma20
-    if (cycleSynth?.meta) {
-      if (cycleSynth.meta.ma5 == null || !isFinite(cycleSynth.meta.ma5)) {
-        m8Warnings.push(makeWarning('critical', 'M8', 'NAN_RESULT',
-          '中長線 MA5 計算結果 NaN',
-          {
-            issue: 'cycle_synthesizer.meta.ma5 = null / NaN',
-            impact: '動態止蝕 (5 日線 × 0.98) 計算失敗',
-            fix: '檢查 computeMA 邏輯, 確認 forward-looking 邏輯 (ma[0] = today 5-day MA)',
-            context: { ma5: cycleSynth.meta.ma5 },
-          }
-        ));
-      }
-      if (cycleSynth.meta.ma20 == null || !isFinite(cycleSynth.meta.ma20)) {
-        m8Warnings.push(makeWarning('critical', 'M8', 'NAN_RESULT',
-          '中長線 MA20 計算結果 NaN',
-          {
-            issue: 'cycle_synthesizer.meta.ma20 = null / NaN',
-            impact: '移動止蝕 (20 日線) 計算失敗',
-            fix: '檢查 computeMA 邏輯, 確認 forward-looking 邏輯',
-            context: { ma20: cycleSynth.meta.ma20 },
-          }
-        ));
-      }
-    }
-    // 5 個 MA trigger 全部 false
-    if (cycleSynth?.triggers) {
-      const allFalse = ['ma5StopTriggered', 'ma5BreakDay1', 'ma5BreakDay2', 'ma20Break', 'ma5RetestSuccess'].every(k => !cycleSynth.triggers[k]);
-      if (allFalse) {
-        m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
-          '5 個 MA trigger 全部 false',
-          {
-            issue: 'ma5StopTriggered / ma5BreakDay1 / ma5BreakDay2 / ma20Break / ma5RetestSuccess 全部 false',
-            impact: 'Verdict 已經準確, 留意股票狀態',
-            fix: '睇其他 module 確認 / 留意 M7 alignment',
-            context: { triggers: cycleSynth.triggers },
-          }
-        ));
-      }
-    }
-    // CACHE_INVALID (adaptive_params 失敗)
-    if (!adaptiveParams) {
-      m8Warnings.push(makeWarning('critical', 'M8', 'CACHE_INVALID',
-        'adaptive_params 計算失敗 (L2 cache 無效)',
-        {
-          issue: 'calibrateAdaptiveParams() return null',
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { symbol },
-        }
-      ));
-    }
-    // CACHE_EXPIRING
-    if (cacheInfo && cacheInfo.age_seconds && cacheInfo.age_seconds > 5 * 24 * 3600) {
-      m8Warnings.push(makeWarning('info', 'M8', 'CACHE_EXPIRING',
-        `L2 cache 超過 5 日 (${Math.round(cacheInfo.age_seconds / 3600)} 小時)`,
-        {
-          issue: `cache age = ${Math.round(cacheInfo.age_seconds / 3600)} 小時 (> 5 日, 7 日內將過期)`,
-          impact: 'Verdict 已經準確, 留意股票狀態',
-          fix: '睇其他 module 確認 / 留意 M7 alignment',
-          context: { age_hours: Math.round(cacheInfo.age_seconds / 3600) },
-        }
-      ));
-    }
-    // CONFIG_DEFAULTS
-    if (strategyMode === 'position' && options.strategyMode === undefined) {
-      m8Warnings.push(makeWarning('info', 'M8', 'CONFIG_DEFAULTS',
-        'strategyMode 用咗 default 「中長線」',
-        {
-          issue: '用戶冇指定 strategyMode, 用 default 中長線',
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { default_strategy: 'position' },
-        }
-      ));
-    }
-    // 大少 2026-08-11 — 7 個 adaptive params warning 注入
-    if (adaptiveParams) {
-      const { ssiWeights, rsiWeight, kellyFraction, markowitzCorr, hurstThresholds } = adaptiveParams;
-      // Hurst 強趨勢 (>0.95)
-      if (hurstThresholds?.persistent > 0.95) {
-        m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
-          `Hurst persistent > 0.95 強趨勢 (${hurstThresholds.persistent.toFixed(3)})`,
-          {
-            issue: `hurstThresholds.persistent = ${hurstThresholds.persistent.toFixed(3)} > 0.95 (極端, 可能 data 太短 / noise 太少)`,
-            impact: 'Verdict 已經準確, 留意股票狀態',
-            fix: '睇其他 module 確認 / 留意 M7 alignment',
-            context: { hurst_persistent: hurstThresholds.persistent, hurst_reverting: hurstThresholds.reverting },
-          }
-        ));
-      }
-      // Hurst 強反轉 (<0.05)
-      if (hurstThresholds?.reverting < 0.05) {
-        m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
-          `Hurst reverting < 0.05 強反轉 (${hurstThresholds.reverting.toFixed(3)})`,
-          {
-            issue: `hurstThresholds.reverting = ${hurstThresholds.reverting.toFixed(3)} < 0.05 (極端, 可能 data 太短)`,
-            impact: 'Verdict 已經準確, 留意股票狀態',
-            fix: '睇其他 module 確認 / 留意 M7 alignment',
-            context: { hurst_persistent: hurstThresholds.persistent, hurst_reverting: hurstThresholds.reverting },
-          }
-        ));
-      }
-      // R² 過低 (ssiWeights normalize 後 < 0.3 嘅 module 過多)
-      if (ssiWeights) {
-        const lowFitModules = Object.entries(ssiWeights).filter(([k, v]) => v < 0.15);
-        if (lowFitModules.length >= 2) {
-          m8Warnings.push(makeWarning('warning', 'M8', 'OUTLIER_VALUE',
-            `${lowFitModules.length} 個 module SSI 權重 < 0.15 (R² 過低)`,
-            {
-              issue: `ssiWeights 入面 ${lowFitModules.length} 個 module 權重 < 0.15`,
-              impact: '呢啲 module 對 verdict 影響太低, 可能 R² 過低 (data 唔啱呢條線)',
-              fix: '增加 dataWindowDays 拎更多 data, 或試另一個 period (1d → 1w)',
-              context: { ssi_weights: ssiWeights, low_fit_modules: lowFitModules.map(([k]) => k) },
-            }
-          ));
-        }
-      }
-      // Kelly 連續高波動 (每次都 >= 5%)
-      if (kellyFraction === 'octo') {
-        m8Warnings.push(makeWarning('info', 'M8', 'CONFIG_DEFAULTS',
-          'Kelly 八分一倉 (高波動)',
-          {
-            issue: `kellyFraction = 'octo' (1/8 = 12.5%), 自動切到高波動倉位`,
-            impact: 'Verdict 唔可信, 唔好落單',
-            fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-            context: { kelly_fraction: kellyFraction, kelly_numeric: 0.125 },
-          }
-        ));
-      }
-      // 馬可維茨相關係數全部接近 0 (分散風險低)
-      if (markowitzCorr) {
-        const avgCorr = (Math.abs(markowitzCorr.dailyWeekly) + Math.abs(markowitzCorr.dailyMonthly) + Math.abs(markowitzCorr.weeklyMonthly)) / 3;
-        if (avgCorr > 0.8) {
-          m8Warnings.push(makeWarning('warning', 'M8', 'THRESHOLD_BREACH',
-            `馬可維茨平均相關係數 > 0.8 (${avgCorr.toFixed(3)}, 分散風險低)`,
-            {
-              issue: `3 個時段 (日/週/月) 平均相關係數 = ${avgCorr.toFixed(3)} > 0.8 (市況單調, 多 timeframe 分散效果低)`,
-              impact: 'Verdict 已經準確, 留意股票狀態',
-              fix: '睇其他 module 確認 / 留意 M7 alignment',
-              context: { markowitz_corr: markowitzCorr, avg_abs_corr: avgCorr },
-            }
-          ));
-        }
-      }
-    }
-
+    // Phase 10 永久 rule: 包返 backend verdict 拎 frontend shape (render 拎 top-level field, 唔使改 render 內部 field path)
+    // Backend warnings 拎 string array → ModuleWarning object array (跟 M9 同 _parseBackendWarnings helper)
     return {
-      ...decisionVerdict,
-      strategy_mode: strategyMode,
-      m1_verdict: m1Verdict,
-      zmen_verdict: zmenVerdict,
-      module_cycle_verdicts: synthResultWithParams.module_cycle_verdicts,
-      adaptive_params: adaptiveParams,
-      cache_info: cacheInfo,
-      // 大少 2026-08-11 22:05 — 改善 3 (修 banner bug) + 改善 1 (M9 summary)
-      // 之前 B 改善拎 cacheInfo.last_calibrated (params cache 7 日), 但 banner 寫住「由 M9 cache 嚟」邏輯錯
-      // 改善: 拎 optimalData.last_backtest (M9 optimal cache 30 日), 配合 banner 「由 M9 cache 嚟」字眼
-      // 順便拎 optimalData.optimal_params / validation / folds_count 畀 M9 summary sub-section render
-      optimal_params_timestamp: optimalData?.last_backtest || null,
-      optimal_params_source: optimalData ? 'cache' : 'fresh-calibrate',
-      optimal_params_age_seconds: optimalData?.age_seconds || null,
-      optimal_data: optimalData || null,  // 完整 M9 optimal data 畀 renderM9Summary() 用
-      _warnings: m8Warnings,  // 大少 2026-08-11 v1.0.0
+      ...verdict,
+      symbol,
+      final_action: verdict.meta?.final_action,
+      final_action_reason: verdict.meta?.final_action_reason,
+      trading_card: verdict.meta?.trading_card,
+      short_term_forecast: verdict.meta?.short_term_forecast,
+      interpretation: verdict.meta?.interpretation,
+      module_verdicts: verdict.meta?.module_verdicts || [],
+      synthesizer_verdict: verdict.meta?.synthesizer_verdict || {},
+      optimal_data: verdict.meta?.optimal_data || null,
+      optimal_params_timestamp: verdict.meta?.optimal_data?.timestamp || null,
+      optimal_params_source: verdict.meta?.optimal_data?.bestParams ? 'cache' : 'fresh-calibrate',
+      optimal_params_age_seconds: null,
+      strategy_mode: options.strategyMode === 'swing' ? 'swing' : 'position',
+      _warnings: _parseBackendWarnings(verdict.warnings || []),
     };
   },
+  // ============================================================================
   renderResult: (verdict) => {
     if (!verdict) return '<div class="result-error">無 verdict</div>';
 
