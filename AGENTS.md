@@ -334,6 +334,29 @@ if existing_history is not None:
 **對應 commit**: (即將 push, Spec Sync #31)
 **對應 doc**: ARCHITECTURE.md §15.23
 
+### Testing page chart-control layout 永久 rule (大少 2026-08-20 23:20)
+
+**凡人話解釋**: testing page 凡係用嚟控制 chart 嘅 controls (啟用 / threshold / sequence) 同 status message (即時更新 / 跑完) 永遠排喺 `chart-section` 入面 `chart-container` 之前, 唔好散喺 `inputs section`, 確保大少視線聚埋喺 chart 上面嘅時候唔使離開向上望。
+
+**大少 23:20 trigger**: 大少撳跑完 M1 嗰陣見到 3 條 (啟用 / threshold / 順序號碼 / 即時更新 message) 排喺 inputs section 跑算法掣下面, 視線要離開 chart 向上望先睇到, trigger「移到圖表上邊」。
+
+**永久 rule**:
+- ✅ 跟 chart 互動嘅 controls + status 永遠排喺 `chart-section` 入面 `chart-container` 之前
+- ✅ 同類 control 視覺一致: 統一用 `#f5f5f5` background + 圓角 + `8px 12px padding` (跟 ma-toggle-bar 一齊)
+- ✅ `inputs section` 留返只有「跑算法」掣 + 「🚀 跑完整鏈條」掣, 其他跟 chart 互動嘅 control 全部搬去 `chart-section`
+- ✅ 套用: 之後 M2 / M3 / M4 等其他 config control 加新嘅時候, 直接加落 `chart-section` 入面 `ma-toggle-bar` 之前, 唔好擺落 `inputs section`
+
+**Layout 順序** (`chart-section` 入面):
+1. `chart-header` (h2 + note)
+2. `run-status` (跑完 / 即時更新 message)
+3. `zigzag-controls` (啟用 + threshold)
+4. `zigzag-sequence-controls` (順序號碼)
+5. `ma-toggle-bar` (MA 線 toggle)
+6. `chart-container` (實際 K 線圖)
+
+**對應 commit**: (即將 push, Spec Sync #32)
+**對應 doc**: ARCHITECTURE.md §15.24
+
 ### K-line Cache (永久 rule, 大少 #8602)
 
 ```python

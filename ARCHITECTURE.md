@@ -2845,3 +2845,47 @@ M5 VolumePrice:
 ### 對應 commit
 - `fix(zigzag-threshold-realtime): ZigZag threshold slider 即時 re-render` — testing-page.js 抽 refreshZigZagOverlay helper + 加 onChange handler + 重構 runAlgorithm + testing-page/index.html hint 改 + cache bust 4.25.0 → 4.26.0 / ?v=2.3.80 → 2.3.81 — 本 commit
 - (Phase 9+10 §15 段未加, 跟返 Spec Sync #29 + #30 commit 結構, Phase 9+10 §15 段留待下次 Spec Sync trigger keyword 「更新Stockpluse」時一齊補返)
+
+## §15.24 — ZigZag controls + runStatus 搬到圖表上邊 layout fix (大少 2026-08-20 23:20 trigger「移到圖表上邊」, Spec Sync #32) [2026-08-20]
+
+### 大少 23:20 trigger
+大少 撳跑完 M1 (AS-03-MA) algorithm 嗰陣見到 3 條 info 排喺 chart 下面 (其實係喺 inputs section 跑算法掣下面, 大少睇落覺得離 chart 太遠), trigger「移到圖表上邊」, 要呢 3 條全部顯示喺 chart-section 入面 chart container 之前:
+1. `啟用 ZigZag | Threshold %: 5 | (改完即時更新紫色線, 唔使撳跑算法)` — 啟用 + threshold 控制
+2. `顯示 ZigZag 點順序號碼 | 顯示最近 N 個 | (1 號=今日 close, 2 號=紫色最後 1 個, 倒序排)` — 順序號碼控制
+3. `✅ ZigZag 即時更新 (threshold=10%, 153 個 points)` — 即時更新 status message
+
+### 大少 why
+- 大少撳跑 / 改 threshold 嗰陣, 視線聚埋喺 chart 上面睇紫色線變化
+- 而家 controls + status 喺 inputs section 跑算法掣下面, 視線要離開 chart 向上望先睇到
+- 大少 want 一睇到 chart 即刻見到「✅ ZigZag 即時更新」同可以即時改 ZigZag 設定, 視線唔使離開 chart 向上望
+
+### Fix 範圍 (2 個 file)
+- **`testing-page/index.html`**:
+  1. Move `#run-status` 元素由 inputs section 搬去 chart-section 入面, 排喺 chart container 之前
+  2. Move `#zigzag-controls` (啟用 + threshold) 由 inputs section 搬去 chart-section 入面, 排喺 ma-toggle-bar 之前
+  3. Move `#zigzag-sequence-controls` (順序號碼) 由 inputs section 搬去 chart-section 入面, 排喺 ma-toggle-bar 之前
+  4. 改 3 個 controls / status 嘅 background + border + padding 跟 ma-toggle-bar 統一 (灰色 #f5f5f5 + 圓角 + 8px 12px padding), 視覺一致
+  5. inputs section 留返只有「跑算法」掣 + 「🚀 跑完整鏈條」掣, layout 簡潔
+- **`testing-page/testing-page.css`**:
+  1. `.run-status` `margin-top: 12px` 改 `margin-top: 0` + `margin-bottom: 8px` 因為已喺 chart-section 內, 唔再需要 margin-top
+
+### Cache bust
+- ALGO_CACHE_BUST 4.26.0 → 4.27.0
+- ?v=2.3.81 → 2.3.82 (testing-page.css + testing-page.js 兩個, 雖然 CSS 改動細但跟 HTML sync)
+
+### 永久 rule 收接 (testing page layout 永久 rule)
+- ✅ **跟 chart 互動嘅 controls + status 永遠排喺 chart-section 入面 chart container 之前** (永久 rule): 凡係用嚟控制 chart 嘅 controls (啟用 / threshold / sequence) 同 status message (即時更新 / 跑完) 全部排喺 chart-section 入面, 唔好散喺 inputs section, 確保大少視線聚埋喺 chart 上面嘅時候唔使離開
+- ✅ **同類 control 視覺一致** (永久 rule): controls 嘅 background + border + padding 統一用 `#f5f5f5` + 圓角 + 8px 12px padding, 跟 ma-toggle-bar 一齊
+- ✅ **inputs section 留返只有「跑算法」掣 + 「🚀 跑完整鏈條」掣** (永久 rule): 其他跟 chart 互動嘅 control 都搬去 chart-section, 唔好擠埋喺 inputs section
+- ✅ **套用: 之後 M2 / M3 / M4 等其他 config control 全部跟呢個 pattern** (永久 rule), 加新 config control 嗰陣, 直接加落 chart-section 入面, 唔好擺落 inputs section
+
+### 凡人話解釋
+> 大少, 我將 3 條 (啟用 + threshold / 順序號碼 / 即時更新 message) 全部搬咗去 chart 上面 (chart-section 入面, chart container 之前), 跟 ma-toggle-bar 一齊排住。
+>
+> 大少撳跑 / 改 threshold 嗰陣視線聚埋喺 chart 上面睇紫色線, 一望上面就即刻見到「✅ ZigZag 即時更新 (threshold=10%, 153 個 points)」, 唔使再離開 chart 向上望。
+>
+> 仲有 3 個 control 我用咗跟 ma-toggle-bar 一樣嘅灰底圓角 (8px 12px padding), 視覺一致。
+
+### 對應 commit
+- `fix(zigzag-controls-chart-top): ZigZag controls + runStatus 搬到圖表上邊` — testing-page/index.html layout 改 (3 個 element 搬去 chart-section + 視覺統一) + testing-page.css .run-status margin 改 + cache bust 4.26.0 → 4.27.0 / ?v=2.3.81 → 2.3.82 — 本 commit
+- `docs(spec-sync-32): ZigZag controls + runStatus 搬到圖表上邊 layout fix — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.24 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「跟 chart 互動嘅 controls + status 永遠排喺 chart-section 入面 chart container 之前」
