@@ -120,8 +120,8 @@ async function fetchBackendZigZag(symbol, period, threshold) {
 // 大少 2026-08-20 20:50 Phase 4 M3 Trendline 拎走 frontend: ALGO_CACHE_BUST = '4.20.0' (補返 Phase 4 漏做嘅 cache bust bump — frontend M3 analyzeTrendline 拎走 506 行 + 7 個 helper, 換 fetch backend stub, 永久 rule 一致)
 // 大少 2026-08-20 21:30 Phase 5+6 M4 Indicators + M5 VolumePrice 拎走 frontend: ALGO_CACHE_BUST = '4.21.0' (Phase 5+6 combined, 拎走 M4 566 行 + M5 ~993 行 frontend, 換 2 個 fetch backend stub, 8 個 render function verdict.X 改 verdict.meta.X, 永久 rule 一致)
 // 大少 2026-08-20 21:24 Fix commit (補返 Phase 3+4+5+6 漏做嘅 cache bust bump): ALGO_CACHE_BUST = '4.21.1' (Phase 1+2 之後 4 個 phase 嘅 cache bust 從來冇做過, 大少 trigger「Doc 都改好了嗎」發現 spec doc 同 testing page code 唔對齊, 而家一齊補返 3 個 phase 漏做嘅 + 永久 rule 加 self-check: 改 adapter.mjs 之後 commit 之前 grep testing-page.js ALGO_CACHE_BUST + index.html ?v= 確認同步 bump, 唔好再漏做)
-// 大少 2026-08-20 21:30 Phase 7 M6 Volatility 拎走 frontend: ALGO_CACHE_BUST = '4.22.0' (frontend M6 analyzeVolatility + helper 拎走, 換 fetch backend stub, 4 個 render function verdict.X 改 verdict.meta.X, 永久 rule self-check 確認: 改 adapter.mjs 之後必同步 bump 2 個地方, Phase 7 跟返冇漏)
-const ALGO_CACHE_BUST = '4.22.0';
+// 大少 2026-08-20 21:54 Phase 9 M9 Back Test 拎走 frontend: ALGO_CACHE_BUST = '4.24.0' (frontend backTestAdapter.analyze 拎走 210 行 chain (import bundle + runWalkForwardCV + decisionFn + 2 個 POST optimal/forward-return), 換 1 個 fetch backend /api/algorithms/run?algo=back_test stub, 補返 Phase 8 漏做嘅 4.22.0 → 4.23.0 cache bust, 永久 rule self-check 確認: 改 adapter.mjs 之後必同步 bump 2 個地方, Phase 9 跟返冇漏)
+const ALGO_CACHE_BUST = '4.24.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
