@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<title>ZigZag Backend Verdict — HK.00700 — Phase 1 Verify</title>
+<style>
+  body { font-family: -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif;
+         margin: 0; padding: 24px; background: #f5f5f5; color: #222; }
+  .container { max-width: 1100px; margin: 0 auto; background: #fff; padding: 32px;
+               border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+  h1 { margin: 0 0 8px; font-size: 26px; color: #1a1a1a; }
+  h2 { margin: 24px 0 12px; font-size: 18px; color: #1a1a1a;
+       border-bottom: 2px solid #6c4ce6; padding-bottom: 6px; }
+  .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .card { background: #f8f8fc; padding: 16px; border-radius: 8px;
+          border-left: 4px solid #6c4ce6; }
+  .card .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .card .value { font-size: 22px; font-weight: 600; color: #1a1a1a; margin-top: 4px; }
+  .card .sub { color: #666; font-size: 12px; margin-top: 2px; }
+  .green { color: #2e7d32; font-weight: 600; }
+  .red { color: #c62828; font-weight: 600; }
+  .endpoint { background: #1a1a1a; color: #00d68f; padding: 16px 20px;
+              border-radius: 8px; font-family: "SF Mono", "Consolas", monospace;
+              font-size: 14px; margin: 8px 0; }
+  .endpoint .label { color: #888; font-size: 11px; text-transform: uppercase;
+                     display: block; margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th { text-align: left; background: #f0f0f4; padding: 8px 10px; font-weight: 600; }
+  td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+  tr.high { background: #fce4ec; }
+  tr.low { background: #e3f2fd; }
+  .type-high { color: #c62828; font-weight: 600; }
+  .type-low { color: #1565c0; font-weight: 600; }
+  .status-ok { background: #2e7d32; color: #fff; padding: 4px 12px;
+               border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .framework { background: #fff3e0; border-left: 4px solid #ff9800; padding: 14px 18px;
+               border-radius: 6px; margin: 16px 0; font-size: 13px; }
+  .framework b { color: #e65100; }
+  .recent { max-height: 320px; overflow-y: auto; }
+  .note { background: #f5f5f5; padding: 12px 16px; border-radius: 6px;
+          font-size: 12px; color: #666; margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🟣 ZigZag Backend Verdict — 騰訊 (HK.00700)</h1>
+  <div class="subtitle">Phase 1 落地驗證 (大少 2026-08-20 18:51 觸發) · threshold 5% · 5 年 K 線 (1260 日)</div>
+
+  <div class="framework">
+    <b>Framework Contract 驗證:</b>
+    <code style="background:#fff; padding:2px 6px; border-radius:3px;">backend/algorithms/base.py</code>
+    Algorithm ABC + Verdict dataclass · Registry pattern · 統一 endpoint · 從 ref code (大少 18:51 提供) 移植
+  </div>
+
+  <h2>📊 整體 Summary</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="label">Status</div>
+      <div class="value"><span class="status-ok">✓ OK</span></div>
+      <div class="sub">Algorithm 跑成功</div>
+    </div>
+    <div class="card">
+      <div class="label">Algorithm / Version</div>
+      <div class="value">zigzag / v1.0.0</div>
+      <div class="sub">Registry 自動 register</div>
+    </div>
+    <div class="card">
+      <div class="label">K 線條數</div>
+      <div class="value">1,260</div>
+      <div class="sub">5 年 wide-fetch (大少 2026-08-14 永久 rule)</div>
+    </div>
+    <div class="card">
+      <div class="label">ZigZag 轉折點</div>
+      <div class="value">316</div>
+      <div class="sub">5% threshold 過濾 noise</div>
+    </div>
+    <div class="card">
+      <div class="label">最近 Peak (頂)</div>
+      <div class="value red" id="lastHighValue">—</div>
+      <div class="sub" id="lastHighDate">—</div>
+    </div>
+    <div class="card">
+      <div class="label">最近 Trough (底)</div>
+      <div class="value" style="color:#1565c0;" id="lastLowValue">—</div>
+      <div class="sub" id="lastLowDate">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Peak ↔ Trough 升幅</div>
+      <div class="value" id="pctChange">—</div>
+      <div class="sub">最近 peak 到 trough</div>
+    </div>
+    <div class="card">
+      <div class="label">Warnings</div>
+      <div class="value" id="warningsCount">0</div>
+      <div class="sub">Module Warning System v1.1.0</div>
+    </div>
+  </div>
+
+  <h2>🔌 API Endpoint</h2>
+  <div class="endpoint">
+    <span class="label">GET Request</span>
+    http://localhost:18792/api/algorithms/run?algo=zigzag&symbol=HK.00700&threshold=5
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px;">
+    <div class="endpoint"><span class="label">Health</span>/api/algorithms/health</div>
+    <div class="endpoint"><span class="label">List</span>/api/algorithms/list</div>
+    <div class="endpoint"><span class="label">Run (統一)</span>/api/algorithms/run?algo=...</div>
+  </div>
+
+  <h2>📈 最近 30 個 ZigZag 點 (由最新排到最舊)</h2>
+  <div class="recent">
+    <table>
+      <thead>
+        <tr><th>#</th><th>日期</th><th>類型</th><th>價格</th><th>距今日日數</th></tr>
+      </thead>
+      <tbody id="recentTable"></tbody>
+    </table>
+  </div>
+
+  <h2>🧪 11 個 Pytest 全部 PASS</h2>
+  <table>
+    <thead><tr><th>Test Case</th><th>Status</th><th>凡人話</th></tr></thead>
+    <tbody>
+      <tr><td>test_zigzag_registered_in_registry</td><td><span class="status-ok">✓</span></td><td>Algorithm 註冊落 framework</td></tr>
+      <tr><td>test_zigzag_basic_up_down</td><td><span class="status-ok">✓</span></td><td>基本 Peak / Trough 識別</td></tr>
+      <tr><td>test_zigzag_default_threshold</td><td><span class="status-ok">✓</span></td><td>默認 5% threshold work</td></tr>
+      <tr><td>test_zigzag_too_short</td><td><span class="status-ok">✓</span></td><td>太少 K 線拎 error (唔 crash)</td></tr>
+      <tr><td>test_zigzag_empty_klines</td><td><span class="status-ok">✓</span></td><td>空 array 拎 error</td></tr>
+      <tr><td>test_zigzag_missing_high_low_field</td><td><span class="status-ok">✓</span></td><td>冇 high/low field 拎 error</td></tr>
+      <tr><td>test_zigzag_low_sample_warning</td><td><span class="status-ok">✓</span></td><td>少過 30 條 trigger LOW_SAMPLE_SIZE warning</td></tr>
+      <tr><td>test_zigzag_no_warning_for_sufficient_data</td><td><span class="status-ok">✓</span></td><td>足夠 K 線唔 trigger warning</td></tr>
+      <tr><td>test_zigzag_meta_has_last_swing</td><td><span class="status-ok">✓</span></td><td>lastSwingHigh / lastSwingLow 畀 M1 用</td></tr>
+      <tr><td>test_zigzag_empty_points_meta</td><td><span class="status-ok">✓</span></td><td>冇 point 嗰陣 lastSwing 都係 None</td></tr>
+      <tr><td>test_verdict_shape_contract</td><td><span class="status-ok">✓</span></td><td>Verdict 跟 framework contract</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    凡人話: Phase 1 backend 部分完成 ✓ — Algorithm framework + ZigZag 第一個 algorithm 落地 work。
+    仲有 frontend testing page 改 fetch backend + 刪舊 ZigZag file 未做,大少 trigger 至做。
+  </div>
+</div>
+
+<script>
+const verdict = JSON.parse(`__VERDICT_JSON__`);
+document.getElementById('lastHighValue').textContent = '$' + verdict.meta.lastSwingHigh.value.toFixed(2);
+document.getElementById('lastHighDate').textContent = verdict.meta.lastSwingHigh.date;
+document.getElementById('lastLowValue').textContent = '$' + verdict.meta.lastSwingLow.value.toFixed(2);
+document.getElementById('lastLowDate').textContent = verdict.meta.lastSwingLow.date;
+const pct = ((verdict.meta.lastSwingHigh.value - verdict.meta.lastSwingLow.value) / verdict.meta.lastSwingLow.value * 100);
+const pctEl = document.getElementById('pctChange');
+pctEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+pctEl.className = pct >= 0 ? 'value green' : 'value red';
+document.getElementById('warningsCount').textContent = verdict.warnings.length;
+
+const today = new Date();
+const recent = verdict.points.slice(-30).reverse();
+const tbody = document.getElementById('recentTable');
+recent.forEach((p, i) => {
+  const days = Math.round((today - new Date(p.date)) / (1000*60*60*24));
+  const tr = document.createElement('tr');
+  tr.className = p.type;
+  tr.innerHTML = `<td>${i+1}</td><td>${p.date}</td>
+    <td class="type-${p.type}">${p.type === 'high' ? 'Peak (頂)' : 'Trough (底)'}</td>
+    <td>$${p.value.toFixed(2)}</td><td>${days} 日前</td>`;
+  tbody.appendChild(tr);
+});
+</script>
+</body>
+</html>

@@ -378,7 +378,7 @@
 
 **Maintainer**: 大少 + Mavis  
 **Created**: 2026-08-16 19:25  
-**Last Updated**: 2026-08-18 06:36 (大少 trigger #10: 例出 9 個 sub-scenario 簡單算法)  
+**Last Updated**: 2026-08-20 12:30 (大少 trigger #12: ZigZag direction flag refactor)  
 **Status**: 🚧 Research doc, 等大少逐條 review 指示
 
 
@@ -444,3 +444,97 @@
 - Chart 入面紫色 ZigZag 線 + 紫色號碼 (14, 16, 12, 10, 8 等倒序排) + 深綠色 收市延伸 (Close Ext.) 446.20 線 + 1 號深綠色 marker
 - 改 spinbutton 拎唔同 N (5) 都 work
 - 截圖: `docs/research/AS-03-cycle-detection/screenshots/m1-zigzag-sequence-verify-2026-08-19.jpg`
+
+---
+
+## 🆕 大少 2026-08-20 Trigger — ZigZag direction flag refactor (clean state machine)
+
+### 大少 trigger (2026-08-20 12:01)
+> 「我建議加一個Flage，如果做了Peak，方向就是向下，那就只看high，當High>5% 時就做Trough，方向就向上，那就只看low。所以不用同時要看high 和 low」
+
+### 凡人話解釋
+
+之前 `calculateZigZag` 雖然已經有 `inUptrend` flag，但代碼結構唔乾淨:
+- 同時追蹤 2 個 variable (`lastSwingHigh` + `lastSwingLow`)
+- 2 個 loop (第一個 break 拎 first swing, 第二個繼續)
+- 讀起上嚟要記住邊個 variable 喺邊個 direction 先 update
+
+大少想要嘅係 clean state machine:
+- **1 個 direction flag** ('up' / 'down') 講晒方向
+- **1 個 reference value** (running extreme — up 嗰陣係 max high, down 嗰陣係 min low)
+- **1 個 refIdx** (拎到 extreme 嗰支 K 線嘅 index)
+- **1 個 loop** (唔再 break 拎 first swing)
+
+凡人話例子:
+- 啱啱確認咗 peak → direction 轉 'down' → 之後每支 K 線只睇 low, low 跌穿 refValue 5% 就確認 trough
+- 啱啱確認咗 trough → direction 轉 'up' → 之後每支 K 線只睇 high, high 升穿 refValue 5% 就確認 peak
+- 永遠唔使同時追蹤 high 同 low，邏輯清晰唔會亂
+
+### 行為對齊 evidence (4 隻 stock 100% 一樣)
+
+Trace script: `/tmp/zigzag_trace/trace_refactor.mjs` (對比舊 vs 新)
+
+| Stock | K線條數 | 舊算法拎 points | 新算法拎 points | 結果 |
+|-------|---------|----------------|----------------|------|
+| HK.00700 (騰訊) | 1260 | 254 | 254 | ✅ 100% 一樣 |
+| HK.00019 (太古) | 258 | 28 | 28 | ✅ 100% 一樣 |
+| HK.00005 (匯豐) | 258 | 24 | 24 | ✅ 100% 一樣 |
+| HK.00016 (新鴻基) | 258 | 39 | 39 | ✅ 100% 一樣 |
+
+### Refactor 過程發現嘅 subtle bug (trigger metric 計算 order)
+
+第一次 refactor 拎出 318 個 points (vs 舊 254)，多咗 64 個 noise。Trace 落去 2026-01-15 (HK.00019) 搵到 root cause:
+
+**舊算法嘅 changeFromHigh 喺 for loop 開頭計** (用 update 前嘅 lastSwingHigh)：
+```javascript
+for (let i = 1; i < klines.length; i++) {
+  const changeFromHigh = (klines[i].low - lastSwingHigh) / lastSwingHigh;  // 開頭計, 用 pre-update value
+  if (inUptrend) {
+    if (klines[i].high > lastSwingHigh) { lastSwingHigh = ...; }  // post-update
+    if (changeFromHigh <= -threshold) { ... }  // 用 pre-update value 計嘅 trigger
+  }
+}
+```
+
+**新算法 (第一版) 將 changeFromRef 擺入 if 入面計** (用 update 後嘅 refValue)：
+```javascript
+if (direction === 'up') {
+  if (klines[i].high > refValue) { refValue = ...; }  // post-update
+  const changeFromRef = (klines[i].low - refValue) / refValue;  // ← post-update
+  if (changeFromRef <= -threshold) { ... }
+}
+```
+
+Post-update 會喺「大 intraday range 嗰日」拎到假信號: e.g. 2026-01-15 H=70.25 L=66.6 (-5.2%) → 拎假 peak/trough 喺同一日 (2026-01-15 high=70.25 + 2026-01-15 low=66.6 兩個 noise point)。
+
+**Fix**: pre-calculate `changeFromRef` 喺 for loop 開頭 (用 update 前嘅 refValue)，對齊舊算法行為。
+
+### Implementation (commit 將會跟 Spec Sync #20+1 push)
+
+`algorithms/AS-03-cycle-detection/adapter.mjs` line 1505-1647
+
+**改動**:
+1. `let direction = klines[1].close > klines[0].close ? 'up' : 'down';` (取代 `inUptrend`)
+2. `let refValue = direction === 'up' ? klines[0].high : klines[0].low;` (取代 `lastSwingHigh` + `lastSwingLow`)
+3. `let refIdx = 0;` (取代 `lastSwingIdx`)
+4. 刪除 first loop (拎 first swing 嗰個 break loop) — 合併去 single loop
+5. Pre-calculate `changeFromRef` 喺 for loop 開頭 (對齊舊算法行為)
+6. 拎 last point 用 `refValue` / `refIdx` / `direction`, 唔再用 `lastSwingHigh` / `lastSwingLow`
+
+**Refactor 結果**:
+- 舊 121 行 (line 1505-1625) → 新 110 行 (line 1505-1614)
+- 邏輯讀起嚟清晰: 「拎咗咩 → 朝咩方向 → 點樣搵下一個」
+- 行為 100% 一樣 (4 隻 stock trace 拎 evidence)
+
+### 永久 rule (大少 2026-08-20 12:01)
+
+- ✅ **`calculateZigZag` 永遠用 1 個 direction flag + 1 個 refValue + 1 個 refIdx + 1 個 loop** — 唔好再分 2 個 loop + 2 個 variable
+- ✅ **Direction 拎 'up' / 'down' 字符串 flag** (唔好用 boolean `inUptrend`, 讀起嚟易明)
+- ✅ **Trigger metric (changeFromRef) 永遠 pre-calculate 喺 for loop 開頭** (用 update 前嘅 refValue, 對齊原本舊算法行為避免假信號)
+- ✅ **拎 last point 用 `refValue` / `refIdx` / `direction`** (唔好用 `lastSwingHigh` / `lastSwingLow` / `inUptrend`)
+- ✅ **改 `calculateZigZag` 嗰陣必須 trace ≥ 3 隻 stock 拎 evidence 確認拎出嚟 point 100% 一樣** (大少 algorithm sub-scenario 永久 rule 一致)
+- ✅ **改完跑晒 `__tests__/*.test.mjs` 確認冇 break 任何 test** (14 個 test file 全部 pass / 21/31 ma-alignment 維持原狀)
+
+### 對應 commit
+
+- 即將 push (跟 Spec Sync #20+1 同步 push)

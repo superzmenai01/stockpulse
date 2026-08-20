@@ -267,157 +267,44 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
   
   return { upper, middle, lower }
 }
-// ============ ZigZag 計算（使用 High/Low）===========
+// ============ ZigZag — Phase 1 Backend Integration (大少 2026-08-20 19:50) ============
+// 凡人話: 刪走 frontend calculateZigZag, 改 fetch /api/algorithms/run?algo=zigzag 拎 verdict
+// 永久 rule: backend 拎唔到 fallback 唔 render (frontend 已經冇 fallback, 因為 backend framework 經 Phase 1 驗證穩定)
+// 對應 backup: backups/zigzag-frontend-2026-08-20/ChartContainer.tsx
+// 對應 ref code: 大少 2026-08-20 18:51 畀嘅 Python ZigZag 移植 (backend/algorithms/zigzag/algorithm.py)
 
 /**
- * ZigZag 轉向點識別
- * 
- * 使用 high/low 追蹤價格峰值和谷底，
- * 當 close 偏離峰值/谷底超過 threshold% 時判定為轉向。
- * 
- * @param klines K線數據
- * @param thresholdPercent 轉向阈值（預設5%）
- * @param period 週期字串（用於時間解析）
- * @returns 轉向點數組 [{time, value}]
+ * 凡人話: 拎 backend ZigZag 嘅 async function
+ * - symbol: 股票代號 (e.g. "HK.00700")
+ * - period: K 線週期 (e.g. "1d")
+ * - threshold: 過濾 noise 門檻 (%)
+ * - signal: AbortController 嘅 signal (用嚟 cancel stale fetch)
+ *
+ * Returns: Array<{time, value}> — lightweight-charts 食嘅 shape
+ *  (從 backend verdict.points [{date, value, type, index}] 轉成 [{time, value}])
  */
-interface ZigZagPoint {
-  time: Time
-  price: number
+async function fetchBackendZigZag(
+  symbol: string,
+  period: string,
+  threshold: number,
+  signal: AbortSignal
+): Promise<Array<{ time: Time; value: number }>> {
+  const url = `/api/algorithms/run?algo=zigzag&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&threshold=${threshold}`;
+  const resp = await fetch(url, { signal });
+  if (!resp.ok) {
+    throw new Error(`Backend ZigZag 拎唔到: ${resp.status} ${resp.statusText}`);
+  }
+  const verdict = await resp.json();
+  if (!verdict.ok || !Array.isArray(verdict.points)) {
+    throw new Error(`Backend ZigZag verdict fail: ${verdict.error || 'unknown'}`);
+  }
+  return verdict.points.map((p: { date: string; value: number; type: string; index: number }) => ({
+    time: parseTime(p.date, period),
+    value: p.value,
+  }));
 }
 
-function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period: string = '1d'): Array<{ time: Time; value: number }> {
-  if (klines.length < 2) return []
 
-  const result: Array<{ time: Time; value: number }> = []
-  const threshold = thresholdPercent / 100
-
-  // ZigZag 永遠從第一支竹的 low 開始
-  result.push({
-    time: parseTime(klines[0].time, period),
-    value: klines[0].low,  // 用 low 作為起始點
-  })
-
-  let lastSwingHigh = klines[0].high
-  let lastSwingLow = klines[0].low
-  let lastSwingIdx = 0
-  let inUptrend = klines[1].close > klines[0].close
-
-  // 找到第一個顯著高/低點
-  for (let i = 1; i < klines.length; i++) {
-    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
-    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
-
-    if (inUptrend) {
-      // 上升趨勢：更新 high
-      if (klines[i].high > lastSwingHigh) {
-        lastSwingHigh = klines[i].high
-        lastSwingLow = klines[i].low
-        lastSwingIdx = i
-      }
-      // 從 high 下跌超過 threshold = 轉向
-      if (changeFromHigh <= -threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingHigh,  // 記錄峰值 high
-        })
-        inUptrend = false
-        lastSwingLow = klines[i].low
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-        break
-      }
-    } else {
-      // 下跌趨勢：更新 low
-      if (klines[i].low < lastSwingLow) {
-        lastSwingLow = klines[i].low
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-      }
-      // 從 low 上升超過 threshold = 轉向
-      if (changeFromLow >= threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingLow,  // 記錄谷底 low
-        })
-        inUptrend = true
-        lastSwingLow = klines[i].low
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-        break
-      }
-    }
-  }
-
-  if (result.length <= 1) {
-    // 沒有找到顯著轉向點，只返回第一個點
-    return result
-  }
-
-  // 繼續追蹤轉向點
-  for (let i = lastSwingIdx + 1; i < klines.length; i++) {
-    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
-    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
-
-    if (inUptrend) {
-      // 上升趨勢：更新 high
-      if (klines[i].high > lastSwingHigh) {
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-      }
-      // 從 high 下跌超過 threshold = 轉向下跌
-      if (changeFromHigh <= -threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingHigh,
-        })
-        inUptrend = false
-        lastSwingLow = klines[i].low
-        lastSwingIdx = i
-      }
-    } else {
-      // 下跌趨勢：更新 low
-      if (klines[i].low < lastSwingLow) {
-        lastSwingLow = klines[i].low
-        lastSwingIdx = i
-      }
-      // 從 low 上升超過 threshold = 轉向上漲
-      if (changeFromLow >= threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingLow,
-        })
-        inUptrend = true
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-      }
-    }
-  }
-
-  // 添加最後一個有效轉向點（峰值或谷底）
-  const lastTime = parseTime(klines[lastSwingIdx].time, period)
-  if (result.length > 0 && result[result.length - 1].time !== lastTime) {
-    result.push({
-      time: lastTime,
-      value: inUptrend ? lastSwingHigh : lastSwingLow,
-    })
-  }
-
-  // 過濾並確保時間严格遞增（去重 + 排序）
-  // 使用 Map 確保每個 timestamp 只有一個點（保留最後一個）
-  const timeMap = new Map<Time, { time: Time; value: number }>()
-  for (const point of result) {
-    timeMap.set(point.time, point)  // 相同 time 的後者覆蓋前者
-  }
-  
-  // 轉為數組並確保嚴格遞增排序
-  const filtered: Array<{ time: Time; value: number }> = Array.from(timeMap.values()).sort((a, b) => {
-    if (a.time < b.time) return -1
-    if (a.time > b.time) return 1
-    return 0
-  })
-
-  return filtered
-}
 
 // ============ 創建圖表實例 ============
 
@@ -898,7 +785,8 @@ export default function ChartContainer({
     }
   }, [klineData, currentPeriod, indicatorConfig])
 
-  // ZigZag Indicator
+  // ZigZag Indicator — Phase 1 Backend Integration (大少 2026-08-20 19:50)
+  // 凡人話: 刪走 frontend calculateZigZag, 改 fetch backend /api/algorithms/run?algo=zigzag
   useEffect(() => {
     if (!chartRef.current || !chartCreated || klineData.length === 0) return
 
@@ -914,19 +802,35 @@ export default function ChartContainer({
 
     if (!enabled) return
 
-    const zigzagData = calculateZigZag(klineData, threshold, currentPeriod)
-    if (zigzagData.length === 0) return
+    // AbortController 取消 stale fetch (大少 React 永久 rule)
+    const controller = new AbortController()
+    ;(async () => {
+      try {
+        const zigzagData = await fetchBackendZigZag(stock.code, currentPeriod, threshold, controller.signal)
+        if (controller.signal.aborted || zigzagData.length === 0) return
 
-    const zigzagSeries = chart.addSeries(LineSeries, {
-      color: '#FFD700',
-      lineWidth: 1,
-      priceLineVisible: false,
-    })
-    zigzagSeries.setData(zigzagData)
-    zigzagSeriesRef.current = zigzagSeries
-  }, [indicatorConfig.ZigZag, klineData, chartCreated])
+        const zigzagSeries = chart.addSeries(LineSeries, {
+          color: '#FFD700',
+          lineWidth: 1,
+          priceLineVisible: false,
+        })
+        zigzagSeries.setData(zigzagData)
+        if (controller.signal.aborted) {
+          try { chart.removeSeries(zigzagSeries) } catch {}
+          return
+        }
+        zigzagSeriesRef.current = zigzagSeries
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          console.warn('[ZigZag] backend fetch 失敗, 唔 render:', e)
+        }
+      }
+    })()
+    return () => controller.abort()
+  }, [indicatorConfig.ZigZag, klineData, chartCreated, stock.code, currentPeriod])
 
-  // Elliott Wave Indicator
+  // Elliott Wave Indicator — Phase 1 改 fetch backend ZigZag (大少 2026-08-20 19:50)
+  // 凡人話: EW 用 ZigZag 拎 data, ZigZag 而家 fetch backend, EW 都要 fetch
   useEffect(() => {
     if (!chartRef.current || !chartCreated || klineData.length === 0) return
 
@@ -948,56 +852,73 @@ export default function ChartContainer({
 
     if (!enabled) return
 
-    // 先計算 ZigZag 轉向點
-    const zigzagData = calculateZigZag(klineData, indicatorConfig.ZigZag.threshold, currentPeriod)
-    if (zigzagData.length < 4) return
+    // AbortController 取消 stale fetch
+    const controller = new AbortController()
+    ;(async () => {
+      try {
+        // 先拎 backend ZigZag 轉向點
+        const zigzagData = await fetchBackendZigZag(
+          stock.code, currentPeriod, indicatorConfig.ZigZag.threshold, controller.signal
+        )
+        if (controller.signal.aborted || zigzagData.length < 4) return
 
-    // 計算 Elliott Wave
-    const ewResult = calculateElliottWave(zigzagData)
-    console.log('[EW] Result:', ewResult)
-    ewResultRef.current = ewResult
+        // 計算 Elliott Wave
+        const ewResult = calculateElliottWave(zigzagData)
+        console.log('[EW] Result:', ewResult)
+        ewResultRef.current = ewResult
 
-    // 繪製 EW 連線（使用調整後的 wave 編號）
-    if (showLines && ewResult.connections.length > 0) {
-      const ewLineData = ewResult.connections.map(conn => ({
-        time: conn.from,
-        value: conn.priceFrom,
-      }))
-      // 添加最後一個點到收盤
-      const lastConn = ewResult.connections[ewResult.connections.length - 1]
-      ewLineData.push({ time: lastConn.to, value: lastConn.priceTo })
+        // 繪製 EW 連線（使用調整後的 wave 編號）
+        if (showLines && ewResult.connections.length > 0) {
+          const ewLineData = ewResult.connections.map(conn => ({
+            time: conn.from,
+            value: conn.priceFrom,
+          }))
+          // 添加最後一個點到收盤
+          const lastConn = ewResult.connections[ewResult.connections.length - 1]
+          ewLineData.push({ time: lastConn.to, value: lastConn.priceTo })
 
-      const ewSeries = chart.addSeries(LineSeries, {
-        color: ewColor,
-        lineWidth: 2,
-        priceLineVisible: false,
-      })
-      ewSeries.setData(ewLineData)
-      ewSeriesRef.current = ewSeries
-    }
+          const ewSeries = chart.addSeries(LineSeries, {
+            color: ewColor,
+            lineWidth: 2,
+            priceLineVisible: false,
+          })
+          ewSeries.setData(ewLineData)
+          if (!controller.signal.aborted) {
+            ewSeriesRef.current = ewSeries
+          }
+        }
 
-    // 繪製 EW 標記（用極端點）
-    if (showLabels && ewResult.waves.length > 0) {
-      // 找出關鍵轉向點（wave > 0 或 wave === 0 當作 A）
-      const labelPoints = ewResult.waves
-        .filter(w => w.wave > 0 || w.wave === 0)
-        .map(w => ({
-          time: w.time,
-          value: w.price,
-        }))
+        // 繪製 EW 標記（用極端點）
+        if (showLabels && ewResult.waves.length > 0) {
+          // 找出關鍵轉向點（wave > 0 或 wave === 0 當作 A）
+          const labelPoints = ewResult.waves
+            .filter(w => w.wave > 0 || w.wave === 0)
+            .map(w => ({
+              time: w.time,
+              value: w.price,
+            }))
 
-      if (labelPoints.length > 0) {
-        const ewLabelSeries = chart.addSeries(LineSeries, {
-          color: ewColor,
-          lineWidth: 0,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        })
-        ewLabelSeries.setData(labelPoints)
-        ewLabelsRef.current = ewLabelSeries
+          if (labelPoints.length > 0) {
+            const ewLabelSeries = chart.addSeries(LineSeries, {
+              color: ewColor,
+              lineWidth: 0,
+              priceLineVisible: false,
+              lastValueVisible: false,
+            })
+            ewLabelSeries.setData(labelPoints)
+            if (!controller.signal.aborted) {
+              ewLabelsRef.current = ewLabelSeries
+            }
+          }
+        }
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          console.warn('[EW] backend ZigZag fetch 失敗, 唔 render:', e)
+        }
       }
-    }
-  }, [indicatorConfig.ElliottWave, indicatorConfig.ZigZag, klineData, chartCreated, currentPeriod, ewUserAdjustments])
+    })()
+    return () => controller.abort()
+  }, [indicatorConfig.ElliottWave, indicatorConfig.ZigZag, klineData, chartCreated, currentPeriod, ewUserAdjustments, stock.code])
 
   // Elliott Wave Markers (wave labels on chart) - 新增 useEffect
   useEffect(() => {

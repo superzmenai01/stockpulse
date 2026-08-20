@@ -213,123 +213,35 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
   return { upper, middle, lower }
 }
 
-// ============ ZigZag Calculation ============
+// ============ ZigZag — Phase 1 Backend Integration (大少 2026-08-20 19:50) ============
+// 凡人話: 刪走 frontend calculateZigZag, 改 fetch /api/algorithms/run?algo=zigzag 拎 verdict
+// 對應 backup: backups/zigzag-frontend-2026-08-20/ElliottWaveTestPage.tsx
 
-function calculateZigZag(klines: KLine[], thresholdPercent: number = 10, period: string = '1d'): Array<{ time: Time; value: number }> {
-  if (klines.length < 2) return []
-
-  const result: Array<{ time: Time; value: number }> = []
-  const threshold = thresholdPercent / 100
-
-  result.push({
-    time: parseTime(klines[0].time, period),
-    value: klines[0].low,
-  })
-
-  let lastSwingHigh = klines[0].high
-  let lastSwingLow = klines[0].low
-  let lastSwingIdx = 0
-  let inUptrend = klines[1].close > klines[0].close
-
-  for (let i = 1; i < klines.length; i++) {
-    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
-    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
-
-    if (inUptrend) {
-      if (klines[i].high > lastSwingHigh) {
-        lastSwingHigh = klines[i].high
-        lastSwingLow = klines[i].low
-        lastSwingIdx = i
-      }
-      if (changeFromHigh <= -threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingHigh,
-        })
-        inUptrend = false
-        lastSwingLow = klines[i].low
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-        break
-      }
-    } else {
-      if (klines[i].low < lastSwingLow) {
-        lastSwingLow = klines[i].low
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-      }
-      if (changeFromLow >= threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingLow,
-        })
-        inUptrend = true
-        lastSwingLow = klines[i].low
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-        break
-      }
-    }
+/**
+ * 凡人話: 拎 backend ZigZag 嘅 async function
+ * 對應 ChartContainer.tsx 嘅 fetchBackendZigZag (ElliottWaveTestPage 獨立 copy, 因為唔 import ChartContainer)
+ */
+async function fetchBackendZigZag(
+  symbol: string,
+  period: string,
+  threshold: number,
+  signal: AbortSignal
+): Promise<Array<{ time: Time; value: number }>> {
+  const url = `/api/algorithms/run?algo=zigzag&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&threshold=${threshold}`;
+  const resp = await fetch(url, { signal });
+  if (!resp.ok) {
+    throw new Error(`Backend ZigZag 拎唔到: ${resp.status} ${resp.statusText}`);
   }
-
-  if (result.length <= 1) return result
-
-  for (let i = lastSwingIdx + 1; i < klines.length; i++) {
-    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh
-    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow
-
-    if (inUptrend) {
-      if (klines[i].high > lastSwingHigh) {
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-      }
-      if (changeFromHigh <= -threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingHigh,
-        })
-        inUptrend = false
-        lastSwingLow = klines[i].low
-        lastSwingIdx = i
-      }
-    } else {
-      if (klines[i].low < lastSwingLow) {
-        lastSwingLow = klines[i].low
-        lastSwingIdx = i
-      }
-      if (changeFromLow >= threshold) {
-        result.push({
-          time: parseTime(klines[lastSwingIdx].time, period),
-          value: lastSwingLow,
-        })
-        inUptrend = true
-        lastSwingHigh = klines[i].high
-        lastSwingIdx = i
-      }
-    }
+  const verdict = await resp.json();
+  if (!verdict.ok || !Array.isArray(verdict.points)) {
+    throw new Error(`Backend ZigZag verdict fail: ${verdict.error || 'unknown'}`);
   }
-
-  const lastTime = parseTime(klines[lastSwingIdx].time, period)
-  if (result.length > 0 && result[result.length - 1].time !== lastTime) {
-    result.push({
-      time: lastTime,
-      value: inUptrend ? lastSwingHigh : lastSwingLow,
-    })
-  }
-
-  const timeMap = new Map<Time, { time: Time; value: number }>()
-  for (const point of result) {
-    timeMap.set(point.time, point)
-  }
-  
-  const filtered: Array<{ time: Time; value: number }> = Array.from(timeMap.values()).sort((a, b) => {
-    if (a.time < b.time) return -1
-    if (a.time > b.time) return 1
-    return 0
-  })
-
-  return filtered
+  return verdict.points.map((p: { date: string; value: number; type: string; index: number }) => ({
+    time: parseTime(p.date, period),
+    value: p.value,
+  }));
 }
+
 
 // ============ Chart Creation ============
 
@@ -613,12 +525,18 @@ export default function ElliottWaveTestPage() {
       setErrorMessage(null)
       dataPeriodRef.current = period
       setKlineData(data.klines)
-      
-      // 計算 Elliott Wave
-      const zigzagPoints = calculateZigZag(data.klines, indicatorConfig.ZigZag.threshold, period)
+
+      // 計算 Elliott Wave — Phase 1 改 fetch backend ZigZag (大少 2026-08-20 19:50)
+      // 凡人話: 拎 stock code (從 URL params 拎), 改 fetch backend /api/algorithms/run?algo=zigzag
+      const urlParams = new URLSearchParams(window.location.search);
+      const stockCode = urlParams.get('symbol') || urlParams.get('code') || 'HK.00700';
+      const controller = new AbortController();
+      const zigzagPoints = await fetchBackendZigZag(
+        stockCode, period, indicatorConfig.ZigZag.threshold, controller.signal
+      );
       const ew = calculateElliottWave(zigzagPoints)
       setEwResult(ew)
-      
+
       // DEBUG: 打印完整 EW 結果
       console.log('[EW Test] === DEBUG START ===')
       console.log('[EW Test] K-lines count:', data.klines.length)
@@ -634,7 +552,7 @@ export default function ElliottWaveTestPage() {
         labels: ew.labels.slice(0, 5).map(l => ({ t: l.text, w: l.wave, p: l.price }))
       }))
       console.log('[EW Test] === DEBUG END ===')
-      
+
       if (candlestickSeriesRef.current && volumeSeriesRef.current && chartRef.current) {
         const candleMap = new Map<string, CandlestickData<Time>>()
         for (const k of data.klines) {
@@ -645,7 +563,7 @@ export default function ElliottWaveTestPage() {
           }
         }
         candlestickSeriesRef.current.setData(Array.from(candleMap.values()))
-        
+
         const volumeMap = new Map<string, HistogramData<Time>>()
         for (const k of data.klines) {
           const t = parseTime(k.time, period)
@@ -773,16 +691,33 @@ export default function ElliottWaveTestPage() {
 
     if (!enabled) return
 
-    const zigzagData = calculateZigZag(klineData, threshold, currentPeriod)
-    if (zigzagData.length === 0) return
+    // Phase 1 改 fetch backend ZigZag (大少 2026-08-20 19:50)
+    const urlParams = new URLSearchParams(window.location.search);
+    const stockCode = urlParams.get('symbol') || urlParams.get('code') || 'HK.00700';
+    const controller = new AbortController()
+    ;(async () => {
+      try {
+        const zigzagData = await fetchBackendZigZag(
+          stockCode, currentPeriod, threshold, controller.signal
+        )
+        if (controller.signal.aborted || zigzagData.length === 0) return
 
-    const zigzagSeries = chart.addSeries(LineSeries, {
-      color: '#FFD700',
-      lineWidth: 1,
-      priceLineVisible: false,
-    })
-    zigzagSeries.setData(zigzagData)
-    zigzagSeriesRef.current = zigzagSeries
+        const zigzagSeries = chart.addSeries(LineSeries, {
+          color: '#FFD700',
+          lineWidth: 1,
+          priceLineVisible: false,
+        })
+        zigzagSeries.setData(zigzagData)
+        if (!controller.signal.aborted) {
+          zigzagSeriesRef.current = zigzagSeries
+        }
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          console.warn('[EW Test ZigZag] backend fetch 失敗, 唔 render:', e)
+        }
+      }
+    })()
+    return () => controller.abort()
   }, [indicatorConfig.ZigZag, klineData, chartCreated, currentPeriod])
 
   // Elliott Wave Connections (lines between waves)
