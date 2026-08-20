@@ -544,7 +544,7 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - `testing-page/index.html` 改 hint text 由「(改完撳「跑算法」應用新 threshold)」改做「(改完即時更新紫色線, 唔使撳跑算法)」
 - Cache bust: ALGO_CACHE_BUST 4.25.0 → 4.26.0, ?v=2.3.80 → 2.3.81
 
-對應 commit: (即將 push, Spec Sync #31)
+對應 commit: `80b9b589` (fix) + `39d0440c` (docs, Spec Sync #31)
 對應 doc: ARCHITECTURE.md §15.23
 
 ### Testing page chart-control layout 永久 rule (Spec Sync #32, 大少 2026-08-20 23:20)
@@ -572,7 +572,7 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - `testing-page/testing-page.css` `.run-status` `margin-top: 12px` 改 `margin-top: 0` + `margin-bottom: 8px` 因為已喺 chart-section 內
 - Cache bust: ALGO_CACHE_BUST 4.26.0 → 4.27.0, ?v=2.3.81 → 2.3.82
 
-對應 commit: (即將 push, Spec Sync #32)
+對應 commit: `3e4474a5` (fix) + `e6f7e35e` (docs, Spec Sync #32)
 對應 doc: ARCHITECTURE.md §15.24
 
 ### Testing page ZigZag threshold 自動調整 (Spec Sync #33, 大少 2026-08-21 00:02)
@@ -611,7 +611,7 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - `testing-page/index.html` 改: head 加 `.multiplier-tooltip` inline style block + `#zigzag-controls` 加「自動/手動」radio + 自動 mode 顯示區 + 手動 mode 顯示區 + 「? 倍數」popup + 隱藏 #zigzag-threshold
 - Cache bust: ALGO_CACHE_BUST 4.27.0 → 4.28.0, ?v=2.3.82 → 2.3.83
 
-對應 commit: (即將 push, Spec Sync #33)
+對應 commit: `faec3898` (feat) + `d475ff1d` (docs, Spec Sync #33)
 對應 doc: ARCHITECTURE.md §15.25
 
 ### Testing page ZigZag lookback 參數 (Spec Sync #34, 大少 2026-08-21 00:24)
@@ -637,7 +637,7 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - `testing-page/index.html` 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣
 - Cache bust: ALGO_CACHE_BUST 4.28.0 → 4.29.0, ?v=2.3.83 → 2.3.84
 
-對應 commit: (即將 push, Spec Sync #34)
+對應 commit: `f30c9e00` (feat) + `c8bdfb07` (docs, Spec Sync #34)
 對應 doc: ARCHITECTURE.md §15.26
 
 ### Testing page ZigZag lookback 永遠顯示 (Spec Sync #35, 大少 2026-08-21 00:31)
@@ -657,8 +657,8 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - `testing-page/testing-page.js` 加 `applyLookbackEditable()` helper (auto 嗰陣 enabled, manual 嗰陣 disabled), 3 個地方 call (init / mode 切 / reset auto)
 - Cache bust: ALGO_CACHE_BUST 4.29.0 → 4.30.0, ?v=2.3.84 → 2.3.85
 
-對應 commit: (即將 push, Spec Sync #35)
-對應 doc: ARCHITECTURE.md §15.27
+對應 commit: `e75fea0b` (fix) + `131eeeb2` (docs, Spec Sync #35, 改寫中) + `2e5d8d1a` (fix) + `74cb80d8` (docs, Spec Sync #36, 改寫 #35)
+對應 doc: ARCHITECTURE.md §15.27 + §15.28
 
 ### Testing page ZigZag lookback 永遠可改 (Spec Sync #36, 大少 2026-08-21 00:38 改寫 #35)
 
@@ -680,7 +680,7 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 
 **教訓 (大少 00:38 教訓)**: 「永遠可改」比「永遠 enable / 永久 enabled」重要, 大少 want config 永遠可改, 唔好為咗 display 用途而 disabled。
 
-對應 commit: (即將 push, Spec Sync #36)
+對應 commit: `2e5d8d1a` (fix) + `74cb80d8` (docs, Spec Sync #36)
 對應 doc: ARCHITECTURE.md §15.28
 
 ### M9 popup 註解全面化 (Spec Sync #17, 大少 2026-08-13 07:23)

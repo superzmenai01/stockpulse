@@ -299,6 +299,14 @@ if existing_history is not None:
 3. Daily Log entry (OpenClaw 自己寫)
 4. Commit + push `./` (你做)
 
+**Spec Sync 進度 (2026-08-20 ~ 2026-08-21)**:
+- #31 (`39d0440c`) — ZigZag threshold slider 即時 re-render — `80b9b589` (fix) + `39d0440c` (docs)
+- #32 (`e6f7e35e`) — ZigZag controls + runStatus 搬到圖表上邊 — `3e4474a5` (fix) + `e6f7e35e` (docs)
+- #33 (`d475ff1d`) — ZigZag threshold 自動調整 (波動率自適應法) — `faec3898` (feat) + `d475ff1d` (docs)
+- #34 (`c8bdfb07`) — ZigZag lookback 參數手動可調 — `f30c9e00` (feat) + `c8bdfb07` (docs)
+- #35 (`131eeeb2`) — Lookback 永遠顯示 (改寫中) — `e75fea0b` (fix) + `131eeeb2` (docs)
+- #36 (`74cb80d8`) — Lookback 永遠可改 (改寫 #35) — `2e5d8d1a` (fix) + `74cb80d8` (docs)
+
 ### Spec Update Mapping (#9664)
 
 | 改咗咩 | 要 update 邊個 doc |
@@ -331,7 +339,7 @@ if existing_history is not None:
 - 改 testing-page input control 之後, grep `getElementById('xxx')` 確認有對應 handler
 - 跟 cache bust self-check 永久 rule (21:24) 一齊: 改 testing-page.js 嗰陣必同步 bump ALGO_CACHE_BUST + ?v= 2 個地方
 
-**對應 commit**: (即將 push, Spec Sync #31)
+**對應 commit**: `80b9b589` (fix) + `39d0440c` (docs, Spec Sync #31)
 **對應 doc**: ARCHITECTURE.md §15.23
 
 ### Testing page chart-control layout 永久 rule (大少 2026-08-20 23:20)
@@ -354,7 +362,7 @@ if existing_history is not None:
 5. `ma-toggle-bar` (MA 線 toggle)
 6. `chart-container` (實際 K 線圖)
 
-**對應 commit**: (即將 push, Spec Sync #32)
+**對應 commit**: `3e4474a5` (fix) + `e6f7e35e` (docs, Spec Sync #32)
 **對應 doc**: ARCHITECTURE.md §15.24
 
 ### Testing page ZigZag threshold 自動調整 永久 rule (大少 2026-08-21 00:02)
@@ -385,7 +393,7 @@ if existing_history is not None:
 - 之後其他 algorithm 加 config (e.g. M2 ATR threshold, M4 RSI period) 都跟呢個 pattern: 自動/手動 切換 + 自動計算 + localStorage + popup
 - 改 testing-page.js 嗰陣同步 bump ALGO_CACHE_BUST + ?v= 2 個地方 (cache bust self-check 永久 rule 21:24)
 
-**對應 commit**: (即將 push, Spec Sync #33)
+**對應 commit**: `faec3898` (feat) + `d475ff1d` (docs, Spec Sync #33)
 **對應 doc**: ARCHITECTURE.md §15.25
 
 ### Testing page ZigZag lookback 參數 永久 rule (大少 2026-08-21 00:24)
@@ -414,7 +422,7 @@ if existing_history is not None:
 - 之後其他 algorithm config 都跟呢個 pattern: 自動/手動 + 額外參數 (lookback 等) + 重置掣 + localStorage + 即時 re-render
 - 改 testing-page.js 嗰陣同步 bump ALGO_CACHE_BUST + ?v= 2 個地方 (cache bust self-check 永久 rule 21:24)
 
-**對應 commit**: (即將 push, Spec Sync #34)
+**對應 commit**: `f30c9e00` (feat) + `c8bdfb07` (docs, Spec Sync #34)
 **對應 doc**: ARCHITECTURE.md §15.26
 
 ### Testing page ZigZag lookback 永遠可改 永久 rule (大少 2026-08-21 00:38 改寫 00:31)
@@ -429,7 +437,7 @@ if existing_history is not None:
 - ✅ 對應 Spec Sync #31 onChange handler pattern (auto + manual 都即時 localStorage 儲存)
 - ✅ 套用: 之後其他 algorithm config 永遠可改 (auto mode 改 trigger 重算, manual mode 改只係儲 settings)
 
-**對應 commit**: (即將 push, Spec Sync #36)
+**對應 commit**: `2e5d8d1a` (fix) + `74cb80d8` (docs, Spec Sync #36)
 **對應 doc**: ARCHITECTURE.md §15.28
 
 ### K-line Cache (永久 rule, 大少 #8602)
