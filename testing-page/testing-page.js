@@ -121,7 +121,8 @@ async function fetchBackendZigZag(symbol, period, threshold) {
 // 大少 2026-08-20 21:30 Phase 5+6 M4 Indicators + M5 VolumePrice 拎走 frontend: ALGO_CACHE_BUST = '4.21.0' (Phase 5+6 combined, 拎走 M4 566 行 + M5 ~993 行 frontend, 換 2 個 fetch backend stub, 8 個 render function verdict.X 改 verdict.meta.X, 永久 rule 一致)
 // 大少 2026-08-20 21:24 Fix commit (補返 Phase 3+4+5+6 漏做嘅 cache bust bump): ALGO_CACHE_BUST = '4.21.1' (Phase 1+2 之後 4 個 phase 嘅 cache bust 從來冇做過, 大少 trigger「Doc 都改好了嗎」發現 spec doc 同 testing page code 唔對齊, 而家一齊補返 3 個 phase 漏做嘅 + 永久 rule 加 self-check: 改 adapter.mjs 之後 commit 之前 grep testing-page.js ALGO_CACHE_BUST + index.html ?v= 確認同步 bump, 唔好再漏做)
 // 大少 2026-08-20 22:08 Phase 10 M8 Decision Engine 拎走 frontend: ALGO_CACHE_BUST = '4.25.0' (frontend decisionEngineAdapter.analyze 拎走 340 行 chain (import bundle + 拎 cache + 拎 M1/zmen + calibrate + applyAdaptiveParams + decide + 9 個 warning 注入), 換 1 個 fetch backend /api/algorithms/run?algo=decision_engine stub, AS-03 進度 10/10 peer algorithm backend done — M1+M2+M3+M4+M5+M6+M7+M8+M9+ZigZag 全部 backend port 完成, 永久 rule self-check 確認: 改 adapter.mjs 之後必同步 bump 2 個地方, Phase 10 跟返冇漏)
-const ALGO_CACHE_BUST = '4.25.0';
+// 大少 2026-08-20 23:10 Bug fix — ZigZag threshold slider 即時 re-render: ALGO_CACHE_BUST = '4.26.0' (testing-page.js 重構 runAlgorithm L785-820 + 抽 refreshZigZagOverlay helper (override lastVerdict.meta + 清舊 ZigZag/extension series + renderChartOverlay 重畫紫色線 + renderDebugPanel 重 update) + 加 #zigzag-threshold input onChange handler (input + change event, debounce 200ms 防拖動 spam, sync value 入 currentOptions, 撳即時 call refreshZigZagOverlay); Bug: 之後 #zigzag-threshold input 完全冇 onChange handler, value 永遠唔入 currentOptions, 紫色線永遠用緊撳跑嗰陣嘅 5%, 違反 2026-08-19 13:03 永久 rule「改動 → 即時 re-render, 唔需要撳跑算法」; 永久 rule: testing page 所有 config input 必須有 onChange handler 同步入 currentOptions + 自動 re-render, 套用 M2/M3/M4 之後 config 全部跟; index.html hint 改「改完即時更新紫色線, 唔使撳跑算法」)
+const ALGO_CACHE_BUST = '4.26.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -779,41 +780,15 @@ async function runAlgorithm() {
 
     // 3.0.1 大少 2026-08-20 19:17 Phase 1 — Backend ZigZag 整合 M1 chart
     // 凡人話: 撳跑完 frontend M1 algorithm 之後, fetch backend /api/algorithms/run?algo=zigzag
-    // 拎 verdict, 將 backend verdict.points 注入 verdict.meta.zigzagPoints override frontend 拎嘅。
-    // 紫色 ZigZag 線 render (L812 嘅 currentAdapter.renderChartOverlay) 用 backend 拎 data。
-    // Fallback: backend 拎唔到就用 frontend 拎嘅, 唔 crash。
+    // 取 verdict, 將 backend verdict.points 注入 verdict.meta.zigzagPoints override frontend 取嘅。
+    // 紫色 ZigZag 線 render (L812 嘅 currentAdapter.renderChartOverlay) 用 backend 取 data。
+    // Fallback: backend 取唔到就用 frontend 取嘅, 唔 crash。
+    // 大少 2026-08-20 23:10 — 重構用 refreshZigZagOverlay helper (同 threshold slider handler 共用, 避免重複)
     if (currentAdapter.id === 'AS-03-MA') {
-      // 凡人話: ZigZag threshold 優先拎 currentOptions.zigzagThreshold (testing page UI control),
-      // 拎唔到用 default 5% (同 adapter.mjs 同 default, 確保 frontend 同 backend 一致)
+      // 凡人話: ZigZag threshold 優先取 currentOptions.zigzagThreshold (testing page UI control),
+      // 取唔到用 default 5% (同 adapter.mjs 同 default, 確保 frontend 同 backend 一致)
       const zigzagThreshold = currentOptions.zigzagThreshold || 5;
-      try {
-        const backendZigZag = await fetchBackendZigZag(code, period, zigzagThreshold);
-        if (backendZigZag.ok && Array.isArray(backendZigZag.points) && backendZigZag.points.length > 0) {
-          // Override verdict.meta.zigzagPoints (紫色 ZigZag 線 render 拎呢個 field, adapter.mjs line 7917)
-          verdict.meta.zigzagPoints = backendZigZag.points;
-          // Override last swing 4 個 field (M1 verdict 都拎呢啲, 改 backend 拎 data)
-          if (backendZigZag.meta) {
-            verdict.meta.lastSwingHigh = backendZigZag.meta.lastSwingHigh;
-            verdict.meta.lastSwingLow = backendZigZag.meta.lastSwingLow;
-            verdict.meta.zigzagThreshold = backendZigZag.meta.threshold;
-            // 大少驗證用: 標記 source 方便大少 confirm
-            verdict.meta.zigzagSource = 'backend (Phase 1 v1.0.0)';
-            verdict.meta.zigzagPointsCount = backendZigZag.meta.points_count;
-          }
-          console.log(
-            `[ZigZag Backend] M1 chart override frontend → ${backendZigZag.points.length} 個 points from backend ` +
-            `(threshold=${zigzagThreshold}%, klines=${backendZigZag.klines_count})`
-          );
-        } else {
-          console.warn(
-            '[ZigZag Backend] verdict.ok=false 或冇 points, fallback 用 frontend 拎嘅:',
-            backendZigZag
-          );
-        }
-      } catch (e) {
-        // 永久 rule: backend 拎唔到 fallback frontend 拎嘅, 唔 crash
-        console.warn('[ZigZag Backend] fetch 失敗, fallback 用 frontend 拎嘅:', e);
-      }
+      await refreshZigZagOverlay(code, period, zigzagThreshold);
     }
 
     // 大少 #11070 — 顯示 user 設定 vs actual (debug 用)
@@ -1051,6 +1026,106 @@ if (zigzagEnabledEl) {
       currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
     }
   });
+}
+
+// 大少 2026-08-20 23:10 — 抽 refreshZigZagOverlay helper 共用畀 runAlgorithm + threshold slider handler
+// 凡人話: 取 backend ZigZag verdict, override lastVerdict.meta, 拎走舊 series, 重 render 紫色線
+// 共用畀: (1) runAlgorithm 之後 (2) threshold slider 即時 re-render
+// 永久 rule: backend 取唔到就 fallback frontend 取嘅, 唔 crash
+async function refreshZigZagOverlay(code, period, threshold) {
+  if (!lastVerdict || !lastKlines || !lastChartRefs || !currentAdapter || !currentAdapter.renderChartOverlay) {
+    return null;
+  }
+  try {
+    const backendZigZag = await fetchBackendZigZag(code, period, threshold);
+    if (!backendZigZag.ok || !Array.isArray(backendZigZag.points) || backendZigZag.points.length === 0) {
+      console.warn(
+        '[ZigZag Backend] verdict.ok=false 或冇 points, fallback 用 frontend 取嘅:',
+        backendZigZag
+      );
+      return null;
+    }
+    // Override lastVerdict.meta (紫色 ZigZag 線 render 取呢個 field, adapter.mjs line 7917)
+    lastVerdict.meta.zigzagPoints = backendZigZag.points;
+    if (backendZigZag.meta) {
+      lastVerdict.meta.lastSwingHigh = backendZigZag.meta.lastSwingHigh;
+      lastVerdict.meta.lastSwingLow = backendZigZag.meta.lastSwingLow;
+      lastVerdict.meta.zigzagThreshold = backendZigZag.meta.threshold;
+      // 大少驗證用: 標記 source 方便大少 confirm
+      lastVerdict.meta.zigzagSource = 'backend (Phase 1 v1.0.0)';
+      lastVerdict.meta.zigzagPointsCount = backendZigZag.meta.points_count;
+    }
+    console.log(
+      `[ZigZag Backend] M1 chart override frontend → ${backendZigZag.points.length} 個 points from backend ` +
+      `(threshold=${threshold}%, klines=${backendZigZag.klines_count})`
+    );
+    // 清舊 ZigZag + close extension series (跟 reRenderZigZagSequence pattern 一樣)
+    ['maV2LineSeries', 'maLineSeries'].forEach(key => {
+      if (lastChartRefs[key]) {
+        if (lastChartRefs[key].zigzag) {
+          try { lastChartRefs.chart.removeSeries(lastChartRefs[key].zigzag); } catch (e) { /* ignore */ }
+          lastChartRefs[key].zigzag = null;
+        }
+        if (lastChartRefs[key].zigzagExtension) {
+          try { lastChartRefs.chart.removeSeries(lastChartRefs[key].zigzagExtension); } catch (e) { /* ignore */ }
+          lastChartRefs[key].zigzagExtension = null;
+        }
+      }
+    });
+    // 清返之前嘅 sequence marker plugin
+    if (lastChartRefs.zigzagSequenceMarkers) {
+      try { lastChartRefs.zigzagSequenceMarkers.setMarkers([]); } catch (e) { /* ignore */ }
+      lastChartRefs.zigzagSequenceMarkers = null;
+    }
+    // 通知 overlay 取新 state (threshold + enabled + sequence)
+    lastChartRefs.zigzagEnabled = zigzagEnabled;
+    lastChartRefs.showZigzagSequence = showZigzagSequence;
+    lastChartRefs.zigzagSequenceMaxCount = zigzagSequenceMaxCount;
+    lastChartRefs.zigzagThreshold = threshold;
+    currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
+    renderDebugPanel(lastChartRefs, lastVerdict, lastKlines);
+    return backendZigZag;
+  } catch (e) {
+    // 永久 rule: backend 取唔到 fallback frontend 取嘅, 唔 crash
+    console.warn('[ZigZag Backend] fetch 失敗, fallback 用 frontend 取嘅:', e);
+    return null;
+  }
+}
+
+// 大少 2026-08-20 23:10 trigger — ZigZag threshold slider 即時 re-render 永久 rule (Bug fix)
+// 凡人話: 改完 threshold 即刻 fetch backend 取新 ZigZag verdict, 重畫紫色線, 唔使再撳「跑算法」
+// 跟 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」一致
+// Bug (大少 23:10): threshold input 之前冇 onChange handler, value 永遠唔入 currentOptions, 紫色線永遠用緊撳跑嗰陣嘅 5%
+// 套用: 之後 M2 / M3 / M4 config 全部跟呢個 pattern (改動 → 即時 re-render, 唔需要撳跑算法)
+const zigzagThresholdEl = document.getElementById('zigzag-threshold');
+if (zigzagThresholdEl) {
+  // 大少開頁嗰陣: 初始 value 同步入 currentOptions (跟 input default value="5" 一致)
+  currentOptions.zigzagThreshold = parseFloat(zigzagThresholdEl.value) || 5;
+  // Debounce 200ms 畀 slider 連環拖動唔好 spam backend fetch
+  let _thresholdDebounce = null;
+  const _onThresholdChange = () => {
+    const v = parseFloat(zigzagThresholdEl.value);
+    // 1-20% 範圍 (跟 index.html input min/max 一致), invalid value 唔 trigger fetch
+    if (isNaN(v) || v < 1 || v > 20) return;
+    currentOptions.zigzagThreshold = v;
+    clearTimeout(_thresholdDebounce);
+    _thresholdDebounce = setTimeout(async () => {
+      // 撳跑算法之前冇 lastVerdict, 跳過 (大少要撳「跑算法」先 render chart, 呢個只係「改完即時更新」)
+      if (!lastVerdict || !lastKlines || !lastChartRefs) return;
+      const code = currentOptions.code;
+      const period = currentOptions.period || '1d';
+      if (!code) return;
+      runStatus.innerHTML = `⏳ 即時更新 ZigZag (threshold=${v}%)...`;
+      const result = await refreshZigZagOverlay(code, period, v);
+      if (result && result.ok) {
+        runStatus.innerHTML = `✅ ZigZag 即時更新 (threshold=${v}%, ${result.points.length} 個 points)`;
+      } else {
+        runStatus.innerHTML = `⚠️ ZigZag 即時更新失敗, 用緊舊 threshold 嘅紫色線`;
+      }
+    }, 200);
+  };
+  zigzagThresholdEl.addEventListener('input', _onThresholdChange);
+  zigzagThresholdEl.addEventListener('change', _onThresholdChange);
 }
 
 // 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 toggle handler
