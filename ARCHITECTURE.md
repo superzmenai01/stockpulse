@@ -2803,3 +2803,45 @@ M5 VolumePrice:
 ### 對應 commit (Phase 8)
 - `feat(backend-algorithm-m7): Phase 8 — Synthesizer 搬去 Python` — backend port + frontend migration + 11 pytest + 5 隻 stock verify
 - `docs(spec-sync-27): Phase 8 M7 Synthesizer backend framework — 4 份 spec doc 永久 rule 同步` — 本 commit
+
+## §15.23 — ZigZag threshold slider 即時 re-render fix (大少 2026-08-20 23:10 trigger「我轉了%但沒有改變」, Spec Sync #31) [2026-08-20]
+
+### 大少 23:10 trigger「檢查M1 Zigzag Threshold，我轉了%但沒有改變」
+大少 撳跑 M1 (AS-03-MA) algorithm 嗰陣, testing page 紫色 ZigZag 線 render 緊 backend 取嘅 verdict points。但大少之後改 `#zigzag-threshold` 個 number input, 紫色線冇跟住改變。
+
+### Root cause
+`testing-page/index.html:53` 個 `<input id="zigzag-threshold">` 喺 2026-08-19 加入個 ZigZag threshold 控制嗰陣, **完全冇 onChange handler 連去 `currentOptions.zigzagThreshold`**, `testing-page.js` 任何地方都冇 reference 呢個 DOM id。即係:
+
+- 大少改 input 嗰陣, value 永遠冇 sync 入 `currentOptions.zigzagThreshold`
+- 撳跑 M1 嗰陣 (line 788) `currentOptions.zigzagThreshold || 5` 取默認 5 落 backend
+- 紫色線永遠 render 緊撳跑嗰陣 backend 取 5% 嘅 zigzagPoints
+- 違反 2026-08-19 13:03 永久 rule「改動 → 即時 re-render, 唔需要撳跑算法」
+
+### Fix 範圍 (2 個 file)
+- **`testing-page/testing-page.js`**:
+  1. **抽 `refreshZigZagOverlay(code, period, threshold)` helper** — 封裝取 backend ZigZag + override `lastVerdict.meta` + 清舊 ZigZag/extension series + 通知 overlay 拎新 state + `renderChartOverlay` 重畫紫色線 + `renderDebugPanel` 重 update。共用畀 (1) `runAlgorithm` 之後 (2) threshold slider 即時 re-render handler
+  2. **重構 `runAlgorithm` L785-820** 改用 `refreshZigZagOverlay` helper (33 行 inline code 變 3 行 call)
+  3. **加 `#zigzag-threshold` input handler** — `input` + `change` event listener, debounce 200ms 防拖動 spam backend fetch, 同步 value 入 `currentOptions.zigzagThreshold`, 撳即時 call `refreshZigZagOverlay`, `runStatus` 顯示「⏳ 即時更新」/「✅ 即時更新」/「⚠️ 失敗」3 個狀態
+- **`testing-page/index.html`**:
+  1. 改 hint text 由「(改完撳「跑算法」應用新 threshold)」改做「(改完即時更新紫色線, 唔使撳跑算法)」
+
+### Cache bust
+- ALGO_CACHE_BUST 4.25.0 → 4.26.0
+- ?v=2.3.80 → 2.3.81 (testing-page.css + testing-page.js 兩個, 雖然 CSS 冇改但跟 HTML sync)
+
+### 永久 rule 收接 (testing page UX 永久 testing gap 解決)
+- ✅ **Testing page config input 必須有 onChange handler** (永久 rule): 改 input 嗰陣, value 必須 sync 入 `currentOptions` + 自動 re-render 對應 chart overlay, 唔可以等大少再撳「跑算法」先 update
+- ✅ **Config UX 模式 (2026-08-19 13:03) + 呢個 fix 統一**: 改動 → 即時 re-render, 唔需要撳跑算法
+- ✅ **Bug: input 漏 handler 比 silent skip 仲危險** (教訓): 之前大少 default value 5% 啱啱好等於 backend 默認, 紫色線「睇落 work」誤導大少以為 threshold slider 改到嘢, 改 1%/10%/20% 嗰陣先發現完全冇 effect
+- ✅ **套用: 之後 M2 / M3 / M4 / M9 嘅 config input 全部跟呢個 pattern** — 改 input → onChange handler 同步 + 即時 re-render, 唔可以只靠撳「跑算法」先生效
+
+### 凡人話解釋
+> 大少, 個 threshold slider 之前 coding 嗰陣漏咗 onChange handler, 所以無論你點改 % 個 value 都唔會入到「取參數」嗰個袋, 紫色線永遠用緊撳跑嗰陣嘅 5%。
+>
+> 我已經 fix 咗: 改完 threshold 即刻 fetch backend 重取 ZigZag 線, 紫色線即時 update, 唔使再撳「跑算法」, 跟你之前 13:03 講過嘅永久 rule 一致 (Config UX 模式: 自動+手動+自動儲存更新圖表)。
+>
+> 之後 M2 / M3 / M4 等其他 config slider 全部會跟呢個 pattern, 唔會再漏 handler。
+
+### 對應 commit
+- `fix(zigzag-threshold-realtime): ZigZag threshold slider 即時 re-render` — testing-page.js 抽 refreshZigZagOverlay helper + 加 onChange handler + 重構 runAlgorithm + testing-page/index.html hint 改 + cache bust 4.25.0 → 4.26.0 / ?v=2.3.80 → 2.3.81 — 本 commit
+- (Phase 9+10 §15 段未加, 跟返 Spec Sync #29 + #30 commit 結構, Phase 9+10 §15 段留待下次 Spec Sync trigger keyword 「更新Stockpluse」時一齊補返)

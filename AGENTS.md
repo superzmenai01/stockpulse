@@ -312,6 +312,28 @@ if existing_history is not None:
 | 新 miniapp feature | README + PROJECT_SPEC + ARCHITECTURE |
 | 新 algorithm 流程改動 | ALGORITHM_SPECS + ARCHITECTURE |
 
+### Testing page config input 必須有 onChange handler 永久 rule (大少 2026-08-20 23:10)
+
+**凡人話解釋**: testing page 任何 config input (number / checkbox / select) 必須有 onChange / onInput handler 連去 `currentOptions[key]` + 自動 re-render 對應 chart overlay, 唔可以等大少再撳「跑算法」先 update。
+
+**Bug 起源 (大少 23:10 trigger)**: `#zigzag-threshold` 個 number input 喺 2026-08-19 加入個 ZigZag threshold 控制嗰陣, 完全冇 onChange handler, 大少改 value 嗰陣永遠唔入 `currentOptions.zigzagThreshold`, 紫色 ZigZag 線永遠 render 緊撳跑嗰陣 backend 取嘅 5%。Default value 5% 啱啱好等於 backend 默認, 紫色線「睇落 work」誤導大少, 改 1%/10%/20% 嗰陣先發現完全冇 effect。
+
+**永久 rule**:
+- ✅ Testing page 所有 config input (number / checkbox / select / autocomplete) 必須有 onChange / onInput handler
+- ✅ Handler 必須: (1) sync value 入 `currentOptions[key]` (2) 即時 re-render 對應 chart overlay (3) 唔需要撳「跑算法」先生效
+- ✅ 跟 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」一致
+- ✅ 改 chart overlay 嗰陣同步 update `renderDebugPanel(...)` (永久 rule 跟 2026-08-19 09:35 一致)
+- ✅ Debounce 200ms 防 slider 連環拖動 spam backend fetch
+- ✅ Fallback: backend 拎唔到 / 失敗嗰陣 continue 用舊 value, 唔 crash, runStatus 顯示「⚠️ 失敗」狀態
+
+**套用**:
+- 之後 M2 / M3 / M4 / M9 嘅 config input 全部跟呢個 pattern
+- 改 testing-page input control 之後, grep `getElementById('xxx')` 確認有對應 handler
+- 跟 cache bust self-check 永久 rule (21:24) 一齊: 改 testing-page.js 嗰陣必同步 bump ALGO_CACHE_BUST + ?v= 2 個地方
+
+**對應 commit**: (即將 push, Spec Sync #31)
+**對應 doc**: ARCHITECTURE.md §15.23
+
 ### K-line Cache (永久 rule, 大少 #8602)
 
 ```python
