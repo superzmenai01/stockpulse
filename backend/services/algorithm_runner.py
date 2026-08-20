@@ -116,6 +116,57 @@ def run_algorithm(
             # 永久 rule: dependency inject 失敗 fallback caller 拎 (唔 crash algorithm)
             logger.warning(f"[Algorithm] M1 ZigZag inject 失敗, 繼續跑 (verdict 會有 null ZigZag): {e}")
 
+    # 大少 2026-08-20 21:30 Phase 8 — M7 Synthesizer 拎 M1-M6 全部 module verdict 做綜合判定
+    # 凡人話: 跑 Synthesizer 之前, 自動跑 M1-M6 拎 verdict 然後轉做 standard verdict interface (state / confidence / base_weight / max_drawdown_estimate / rules_fired) inject 落 options
+    # 永久 rule: Synthesizer algorithm 唔可以直接 fetch K 線跑 M1-M6, 由 runner 統一 inject
+    if algo_name == "synthesizer":
+        # 6 個 upstream algo (對應 module_id)
+        upstream_algos = [
+            ("ma_alignment", "ma-alignment", 0.25),
+            ("hl_structure", "hl-structure", 0.15),
+            ("trendline", "trendline", 0.10),
+            ("indicators", "indicators", 0.10),
+            ("volume_price", "volume", 0.10),
+            ("volatility", "volatility", 0.10),
+        ]
+        module_verdicts: list = []
+        for upstream_name, module_id, base_weight in upstream_algos:
+            try:
+                upstream_algo = get_algorithm(upstream_name)
+                upstream_verdict = upstream_algo.run(klines, {"period": period})
+                if upstream_verdict.ok:
+                    # Extract standard verdict fields from upstream verdict meta
+                    upstream_meta = upstream_verdict.meta
+                    state = upstream_meta.get("state", "SIDEWAYS")
+                    confidence = upstream_meta.get("confidence", 0)
+                    # rules_fired 對齊 frontend 結構: matchedRules (M1-M6 都用 matchedRules)
+                    rules_fired = (
+                        upstream_meta.get("matchedRules")
+                        or upstream_meta.get("matched_rules")
+                        or upstream_meta.get("rules_fired", [])
+                    )
+                    module_verdicts.append({
+                        "module_id": module_id,
+                        "state": state,
+                        "confidence": confidence,
+                        "base_weight": base_weight,
+                        # M7 v1.0.0 拎 static max_drawdown_estimate, M8 Sprint 2 將 adaptive auto-calibrate
+                        "max_drawdown_estimate": 0.05,
+                        "rules_fired": rules_fired if isinstance(rules_fired, list) else [],
+                    })
+                    logger.info(
+                        f"[Algorithm] M7 inject {module_id}: state={state} conf={confidence} "
+                        f"rules={len(module_verdicts[-1]['rules_fired'])}"
+                    )
+            except Exception as e:
+                # 永久 rule: dependency inject 失敗 fallback caller 拎 (唔 crash synth, synth verdict 少 1 個 module)
+                logger.warning(
+                    f"[Algorithm] M7 upstream {upstream_name} inject 失敗, 繼續跑 "
+                    f"(synth verdict 會少 1 個 module): {e}"
+                )
+        options["moduleVerdicts"] = module_verdicts
+        logger.info(f"[Algorithm] M7 Synthesizer 拎 {len(module_verdicts)} 個 module verdict")
+
     logger.info(
         f"[Algorithm] Running {algo_name} v{algo.version} on {symbol} {period} "
         f"({len(klines)} klines, options={options})"

@@ -20,7 +20,7 @@ Framework contract:
 from .base import Algorithm, Verdict, KLine
 from .registry import register, get_algorithm, list_algorithms
 
-# Import algorithms 觸發 register (zigzag 係第一個, M1 ma_alignment 係第二個, M2 hl_structure 係第三個, M3 trendline 係第四個, M4 indicators 係第五個, M5 volume_price 係第六個, M6 volatility 係第七個, 之後加 M7 synthesizer 喺呢度加)
+# Import algorithms 觸發 register (zigzag 係第一個, M1 ma_alignment 係第二個, M2 hl_structure 係第三個, M3 trendline 係第四個, M4 indicators 係第五個, M5 volume_price 係第六個, M6 volatility 係第七個, M7 synthesizer 係第八個, AS-03 peer module 全部 done)
 from .zigzag import ZigZagAlgorithm  # noqa: F401  (import 觸發 register)
 from .ma_alignment import MAAlignmentV2Algorithm  # noqa: F401  (Phase 2 大少 2026-08-20 20:05)
 from .hl_structure import HLStructureAlgorithm  # noqa: F401  (Phase 3 大少 2026-08-20 20:35)
@@ -28,6 +28,7 @@ from .trendline import TrendlineAlgorithm  # noqa: F401  (Phase 4 大少 2026-08
 from .indicators import IndicatorsAlgorithm  # noqa: F401  (Phase 5 大少 2026-08-20 21:10)
 from .volume_price import VolumePriceAlgorithm  # noqa: F401  (Phase 6 大少 2026-08-20 21:30)
 from .volatility import VolatilityAlgorithm  # noqa: F401  (Phase 7 大少 2026-08-20 21:30)
+from .synthesizer import SynthesizerAlgorithm  # noqa: F401  (Phase 8 大少 2026-08-20 21:30)
 
 __all__ = [
     "Algorithm",
@@ -43,4 +44,5 @@ __all__ = [
     "IndicatorsAlgorithm",
     "VolumePriceAlgorithm",
     "VolatilityAlgorithm",
+    "SynthesizerAlgorithm",
 ]
