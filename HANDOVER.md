@@ -26,7 +26,7 @@
 | **路徑** | `~/stockpulse/` |
 | **Git** | github.com/superzmenai01/stockpulse |
 | **Branch** | main |
-| **Latest commit** | ae56fdff (2026-07-29) |
+| **Latest commit** | 0900dd7c (2026-08-20) — M1 之字 metric 對齊 high/low fix |
 | **性質** | 港股即時報價 + K線 + AI algorithm 篩選 web app |
 | **用途** | 大少個人投資工具 |
 
@@ -105,13 +105,27 @@
 | 6. Probability + Risk-Reward | Module 10 + 12（要 trade data）| ⏳ |
 | 7. Bayesian Tuning + 個股化 | 30+ 樣本後 tune | ⏳ |
 
-**AS-03 current state (Stage 0-1 入面)**:
-- Module 1 (ma-alignment) ✅ v0.3.0 — 10 條 rule (A-J), rule-based, additive confidence
+**AS-03 current state (Stage 1 收官, Stage 2 進行中)**:
+- Module 1 (均線系統週期判斷法) ✅ v2.1.0 — 9 個 sub-scenario (到頂/到底轉勢 / 強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌) + 5 個判定優先級 + 凡人話 popup 註解
 - Module 2 (HL Structure) ✅ v0.1.0 — peaks/troughs + 形態 (頭肩頂/雙底)
 - Module 3 (Trendline) ✅ v0.1.0 — 10 條 rule (A-J), 動態 OLS + 觸線 + 真假突破
-- Module 4-7 ⏳ skeleton — Stage 1 跟 Roadmap 排程做
+- Module 4 (動能背馳與衰竭檢測法) ✅ v1.0.0 — 動能 + 背馳 + 衰竭
+- Module 5 (成交量價格行為確認法) ✅ v2.0 — 放量 / 縮量 / 背馳確認
+- Module 6 (波動率與市場結構) ✅ v1.0.0 — 收縮 / 擴張 / 結構判定
+- Module 7 (Synthesizer) ✅ Level 1-6 — 全用上 M1 嘅 14 個 field (動態 base_weight + 3 條 expert rules + 2 條 alignment enrich + 凡人話 reasoning)
+- M8 (Decision Engine) ✅ Chain v1.1 — M7→M9→M8 chain, M8 verdict embed M9 summary sub-section, conditional (cache OK skip M9, 2-4 秒搞掂)
+- M9 (Back Test) ✅ v0.3.0 + popup 註解全面化 — 25 個 keyword 凡人話 + 7 日 cache expiry
+- zmen 均算法 v1.0 ✅ — 雙層 architecture (Layer 1 保留 v0.3.0 10 條 rule + Layer 2 加 M1 9 個 sub-scenario enrich)
+- ZigZag 拎 point ✅ — 5% threshold 過濾 noise + 之字斜率 framework (Stage 1) + 之字 metric 對齊 high/low
 - 完整 workflow + status table: **`docs/research/AS-03-cycle-detection/ROADMAP.md`**
 - 各 module 詳細 spec: `docs/research/AS-03-cycle-detection/MODULE-*.md`
+
+**AS-03 永久 rules 累積 (8-7 至 8-20 大少拍板)**:
+- 2 banner 分類 warning (🔧 system / 📊 stock_state) — Spec Sync #18
+- dataWindowDays 默認 1260 (5 年) — 對齊 M9
+- 之字 = ZigZag 簡稱
+- Config UX 模式: 自動計算 + 可手動調 + 自動儲存 + 自動更新圖表
+- 改 sub-scenario trigger 必須附 ≥ 3 個真實 stock 例子, 大少 verify 先改 code (2026-08-16 19:21 永久 rule)
 
 ---
 
@@ -191,6 +205,39 @@ def _compute_fetch_max_count(period):
 2. **Backend write**: `services.html_sanitizer.sanitize_html()` 用 bleach + post-scrub
 3. **Frontend render**: `DOMPurify.sanitize()` client-side
 
+### G. 2 Banner 分類 warning (Spec Sync #18, 8-14)
+
+- 🔧 **system** (12 個 warning code): verdict 可能唔可信, 唔好落單
+- 📊 **stock_state** (3 個 warning code): verdict 已經準確, 只係狀態提示
+- 2 個 banner 永遠獨立 render, 唔合併
+- 凡人話 impact/fix 永久跟 CATEGORY_DISPLAY template
+
+### H. dataWindowDays 默認 1260 (5 年, 8-14)
+
+- Testing page 永遠用 5 年 K 線 (1260 日), 唔再用 100 日默認
+- 對齊 M9 設定
+- 對短-history 股票 (新上市), user 自行調小 dataWindowDays
+
+### I. 之字 = ZigZag 簡稱 + Config UX 模式 (8-19)
+
+- 「之字」= ZigZag 紫色 line, 5% threshold
+- Config UX 模式: 自動計算 (預設) + 可手動調 + 自動儲存 (localStorage) + 自動更新圖表
+- 改動 → 即時 re-render, 唔需要撳跑算法
+- 手動 mode 有「重置為自動」按鈕
+
+### J. Algorithm sub-scenario 改動 必須人手 review (8-16)
+
+- 改 algorithm sub-scenario trigger / 定義: 唔好 auto-implement, 逐條人手 review
+- 步驟: (1) 大少拎出 sub-scenario (2) 大少睇 ≥ 3 個真實 stock 例子 confirm trigger (3) OK 先加入 (4) 全部確認一次過改 code (5) Spec Sync + commit + push
+- 凡人話解釋 / bug fix / debug query: 跟舊 rule (Mavis 自動做 investigation + fix + spec sync)
+- 對應: 改 sub-scenario trigger 必須附 ≥ 3 個真實 stock 例子
+
+### K. HANDOVER.md 永久 rule 同步 (8-20, 本 commit 加返)
+
+- MiniMax Code 完成 StockPulse feature → Update ARCHITECTURE.md + 呢個 HANDOVER.md (relevant sections) + commit + push
+- 之前 8-7 至 8-20 漏 sync 13 日, 大少 8-20 trigger 補返, 之後每次 commit 必須 sync
+- Spec drift detected → 任何一方 outbound flag 畀大少
+
 ---
 
 ## 7. Critical Pitfalls (避開!)
@@ -231,6 +278,30 @@ def _compute_fetch_max_count(period):
 | 2026-08-07 | **MA chart overlay 完成** — MiniMax Code: testing page 嘅 K 線圖 render MA5/MA10/MA60 三條 trend line (跟股價走嘅斜線, 主流 trading app 風格). 由 `createPriceLine` (水平價線) 改 `addLineSeries` (re-compute MA 歷史 series). `_computeMASeries` skip header `period-1` 點避免 lightweight-charts 將 null 當 0. Function name `renderMAChartOverlay` → `renderChartOverlay` 跟 testing page 嘅 standard contract. 3 commits (`9d77021a` / `ec452c98` / `830927cc`). Tests 12/12 + 19/19 全部 pass. |
 | 2026-08-07 | **Module 2 (高低點結構法) v0.1.0 落地** — MiniMax Code: 18 步 v2.0 algorithm (modules/hl-structure.ts) + config (HLStructureConfig) + tests (12/12 pass) + adapter (`hlStructureAdapter` named export) + testing page integration (REGISTRY entry + `renderChartOverlay` contract) + spec doc (`MODULE-02-HL-STRUCTURE.md`) |
 | 2026-08-07 | **Testing page renderChartOverlay contract** — 通用 contract, 每個 adapter 自己 implement chart overlay (peaks/troughs markers + 箱體線 + 形態預警) |
+| 2026-08-08 | **M1 v2.0 (均線系統週期判斷法) 落地** — MiniMax Code: 從 `zmen均算去` 抽離做 M1, 加 Volume & Slope 擴展. 6 個 modules 命名 01-06 (zmen 排去尾). 4 條 MA chart overlay (MA5/10/60 + zmen MA). |
+| 2026-08-08 | **Module 4-6 v1.0.0 落地** — MiniMax Code: M4 動能背馳與衰竭 + M5 成交量價格行為確認 v2.0 + M6 波動率與市場結構. 全部 spec doc + tests pass + testing page verify. |
+| 2026-08-08 | **4 個 UX 優化** — MiniMax Code: data-summary 排版 + 信心指數解讀 + 凡人話 interpretation + 觀望/策略 box 詳細解說. 大少 #10203 trigger. |
+| 2026-08-09 | **StockPulse Spec Sync #2-#3** — MiniMax Code: 7 modules done + REGISTRY 6 entries + qfq fix + M1 v2.0 spec. ARCHITECTURE.md + 4 份 spec doc 全部 sync. |
+| 2026-08-10 | **dataWindowDays 對齊 backend fix (#11070)** — MiniMax Code: testing page 改 dataWindowDays 改 300 但 chart 仲係 100 日結果 bug 修咗. Backend 1d endpoint start_date = count*1.5 calendar days back, response trim, metadata 顯示「設定 X / 實際 Y」. 永久 rule 應用所有 K 線 endpoint. |
+| 2026-08-10 | **K-line Cache wide-fetch 永久 rule** — MiniMax Code: 1d period 用 max_count=30*365=10950 (30 年 window), caller max_count 只作 trim response. Cold cache wide-fetch fix. ARCHITECTURE §13.1 sync. |
+| 2026-08-11 | **AS-03 Chain v1.0 (M7→M9→M8)** — MiniMax Code: 完整 chain flow, dropdown 排位 07→09→zmen→08→11, M8 verdict 永久有 optimal_params 3 個 field, 「跑完整鏈條」掣. M9 ReferenceError 'postErrors is not defined' 永久 fix. |
+| 2026-08-11 | **AS-03 Chain v1.1 改善 1+2+3** — MiniMax Code: M8 verdict embed M9 summary sub-section, Chain 改 conditional (cache OK skip M9, 2-4 秒搞掂), banner timestamp bug fix. |
+| 2026-08-11 | **Codebase 註解 Phase 4 partial gap fill** — MiniMax Code: M4 analyzeIndicators header 註解 + 6 個 adapter entry header 註解 (maAlignmentV2 / hlStructure / trendline / indicators / volumePrice / volatility). |
+| 2026-08-11 | **Cache save_params edge case fix** — MiniMax Code: 永久 preserve 已有 optimal 同 forward_return_history 即使 cache 過期或 _read_cache fail. |
+| 2026-08-11 | **UX 改善 — 2 個掣 conditional show/hide** — MiniMax Code: 「跑完整鏈條」掣只喺 M8 顯示, 「跑算法」掣喺 M8 隱藏. |
+| 2026-08-13 | **M9 popup 註解全面化** — MiniMax Code: 25 個 M9_TOOLTIPS key 凡人話解釋, 跟 M7/M8 同樣 .m9-verdict-tooltip inline style. Spec Sync #17. |
+| 2026-08-14 | **2 banner 分類 warning (Spec Sync #18)** — MiniMax Code: 🔧 system (verdict 唔可信, 12 個) + 📊 stock_state (verdict 已經準確, 3 個). 2 個獨立 banner 永遠 render. 13 個 warning code impact/fix 永久跟 CATEGORY_DISPLAY template. |
+| 2026-08-14 | **dataWindowDays 默認 1260 (5 年) 永久 rule** — MiniMax Code: 對齊 M9 設定. 移除 M1 v0.3.0 zmen + M9 algorithm 嘅 CONFIG_DEFAULTS trigger. |
+| 2026-08-15 | **M1 v2.1.0 — 9 個 sub-scenario extend** — MiniMax Code: 5 個判定優先級 (到頂/到底轉勢 → 強趨勢 → 弱趨勢 → 過渡形態 → 橫行). 凡人話 popup 註解 + 凡人話 strategy advice + 凡人話 12 步 step-by-step guide. 3 個 warning code (FALLBACK_USED / THRESHOLD_BREACH / CONFLICT_STATE). |
+| 2026-08-15 | **M7 Synthesizer 優化 Level 1-6** — MiniMax Code: 全用上 M1 嘅 14 個 field. M1 動態 base_weight + 3 條 expert rules (TRANSITION + super weight) + 2 條 cross-module alignment enrich + 凡人話 reasoning enrich. |
+| 2026-08-15 | **zmen 均算法 v1.0 雙層 architecture** — MiniMax Code: Layer 1 保留 v0.3.0 10 條 rule + Layer 2 加 M1 9 個 sub-scenario enrich (用 zmen 自己 MA 數據 derive, 唔覆蓋 Layer 1). 凡人話 warning (THRESHOLD_BREACH / CONFLICT_STATE). |
+| 2026-08-16 | **「虛火」concept 錯反饋** — 大少: 太古 00019 7月 81.1 → 8月 101.7 (+25.40%) 判定「虛火」係錯. 真強升都有 70% 日穿. 真正「虛火」應該係: 升緊但每次反彈縮短, 每次下跌加深. M1 v2.2 algorithm 改動 spec doc. |
+| 2026-08-16 | **改 sub-scenario trigger 必須附 ≥ 3 個真實 stock 例子永久 rule** — 大少: 改 algorithm sub-scenario trigger / 定義改動要逐條人手 review. 步驟: 大少拎出 → ≥ 3 隻 stock 例子 verify → OK 加入 → 全部確認一次過改 code → Spec Sync + commit. |
+| 2026-08-19 | **ZigZag 拎 point 落地 (M1 v2.0)** — MiniMax Code: 5% threshold 過濾 noise, 從 ChartContainer.tsx 移植 calculateZigZag 去 algorithms/AS-03-cycle-detection/adapter.mjs. _zigzagNormalizeDate fallback chain fix. 紫色 ZigZag line render. 加深綠色 close extension line. 8-20 7:10 修正之字 metric 對齊 high/low (用 wick extreme 拎 point). |
+| 2026-08-19 | **ZigZag 點順序號碼 marker** — MiniMax Code: 紫色 ZigZag 點加 1, 2, 3, ... 號碼 marker + toggle + spinbutton. 永遠 auto-update debug panel. |
+| 2026-08-19 | **M1 v2.2 Stage 1 之字斜率 framework** — MiniMax Code: calcZigZagSlope 用之字第 1 點 → 第 2 點計算斜率, 拎 dailySlope. Config UX 模式: 自動計算 (預設) + 可手動調 + 自動儲存 (localStorage) + 自動更新圖表. |
+| 2026-08-19 | **Spec Sync #20** — MiniMax Code: ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動. ARCHITECTURE.md 永久 sync. **HANDOVER.md 漏 sync 13 日 (本 commit 補返)**. |
+| 2026-08-20 | **ZigZag Noise 大少提問 (0981 7-13 低 76.65)** — 大少 trigger: 「ZigZag 轉向如果設定當日只能做一次 5% threshold, 可否解決 Noise 嘅問題」. MiniMax Code 確認算法現時 main loop 已經係每個 i 拎 0/1 個 point, 但「補最後一個 point」邏輯 + wick extreme 敏感性可能係 noise 源頭. 等大少揀方案 (A cooldown 1 / B 提高 threshold / C 拎 close 變化 / D hold N 日 confirm). |
 | 2026-08-06 | K-line cache gap-fill fix (3 fixes, 14/14 tests pass) |
 | 2026-08-06 | AS-03 量價 + 斜率 module 開發 + plain language 解讀 |
 | 2026-08-05 | Testing page framework + AS-03 dropdown |
