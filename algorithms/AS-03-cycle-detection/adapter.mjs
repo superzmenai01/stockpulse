@@ -2622,333 +2622,38 @@ export const volumePriceAdapter = {
 // 對應 ts file: algorithms/AS-03-cycle-detection/modules/volatility.ts
 // Spec doc: docs/research/AS-03-cycle-detection/MODULE-06-VOLATILITY.md
 
-const DEFAULT_VOLATILITY_CONFIG = {
-  bbPeriod: 20,
-  bbStd: 2.0,
-  kcPeriod: 20,
-  kcAtrMult: 1.5,
-  atrPeriod: 14,
-  squeezeMinDuration: 3,
-  followThroughDays: 5,
-  vcpTolerancePct: 0.02,
-  vcpMinWindows: 2,
-};
+// ===== analyzeVolatility (M6 — 對應 modules/volatility.ts) — Phase 7 backend fetch stub =====
+// 大少 2026-08-20 21:30 Phase 7 — analyzeVolatility 拎走 frontend, 改 fetch backend
+// 凡人話: M6 algorithm 完整 (~456 行, 12 rules S1-S12) 已經 port 去 backend/algorithms/volatility/algorithm.py
+// frontend 唔再自己跑 M6 algorithm, 改為 fetch backend /api/algorithms/run?algo=volatility
+// 對應 backup: backups/zigzag-frontend-2026-08-20/adapter.mjs
+// 永久 rule: frontend M6 algorithm 拎走, 改 caller inject backend verdict
+// 對應 source: algorithms/AS-03-cycle-detection/modules/volatility.ts (456 行, 1:1 port 去 Python)
 
-export async function analyzeVolatility(klines, options = {}) {
-  const cfg = { ...DEFAULT_VOLATILITY_CONFIG, ...(options.volatilityConfig || {}) };
-  const minData = Math.max(85, cfg.bbPeriod + 50 + cfg.followThroughDays + 10);
-  if (!Array.isArray(klines) || klines.length < minData) {
-    return {
-      moduleId: 'volatility', timeframe: options.period || '1d',
-      state: 'SIDEWAYS', confidence: 0,
-      interpretation: `[Volatility v1.0] 數據不足: need >= ${minData} bars, got ${klines.length}`,
-      evidence: [], warnings: [`數據不足 (${klines.length}/${minData})`],
-      _warnings: [makeWarning('critical', 'M6', 'INSUFFICIENT_DATA',
-        '數據不足以跑波動率分析',
-        {
-          issue: `klines count ${klines?.length || 0} < ${minData} required`,
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: '增加 dataWindowDays 設定 (e.g. count=200)',
-          context: { kline_count: klines?.length || 0, min_required: minData, period: options.period },
-        })],
-      meta: { dataDays: klines.length, configUsed: cfg }, timestamp: Date.now(),
-    };
+/**
+ * 凡人話: 拎 backend M6 algorithm 嘅 verdict
+ * @param klines - K 線 array (frontend 拎到, 傳畀 backend 入面用嚟對齊時間)
+ * @param options - 參數 (symbol, period, dataWindowDays, volatilityConfig, etc)
+ * @returns backend verdict (verdict.meta 拎 state / confidence / squeeze / vcpStructure / atrDecomposition / setupType / matchedRules)
+ */
+async function analyzeVolatility(klines, options = {}) {
+  const BACKEND_URL = (typeof window !== "undefined" && window.BACKEND_URL) || "http://localhost:18792";
+  const symbol = options.code || options.symbol || "UNKNOWN";
+  const period = options.period || "1d";
+  const dataWindowDays = options.dataWindowDays || 100;  // M6 frontend 默認 100 日 (2026-08-07)
+
+  const url = `${BACKEND_URL}/api/algorithms/run?algo=volatility&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&data_window_days=${dataWindowDays}`;
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Backend M6 algorithm 拎唔到: ${resp.status} ${resp.statusText}`);
   }
-
-  const recent = klines.slice(-Math.max(klines.length, minData));
-  const n = recent.length;
-  const lastIdx = n - 1;
-  const lastBar = recent[lastIdx];
-
-  // ATR (Wilder)
-  const atrValue = (() => {
-    if (n < cfg.atrPeriod + 1) return 0;
-    const trs = [];
-    for (let i = 1; i < n; i++) {
-      trs.push(Math.max(
-        recent[i].high - recent[i].low,
-        Math.abs(recent[i].high - recent[i-1].close),
-        Math.abs(recent[i].low - recent[i-1].close),
-      ));
-    }
-    let atr = trs.slice(0, cfg.atrPeriod).reduce((a,b) => a+b, 0) / cfg.atrPeriod;
-    for (let i = cfg.atrPeriod; i < trs.length; i++) {
-      atr = (atr * (cfg.atrPeriod - 1) + trs[i]) / cfg.atrPeriod;
-    }
-    return atr;
-  })();
-
-  // BB / KC
-  const bbUpper = [], bbLower = [], bbSma = [], kcUpper = [], kcLower = [];
-  for (let i = 0; i < n; i++) {
-    const start = Math.max(0, i - cfg.bbPeriod + 1);
-    let sum = 0, count = 0;
-    for (let j = start; j <= i; j++) { sum += recent[j].close; count++; }
-    const sma = count > 0 ? sum / count : 0;
-    let sqSum = 0;
-    for (let j = start; j <= i; j++) sqSum += (recent[j].close - sma) ** 2;
-    const std = count > 0 ? Math.sqrt(sqSum / count) : 0;
-    bbSma.push(sma);
-    bbUpper.push(sma + cfg.bbStd * std);
-    bbLower.push(sma - cfg.bbStd * std);
-    kcUpper.push(sma + cfg.kcAtrMult * atrValue);
-    kcLower.push(sma - cfg.kcAtrMult * atrValue);
+  const verdict = await resp.json();
+  if (!verdict.ok) {
+    throw new Error(`Backend M6 verdict fail: ${verdict.error || "unknown"}`);
   }
-
-  // Squeeze detection
-  const squeezeHistory = [];
-  for (let i = 0; i < n; i++) {
-    const wbb = bbSma[i] > 0 ? (bbUpper[i] - bbLower[i]) / bbSma[i] : 0;
-    const wkc = bbSma[i] > 0 ? (kcUpper[i] - kcLower[i]) / bbSma[i] : 0;
-    squeezeHistory.push(wbb < wkc);
-  }
-  const isSqueeze = squeezeHistory[lastIdx];
-  let squeezeDuration = 0;
-  for (let i = lastIdx; i >= 0; i--) {
-    if (squeezeHistory[i]) squeezeDuration++;
-    else break;
-  }
-
-  // Squeeze quality
-  const squeezeStart = Math.max(0, lastIdx - squeezeDuration + 1);
-  const squeezePrices = recent.slice(squeezeStart, lastIdx + 1).map(k => k.close);
-  const pMean = squeezePrices.length > 0 ? squeezePrices.reduce((a,b) => a+b, 0) / squeezePrices.length : 0;
-  const pStd = squeezePrices.length > 0 ? Math.sqrt(squeezePrices.reduce((acc, p) => acc + (p - pMean)**2, 0) / squeezePrices.length) : 0;
-  const priceCV = pMean > 0 ? pStd / pMean : 0;
-
-  // Volume concentration (5 bins entropy)
-  const minP = squeezePrices.length > 0 ? Math.min(...squeezePrices) : 0;
-  const maxP = squeezePrices.length > 0 ? Math.max(...squeezePrices) : 0;
-  const rangeP = maxP - minP;
-  const volBins = new Array(5).fill(0);
-  if (rangeP > 0) {
-    for (const k of recent.slice(squeezeStart, lastIdx + 1)) {
-      const binIdx = Math.min(4, Math.floor((k.close - minP) / (rangeP / 5)));
-      volBins[binIdx] += k.volume;
-    }
-  }
-  const totalVol = volBins.reduce((a,b) => a+b, 0);
-  let entropy = 0;
-  if (totalVol > 0) {
-    for (const v of volBins) {
-      if (v > 0) { const p = v / totalVol; entropy -= p * Math.log(p); }
-    }
-  }
-  const maxEntropy = Math.log(5);
-  const volumeConcentration = maxEntropy > 0 ? 1 - entropy / maxEntropy : 0;
-  const squeezeTrend = squeezePrices.length > 0 ? (squeezePrices[squeezePrices.length-1] - squeezePrices[0]) / squeezePrices[0] : 0;
-  const isHorizontal = Math.abs(squeezeTrend) < 0.02;
-  let qualityScore = 0;
-  if (isHorizontal) qualityScore += 0.3;
-  qualityScore += volumeConcentration * 0.4;
-  qualityScore += (1 - Math.min(1, priceCV / 0.03)) * 0.3;
-  const isGenuineSqueeze = qualityScore >= 0.6 && squeezeDuration >= cfg.squeezeMinDuration;
-
-  // ATR decomposition (linear regression residual)
-  const lookback = 20;
-  const trendAtr = [], noiseAtr = [];
-  for (let i = lookback - 1; i < n; i++) {
-    const seg = recent.slice(i - lookback + 1, i + 1);
-    const xMean = (lookback - 1) / 2;
-    const yMean = seg.reduce((a, k) => a + k.close, 0) / seg.length;
-    let num = 0, denX = 0;
-    for (let j = 0; j < seg.length; j++) {
-      const dx = j - xMean, dy = seg[j].close - yMean;
-      num += dx * dy; denX += dx * dx;
-    }
-    const slope = denX > 0 ? num / denX : 0;
-    const intercept = yMean - slope * xMean;
-    let trendComp = 0;
-    const residuals = [];
-    for (let j = 0; j < seg.length; j++) {
-      const pred = slope * j + intercept;
-      trendComp += Math.abs(seg[j].high - pred) + Math.abs(seg[j].low - pred);
-      residuals.push(seg[j].close - pred);
-    }
-    trendComp = trendComp / (2 * seg.length);
-    const noiseComp = residuals.reduce((a, r) => a + Math.abs(r), 0) / residuals.length;
-    trendAtr.push(trendComp);
-    noiseAtr.push(noiseComp);
-  }
-  const latestTrendAtr = trendAtr[trendAtr.length - 1] || 0;
-  const latestNoiseAtr = noiseAtr[noiseAtr.length - 1] || 0;
-  const snr = latestNoiseAtr > 0 ? latestTrendAtr / latestNoiseAtr : 10;
-  const regime = snr > 2 ? 'trending' : snr < 0.5 ? 'choppy' : 'balanced';
-
-  // VCP (high/low 3-window extema, simplified)
-  const last20 = recent.slice(-20);
-  const highs = [], lows = [];
-  for (let i = 4; i < last20.length - 4; i++) {
-    let isH = true, isL = true;
-    for (let j = i - 3; j <= i + 3; j++) {
-      if (j === i) continue;
-      if (last20[j].high >= last20[i].high) isH = false;
-      if (last20[j].low <= last20[i].low) isL = false;
-    }
-    if (isH) highs.push(last20[i].high);
-    if (isL) lows.push(last20[i].low);
-  }
-  let highLowPairs = 0;
-  let lastH = Infinity, lastL = -Infinity;
-  const minHL = Math.min(highs.length, lows.length);
-  for (let i = 0; i < minHL; i++) {
-    if (highs[i] < lastH && lows[i] > lastL) {
-      highLowPairs++;
-      lastH = highs[i];
-      lastL = lows[i];
-    }
-  }
-  const vcpDetected = highLowPairs >= cfg.vcpMinWindows;
-  let volTightening = false;
-  if (vcpDetected) {
-    const fh = last20.slice(0, 10).reduce((a, k) => a + k.volume, 0) / 10;
-    const sh = last20.slice(-10).reduce((a, k) => a + k.volume, 0) / 10;
-    volTightening = sh < fh * 0.7;
-  }
-
-  // Follow-through
-  const recentRange = recent.slice(-cfg.followThroughDays);
-  const prevRange = recent.slice(-cfg.followThroughDays * 2, -cfg.followThroughDays);
-  const recentHigh = Math.max(...recentRange.map(k => k.high));
-  const prevHigh = Math.max(...prevRange.map(k => k.high));
-  const isBreakout = recentHigh > prevHigh * 1.01;
-  let followScore = 0, priceProgression = 0;
-  if (isBreakout) {
-    const closes = recentRange.map(k => k.close);
-    const higher = closes.slice(1).filter((c, i) => c > closes[i]).length;
-    priceProgression = closes.length > 1 ? higher / (closes.length - 1) : 0;
-    const avgVol = recentRange.reduce((a, k) => a + k.volume, 0) / recentRange.length;
-    const maxHighIdx = recentRange.findIndex(k => k.high === recentHigh);
-    const breakoutDayVol = maxHighIdx >= 0 ? recentRange[maxHighIdx].volume : 0;
-    const postVols = maxHighIdx >= 0 ? recentRange.slice(maxHighIdx + 1) : [];
-    let volumeDecay = 0;
-    if (breakoutDayVol > avgVol * 1.3) {
-      if (postVols.length >= 2) {
-        const postAvg = postVols.reduce((a, k) => a + k.volume, 0) / postVols.length;
-        volumeDecay = postAvg < breakoutDayVol * 0.8 ? 0.8 : 0.4;
-      } else volumeDecay = 0.4;
-    } else volumeDecay = 0.2;
-    followScore = volumeDecay * 0.5 + priceProgression * 0.5;
-  }
-
-  // Failure mode
-  let failureMode = 'none';
-  if (isSqueeze && latestNoiseAtr > latestTrendAtr * 2) failureMode = 'noisy_squeeze';
-  else if (isBreakout && followScore < 0.4) failureMode = 'weak_follow_through';
-
-  // Entry score (5 setups)
-  const wasSqueeze = lastIdx > 0 && (squeezeHistory[lastIdx - 1] || false);
-  const failureMaxCap = failureMode !== 'none' ? 0.4 : 1.0;
-  let entryScore = 0, setupType = 'no_clear_setup', riskReward = 0;
-  if (!isSqueeze && wasSqueeze && qualityScore >= 0.6 && failureMode !== 'weak_follow_through') {
-    entryScore = 0.95 * failureMaxCap; setupType = 'mtf_squeeze_fire'; riskReward = 3.5;
-  } else if (vcpDetected && volTightening && followScore >= 0.5 && failureMode !== 'noisy_squeeze') {
-    entryScore = 0.9 * failureMaxCap; setupType = 'confirmed_vcp_breakout'; riskReward = 3.0;
-  } else if (isGenuineSqueeze && qualityScore >= 0.75) {
-    entryScore = 0.55 * failureMaxCap; setupType = 'genuine_squeeze_forming';
-  } else if (latestNoiseAtr < latestTrendAtr * 0.5 && regime === 'trending' && followScore >= 0.6) {
-    entryScore = 0.7 * failureMaxCap; setupType = 'clean_trend_expansion'; riskReward = 2.0;
-  } else {
-    entryScore = 0.25; setupType = 'no_clear_setup';
-  }
-
-  // 12 條 rules S1-S12
-  const matchedRules = [];
-  if (isSqueeze) matchedRules.push({ id: 'S1', label: '日線 Squeeze', strength: 'medium' });
-  if (qualityScore >= 0.6) matchedRules.push({ id: 'S2', label: 'Squeeze 質量高', strength: 'medium' });
-  if (squeezeDuration >= cfg.squeezeMinDuration) matchedRules.push({ id: 'S3', label: 'Squeeze 持續夠耐', strength: 'medium' });
-  if (snr > 2) matchedRules.push({ id: 'S4', label: '趨勢 ATR 強', strength: 'strong' });
-  if (snr < 0.5) matchedRules.push({ id: 'S5', label: '噪音 ATR 高', strength: 'strong' });
-  const recent5Atr = noiseAtr.slice(-5).reduce((a,b) => a+b, 0) / 5;
-  const prev5Atr = noiseAtr.slice(-10, -5).reduce((a,b) => a+b, 0) / 5;
-  if (recent5Atr < prev5Atr * 0.85) matchedRules.push({ id: 'S6', label: '結構性收縮', strength: 'medium' });
-  if (recent5Atr > prev5Atr * 1.15) matchedRules.push({ id: 'S7', label: '結構性擴張', strength: 'medium' });
-  if (volumeConcentration > 0.6) matchedRules.push({ id: 'S8', label: '籌碼集中', strength: 'medium' });
-  if (vcpDetected) matchedRules.push({ id: 'S9', label: 'VCP 結構', strength: 'medium' });
-  if (volTightening) matchedRules.push({ id: 'S10', label: 'VCP 量縮確認', strength: 'medium' });
-  if (followScore >= 0.5) matchedRules.push({ id: 'S11', label: '突破跟進', strength: 'medium' });
-  if (failureMode !== 'none') matchedRules.push({ id: 'S12', label: '失敗模式 (' + failureMode + ')', strength: 'strong' });
-
-  // Win probability
-  let baseWin;
-  if (setupType === 'mtf_squeeze_fire') baseWin = 0.75;
-  else if (setupType === 'confirmed_vcp_breakout') baseWin = 0.70;
-  else if (setupType === 'clean_trend_expansion') baseWin = 0.62;
-  else if (setupType === 'genuine_squeeze_forming') baseWin = 0.50;
-  else baseWin = 0.35;
-  if (failureMode === 'weak_follow_through') baseWin -= 0.12;
-  if (failureMode === 'noisy_squeeze') baseWin -= 0.10;
-  const winProbability = Math.min(0.82, Math.max(0.25, baseWin));
-
-  // Cycle derivation
-  let cycle, cycleLabel;
-  if (entryScore >= 0.8) { cycle = 'uptrend'; cycleLabel = '高質量蓄力'; }
-  else if (failureMode !== 'none') { cycle = 'downtrend'; cycleLabel = '假蓄力警告'; }
-  else if (regime === 'choppy') { cycle = 'sideways'; cycleLabel = '亂爆階段'; }
-  else { cycle = 'sideways'; cycleLabel = '蓄力觀察'; }
-  const state = cycle === 'uptrend' ? 'UP' : cycle === 'downtrend' ? 'DOWN' : 'SIDEWAYS';
-
-  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c) — M6 Volatility
-  const m6Warnings = [];
-  // ATR% > 30% outlier (用 atrValue 標準 ATR, 唔用 noiseAtr residual)
-  const currentPrice = recent[recent.length - 1]?.close || 1;
-  const atrPct = currentPrice > 0 ? (atrValue / currentPrice) * 100 : 0;
-  if (atrPct > 30) {
-    m6Warnings.push(makeWarning('warning', 'M6', 'OUTLIER_VALUE',
-      `ATR% > 30% 極端波動 (${atrPct.toFixed(1)}%)`,
-      {
-        issue: `ATR% = ${atrPct.toFixed(1)}% > 30% (極端波動)`,
-        impact: '波動率 verdict 唔可信, squeeze/breakout 判斷可能誤判',
-        fix: '可能係股票特殊事件 (拆股/復牌/業績), 排除該日 kline 或增加 dataWindowDays',
-        context: { atr_pct: atrPct, atr_value: atrValue, current_price: currentPrice },
-      }
-    ));
-  }
-  // FALLBACK_USED: matchedRules 0 個
-  if (matchedRules.length === 0) {
-    m6Warnings.push(makeWarning('warning', 'M6', 'FALLBACK_USED',
-      '波動率 rule 全部 fail, fallback SIDEWAYS',
-      {
-        issue: 'matchedRules.length = 0 (波動率 setup 全部 fail)',
-        impact: 'M6 verdict 默認 SIDEWAYS, 對 M7 影响有限',
-        fix: '正常, 屬於橫行市況; 如果市況明顯波動但 verdict SIDEWAYS, 檢查 kline data',
-        context: { matched_rules: 0, atr_pct: atrPct },
-      }
-    ));
-  }
-
-  return {
-    moduleId: 'volatility', timeframe: options.period || '1d', state, confidence: Math.round(entryScore * 10000) / 10000,
-    interpretation: matchedRules.length > 0 ? matchedRules.map(r => r.label).join('；') : '無明確波動率信號',
-    evidence: matchedRules.map(r => ({ type: 'rule-' + r.id, label: r.label, value: r.id, passed: true })),
-    warnings: m6Warnings,
-    _warnings: m6Warnings,  // 大少 2026-08-11 v1.0.0
-    meta: {
-      cycle, cycleLabel, setupType, riskReward,
-      entryScore: Math.round(entryScore * 10000) / 10000,
-      winProbability: Math.round(winProbability * 10000) / 10000,
-      failureMode,
-      squeeze: { isSqueeze, duration: squeezeDuration, qualityScore: Math.round(qualityScore * 10000) / 10000, isGenuine: isGenuineSqueeze },
-      vcpStructure: { detected: vcpDetected, highLowPairs, volTightening },
-      atrDecomposition: {
-        totalAtr: Math.round(atrValue * 100) / 100,
-        trendAtr: Math.round(latestTrendAtr * 100) / 100,
-        noiseAtr: Math.round(latestNoiseAtr * 100) / 100,
-        snr: Math.round(snr * 100) / 100, regime,
-      },
-      followThrough: { followScore: Math.round(followScore * 100) / 100, volumeDecay: 0, priceProgression: Math.round(priceProgression * 100) / 100 },
-      matchedRules: matchedRules.map(r => r.id),
-      ruleLabels: matchedRules.map(r => r.label),
-      rulesFired: matchedRules.length,
-      atr: Math.round(atrValue * 100) / 100,
-      bbWidth: Math.round((bbUpper[lastIdx] - bbLower[lastIdx]) * 100) / 100,
-      kcWidth: Math.round((kcUpper[lastIdx] - kcLower[lastIdx]) * 100) / 100,
-      priceCV: Math.round(priceCV * 10000) / 10000,
-      volumeConcentration: Math.round(volumeConcentration * 10000) / 10000,
-      configUsed: cfg, dataDays: n,
-    },
-    timestamp: Date.now(),
-  };
+  // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 state / confidence / squeeze / matchedRules / etc)
+  return verdict;
 }
 
 export function renderVolatilityResult(verdict) {
@@ -2965,8 +2670,8 @@ export function renderVolatilityResult(verdict) {
     none: '🟢 無', noisy_squeeze: '🔴 噪音 Squeeze',
     weak_follow_through: '🔴 跟進無力', no_setup: '🟡 冇明確 setup',
   };
-  const color = stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const color = stateColors[verdict.meta.state] || '#666';
+  const stateLabel = stateLabels[verdict.meta.state] || verdict.meta.state;
   const cycle = verdict.meta.cycle || 'sideways';
   const cycleLabel = verdict.meta.cycleLabel || '蓄力觀察';
   const setupType = verdict.meta.setupType || 'no_clear_setup';
@@ -3029,7 +2734,7 @@ export function renderVolatilityResult(verdict) {
         </div>
       </div>
       <div class="interpretation">
-        <strong>📌 波動率結構：</strong>${verdict.interpretation}
+        <strong>📌 波動率結構：</strong>${verdict.meta.interpretation}
         ${setupDetail}
       </div>
       <div class="key-metrics">
