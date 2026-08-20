@@ -2168,591 +2168,38 @@ export function getHelp() {
 //   Step 5 — Confidence derivation (同 ma-alignment pattern)
 //   Step 6 — Signal derivation (D020 — meta.signal = CONFIRM | DISCONFIRM | NEUTRAL)
 
-const DEFAULT_VOLUME_PRICE_CONFIG = {
-  // 大少 2026-08-07 — Module 5 v2.0.0 fields (跟 modules/volume.ts)
-  volumePercentileLookback: 60,
-  vwapPeriod: 20,
-  breakoutConfirmDays: 3,
-  pullbackCorrelationWindow: 10,
-  volumeSurgeMinDays: 2,
-  falseBreakoutRetracePct: 0.5,
-  denseZoneAtrMultiple: 0.5,
-};
+// ===== analyzeVolumePrice (M5 — 對應 modules/volume.ts) — Phase 6 backend fetch stub =====
+// 大少 2026-08-20 21:30 Phase 6 — analyzeVolumePrice 拎走 frontend, 改 fetch backend
+// 凡人話: M5 algorithm 完整 (~688 行, 15 rules V1-V15) 已經 port 去 backend/algorithms/volume_price/algorithm.py
+// frontend 唔再自己跑 M5 algorithm, 改為 fetch backend /api/algorithms/run?algo=volume_price
+// 對應 backup: backups/zigzag-frontend-2026-08-20/adapter.mjs
+// 永久 rule: frontend M5 algorithm 拎走, 改 caller inject backend verdict
+// 對應 source: algorithms/AS-03-cycle-detection/modules/volume.ts (688 行, 1:1 port 去 Python)
 
-// ===== VolumePrice v2.0.0 (M5 — 對應 modules/volume.ts) =====
-//
-// 大少 2026-08-07 overwrite: 對應 modules/volume.ts v2.0.0
-// 跟 ma-alignment / hl-structure / trendline / indicators pattern 一致
-// 跟 docx `05成交量價格行為確認法.docx` v2.0 spec
-// Spec doc: `docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md`
-//
-// 15 條 rule V1-V15 (對應 modules/volume.ts 嘅 MatchedRule detection)
-// 11 個 step algorithm (data validation → basic indicators → volume filter →
-// weighted OBV → breakout detection → pullback health → ATR dynamic bins →
-// rolling volume-price correlation → volume regime → rule engine → output)
-//
-// State 派生: cycle (uptrend / downtrend / sideways) + signal (CONFIRM / DISCONFIRM / NEUTRAL)
-//
-// 用法 (Usage):
-//   await analyzeVolumePrice(klines, { volumePriceConfig: { ... } }) → volumeVerdict
-//
-// Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
-//   - state: 'UP' | 'DOWN' | 'SIDEWAYS'
-//   - confidence: buyTimingScore (0-1)
-//   - meta.cycle: 'uptrend' | 'downtrend' | 'sideways'
-//   - meta.signal: 'CONFIRM' | 'DISCONFIRM' | 'NEUTRAL'
-//   - meta.breakoutStatus: { isBreakout, isConfirmed, pattern, strength, falseBreakoutRisk }
-//   - _warnings: ModuleWarning[] 可能包含 KLINE_MISSING / OUTLIER_VALUE / FALLBACK_USED
-//
-// 對應 module: M5 (VolumePrice)
-// 對應 ts file: algorithms/AS-03-cycle-detection/modules/volume.ts
-// Spec doc: docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md
+/**
+ * 凡人話: 拎 backend M5 algorithm 嘅 verdict
+ * @param klines - K 線 array (frontend 拎到, 傳畀 backend 入面用嚟對齊時間)
+ * @param options - 參數 (symbol, period, dataWindowDays, volumePriceConfig, etc)
+ * @returns backend verdict (verdict.meta 拎 state / confidence / signal / buyTimingScore / winProbability / volumeRegime / breakoutStatus / obvAnalysis / matchedRules)
+ */
+async function analyzeVolumePrice(klines, options = {}) {
+  const BACKEND_URL = (typeof window !== "undefined" && window.BACKEND_URL) || "http://localhost:18792";
+  const symbol = options.code || options.symbol || "UNKNOWN";
+  const period = options.period || "1d";
+  const dataWindowDays = options.dataWindowDays || 100;  // M5 frontend 默認 100 日 (2026-08-07)
 
-export async function analyzeVolumePrice(klines, options = {}) {
-  const cfg = { ...DEFAULT_VOLUME_PRICE_CONFIG, ...(options.volumePriceConfig || {}) };
+  const url = `${BACKEND_URL}/api/algorithms/run?algo=volume_price&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&data_window_days=${dataWindowDays}`;
 
-  // ============ Step 0: 輸入驗證 ============
-  const minData = Math.max(80, cfg.volumePercentileLookback + cfg.vwapPeriod + cfg.breakoutConfirmDays + 20);
-  if (!Array.isArray(klines) || klines.length < minData) {
-    return {
-      moduleId: 'volume',
-      timeframe: options.period || '1d',
-      state: 'SIDEWAYS',
-      confidence: 0,
-      interpretation: `[VolumePrice v2.0] 數據不足: need >= ${minData} bars, got ${klines.length}`,
-      evidence: [],
-      warnings: [`數據不足 (${klines.length}/${minData})`],
-      meta: { dataDays: klines.length, configUsed: cfg },
-      timestamp: Date.now(),
-    };
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Backend M5 algorithm 拎唔到: ${resp.status} ${resp.statusText}`);
   }
-
-  const recent = klines.slice(-Math.max(klines.length, minData));
-  const n = recent.length;
-  const lastIdx = n - 1;
-  const lastBar = recent[lastIdx];
-  const currentPrice = lastBar.close;
-
-  // ============ Step 1: 計算基礎指標 ============
-  // ATR (Wilder 14)
-  const atrValue = computeATR_v2(recent, 14);
-  // VWAP
-  const vwapValue = computeVWAP_v2(recent, cfg.vwapPeriod);
-  // Volume percentile
-  const volPercentile = computeVolumePercentile_v2(recent, cfg.volumePercentileLookback);
-  // Turnover rate
-  const sharesOutstanding = options.sharesOutstanding ?? null;
-  const turnoverRate = sharesOutstanding ? lastBar.volume / sharesOutstanding : null;
-
-  // ============ Step 2: 成交量標準差過濾 ============
-  const vol20 = recent.slice(-20).map(k => k.volume);
-  const volMean20 = vol20.reduce((a, b) => a + b, 0) / 20;
-  const volStd20 = Math.sqrt(vol20.reduce((acc, v) => acc + (v - volMean20) ** 2, 0) / 20);
-  const volZScore = volStd20 > 0 ? (lastBar.volume - volMean20) / volStd20 : 0;
-  const prevVol1 = n >= 3 ? recent[n - 2].volume : 0;
-  const prevVol2 = n >= 3 ? recent[n - 3].volume : 0;
-  const isAnomalySpike = volZScore > 3.0
-    && prevVol1 < volMean20 * 1.5
-    && prevVol2 < volMean20 * 1.5
-    && lastBar.volume >= volMean20 * 5;
-
-  // 連續放量
-  let consecutiveSurge = 0;
-  for (let i = lastIdx; i >= Math.max(0, lastIdx - 9); i--) {
-    if (recent[i].volume / volMean20 >= 1.3) consecutiveSurge++;
-    else break;
+  const verdict = await resp.json();
+  if (!verdict.ok) {
+    throw new Error(`Backend M5 verdict fail: ${verdict.error || "unknown"}`);
   }
-  const isSustainedVolume = consecutiveSurge >= cfg.volumeSurgeMinDays && !isAnomalySpike;
-
-  // ============ Step 3: 加權 OBV (Tanh) ============
-  const weightedObv = [0];
-  for (let i = 1; i < n; i++) {
-    const priceChangePct = (recent[i].close - recent[i - 1].close) / recent[i - 1].close;
-    const weight = Math.tanh(priceChangePct * 10);
-    weightedObv.push(weightedObv[i - 1] + recent[i].volume * weight);
-  }
-  const obvSma20 = computeSMA_v2(weightedObv, 20);
-  const obvTrend = weightedObv[lastIdx] > obvSma20[lastIdx] * 1.03 ? 'rising'
-    : weightedObv[lastIdx] < obvSma20[lastIdx] * 0.97 ? 'falling' : 'flat';
-  const recentCloses20 = recent.slice(-20).map(k => k.close);
-  const recentObv20 = weightedObv.slice(-20);
-  const obvPriceCorr = pearsonCorrelation_v2(recentCloses20, recentObv20);
-
-  // ============ Step 4: 放量突破檢測 ============
-  const last20Closes = recent.slice(-20).map(k => k.close);
-  const recent20High = Math.max(...last20Closes);
-  const last40Closes = recent.slice(-40, -20).map(k => k.close);
-  const prevPeriodHigh = last40Closes.length > 0 ? Math.max(...last40Closes) : recent20High;
-  const breakoutWindow = recent.slice(-(cfg.breakoutConfirmDays + 1)).map(k => k.close);
-  const maxCloseInBreakoutWindow = Math.max(...breakoutWindow);
-  const isPriceBreakout = maxCloseInBreakoutWindow > recent20High * 0.998;
-
-  let breakoutPattern = 'none';
-  let breakoutStrength = 0;
-  let falseBreakoutRisk = 0;
-
-  if (isPriceBreakout && n >= 4) {
-    const baseline7 = recent.slice(n - 9, n - 2).map(k => k.volume);
-    const preAvg = baseline7.reduce((a, b) => a + b, 0) / baseline7.length;
-    const preBreakoutVols = [recent[n - 4].volume, recent[n - 3].volume, recent[n - 2].volume];
-
-    const gradualBuildup = preBreakoutVols.every(v => v > preAvg * 1.1)
-      && lastBar.volume > preAvg * 1.5
-      && !isAnomalySpike;
-    const surgeBreakout = lastBar.volume > preAvg * 2.0 && consecutiveSurge >= 2;
-
-    if (gradualBuildup) {
-      breakoutPattern = 'gradual_buildup';
-      breakoutStrength = 0.9;
-    } else if (surgeBreakout && !isAnomalySpike) {
-      breakoutPattern = 'sustained_surge';
-      breakoutStrength = 0.75;
-    } else if (lastBar.volume > preAvg * 1.5) {
-      breakoutPattern = 'single_spike';
-      breakoutStrength = 0.4;
-      falseBreakoutRisk = 0.4;
-    } else {
-      breakoutPattern = 'low_volume';
-      breakoutStrength = 0.15;
-      falseBreakoutRisk = 0.7;
-    }
-
-    if (breakoutStrength >= 0.4 && n >= cfg.breakoutConfirmDays + 1) {
-      const postBreakoutLows = recent.slice(-cfg.breakoutConfirmDays).map(k => k.low);
-      const postBreakoutLow = Math.min(...postBreakoutLows);
-      const breakoutLevel = recent20High;
-      const range = breakoutLevel - prevPeriodHigh > 0 ? breakoutLevel - prevPeriodHigh : 1;
-      const retracePct = (breakoutLevel - postBreakoutLow) / range;
-      if (retracePct > cfg.falseBreakoutRetracePct) {
-        falseBreakoutRisk += 0.3;
-      }
-    }
-  }
-
-  const isBreakoutConfirmed = breakoutPattern === 'none' ? false
-    : breakoutStrength < 0.4 ? false
-    : n < cfg.breakoutConfirmDays + 1 ? 'pending'
-    : (falseBreakoutRisk < 0.6);
-
-  // ============ Step 5: 回調健康度 ============
-  const last20 = recent.slice(-20);
-  let recentPeakIdx = 0;
-  let recentPeakPrice = last20[0].close;
-  for (let i = 1; i < last20.length; i++) {
-    if (last20[i].close > recentPeakPrice) {
-      recentPeakPrice = last20[i].close;
-      recentPeakIdx = i;
-    }
-  }
-  const recentPeakFullIdx = (n - 20) + recentPeakIdx;
-  const pullbackDays = lastIdx - recentPeakFullIdx;
-  const isPullback = currentPrice < recentPeakPrice * 0.97;
-
-  let pullbackIsHealthy = false;
-  let depthVolCorr = 0;
-  let supportZone = null;
-  let daysToSupport = null;
-
-  if (isPullback && pullbackDays <= 20 && pullbackDays >= 2) {
-    const pullbackSegment = recent.slice(recentPeakFullIdx);
-    const depths = [];
-    const volumes = [];
-    for (const k of pullbackSegment) {
-      depths.push((recentPeakPrice - k.close) / recentPeakPrice);
-      volumes.push(k.volume);
-    }
-    if (depths.length >= 5) {
-      depthVolCorr = pearsonCorrelation_v2(depths, volumes);
-      if (depthVolCorr < -0.3) {
-        pullbackIsHealthy = true;
-        if (currentPrice > vwapValue * 0.99) {
-          supportZone = 'vwap';
-          daysToSupport = 0;
-        } else {
-          supportZone = 'dense_zone_pending';
-          daysToSupport = 0;
-        }
-      } else if (depthVolCorr > 0.3) {
-        pullbackIsHealthy = false;
-      } else {
-        pullbackIsHealthy = 'unclear';
-      }
-    }
-  }
-
-  // ============ Step 6: ATR 動態分箱 ============
-  const binWidth = atrValue > 0 ? atrValue * cfg.denseZoneAtrMultiple : currentPrice * 0.01;
-  const bins = new Map();
-  for (let i = Math.max(0, n - 60); i < n; i++) {
-    const center = Math.round(recent[i].close / binWidth) * binWidth;
-    if (!bins.has(center)) {
-      bins.set(center, { totalVol: 0, high: recent[i].high, low: recent[i].low, count: 0 });
-    }
-    const b = bins.get(center);
-    b.totalVol += recent[i].volume;
-    b.high = Math.max(b.high, recent[i].high);
-    b.low = Math.min(b.low, recent[i].low);
-    b.count++;
-  }
-  const overallAvgVol = recent.slice(-60).reduce((acc, k) => acc + k.volume, 0) / 60;
-  const sortedBins = [...bins.entries()].sort((a, b) => b[1].totalVol - a[1].totalVol).slice(0, 3);
-  const denseZones = [];
-  for (const [center, data] of sortedBins) {
-    const avgVolInBin = data.totalVol / data.count;
-    if (avgVolInBin > overallAvgVol * 1.3) {
-      const zoneType = currentPrice > center + binWidth / 2 ? 'support'
-        : currentPrice < center - binWidth / 2 ? 'resistance' : 'neutral';
-      denseZones.push({
-        priceLevelLow: Math.round(data.low * 100) / 100,
-        priceLevelHigh: Math.round(data.high * 100) / 100,
-        priceLevelMid: Math.round(center * 100) / 100,
-        totalVolume: data.totalVol,
-        volumeRatio: Math.round((avgVolInBin / overallAvgVol) * 100) / 100,
-        type: zoneType,
-        distancePct: Math.round(((currentPrice - center) / center) * 10000) / 10000,
-      });
-      if (zoneType === 'support' && supportZone === 'dense_zone_pending') {
-        supportZone = `dense_zone_${Math.round(center)}`;
-      }
-    }
-  }
-
-  // ============ Step 7: 滾動量价相關 ============
-  const last15 = recent.slice(-15);
-  const priceChanges = [];
-  const volumeChanges = [];
-  for (let i = 1; i < last15.length; i++) {
-    priceChanges.push((last15[i].close - last15[i - 1].close) / last15[i - 1].close);
-    volumeChanges.push(last15[i - 1].volume > 0
-      ? (last15[i].volume - last15[i - 1].volume) / last15[i - 1].volume
-      : 0);
-  }
-  const corrRecent = priceChanges.length >= 10
-    ? pearsonCorrelation_v2(priceChanges.slice(5, 10), volumeChanges.slice(5, 10))
-    : 0;
-  const corrEarlier = priceChanges.length >= 5
-    ? pearsonCorrelation_v2(priceChanges.slice(0, 5), volumeChanges.slice(0, 5))
-    : 0;
-  const correlationDecay = corrEarlier - corrRecent;
-  const divergenceDetected = correlationDecay > 0.4 && Math.abs(corrRecent) < 0.2;
-  const divergenceType = divergenceDetected
-    ? (currentPrice > last15[last15.length - 6].close ? 'bearish_vp' : 'bullish_vp')
-    : undefined;
-
-  // ============ Step 8: 成交量體制 ============
-  const priceTrend10d = (n >= 11 ? (recent[n - 1].close - recent[n - 11].close) / recent[n - 11].close : 0);
-  const priceRising = priceTrend10d > 0.02;
-  const priceFalling = priceTrend10d < -0.02;
-  let accumulationScore = 0;
-  let distributionScore = 0;
-  if (obvTrend === 'rising' && volPercentile < 0.3) accumulationScore += 0.3;
-  if (pullbackIsHealthy === true) accumulationScore += 0.25;
-  if (breakoutPattern === 'gradual_buildup') accumulationScore += 0.25;
-  if (priceRising && obvTrend === 'rising') accumulationScore += 0.2;
-  if (obvTrend === 'falling' && volPercentile > 0.7) distributionScore += 0.3;
-  if (divergenceType === 'bearish_vp') distributionScore += 0.25;
-  if (breakoutPattern === 'single_spike' && falseBreakoutRisk > 0.5) distributionScore += 0.2;
-  if (priceFalling && obvTrend === 'falling') distributionScore += 0.2;
-  const volumeRegime = accumulationScore > distributionScore && accumulationScore > 0.4 ? 'accumulation'
-    : distributionScore > accumulationScore && distributionScore > 0.4 ? 'distribution' : 'neutral';
-
-  // ============ Step 9: 15 條 rule V1-V15 觸發 ============
-  const matchedRules = [];
-  const RULES = [
-    { id: 'V1', label: 'ATR 波動充足', strength: 'weak' },
-    { id: 'V2', label: 'VWAP 支撐', strength: 'weak' },
-    { id: 'V3', label: '成交量百分位正常', strength: 'weak' },
-    { id: 'V4', label: '連續堆量', strength: 'medium' },
-    { id: 'V5', label: '異常爆量過濾', strength: 'strong' },
-    { id: 'V6', label: '加權 OBV 上升', strength: 'medium' },
-    { id: 'V7', label: '加權 OBV 下跌', strength: 'medium' },
-    { id: 'V8', label: 'OBV 與價格同向', strength: 'strong' },
-    { id: 'V9', label: '溫和堆量突破', strength: 'strong' },
-    { id: 'V10', label: '放量突破確認', strength: 'strong' },
-    { id: 'V11', label: '縮量突破警告', strength: 'strong' },
-    { id: 'V12', label: '假突破識別', strength: 'strong' },
-    { id: 'V13', label: '健康回調', strength: 'medium' },
-    { id: 'V14', label: '拋售拋壓', strength: 'strong' },
-    { id: 'V15', label: '量价背馳', strength: 'strong' },
-  ];
-  if (atrValue > currentPrice * 0.005) matchedRules.push(RULES[0]);
-  if (currentPrice > vwapValue * 0.99) matchedRules.push(RULES[1]);
-  if (volPercentile >= 0 && volPercentile <= 1) matchedRules.push(RULES[2]);
-  if (isSustainedVolume) matchedRules.push(RULES[3]);
-  if (isAnomalySpike) matchedRules.push(RULES[4]);
-  if (obvTrend === 'rising') matchedRules.push(RULES[5]);
-  if (obvTrend === 'falling') matchedRules.push(RULES[6]);
-  if (obvPriceCorr > 0.5) matchedRules.push(RULES[7]);
-  if (breakoutPattern === 'gradual_buildup') matchedRules.push(RULES[8]);
-  if (breakoutPattern === 'sustained_surge' && isBreakoutConfirmed === true) matchedRules.push(RULES[9]);
-  if (breakoutPattern === 'low_volume' || falseBreakoutRisk > 0.5) matchedRules.push(RULES[10]);
-  if (falseBreakoutRisk > 0.6) matchedRules.push(RULES[11]);
-  if (pullbackIsHealthy === true) matchedRules.push(RULES[12]);
-  if (depthVolCorr > 0.3) matchedRules.push(RULES[13]);
-  if (divergenceDetected) matchedRules.push(RULES[14]);
-
-  // ============ Step 10: 規則引擎 (5 buy + 4 減分) ============
-  let buyTimingScore = 0.3;
-  const buyReasons = [];
-  const falseSignalFlags = [];
-
-  if (breakoutPattern === 'gradual_buildup' && isBreakoutConfirmed === true
-      && obvPriceCorr > 0.5 && !divergenceDetected) {
-    buyTimingScore = 0.9;
-    buyReasons.push('V9 溫和堆量突破確認 + V8 OBV 同步,黃金買點');
-  } else if (pullbackIsHealthy === true && supportZone !== null
-      && volumeRegime === 'accumulation' && obvTrend === 'rising') {
-    buyTimingScore = 0.75;
-    buyReasons.push(`V13 健康回調至 ${supportZone},V6 OBV 資金流入`);
-  } else if (divergenceType === 'bullish_vp' && volPercentile < 0.2 && obvTrend !== 'falling') {
-    buyTimingScore = 0.6;
-    buyReasons.push('V15 拋壓枯竭,試探性買入');
-  } else if (currentPrice > vwapValue * 0.995 && currentPrice < vwapValue * 1.02
-      && volPercentile < 0.5 && obvTrend === 'rising') {
-    buyTimingScore = 0.55;
-    buyReasons.push('V2 VWAP 支撐反彈,量縮');
-  } else {
-    buyReasons.push('暫無明確成交量買入模式');
-  }
-
-  if (falseBreakoutRisk > 0.6) {
-    buyTimingScore *= 0.5;
-    falseSignalFlags.push('high_false_breakout_risk');
-    buyReasons.push('警告:假突破風險極高');
-  }
-  if (divergenceType === 'bearish_vp' && volPercentile > 0.8) {
-    buyTimingScore *= 0.4;
-    falseSignalFlags.push('distribution_with_price_rise');
-    buyReasons.push('警告:放量滯漲,主力可能出貨');
-  }
-  if (isAnomalySpike) {
-    buyTimingScore *= 0.6;
-    falseSignalFlags.push('anomaly_volume_spike');
-    buyReasons.push('警告:單日異常爆量,信號不可靠');
-  }
-  if (obvPriceCorr < -0.3) {
-    buyTimingScore *= 0.7;
-    falseSignalFlags.push('obv_price_divergence');
-    buyReasons.push('警告:OBV 與價格背馳,資金暗中流出');
-  }
-  if (obvTrend === 'falling' && volPercentile > 0.8 && priceTrend10d > 0.02) {
-    buyTimingScore *= 0.5;
-    falseSignalFlags.push('distribution_with_price_rise');
-    buyReasons.push('警告:放量滯漲,主力可能出貨');
-  }
-
-  // ============ Step 11: Signal 推導 ============
-  let signal = 'NEUTRAL';
-  if (volumeRegime === 'distribution' || falseSignalFlags.length >= 2
-      || (obvTrend === 'falling' && volPercentile > 0.7)) {
-    signal = 'DISCONFIRM';
-  } else if (buyTimingScore >= 0.55 && volumeRegime !== 'distribution'
-      && falseSignalFlags.length === 0 && obvTrend !== 'falling') {
-    signal = 'CONFIRM';
-  }
-
-  // ============ Step 12: Cycle 推導 ============
-  const cycle = buyTimingScore >= 0.55 ? 'uptrend'
-    : volumeRegime === 'distribution' ? 'downtrend' : 'sideways';
-  const cycleLabel = buyTimingScore >= 0.55 ? '資金流入'
-    : volumeRegime === 'distribution' ? '資金流出' : '資金觀望';
-  const state = cycle === 'uptrend' ? 'UP'
-    : cycle === 'downtrend' ? 'DOWN' : 'SIDEWAYS';
-
-  // ============ Step 13: 勝率估算 ============
-  let baseWin;
-  if (buyTimingScore >= 0.85) baseWin = 0.68;
-  else if (buyTimingScore >= 0.7) baseWin = 0.60;
-  else if (buyTimingScore >= 0.55) baseWin = 0.52;
-  else baseWin = 0.40;
-  if (falseSignalFlags.length > 0) baseWin -= 0.08 * falseSignalFlags.length;
-  const winProbability = Math.min(0.80, Math.max(0.25, baseWin));
-
-  // ============ Step 14: 組裝輸出 ============
-  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a) — M5 VolumePrice
-  // 警告注入:
-  //   🟡 OUTLIER_VALUE: volume 全部 0 (klines 入面 volume 0)
-  //   🟡 FALLBACK_USED: outstanding_shares = 0 (turnover_rate 計唔到)
-  //   🔴 KLINE_MISSING: klines 為空 (length = 0)
-  const m5Warnings = [];
-  if (!Array.isArray(klines) || klines.length === 0) {
-    m5Warnings.push(makeWarning('critical', 'M5', 'KLINE_MISSING',
-      'klines 為空',
-      {
-        issue: 'klines array 為空或 undefined',
-        impact: 'Verdict 唔可信, 唔好落單',
-        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-        context: { kline_count: klines?.length ?? 0 },
-      }
-    ));
-  } else {
-    const zeroVolCount = klines.filter(k => !k.volume || k.volume === 0).length;
-    if (zeroVolCount === klines.length) {
-      m5Warnings.push(makeWarning('warning', 'M5', 'OUTLIER_VALUE',
-        'volume 全部 0',
-        {
-          issue: `${zeroVolCount}/${klines.length} 條 klines volume 係 0`,
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { zero_volume_count: zeroVolCount, total_count: klines.length },
-        }
-      ));
-    }
-    // 檢 outstanding_shares
-    const outstandingSh = typeof outstanding_shares !== 'undefined' ? outstanding_shares : 0;
-    if (outstandingSh === 0) {
-      m5Warnings.push(makeWarning('warning', 'M5', 'FALLBACK_USED',
-        'outstanding_shares = 0',
-        {
-          issue: 'outstanding_shares 拎唔到, turnover_rate fallback 0',
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: '檢查 Futu get_market_snapshot() 有冇返 outstanding_shares, 美股 / 港股新 IPO 可能拎唔到',
-          context: { outstanding_shares: 0 },
-        }
-      ));
-    }
-  }
-
-  return {
-    moduleId: 'volume',
-    timeframe: options.period || '1d',
-    state,
-    confidence: Math.round(buyTimingScore * 10000) / 10000,
-    interpretation: buyReasons.join('；'),
-    evidence: matchedRules.map(r => ({ type: `rule-${r.id}`, label: r.label, value: r.id, passed: true })),
-    warnings: m5Warnings,  // Backward compat
-    _warnings: m5Warnings,  // 大少 2026-08-11 v1.0.0
-    meta: {
-      cycle,
-      cycleLabel,
-      signal,
-      buyTimingScore: Math.round(buyTimingScore * 10000) / 10000,
-      winProbability: Math.round(winProbability * 10000) / 10000,
-      falseSignalFlags,
-      volumeRegime,
-      accumulationScore: Math.round(accumulationScore * 100) / 100,
-      distributionScore: Math.round(distributionScore * 100) / 100,
-      breakoutStatus: {
-        isBreakout: isPriceBreakout,
-        isConfirmed: isBreakoutConfirmed,
-        pattern: breakoutPattern,
-        strength: Math.round(breakoutStrength * 100) / 100,
-        falseBreakoutRisk: Math.round(falseBreakoutRisk * 100) / 100,
-      },
-      pullbackHealth: {
-        isHealthy: pullbackIsHealthy,
-        depthVolCorrelation: Math.round(depthVolCorr * 10000) / 10000,
-        supportZone,
-        daysToSupport,
-      },
-      vwapAnalysis: {
-        vwapValue: Math.round(vwapValue * 100) / 100,
-        priceVsVwapPct: Math.round(((currentPrice - vwapValue) / vwapValue) * 10000) / 10000,
-        vwapSupportStrength: currentPrice > vwapValue * 1.01 ? 'strong'
-          : currentPrice > vwapValue * 0.99 ? 'testing' : 'broken',
-      },
-      volumePercentile: Math.round(volPercentile * 10000) / 10000,
-      turnoverRate: turnoverRate !== null ? Math.round(turnoverRate * 1000000) / 1000000 : null,
-      denseZones,
-      volumePriceCorrelation: {
-        pearsonRecent: Math.round(corrRecent * 10000) / 10000,
-        pearsonEarlier: Math.round(corrEarlier * 10000) / 10000,
-        correlationDecay: Math.round(correlationDecay * 10000) / 10000,
-        divergenceDetected,
-        divergenceType,
-      },
-      obvAnalysis: {
-        obvTrend,
-        obvPriceCorrelation: Math.round(obvPriceCorr * 10000) / 10000,
-        weightedObvValue: Math.round(weightedObv[lastIdx]),
-      },
-      matchedRules: matchedRules.map(r => r.id),
-      ruleLabels: matchedRules.map(r => r.label),
-      rulesFired: matchedRules.length,
-      atr: Math.round(atrValue * 100) / 100,
-      vwap: Math.round(vwapValue * 100) / 100,
-      consecutiveSurge,
-      isAnomalySpike,
-      configUsed: cfg,
-      dataDays: n,
-    },
-    timestamp: Date.now(),
-  };
-}
-
-// ===== v2.0 helpers (port from modules/volume.ts) =====
-
-function computeATR_v2(klines, period) {
-  if (klines.length < period + 1) return 0;
-  const trs = [];
-  for (let i = 1; i < klines.length; i++) {
-    const tr = Math.max(
-      klines[i].high - klines[i].low,
-      Math.abs(klines[i].high - klines[i - 1].close),
-      Math.abs(klines[i].low - klines[i - 1].close),
-    );
-    trs.push(tr);
-  }
-  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i < trs.length; i++) {
-    atr = (atr * (period - 1) + trs[i]) / period;
-  }
-  return atr;
-}
-
-function computeVWAP_v2(klines, period) {
-  const startIdx = Math.max(0, klines.length - period);
-  let cumPV = 0, cumVol = 0;
-  for (let i = startIdx; i < klines.length; i++) {
-    const typicalPrice = (klines[i].high + klines[i].low + klines[i].close) / 3;
-    cumPV += typicalPrice * klines[i].volume;
-    cumVol += klines[i].volume;
-  }
-  if (cumVol === 0) {
-    const slice = klines.slice(startIdx);
-    return slice.reduce((acc, k) => acc + k.close, 0) / slice.length;
-  }
-  return cumPV / cumVol;
-}
-
-function computeVolumePercentile_v2(klines, lookback) {
-  const startIdx = Math.max(0, klines.length - lookback);
-  const recentVols = klines.slice(startIdx).map(k => k.volume);
-  if (recentVols.length === 0) return 0;
-  const sorted = [...recentVols].sort((a, b) => a - b);
-  const latestVol = recentVols[recentVols.length - 1];
-  const rank = sorted.filter(v => v <= latestVol).length;
-  return rank / sorted.length;
-}
-
-function computeSMA_v2(series, period) {
-  const sma = [];
-  for (let i = 0; i < series.length; i++) {
-    if (i < period - 1) { sma.push(NaN); continue; }
-    let sum = 0;
-    for (let j = i - period + 1; j <= i; j++) sum += series[j];
-    sma.push(sum / period);
-  }
-  return sma;
-}
-
-function pearsonCorrelation_v2(xs, ys) {
-  const n = Math.min(xs.length, ys.length);
-  if (n < 2) return 0;
-  const xSlice = xs.slice(-n);
-  const ySlice = ys.slice(-n);
-  const xMean = xSlice.reduce((a, b) => a + b, 0) / n;
-  const yMean = ySlice.reduce((a, b) => a + b, 0) / n;
-  let num = 0, denX = 0, denY = 0;
-  for (let i = 0; i < n; i++) {
-    const dx = xSlice[i] - xMean;
-    const dy = ySlice[i] - yMean;
-    num += dx * dy;
-    denX += dx * dx;
-    denY += dy * dy;
-  }
-  const den = Math.sqrt(denX * denY);
-  return den === 0 ? 0 : num / den;
+  // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 state / confidence / signal / matchedRules / etc)
+  return verdict;
 }
 
 export function renderVolumeResult(verdict) {
@@ -2769,8 +2216,8 @@ export function renderVolumeResult(verdict) {
     none: '無突破',
   };
 
-  const color = stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
+  const color = stateColors[verdict.meta.state] || '#666';
+  const stateLabel = stateLabels[verdict.meta.state] || verdict.meta.state;
   const signal = verdict.meta.signal || 'NEUTRAL';
   const signalColor = signalColors[signal] || '#faad14';
   const cycle = verdict.meta.cycle || 'sideways';
@@ -2786,7 +2233,7 @@ export function renderVolumeResult(verdict) {
   const falseSignalFlags = verdict.meta.falseSignalFlags || [];
   const matchedRules = verdict.meta.matchedRules || [];
   const rulesFired = verdict.meta.rulesFired || 0;
-  const confidencePct = (verdict.confidence * 100).toFixed(1);
+  const confidencePct = (verdict.meta.confidence * 100).toFixed(1);
   const winProbPct = (winProbability * 100).toFixed(0);
   const buyScorePct = (buyTimingScore * 100).toFixed(0);
 
@@ -2848,7 +2295,7 @@ export function renderVolumeResult(verdict) {
       </div>
 
       <div class="interpretation">
-        <strong>📌 資金判斷：</strong>${verdict.interpretation}
+        <strong>📌 資金判斷：</strong>${verdict.meta.interpretation}
         ${interpretationDetail}
         <p>💡 <strong>Signal 點解咁講</strong>: ${signalExplain}。</p>
       </div>
@@ -4801,584 +4248,50 @@ export const trendlineAdapter = {
 // browser-compatible port)。Indicators.ts 用 TypeScript class,呢度 port 落 pure JS
 // function-based,行為完全一致 (T1-T14 全部 36 assertions pass)。
 
-const DEFAULT_INDICATORS_CONFIG = {
-  lookbackDays: 60,
-  rsiPeriod: 14,
-  macdFast: 12,
-  macdSlow: 26,
-  macdSignal: 9,
-  divergenceTolerance: 0.03,
-  minSwingPct: 0.03,
-  signalThreshold: 0.6,
-};
-
-// ============ Pure-JS port of modules/indicators.ts ============
-
-function _indicatorsRound(n, decimals = 4) {
-  const factor = Math.pow(10, decimals);
-  return Math.round(n * factor) / factor;
-}
-
-function _indicatorsClamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
-}
+// ===== analyzeIndicators (M4 — 對應 modules/indicators.ts) — Phase 5 backend fetch stub =====
+// 大少 2026-08-20 21:10 Phase 5 — analyzeIndicators 拎走 frontend, 改 fetch backend
+// 凡人話: M4 algorithm 完整 (~758 行, RSI + MACD + 背馳 + 衰竭) 已經 port 去 backend/algorithms/indicators/algorithm.py
+// frontend 唔再自己跑 M4 algorithm, 改為 fetch backend /api/algorithms/run?algo=indicators
+// 對應 backup: backups/zigzag-frontend-2026-08-20/adapter.mjs
+// 永久 rule: frontend M4 algorithm 拎走, 改 caller inject backend verdict
+// 對應 source: algorithms/AS-03-cycle-detection/modules/indicators.ts (758 行, 1:1 port 去 Python)
 
 /**
- * Wilder RSI (跟 docx Step 1)
+ * 凡人話: 拎 backend M4 algorithm 嘅 verdict
+ * @param klines - K 線 array (frontend 拎到, 傳畀 backend 入面用嚟對齊時間)
+ * @param options - 參數 (symbol, period, dataWindowDays, indicatorsConfig, etc)
+ * @returns backend verdict (verdict.meta 拎 state / confidence / signal / momentumState / divergence / winProbability / rsiSeries / macdSeries)
  */
-function _indicatorsCalculateRSI(closes, period) {
-  const rsi = [];
-  if (closes.length < period + 1) return rsi;
+async function analyzeIndicators(klines, options = {}) {
+  const BACKEND_URL = (typeof window !== "undefined" && window.BACKEND_URL) || "http://localhost:18792";
+  const symbol = options.code || options.symbol || "UNKNOWN";
+  const period = options.period || "1d";
+  const dataWindowDays = options.dataWindowDays || 100;  // M4 frontend 默認 100 日 (2026-08-07)
 
-  let gainSum = 0;
-  let lossSum = 0;
-  for (let i = 1; i <= period; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff > 0) gainSum += diff;
-    else lossSum += -diff;
+  const url = `${BACKEND_URL}/api/algorithms/run?algo=indicators&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&data_window_days=${dataWindowDays}`;
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Backend M4 algorithm 拎唔到: ${resp.status} ${resp.statusText}`);
   }
-  let avgGain = gainSum / period;
-  let avgLoss = lossSum / period;
-
-  const firstRs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
-  rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + firstRs));
-
-  for (let i = period + 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? -diff : 0;
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
-    if (avgLoss === 0) {
-      rsi.push(100);
-    } else {
-      const rs = avgGain / avgLoss;
-      rsi.push(100 - 100 / (1 + rs));
-    }
+  const verdict = await resp.json();
+  if (!verdict.ok) {
+    throw new Error(`Backend M4 verdict fail: ${verdict.error || "unknown"}`);
   }
-  return rsi;
-}
-
-/**
- * EMA — fix off-by-one (用 array index 直接 assign, ema[period-1] = SMA seed)
- */
-function _indicatorsCalculateEMA(values, period) {
-  const ema = new Array(values.length).fill(0);
-  if (values.length < period) return [];
-  const mult = 2 / (period + 1);
-
-  let sum = 0;
-  for (let i = 0; i < period; i++) sum += values[i];
-  ema[period - 1] = sum / period;
-
-  for (let i = period; i < values.length; i++) {
-    ema[i] = values[i] * mult + ema[i - 1] * (1 - mult);
-  }
-  return ema.slice(period - 1);
-}
-
-/**
- * MACD (12/26/9) — 回返 histogram series
- */
-function _indicatorsCalculateMACD(closes, fast, slow, signal) {
-  const emaFast = _indicatorsCalculateEMA(closes, fast);
-  const emaSlow = _indicatorsCalculateEMA(closes, slow);
-  if (emaFast.length === 0 || emaSlow.length === 0) return [];
-
-  const dif = [];
-  const alignedStart = slow - 1;
-  const emaFastOffset = alignedStart - (fast - 1);
-  for (let i = 0; i < emaSlow.length; i++) {
-    dif.push(emaFast[emaFastOffset + i] - emaSlow[i]);
-  }
-
-  const dea = _indicatorsCalculateEMA(dif, signal);
-  if (dea.length === 0) return [];
-
-  const deaOffset = signal - 1;
-  const histogram = [];
-  for (let i = 0; i < dea.length; i++) {
-    histogram.push(dif[deaOffset + i] - dea[i]);
-  }
-  return histogram;
-}
-
-/**
- * 3-window local extremum detection
- */
-function _indicatorsFindLocalExtrema(series, w) {
-  const peaks = [];
-  const troughs = [];
-  if (series.length < 2 * w + 1) return { peaks, troughs };
-
-  for (let i = w; i < series.length - w; i++) {
-    let isPeak = true;
-    let isTrough = true;
-    for (let j = i - w; j <= i + w; j++) {
-      if (j === i) continue;
-      if (series[j] >= series[i]) isPeak = false;
-      if (series[j] <= series[i]) isTrough = false;
-      if (!isPeak && !isTrough) break;
-    }
-    if (isPeak) peaks.push({ index: i, value: series[i] });
-    else if (isTrough) troughs.push({ index: i, value: series[i] });
-  }
-  return { peaks, troughs };
-}
-
-function _indicatorsFindNearestExtremum(extrema, targetIndex) {
-  if (extrema.length === 0) return null;
-  let nearest = extrema[0];
-  let minDist = Math.abs(extrema[0].index - targetIndex);
-  for (const e of extrema) {
-    const d = Math.abs(e.index - targetIndex);
-    if (d < minDist) {
-      minDist = d;
-      nearest = e;
-    }
-  }
-  return nearest;
-}
-
-function _indicatorsDetectDivergence(priceExtrema, indicatorExtrema, tolerance, minSwing, dates, indicatorName) {
-  const out = [];
-  if (priceExtrema.length < 2 || indicatorExtrema.length === 0) return out;
-
-  const prev = priceExtrema[priceExtrema.length - 2];
-  const curr = priceExtrema[priceExtrema.length - 1];
-
-  const swing = Math.abs(curr.value - prev.value) / prev.value;
-  if (swing < minSwing) return out;
-
-  const prevInd = _indicatorsFindNearestExtremum(indicatorExtrema, prev.index);
-  const currInd = _indicatorsFindNearestExtremum(indicatorExtrema, curr.index);
-  if (!prevInd || !currInd) return out;
-
-  if (curr.value > prev.value * (1 + tolerance) && currInd.value < prevInd.value) {
-    const strength = (prevInd.value - currInd.value) / Math.abs(prevInd.value || 1);
-    out.push({
-      type: 'bearish_divergence',
-      indicator: indicatorName,
-      pricePoint1: prev.value,
-      pricePoint2: curr.value,
-      indicatorPoint1: prevInd.value,
-      indicatorPoint2: currInd.value,
-      strength: _indicatorsClamp(Math.abs(strength), 0, 1),
-      index1: prev.index,
-      index2: curr.index,
-      date1: dates[prev.index] || '',
-      date2: dates[curr.index] || '',
-    });
-  } else if (curr.value < prev.value * (1 - tolerance) && currInd.value > prevInd.value) {
-    const strength = (currInd.value - prevInd.value) / Math.abs(prevInd.value || 1);
-    out.push({
-      type: 'bullish_divergence',
-      indicator: indicatorName,
-      pricePoint1: prev.value,
-      pricePoint2: curr.value,
-      indicatorPoint1: prevInd.value,
-      indicatorPoint2: currInd.value,
-      strength: _indicatorsClamp(Math.abs(strength), 0, 1),
-      index1: prev.index,
-      index2: curr.index,
-      date1: dates[prev.index] || '',
-      date2: dates[curr.index] || '',
-    });
-  }
-  return out;
-}
-
-/**
- * Main algorithm — port 自 modules/indicators.ts
- */
-function _indicatorsDetect(klines, config, symbol, timeframe) {
-  // Step 0
-  const minRequired = Math.max(config.rsiPeriod, config.macdSlow + config.macdSignal) + config.lookbackDays + 10;
-  if (klines.length < minRequired) {
-    return {
-      moduleId: 'indicators',
-      timeframe,
-      state: 'SIDEWAYS',
-      confidence: 0,
-      interpretation: `[動能背馳] 數據不足,需要至少 ${minRequired} 條 K 線,目前 ${klines.length} 條`,
-      evidence: [],
-      warnings: [`數據不足: ${klines.length} < ${minRequired}`],
-      meta: {
-        inputBars: klines.length,
-        minRequired,
-        cycleLabel: '動能中性',
-        divergence: { rsiDivergences: [], macdDivergences: [], totalCount: 0 },
-        momentumState: { rsi: 50, macd: 0, rsiTrend: 'falling', macdTrend: 'falling', macdState: 'bearish_accelerating', isOverbought: false, isOversold: false },
-        signal: { type: 'hold', strength: 0, action: '觀望', reasons: [] },
-        winProbability: 0.5,
-        exhaustionScore: 0,
-        historicalOpportunities: [],
-        adjustmentLog: [],
-        reason: '數據不足',
-        lastDate: '',
-        rsiSeries: [],
-        macdSeries: [],
-      },
-      timestamp: Date.now(),
-    };
-  }
-
-  // Helper: timestamp -> date string
-  const klineDate = (k) => {
-    if (typeof k.timestamp === 'number') {
-      return new Date(k.timestamp).toISOString().split('T')[0];
-    }
-    return String(k.timestamp).split('T')[0].split(' ')[0];
-  };
-
-  const closes = klines.map(k => k.close);
-  const dates = klines.map(k => klineDate(k));
-
-  // Step 1: RSI + MACD
-  const rsiSeries = _indicatorsCalculateRSI(closes, config.rsiPeriod);
-  const macdRaw = _indicatorsCalculateMACD(closes, config.macdFast, config.macdSlow, config.macdSignal);
-  const macdOffset = config.macdSlow + config.macdSignal - 2;
-  const macdSeries = new Array(macdOffset).fill(0).concat(macdRaw);
-
-  const rsiLatest = rsiSeries.length > 0 ? rsiSeries[rsiSeries.length - 1] : 50;
-  const macdLatest = macdSeries.length > 0 ? macdSeries[macdSeries.length - 1] : 0;
-
-  // Step 4: momentum state
-  const rsiTrend = rsiSeries.length >= 6
-    ? (rsiLatest > rsiSeries.slice(-6, -1).reduce((a, b) => a + b, 0) / 5 ? 'rising' : 'falling')
-    : 'falling';
-  const macdTrend = macdSeries.length >= 6
-    ? (macdLatest > macdSeries.slice(-6, -1).reduce((a, b) => a + b, 0) / 5 ? 'rising' : 'falling')
-    : 'falling';
-  const isOverbought = rsiLatest > 70;
-  const isOversold = rsiLatest < 30;
-
-  let macdState;
-  if (macdLatest > 0 && macdTrend === 'rising') macdState = 'bullish_accelerating';
-  else if (macdLatest > 0 && macdTrend === 'falling') macdState = 'bullish_decelerating';
-  else if (macdLatest < 0 && macdTrend === 'falling') macdState = 'bearish_accelerating';
-  else macdState = 'bearish_decelerating';
-
-  // Step 2 + 3: 背馳
-  const extW = 3;
-  const { peaks: pricePeaks, troughs: priceTroughs } = _indicatorsFindLocalExtrema(closes, extW);
-  const { peaks: rsiPeaks, troughs: rsiTroughs } = _indicatorsFindLocalExtrema(rsiSeries, extW);
-  const { peaks: macdPeaks, troughs: macdTroughs } = _indicatorsFindLocalExtrema(macdSeries, extW);
-
-  const rsiDiv = [
-    ..._indicatorsDetectDivergence(pricePeaks, rsiPeaks, config.divergenceTolerance, config.minSwingPct, dates, 'rsi'),
-    ..._indicatorsDetectDivergence(priceTroughs, rsiTroughs, config.divergenceTolerance, config.minSwingPct, dates, 'rsi'),
-  ];
-  const macdDiv = [
-    ..._indicatorsDetectDivergence(pricePeaks, macdPeaks, config.divergenceTolerance, config.minSwingPct, dates, 'macd'),
-    ..._indicatorsDetectDivergence(priceTroughs, macdTroughs, config.divergenceTolerance, config.minSwingPct, dates, 'macd'),
-  ];
-
-  // Step 5: 衰竭分數
-  let exhaustionScore = 0;
-  if (isOverbought) exhaustionScore += 0.3 * (rsiLatest - 70) / 30;
-  else if (isOversold) exhaustionScore += 0.3 * (30 - rsiLatest) / 30;
-
-  const last10MacdAbs = macdSeries.slice(-10).map(Math.abs);
-  const recentMaxMacd = Math.max(...last10MacdAbs);
-  if (recentMaxMacd > 0) {
-    const shrinkRatio = Math.abs(macdLatest) / recentMaxMacd;
-    exhaustionScore += 0.3 * (1 - shrinkRatio);
-  }
-
-  if (rsiDiv.length > 0) {
-    const maxRsiStrength = Math.max(...rsiDiv.map(d => d.strength));
-    exhaustionScore += 0.25 * maxRsiStrength;
-  }
-  if (macdDiv.length > 0) {
-    const maxMacdStrength = Math.max(...macdDiv.map(d => d.strength));
-    exhaustionScore += 0.25 * maxMacdStrength;
-  }
-  exhaustionScore = _indicatorsClamp(exhaustionScore, 0, 1);
-
-  // Step 6: 訊號
-  const allDiv = [...rsiDiv, ...macdDiv];
-  const hasBullDiv = allDiv.some(d => d.type === 'bullish_divergence');
-  const hasBearDiv = allDiv.some(d => d.type === 'bearish_divergence');
-  const signalReasons = [];
-  let bullScore = 0;
-  let bearScore = 0;
-
-  if (hasBullDiv) {
-    bullScore += 0.35;
-    signalReasons.push('出現底背馳,下跌動能衰竭');
-  }
-  if (isOversold && rsiTrend === 'rising') {
-    bullScore += 0.25;
-    signalReasons.push('RSI 超賣區回升');
-  }
-  if (macdLatest > 0 && macdSeries[macdSeries.length - 2] <= 0) {
-    bullScore += 0.25;
-    signalReasons.push('MACD 柱狀體翻正(金叉)');
-  } else if (
-    macdState === 'bearish_decelerating'
-    && macdLatest > macdSeries[macdSeries.length - 2]
-  ) {
-    bullScore += 0.15;
-    signalReasons.push('MACD 下跌動能減弱');
-  }
-  if (klines.length >= 11) {
-    const last10Vols = klines.slice(-11, -1).map(k => k.volume);
-    const avgVol = last10Vols.reduce((a, b) => a + b, 0) / 10;
-    if (klines[klines.length - 1].volume > avgVol * 1.2) {
-      bullScore += 0.15;
-      signalReasons.push('放量確認');
-    }
-  }
-
-  if (hasBearDiv) {
-    bearScore += 0.35;
-    signalReasons.push('出現頂背馳,上升動能衰竭');
-  }
-  if (isOverbought && rsiTrend === 'falling') {
-    bearScore += 0.25;
-    signalReasons.push('RSI 超買區回落');
-  }
-  if (macdLatest < 0 && macdSeries[macdSeries.length - 2] >= 0) {
-    bearScore += 0.25;
-    signalReasons.push('MACD 柱狀體翻負(死叉)');
-  }
-
-  let signalType, signalStrength;
-  if (bullScore >= config.signalThreshold && bullScore > bearScore) {
-    signalType = 'buy';
-    signalStrength = _indicatorsClamp(bullScore, 0, 1);
-  } else if (bearScore >= config.signalThreshold && bearScore > bullScore) {
-    signalType = 'sell';
-    signalStrength = _indicatorsClamp(bearScore, 0, 1);
-  } else {
-    signalType = 'hold';
-    signalStrength = _indicatorsClamp(Math.max(bullScore, bearScore), 0, 1);
-  }
-
-  // Step 7: 勝率
-  let winProbability = 0.5;
-  if (signalType === 'buy') {
-    let base = 0.55;
-    if (hasBullDiv) base += 0.12;
-    if (isOversold) base += 0.08;
-    if (macdState === 'bearish_decelerating') base += 0.05;
-    winProbability = _indicatorsClamp(base, 0, 0.85);
-  } else if (signalType === 'sell') {
-    let base = 0.55;
-    if (hasBearDiv) base += 0.12;
-    if (isOverbought) base += 0.08;
-    winProbability = _indicatorsClamp(base, 0, 0.85);
-  }
-
-  // Step 8: 歷史機會
-  const historicalOpportunities = [];
-  if (klines.length >= 20) {
-    const lookback = Math.min(config.lookbackDays, klines.length - 1);
-    const lastClose = klines[klines.length - 1].close;
-    for (let i = klines.length - lookback; i < klines.length; i++) {
-      if (i < 11) continue;
-      const rsiIdx = i - (klines.length - rsiSeries.length);
-      const rsiVal = rsiSeries[rsiIdx] ?? 50;
-      const macdVal = macdSeries[i] ?? 0;
-      const macdPrev = macdSeries[i - 1] ?? 0;
-      const ma5Start = Math.max(0, i - 5);
-      const ma5Len = Math.min(5, i);
-      const ma5 = klines.slice(ma5Start, i).reduce((s, k) => s + k.close, 0) / ma5Len;
-      if (rsiVal < 35 && macdVal > 0 && macdPrev <= 0 && klines[i].close > ma5) {
-        const futureReturn = (lastClose - klines[i].close) / klines[i].close;
-        if (futureReturn > 0.02) {
-          const dateStr = klineDate(klines[i]);
-          historicalOpportunities.push({
-            date: dateStr,
-            price: _indicatorsRound(klines[i].close, 4),
-            signalStrength: _indicatorsRound(0.6 + (35 - rsiVal) / 50, 4),
-            reason: `RSI 超賣 (${_indicatorsRound(rsiVal, 1)}) + MACD 金叉 + 收 > MA5`,
-            returnToDate: _indicatorsRound(futureReturn, 4),
-            missed: true,
-          });
-        }
-      }
-    }
-    historicalOpportunities.sort((a, b) => b.signalStrength - a.signalStrength);
-    historicalOpportunities.splice(3);  // Top 3
-  }
-
-  // Step 9: 信心
-  let confidence = signalStrength;
-  const divCount = rsiDiv.length + macdDiv.length;
-  if (divCount >= 2) confidence *= 1.15;
-  if (
-    (signalType === 'buy' && exhaustionScore > 0.6)
-    || (signalType === 'sell' && exhaustionScore > 0.6)
-  ) {
-    confidence *= 1.1;
-  }
-  confidence = _indicatorsRound(_indicatorsClamp(confidence, 0, 1), 4);
-
-  // Cycle derivation
-  let cycle, cycleLabel;
-  if (signalType === 'buy') { cycle = 'UP'; cycleLabel = '動能偏多'; }
-  else if (signalType === 'sell') { cycle = 'DOWN'; cycleLabel = '動能偏空'; }
-  else { cycle = 'SIDEWAYS'; cycleLabel = '動能中性'; }
-
-  // Evidence
-  const evidence = [
-    { type: 'rsi', label: 'RSI(14)', value: _indicatorsRound(rsiLatest, 2), threshold: '30 / 70', passed: !isOverbought && !isOversold },
-    { type: 'macd', label: 'MACD 柱狀體', value: _indicatorsRound(macdLatest, 4), threshold: '0', passed: macdLatest > 0 },
-    { type: 'macd-state', label: 'MACD 動能狀態', value: macdState, passed: macdState.includes('bullish') === (cycle === 'UP') },
-    { type: 'rsi-trend', label: 'RSI 5 日趨勢', value: rsiTrend, passed: true },
-    { type: 'divergence', label: '背馳數量', value: rsiDiv.length + macdDiv.length, passed: rsiDiv.length + macdDiv.length > 0 },
-    { type: 'exhaustion', label: '衰竭分數', value: _indicatorsRound(exhaustionScore, 4), threshold: 0.6, passed: exhaustionScore > 0.6 },
-  ];
-
-  // Interpretation
-  const parts = [`動能視角: ${cycleLabel}`];
-  if (signalReasons.length > 0) parts.push(`訊號: ${signalReasons.join('、')}`);
-  if (rsiDiv.length + macdDiv.length > 0) parts.push(`背馳數 ${rsiDiv.length + macdDiv.length} 條`);
-  if (winProbability >= 0.7) parts.push(`勝率估算 ${(winProbability * 100).toFixed(0)}%`);
-
-  return {
-    moduleId: 'indicators',
-    timeframe,
-    state: cycle,
-    confidence,
-    interpretation: parts.join(' / '),
-    evidence,
-    warnings: (() => {
-      // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5c) — M4 Indicators
-      const m4Warnings = [];
-      // RSI 超出 [0, 100] 範圍
-      if (rsiLatest != null && (rsiLatest < 0 || rsiLatest > 100)) {
-        m4Warnings.push(makeWarning('warning', 'M4', 'OUTLIER_VALUE',
-          `RSI 超出 [0, 100] 範圍 (${rsiLatest.toFixed(1)})`,
-          {
-            issue: `rsi = ${rsiLatest.toFixed(1)} (應 [0, 100])`,
-            impact: 'RSI verdict 唔可信, 超買/超賣判斷錯誤',
-            fix: '檢查 RSI 計算邏輯, 可能 kline 有極端值',
-            context: { rsi: rsiLatest, macd: macdLatest },
-          }
-        ));
-      }
-      // MACD 結果 NaN
-      if (macdLatest != null && !isFinite(macdLatest)) {
-        m4Warnings.push(makeWarning('critical', 'M4', 'NAN_RESULT',
-          'MACD 計算結果 NaN',
-          {
-            issue: 'macd 結果係 NaN 或 Infinity',
-            impact: 'Verdict 唔可信, 唔好落單',
-            fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-            context: { macd: macdLatest },
-          }
-        ));
-      }
-      return m4Warnings;
-    })(),
-    _warnings: (() => {
-      const m4Warnings = [];
-      if (rsiLatest != null && (rsiLatest < 0 || rsiLatest > 100)) {
-        m4Warnings.push(makeWarning('warning', 'M4', 'OUTLIER_VALUE',
-          'RSI 超出範圍',
-          { issue: `rsi = ${rsiLatest}`, impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { rsi: rsiLatest } }));
-      }
-      if (macdLatest != null && !isFinite(macdLatest)) {
-        m4Warnings.push(makeWarning('critical', 'M4', 'NAN_RESULT',
-          'MACD NaN',
-          { issue: 'macd NaN', impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { macd: macdLatest } }));
-      }
-      return m4Warnings;
-    })(),
-    meta: {
-      inputBars: klines.length,
-      cycleLabel,
-      divergence: {
-        rsiDivergences: rsiDiv,
-        macdDivergences: macdDiv,
-        totalCount: rsiDiv.length + macdDiv.length,
-      },
-      momentumState: {
-        rsi: _indicatorsRound(rsiLatest, 2),
-        macd: _indicatorsRound(macdLatest, 4),
-        rsiTrend,
-        macdTrend,
-        macdState,
-        isOverbought,
-        isOversold,
-      },
-      signal: {
-        type: signalType,
-        strength: _indicatorsRound(signalStrength, 4),
-        action: signalType === 'buy' ? '買入' : signalType === 'sell' ? '賣出' : '觀望',
-        reasons: signalReasons,
-      },
-      winProbability: _indicatorsRound(winProbability, 4),
-      exhaustionScore: _indicatorsRound(exhaustionScore, 4),
-      historicalOpportunities,
-      adjustmentLog: [],
-      reason: signalReasons.length > 0 ? signalReasons.join('；') : '暫無明確動能訊號',
-      lastDate: dates[dates.length - 1] || '',
-      rsiSeries,
-      macdSeries,
-    },
-    timestamp: Date.now(),
-  };
-}
-
-/**
- * ===== analyzeIndicators (M4 — 對應 modules/indicators.ts) =====
- *
- * 大少 2026-08-07 Stage 1 focus — 動能背馳與衰竭 (睇 RSI 同 MACD)
- * 對應 modules/indicators.ts v1.0.0
- * Spec doc: docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md
- *
- * Algorithm (M4):
- *   1. 計算 RSI (14 日 default, normalized 0-1, raw 0-100)
- *   2. 計算 MACD (12-26-9 default)
- *   3. 識別 RSI 背馳 (頂背馳/底背馳)
- *   4. 識別 MACD 背馳
- *   5. 衍生 cycle state (UP/DOWN/SIDEWAYS/TRANSITION)
- *   6. Historical opportunities (RSI 超賣 + MACD 金叉 + 收 > MA5 過濾)
- *
- * 用法 (Usage):
- *   await analyzeIndicators(klines, { indicatorsConfig: { rsiPeriod: 14 } }) → indicatorsVerdict
- *
- * Output: { state, confidence, interpretation, evidence, meta: { ... }, _warnings }
- *   - state: 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION'
- *   - meta.rsiSeries: array of RSI values
- *   - meta.macdSeries: array of MACD values
- *   - meta.divergence: { rsiDivergences, macdDivergences, totalCount }
- *   - _warnings: ModuleWarning[] 可能包含 OUTLIER_VALUE (RSI > 1) / NAN_RESULT (MACD NaN)
- *
- * 對應 module: M4 (Indicators)
- * 對應 ts file: algorithms/AS-03-cycle-detection/modules/indicators.ts
- * Spec doc: docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md
- */
-export async function analyzeIndicators(klines, options = {}) {
-  const n = klines.length;
-  const dataWindowDays = options.dataWindowDays ?? n;
-  const recent = klines.slice(-Math.min(dataWindowDays, n));
-  const recentN = recent.length;
-
-  const cfg = { ...DEFAULT_INDICATORS_CONFIG, ...(options.indicatorsConfig || {}) };
-  const timeframe = options.period || '1d';
-  const verdict = _indicatorsDetect(recent, cfg, options.symbol || 'TEST', timeframe);
-  verdict.meta = verdict.meta || {};
-  verdict.meta.dataDays = recentN;
-  verdict.meta.configUsed = cfg;
+  // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 state / confidence / signal / rsiSeries / etc)
   return verdict;
 }
 
-// ===== Indicators result renderer =====
 function renderIndicatorsResult(verdict) {
   const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
   const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
-  const color = stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
-  const confidencePct = (verdict.confidence * 100).toFixed(1);
-  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 信號強' : verdict.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
-  const signal = verdict.meta?.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
-  const ms = verdict.meta?.momentumState || {};
-  const div = verdict.meta?.divergence || { totalCount: 0 };
+  const color = stateColors[verdict.meta.state] || '#666';
+  const stateLabel = stateLabels[verdict.meta.state] || verdict.meta.state;
+  const confidencePct = (verdict.meta.confidence * 100).toFixed(1);
+  const confidenceExplain = verdict.meta.confidence >= 0.7 ? '高信心, 信號強' : verdict.meta.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
+  const signal = verdict.meta.meta?.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
+  const ms = verdict.meta.meta?.momentumState || {};
+  const div = verdict.meta.meta?.divergence || { totalCount: 0 };
 
   const actionColor = signal.type === 'buy' ? '#52c41a' : signal.type === 'sell' ? '#ff4d4f' : '#faad14';
   const actionEmoji = signal.type === 'buy' ? '🟢' : signal.type === 'sell' ? '🔴' : '🟡';
@@ -5389,7 +4302,7 @@ function renderIndicatorsResult(verdict) {
 
   // 📌 解讀 + 觀望 box 詳細解說 (plain language)
   const signalStrengthPct = (signal.strength * 100).toFixed(0);
-  const winProbPct = ((verdict.meta?.winProbability || 0.5) * 100).toFixed(0);
+  const winProbPct = ((verdict.meta.meta?.winProbability || 0.5) * 100).toFixed(0);
   const interpretationDetail = signal.type === 'buy' ? `
     <p>📌 <strong>簡單講</strong>: RSI 同 MACD 兩條動能指標都出現買入訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向上。</p>
     <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
@@ -5419,21 +4332,21 @@ function renderIndicatorsResult(verdict) {
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
           <span class="state-label">${stateLabel}</span>
-          <span class="state-code">${verdict.state}</span>
+          <span class="state-code">${verdict.meta.state}</span>
         </div>
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
           <div class="conf-label">信心指數 — ${confidenceExplain}</div>
         </div>
         <div class="data-summary">
-          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.timeframe}</strong></div>
-          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta?.dataDays || 0}</strong></div>
+          <div class="summary-row"><span>時間週期:</span> <strong>${verdict.meta.timeframe}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.meta?.dataDays || 0}</strong></div>
           <div class="summary-row"><span>背馳數:</span> <strong>${div.totalCount}</strong></div>
         </div>
       </div>
 
       <div class="interpretation">
-        <strong>📌 解讀：</strong>${verdict.interpretation}
+        <strong>📌 解讀：</strong>${verdict.meta.interpretation}
         ${interpretationDetail}
       </div>
 
@@ -5466,7 +4379,7 @@ function renderIndicatorsResult(verdict) {
       </div>
 
       <div class="exhaustion-score" style="margin-top: 12px; padding: 8px 12px; background: #f5f5f5; border-radius: 4px;">
-        <strong>💨 衰竭分數:</strong> ${((verdict.meta?.exhaustionScore || 0) * 100).toFixed(0)}%
+        <strong>💨 衰竭分數:</strong> ${((verdict.meta.meta?.exhaustionScore || 0) * 100).toFixed(0)}%
         <small style="color: #888;"> (越高越接近轉勢, >60% 為明顯衰竭)</small>
       </div>
 
@@ -5476,7 +4389,7 @@ function renderIndicatorsResult(verdict) {
 
       <details class="meta-details">
         <summary>🔧 配置（debug 用）</summary>
-        <pre>${JSON.stringify(verdict.meta?.configUsed, null, 2)}</pre>
+        <pre>${JSON.stringify(verdict.meta.meta?.configUsed, null, 2)}</pre>
       </details>
     </div>
   `;
@@ -5485,18 +4398,18 @@ function renderIndicatorsResult(verdict) {
 // ===== 詳細解讀 section (Indicators) =====
 // 大少 #11056 — 永久 rule,所有 Module 都要有詳細解讀/策略建議/點用點睇 (用人話)
 function renderDetailedExplanationIndicators(verdict) {
-  const confidencePct = (verdict.confidence * 100).toFixed(0);
-  const signal = verdict.meta?.signal || {};
-  const ms = verdict.meta?.momentumState || {};
-  const div = verdict.meta?.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
-  const exhaustion = verdict.meta?.exhaustionScore || 0;
-  const winProb = verdict.meta?.winProbability || 0.5;
+  const confidencePct = (verdict.meta.confidence * 100).toFixed(0);
+  const signal = verdict.meta.meta?.signal || {};
+  const ms = verdict.meta.meta?.momentumState || {};
+  const div = verdict.meta.meta?.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
+  const exhaustion = verdict.meta.meta?.exhaustionScore || 0;
+  const winProb = verdict.meta.meta?.winProbability || 0.5;
 
   return `
     <div class="detailed-explanation">
       <h4>📖 詳細解讀 (動能指標 + 背馳 + 衰竭 點解讀)</h4>
       <ul>
-        <li><strong>📌 整體 cycle 點解:</strong> Verdict state = <code>${verdict.state}</code>,代表「<strong>${verdict.interpretation.split(' / ')[0] || '動能中性'}</strong>」。呢個 cycle 係由訊號 (buy/sell/hold) 直接 derive,唔係睇大方向 (嗰個係 M1 MA Alignment 嘅工作)。</li>
+        <li><strong>📌 整體 cycle 點解:</strong> Verdict state = <code>${verdict.meta.state}</code>,代表「<strong>${verdict.meta.interpretation.split(' / ')[0] || '動能中性'}</strong>」。呢個 cycle 係由訊號 (buy/sell/hold) 直接 derive,唔係睇大方向 (嗰個係 M1 MA Alignment 嘅工作)。</li>
         <li><strong>📈 訊號類型 (signal.type):</strong> ${signal.type === 'buy' ? '<span style="color: #52c41a;">🟢 buy (買入)</span>' : signal.type === 'sell' ? '<span style="color: #ff4d4f;">🔴 sell (賣出)</span>' : '<span style="color: #faad14;">🟡 hold (觀望)</span>'}。代表「而家係咪行動嘅時候」, 唔代表「而家係咩 season」(要 M1/M2/M3 確認大方向)。</li>
         <li><strong>💪 訊號強度 (signal.strength):</strong> ${(signal.strength * 100).toFixed(0)}%,加權分數 (0-1)。每個觸發條件加 0.15-0.35 分,超過 0.6 先算明確訊號。詳細 score breakdown 見下面「訊號觸發原因」。</li>
         <li><strong>🎯 信心指數 (confidence):</strong> ${confidencePct}%,由 signal.strength × 多個 boost 計算。背馳數 ≥ 2 會 ×1.15,衰竭分數 > 0.6 會 ×1.10,cap 喺 0-1。信心高 = 訊號強 + 多個條件 corroborate。</li>
@@ -5507,12 +4420,12 @@ function renderDetailedExplanationIndicators(verdict) {
         <li><strong>🔍 背馳 (Divergence) 數量:</strong> ${div.totalCount} 條。頂背馳 = 價格創新高但動能未新高 (跌警),底背馳 = 價格創新低但動能未新低 (升機)。RSI 背馳通常 5-10 日見效,MACD 背馳通常 10-20 日。</li>
         <li><strong>💨 衰竭分數 (exhaustion):</strong> ${(exhaustion * 100).toFixed(0)}%,綜合 RSI 極端 + MACD 柱狀體縮小 + 背馳強度,越高越接近趨勢尾聲。> 60% = 明顯衰竭,通常預示 1-2 週內反轉。</li>
         <li><strong>🎲 勝率估算 (winProbability):</strong> ${(winProb * 100).toFixed(0)}%,基於歷史統計 + 當前條件推算「5 日後升嘅機率」。Base 55%,底背馳 +12%,超賣 +8%,macd_decelerating +5%,cap 85%。</li>
-        <li><strong>📅 數據日數 (dataDays):</strong> ${verdict.meta?.dataDays || 0} 條 K 線,最少 119 條 (14 RSI + 35 MACD + 60 lookback + 10 buffer) 先夠用。</li>
-        <li><strong>⏰ 時間週期 (timeframe):</strong> ${verdict.timeframe}。日線睇中線 (幾週),週線睇長線 (幾月)。</li>
+        <li><strong>📅 數據日數 (dataDays):</strong> ${verdict.meta.meta?.dataDays || 0} 條 K 線,最少 119 條 (14 RSI + 35 MACD + 60 lookback + 10 buffer) 先夠用。</li>
+        <li><strong>⏰ 時間週期 (timeframe):</strong> ${verdict.meta.timeframe}。日線睇中線 (幾週),週線睇長線 (幾月)。</li>
         <li><strong>📜 訊號觸發原因 (signal.reasons):</strong> ${(signal.reasons || []).join('、') || '暫無明確觸發'}。每個 reason 對應一個 score 累加,例如「底背馳 +0.35」「RSI 超賣回升 +0.25」,總分 ≥ 0.6 = 明確 buy。</li>
-        <li><strong>⚠️ 數據不足警告:</strong> ${verdict.warnings && verdict.warnings.length > 0 ? verdict.warnings[0] : '無'}。</li>
+        <li><strong>⚠️ 數據不足警告:</strong> ${verdict.meta.warnings && verdict.meta.warnings.length > 0 ? verdict.meta.warnings[0] : '無'}。</li>
         <li><strong>🔄 統一 cycle 派生規則:</strong> buy → UP, sell → DOWN, hold → SIDEWAYS (TRANSITION 由 Synthesizer 判)。呢個 module 唔 emit TRANSITION。</li>
-        <li><strong>📂 過去錯過的買點 (historicalOpportunities):</strong> ${(verdict.meta?.historicalOpportunities || []).length} 個。回顧過去 lookbackDays 內曾經出現過嘅買入訊號,計算到今日嘅回報。Top 3 strongest。可以用嚟訓練盤感。</li>
+        <li><strong>📂 過去錯過的買點 (historicalOpportunities):</strong> ${(verdict.meta.meta?.historicalOpportunities || []).length} 個。回顧過去 lookbackDays 內曾經出現過嘅買入訊號,計算到今日嘅回報。Top 3 strongest。可以用嚟訓練盤感。</li>
       </ul>
     </div>
   `;
@@ -5520,11 +4433,11 @@ function renderDetailedExplanationIndicators(verdict) {
 
 // ===== 策略建議 section (Indicators) =====
 function renderStrategyAdviceIndicators(verdict) {
-  const signal = verdict.meta?.signal || {};
+  const signal = verdict.meta.meta?.signal || {};
   const signalType = signal.type;
-  const ms = verdict.meta?.momentumState || {};
-  const winProb = verdict.meta?.winProbability || 0.5;
-  const exhaustion = verdict.meta?.exhaustionScore || 0;
+  const ms = verdict.meta.meta?.momentumState || {};
+  const winProb = verdict.meta.meta?.winProbability || 0.5;
+  const exhaustion = verdict.meta.meta?.exhaustionScore || 0;
 
   let strategy;
   if (signalType === 'buy') {
@@ -5547,7 +4460,7 @@ function renderStrategyAdviceIndicators(verdict) {
     strategy = `
       <li>🟡 <strong>等方向</strong>: hold = 觀望, 唔 buy 唔 sell, 因為冇明確反轉觸發</li>
       <li>📍 <strong>睇大方向</strong>: 配合 M1 (MA Alignment) 判斷大方向, 如果 M1 = UP, 呢個 hold 暗示「升但等回調」, 密切 monitor RSI 接近 30 或底背馳出現</li>
-      <li>🔍 <strong>留意背馳</strong>: 背馳數 = ${verdict.meta?.divergence?.totalCount || 0} 條, 0 背馳 = 純粹跟趨勢, ≥1 背馳 = 可能有反轉, 預警</li>
+      <li>🔍 <strong>留意背馳</strong>: 背馳數 = ${verdict.meta.meta?.divergence?.totalCount || 0} 條, 0 背馳 = 純粹跟趨勢, ≥1 背馳 = 可能有反轉, 預警</li>
       <li>💨 <strong>睇衰竭</strong>: 衰竭分數 = ${(exhaustion * 100).toFixed(0)}%, > 60% = 即將見頂/見底, 開始收緊止損或準備入新倉</li>
       <li>⏸️ <strong>唔好勉強</strong>: 冇明確訊號 = 冇 edge, 強行 trade 通常輸錢, 等清晰訊號先動</li>
     `;
@@ -5578,7 +4491,7 @@ function renderUsageGuideIndicators(verdict) {
         <li>🎯 <strong>睇勝率估算</strong>: > 70% = 高勝率 trade, 60-70% = 中等, < 60% = 唔好亂動。勝率 base 55%, 加底背馳 + 12%, 加超賣 + 8%</li>
         <li>📂 <strong>睇歷史錯過嘅買點</strong>: 「1 個月前邊日買最好」可以訓練你嘅盤感, 知道點樣嘅 setup 通常會 work</li>
         <li>🔄 <strong>配合其他 module 一齊睇</strong>: M1 (MA) 講大方向, M2 (HL) 講結構, M3 (TL) 講支撐壓力, M4 (呢個) 講買賣時機。4 個 module 都同方向 = 高信心 trade</li>
-        <li>⚠️ <strong>注意數據限制</strong>: 數據日數 = ${verdict.meta?.dataDays || 0} 條, < 119 條會 warning, 數據唔夠 = 結果唔可靠</li>
+        <li>⚠️ <strong>注意數據限制</strong>: 數據日數 = ${verdict.meta.meta?.dataDays || 0} 條, < 119 條會 warning, 數據唔夠 = 結果唔可靠</li>
         <li>📌 <strong>記住: M4 答「幾時該行動」, 唔答「而家係咩 season」</strong>: 配合 M1 用, M1 = UP + M4 = buy = 高勝率買入; M1 = UP + M4 = hold = 等回調, 唔好追</li>
       </ol>
     </div>
@@ -5592,7 +4505,7 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
     console.warn('[renderIndicatorsChartOverlay] chartRefs.chart 缺失');
     return;
   }
-  if (!verdict || !verdict.meta) {
+  if (!verdict || !verdict.meta.meta) {
     console.warn('[renderIndicatorsChartOverlay] verdict 缺失');
     return;
   }
