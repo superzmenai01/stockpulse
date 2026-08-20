@@ -1522,8 +1522,11 @@ function calculateZigZag(klines, thresholdPercent = 5) {
 
   // 找到第一個顯著高/低點
   for (let i = 1; i < klines.length; i++) {
-    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh;
-    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow;
+    // 大少 2026-08-20 07:10 fix — 之字 metric 對齊 (用 high/low 拎 point → trigger 都用 high/low)
+    // 凡人話原因: 太古 case 證明 close 計拎唔到 wick extreme (7/30 high 100 → 8/6 low 92.45 = -7.55% 跌穿 5%, 但 8/6 close 96.65 跌幅 -3.35% 唔過 threshold, 拎唔到 trough)
+    // 改用 high/low 對齊後, 拎 point 同 trigger 都用 wick extreme, 之字拎到真實 peak/trough
+    const changeFromHigh = (klines[i].low - lastSwingHigh) / lastSwingHigh;   // 用 low 對 high (跌穿 trigger)
+    const changeFromLow = (klines[i].high - lastSwingLow) / lastSwingLow;     // 用 high 對 low (升穿 trigger)
 
     if (inUptrend) {
       if (klines[i].high > lastSwingHigh) {
@@ -1568,8 +1571,9 @@ function calculateZigZag(klines, thresholdPercent = 5) {
 
   // 繼續追蹤轉向點
   for (let i = lastSwingIdx + 1; i < klines.length; i++) {
-    const changeFromHigh = (klines[i].close - lastSwingHigh) / lastSwingHigh;
-    const changeFromLow = (klines[i].close - lastSwingLow) / lastSwingLow;
+    // 大少 2026-08-20 07:10 fix — 同上, 之字 metric 對齊 high/low
+    const changeFromHigh = (klines[i].low - lastSwingHigh) / lastSwingHigh;   // 用 low 對 high
+    const changeFromLow = (klines[i].high - lastSwingLow) / lastSwingLow;     // 用 high 對 low
 
     if (inUptrend) {
       if (klines[i].high > lastSwingHigh) {

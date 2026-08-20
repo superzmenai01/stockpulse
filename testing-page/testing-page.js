@@ -98,7 +98,8 @@ const BACKEND_URL = 'http://localhost:18792';
 // 大少 2026-08-19 16:43 修正 2 個 UI bug: ALGO_CACHE_BUST = '4.12.0' (Bug 1: ZigZag sequence marker 全部用 position: 'inBar' 錯, 改 high type → aboveBar (Peak 號碼喺上) + low type → belowBar (Trough 號碼喺下) + 1 號 (close) → aboveBar; Bug 2: setVisibleLogicalRange 嗰陣 v4.2.3 會清 marker state 導致 50ms race condition, 50ms 後再 set 返一次確保 persist, 大少 reload verify)
 // 大少 2026-08-19 17:00 MA 線獨立 toggle 即時生效: ALGO_CACHE_BUST = '4.13.0' (testing-page/index.html 加 4 個 MA checkbox (MA5/MA10/MA20/MA60 顏色 chip 對齊 line color), testing-page.js 加 4 個 change handler 用 lineSeries.applyOptions({ visible }) 即時切換, 唔需要 re-create series 或 re-call renderChartOverlay, 凡人話: 大少撳 MA5 → 紅色線即時消失 / 出現, 注意只 cover M1 v2.0 (maV2LineSeries), zmen v0.3.0 用 maLineSeries 唔 cover)
 // 大少 2026-08-19 17:05 MA toggle UI 改善: ALGO_CACHE_BUST = '4.14.0' (MA toggle div 從 inputs section 搬到 chart-section 上面 (#ma-toggle-bar 用淺灰背景 + padding), 凡人話: 大少 trigger「放喺圖表上邊方便使用」; MA10 預設 unchecked (其他 MA 維持 checked), 凡人話: 大少 trigger「MA10 預設冇 Take」)
-const ALGO_CACHE_BUST = '4.14.0';
+// 大少 2026-08-20 07:10 之字 metric 對齊 hot fix: ALGO_CACHE_BUST = '4.15.0' (adapter.mjs calculateZigZag 函數 (2 處) 改用 high/low 拎 point 同計 threshold, 原本用 close 計拎唔到 wick extreme, 大少 evidence 太古 00019 7/30 high 100 → 8/6 low 92.45 = -7.55% 跌穿 5% 但 close 96.65 跌幅 -3.35% 唔過 threshold, 拎唔到 8/6 trough 92.45; 改 high/low 對齊後拎到, 永久 rule: 之字拎 point 同 trigger 都用 high/low 對齊, 唔好用 close)
+const ALGO_CACHE_BUST = '4.15.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
