@@ -549,6 +549,39 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 
 對應 commit: 9f72b113 (feat(m9-rendering): M9 popup 註解全面化)
 
+### Backend Algorithm Framework (Spec Sync #21, 2026-08-20)
+
+**凡人話解釋**: 大少 2026-08-20 19:50 trigger「最終想把所有演算法搬去 backend」, 啟動 StockPulse algorithms → Python backend migration roadmap。Phase 1 (framework + ZigZag) + Phase 2 (M1 MA Alignment) done 2026-08-20, Phase 3+ 之後逐個 port 落 backend。
+
+**設計原則**:
+- **Algorithm ABC pattern** (`backend/algorithms/base.py`): `Algorithm.run(klines, options) → Verdict`, 每個 algorithm 一個 folder (e.g. `zigzag/`, `ma_alignment/`)
+- **Verdict dataclass**: `ok / points / meta / warnings / error`, 統一 shape
+- **Registry pattern** (`backend/algorithms/registry.py`): 全部 algorithm 用 `register(name, cls)` 自動 expose, 3 個 endpoint 自動生成
+- **Algorithm runner** (`backend/services/algorithm_runner.py`): 統一 fetch K-line + 跑 algorithm + 包 response
+- **Caller inject pattern**: M1 要 ZigZag 做 dependency, runner 自動跑 ZigZag + inject 落 M1 options, M1 唔需要知道 backend 有邊個 algorithm
+- **Python module naming**: 用 underscore (`ma_alignment`) 唔用 hyphen (`ma-alignment`), 跟 PEP 8
+- **Frontend `analyze` 變 fetch backend stub**: 拎走 1000+ 行 duplicated logic, testing page call site 完全唔改
+
+**永久 rule (5 個 new rule)**:
+- ✅ **Algorithm ABC contract** (`backend/algorithms/base.py`): `Algorithm.run(klines, options) → Verdict`, 永久 rule
+- ✅ **Verdict dataclass shape** (`ok / points / meta / warnings / error`): 統一
+- ✅ **Registry pattern** (`backend/algorithms/registry.py`): 全部 algorithm 必須 `register(name, cls)`, 永久 rule
+- ✅ **Caller inject pattern** (`algorithm_runner.py`): algorithm dependency 由 runner 自動 inject, algorithm 唔需要直接 import 另一個 algorithm
+- ✅ **Python module naming underscore** (`ma_alignment` not `ma-alignment`): 跟 Python PEP 8, 永久 rule
+
+**Phase 1+2 done (2026-08-20)**:
+- **Phase 1** (framework + ZigZag) v1.0.0: `backend/algorithms/zigzag/`
+- **Phase 2** (M1 MA Alignment) v2.0.0: `backend/algorithms/ma_alignment/`
+- pytest 163/163 PASS (ZigZag 11 + M1 9 + existing 143)
+- 凡人話: 一個 source of truth, 之後加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
+
+**Backup tag + 還原方法** (大少 2026-08-20 18:39 永久 rule):
+- Tag: `pre-zigzag-backend-refactor-2026-08-20` (annotated)
+- Backup folder: `backups/zigzag-frontend-2026-08-20/` (852K, 8 個 file)
+- 還原方法: 詳見 `backups/zigzag-frontend-2026-08-20/RESTORE.md` (4 個 scenario A/B/C/D)
+- `.gitignore` 加 `backups/`: backup folder 唔 commit 入 git history
+- Apply 條件: Phase 3+ 做之前必須確認 backup 仲喺度
+
 ### Spec / Roadmap
 
 詳細 spec: `docs/research/AS-03-cycle-detection/ROADMAP.md` (228 行, 7 stages)

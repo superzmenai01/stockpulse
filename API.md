@@ -546,6 +546,107 @@ Health check endpoint.
 
 ---
 
+## 🐍 Algorithm Backend API (`/api/algorithms`, Spec Sync #21, 2026-08-20)
+
+Backend algorithm framework — 統一 algorithm 入口, frontend call backend 一個 HTTP request 拎 algorithm verdict。
+
+凡人話: 大少 2026-08-20 19:50 trigger「最終想把所有演算法搬去 backend」, Phase 1 (framework + ZigZag) + Phase 2 (M1 MA Alignment) done 2026-08-20。
+
+**Endpoints (3 個):**
+
+### `GET /api/algorithms/list`
+拎全部已註冊 algorithm 嘅 name + version。
+
+**Response:**
+```json
+{
+  "ok": true,
+  "algorithms": [
+    { "name": "zigzag", "version": "1.0.0" },
+    { "name": "ma_alignment", "version": "2.0.0" }
+  ]
+}
+```
+
+### `GET /api/algorithms/health`
+拎 health check (registry ready?).
+
+**Response:**
+```json
+{
+  "ok": true,
+  "registry_size": 2,
+  "status": "ready"
+}
+```
+
+### `GET /api/algorithms/run?algo=X&symbol=HK.YYY&period=1d&data_window_days=1260`
+跑 1 個 algorithm 拎 verdict。
+
+**Query Parameters:**
+- `algo` (required): algorithm name (e.g. `zigzag`, `ma_alignment`)
+- `symbol` (required): 股票代號 (e.g. `HK.00700`, `US.AAPL`)
+- `period` (optional): K 線 period (`1d` / `1w` / `1m` / `5m`, 預設 `1d`)
+- `data_window_days` (optional): 拎幾多日 K 線 (預設 1260 = 5 年, 跟大少 2026-08-14 23:15 永久 rule)
+
+**Response (ma_alignment example, HK.00700):**
+```json
+{
+  "ok": true,
+  "algorithm": "ma_alignment",
+  "version": "2.0.0",
+  "symbol": "HK.00700",
+  "period": "1d",
+  "klines_count": 1260,
+  "meta": {
+    "cycle": "sideways",
+    "cycleLabel": "橫行週期",
+    "cyclePosition": "range_bound",
+    "cyclePositionLabel": "橫行整理中",
+    "confidence": 0.204,
+    "maValues": { "MA5": 443.4, "MA10": 458.88, "MA20": 462.12, "MA60": 453.5267 },
+    "maRanks": ["MA20", "MA10", "MA60", "MA5"],
+    "maSlopes": { "MA5": -0.065267, "MA10": -0.041804, "MA20": -0.012923, "MA60": -0.001021 },
+    "momentumScore": -0.04881,
+    "volumeTrendRatio": 1.5862,
+    "volumeSignal": "expanding",
+    "maxSpreadPct": 0.042219,
+    "consecutiveDays": 0,
+    "zigzagPointsCount": 316,
+    "lastSwingHigh": { "date": "2026-08-05", "value": 497.8 },
+    "lastSwingLow": { "date": "2026-07-24", "value": 432.0 },
+    "zigzagSource": "backend (Phase 1 v1.0.0, M1 dependency inject)",
+    "adjustmentLog": ["放量震盪，可能醞釀突破", "均線斜率過大，橫行周期可能即將結束"]
+  },
+  "points": [],
+  "warnings": []
+}
+```
+
+**Caller inject pattern**: M1 跑嗰陣 backend 自動跑 ZigZag 落同一份 klines + inject `zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSource` 落 M1 options, M1 唔需要知道 backend 有 ZigZag。
+
+**Algorithm ABC contract** (`backend/algorithms/base.py`):
+```python
+class Algorithm(ABC):
+    name: str = ""
+    version: str = "0.0.0"
+    @abstractmethod
+    def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict: ...
+```
+
+**Registry pattern** (`backend/algorithms/registry.py`):
+```python
+register("zigzag", ZigZagAlgorithm)
+register("ma_alignment", MAAlignmentV2Algorithm)
+```
+
+**Use case:**
+- Testing page `maAlignmentV2Adapter.analyze` 改 `async fetch('/api/algorithms/run?algo=ma_alignment&symbol=...')`
+- 將來 miniapp / cron / batch run 可以直接 call backend endpoint 拎 verdict
+- 之後加 machine learning / Bayesian 容易 (Python 生態)
+
+---
+
 ## 📓 Trade Journal API (Stage 1+ MVP + Followup, 大少 15:04 揀 Full scope)
 
 大少真正落實倉位後記錄落 Trade Journal, 之後 mark 啱/錯, 拎真實 forward return, 之後 tune 5 個 adaptive params (Stage 1+ 真實 forward return tracking)。

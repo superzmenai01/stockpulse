@@ -46,6 +46,11 @@ web/node_modules/.vite/
 # Runtime SQLite DB (per-machine state, schema is migration-tracked)
 backend/data/stocks.db
 
+# Backup folders (local-only snapshots, 唔 commit 入 git history — 852K binary)
+# Backup metadata 記錄喺 git tag + ARCHITECTURE.md §15.x 章節
+backups/
+
+
 # sed backup files
 *.bak
 *.bak-*    # 帶 timestamp suffix 嘅 backup (e.g. stocks.db.bak-20260810-before-source-field)

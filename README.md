@@ -323,6 +323,24 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
 - **儲存：** User 手動點前端「💾 儲存 N 隻合格股票」button → SaveRunModal → POST `/api/saved-runs`（大少 #9700 永久 rule：runtime endpoint 唔可以 auto-save）
 - **結果庫：** `/library` 頁 (`/api/saved-runs`)
 
+### 🐍 Backend Algorithm Framework (Spec Sync #21, 2026-08-20)
+- **入口：** `GET /api/algorithms/run?algo=X&symbol=HK.YYY&period=1d` — frontend call backend 一個 HTTP request 拎 algorithm verdict
+- **位置：** `backend/algorithms/` — 每個 algorithm 一個 folder (e.g. `zigzag/`, `ma_alignment/`)
+- **Algorithm 註冊：** `backend/algorithms/registry.py` — 全部 algorithm 用 `register(name, cls)` 自動 expose
+- **Algorithm ABC contract** (`base.py`): `Algorithm.run(klines, options) → Verdict`, 統一 interface
+- **Verdict shape** (`ok / points / meta / warnings / error`) — frontend render function 拎 verdict 嘅 meta 自己做 UX
+- **Caller inject pattern** (`services/algorithm_runner.py`): M1 要 ZigZag 做 dependency, runner 自動跑 ZigZag 落同一份 klines + inject 落 M1 options, M1 唔需要知道 backend 有邊個 algorithm
+- **3 個 endpoint**:
+  - `GET /api/algorithms/list` — 拎全部 algorithm name + version
+  - `GET /api/algorithms/health` — 拎 health check
+  - `GET /api/algorithms/run?algo=X&symbol=HK.YYY&period=1d` — 跑 1 個 algorithm
+- **Phase 1+2 done (2026-08-20)**:
+  - **Phase 1** (framework + ZigZag) v1.0.0 — `backend/algorithms/zigzag/`
+  - **Phase 2** (M1 MA Alignment) v2.0.0 — `backend/algorithms/ma_alignment/`
+  - Frontend `adapter.mjs` + `ChartContainer.tsx` + `ElliottWaveTestPage.tsx` 拎走 1000+ 行 duplicated logic, 換 fetch backend stub
+  - pytest 163/163 PASS (ZigZag 11 + M1 9 + existing 143)
+- **凡人話:** 一個 source of truth, 之後 algorithm 加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
+
 ### ⚙️ Settings Page
 - **入口：** `/settings`
 - **功能：** LLM provider 切換 / API key 管理 / OpenD 設定

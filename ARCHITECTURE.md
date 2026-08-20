@@ -1687,6 +1687,7 @@ Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except 
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
+| 2026-08-20 20:18 | **大少 2026-08-20 19:50 trigger「最終想把所有演算法搬去 backend」, Phase 1 (ZigZag framework) + Phase 2 (M1 MA Alignment 搬去 Python) done (Spec Sync #21)** | Phase 1 commit (`feat(backend-algorithm-framework): Phase 1 + ZigZag v1.0.0 + frontend migration` — 8 backend file + 4 frontend file + 11 pytest pass) + Phase 2 commit (`feat(backend-algorithm-ma-alignment): M1 v2.0.0 Python port + 9 tests pass` — 5 backend file + frontend `adapter.mjs` 拎走 1081 行) + Spec Sync #21 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §11 (Module 進度表 row 01 加 "Phase 2 backend Python v1.0.0" + 加 "獨立 backend — ZigZag v1.0.0" row) + §15.17 新 (Backend Algorithm Framework + Phase 1+2 + 5 個 new rule + backup tag 還原方法), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection); PROJECT_SPEC §AS-03 (加 Backend Algorithm Framework subsection + 5 個 new rule); API §🧠 Algorithm Backend API 新章節 (`/api/algorithms/list`, `/health`, `/run`); `.gitignore` 加 `backups/` (852K 唔 commit); testing-page.js ALGO_CACHE_BUST '4.10.0' → '4.18.0' + M1 跑 backend override logic; testing-page/index.html ?v=2.3.64 → 2.3.72 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 `analyzeMAAlignmentV2` 1081 行拎走 + 換 fetch backend stub + restore 3 個 render function by backup); ChartContainer.tsx + ElliottWaveTestPage.tsx (ZigZag 152 行拎走 + fetch backend stub) |
 | 2026-08-19 11:42 | **大少 11:42 trigger「Update stockPulse」: ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動 + 4 個 fix commits (Spec Sync #20)** | `082090e8` + `415ce5f5` + `138dede5` + `402cb29b` + `97f29791` + `9f72b113` + `c72bdf3d` + `7567fe99` + `ca5ebe7d` + `77f595e5` + `d519037a` + `72ac75ba` + `79e026b6` + `1a2de578` + `07d824b5` + `ba98ac98` + (本 commit) | ARCHITECTURE §11 (M1 row v2.0.0 → v2.1.0 + 9 個 sub-scenario + 14 fields + 29 個凡人話 popup) + (zmen row v0.3.0 → v1.0 Layer 1 + Layer 2 雙層) + §15.16 新 (ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動), §14 (本 row); M1-V22-RESEARCH.md (永久 rule ZigZag sequence 號碼 + renderDebugPanel 抽出去 + lightweight-charts v4 setMarkers 永久 rule + 改 chart overlay debug panel auto-update 永久 rule); testing-page.js ALGO_CACHE_BUST '4.7.0' → '4.10.0' + dropdown 把 zmen 排最尾 (72ac75ba) + chart 預設 zoom 半年 (79e026b6) + 3 個 date display fix fallback chain (1a2de578) + renderDebugPanel 抽出去 (07d824b5); testing-page/index.html ?v=2.3.55 → 2.3.64 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 v2.1.0 9 個 sub-scenario + 14 fields + 凡人話 UX 082090e8 + M7 Level 1-6 138dede5 + zmen Layer 1+2 402cb29b + M9 popup 註解全面化 9f72b113 + ZigZag 點順序號碼 setMarkers 07d824b5) |
 | 2026-08-08 23:55 | **大少 23:55 + 大少「Update Stockpulse」24:00 觸發: Sprint 3 收官 (9.1-9.7) + i18n 繁體人話 (commit 72a892a7) + Spec Sync #5** | `f2c0a8d8` + `72a892a7` + (本 commit) | ARCHITECTURE §11 (Module 進度表 row 09 = M9 v0.6.0 + Spec 連結表 row 9 = MODULE-09-BACK-TEST.md), §14 (本 row + 上 1 row 22:28 9.6 補登); README §AS03 模組表 row 09 M9 v0.6.0 + Sprint 3 mention + 776 assertions; PROJECT_SPEC §Module 結構 (8 done + 1 獨立 + 2 hidden, Stage 1 + Sprint 3 收官), §Testing page (加 09 — AS-03-BT entry 排 [8]); API §Adaptive Params API (8 endpoints: 4 舊 M8 + 4 新 M9); testing-page.js REGISTRY (加 `09 — AS-03-BT` entry 排 [8], zmen均算法 變 [9]) |
 | 2026-08-09 13:15 | **大少 13:15 揀 A: Spec Sync #7 (Sprint 2 收官 + 4 followup bugs 全部 done)** | `da32c4db` + `639e6d70` + `d61d96d6` + (本 commit) | ARCHITECTURE §11 (M8 row v2.3.0 → v2.0.0 + 4 fix commits list) + Spec 連結表 row 8 (M8 spec 連結 v2.0.0 + 4 fix commits) + §15.4 4 bugs 改 "ALL FIXED" + §15.8 新 (Sprint 2 收官 + Spec Sync #7), §14 (本 row); README §AS03 模組表 (M8 v2.0.0 + Bug 1+2+3+4 fix mention) + §近期重要更新 (13:15 Sprint 2 收官 + 4 fixes); PROJECT_SPEC §Module 結構 row 08 (M8 v2.0.0 + 2.9 spec doc final + 4 fix commits); testing-page.js ALGO_CACHE_BUST '1.8.0' → '2.0.0' + .mjs cache bust 永久 rule 應用; testing-page/index.html ?v=2.3.4 → ?v=2.3.5 (HTML cache bust sync 永久 rule 應用) |
@@ -2408,3 +2409,83 @@ return = (actual_exit_price - entry_price) / entry_price
 - 改 spinbutton 拎唔同 N (5) 都 work
 - 截圖: `docs/research/AS-03-cycle-detection/screenshots/m1-zigzag-sequence-verify-2026-08-19.jpg`
 - Spec doc: `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` (大少 v2.2 research, 永久記錄 sub-scenario review + ZigZag 永久 rule)
+
+## §15.17 — Backend Algorithm Framework + Phase 1+2 (ZigZag + M1 搬去 Python) (大少 2026-08-20 揀 1 確認, Spec Sync #21) [2026-08-20]
+
+### 大少 2026-08-20 19:50 trigger
+「最終想把所有演算法搬去 backend」, 大少正式啟動 StockPulse algorithms → Python backend migration roadmap:
+- **Phase 1** (framework + ZigZag): 試水溫, 設計 backend algorithm framework + port ZigZag 試 startup
+- **Phase 2** (M1 MA Alignment): port 第一個 AS-03 module 證明 framework 通用
+- **Phase 3+** (M2-M7, M8-M12, zmen): 之後逐個 port
+
+### 凡人話點解要搬去 backend
+- 一個 source of truth — frontend 唔再 duplicate algorithm logic
+- Backend 可以 reuse 喺 Telegram miniapp / API 直接 access (唔需要靠 testing page)
+- Python 生態 (numpy / pandas / scikit-learn / Bayesian) 比 JS 強, 之後加 machine learning 容易
+- Algorithm 可以 run async / cron / batch, 唔 block UI
+
+### 設計決策
+- **Algorithm ABC pattern** (`backend/algorithms/base.py`): `Algorithm.run(klines, options) → Verdict`, 每個 algorithm 一個 folder (e.g. `zigzag/`, `ma_alignment/`)
+- **Verdict dataclass**: `ok / points / meta / warnings / error`, frontend render function 拎 verdict 嘅 meta 自己做 UX (render 仲喺 frontend)
+- **Registry pattern** (`backend/algorithms/registry.py`): `register("zigzag", ZigZagAlgorithm)`, `list_algorithms()` 拎全部, 3 個 endpoint 自動 expose
+- **Algorithm runner** (`backend/services/algorithm_runner.py`): 統一 fetch K-line + 跑 algorithm + 包 response (1 個 helper function 全部 algorithm 用)
+- **Caller inject pattern** (重要): M1 要 ZigZag 做 dependency, algorithm_runner 自動跑 ZigZag 落同一份 klines, inject `zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSource` 落 M1 options. M1 唔需要知道 backend 有邊個 algorithm
+- **3 個 endpoint**:
+  - `GET /api/algorithms/list` — 拎全部 algorithm name + version
+  - `GET /api/algorithms/health` — 拎 health check (registry ready?)
+  - `GET /api/algorithms/run?algo=X&symbol=HK.YYY&period=1d` — 跑 1 個 algorithm
+- **Frontend `analyze` 變 fetch backend stub**: `maAlignmentV2Adapter.analyze` 變 `async fetch(/api/algorithms/run?algo=ma_alignment)`, testing page call site 完全唔改
+
+### Phase 1 — Backend Algorithm Framework + ZigZag (commit 1)
+**Implementation done** (8 個 file):
+- `backend/algorithms/base.py` (Algorithm ABC + Verdict dataclass, 73 行)
+- `backend/algorithms/registry.py` (registry pattern, 30 行)
+- `backend/algorithms/zigzag/algorithm.py` (port 由 `adapter.mjs` 嘅 `calculateZigZag`, refactor 做 state machine, 大少 2026-08-20 07:10 永久 rule: ZigZag 用 high/low, NOT close)
+- `backend/algorithms/zigzag/config.py` (DEFAULT_THRESHOLD = 5.0)
+- `backend/services/algorithm_runner.py` (fetch K-line + run algo + wrap response)
+- `backend/api/algorithms.py` (3 個 endpoint: `/run`, `/list`, `/health`)
+- `backend/main.py` (register `algorithms` router)
+- `backend/tests/test_zigzag.py` (11 tests, 全部 pass)
+
+**Frontend migration** (3 個 file):
+- `web/src/components/chart/ChartContainer.tsx`: 拎走 `ZigZagPoint` interface + `calculateZigZag` (152 行), 加 `fetchBackendZigZag` async function
+- `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx`: 同樣 migration
+- `algorithms/AS-03-cycle-detection/adapter.mjs`: 拎走 `_zigzagNormalizeDate` / `calculateZigZag` / `calcZigZagSlope` (223 行), 拎走 `analyzeMAAlignmentV2` 入面 ZigZag section, 換 null defaults in meta
+- `testing-page/testing-page.js`: 加 `fetchBackendZigZag` function + `runAlgorithm` M1 override logic
+- `testing-page/index.html`: cache bust `?v=2.3.72`
+- `ALGO_CACHE_BUST = '4.18.0'`
+
+### Phase 2 — M1 MA Alignment 搬去 Python (commit 1)
+**Implementation done** (5 個 file):
+- `backend/algorithms/ma_alignment/algorithm.py` (19.8KB, 8 steps, 9 個 sub-scenario + 6 個 cycle position, port 由 `modules/ma-alignment.ts` v2.1.0)
+- `backend/algorithms/ma_alignment/config.py` (DEFAULT_MA_ALIGNMENT_V2_CONFIG dict)
+- `backend/algorithms/ma_alignment/__init__.py`
+- `backend/algorithms/__init__.py` import M1
+- `backend/services/algorithm_runner.py` 加 caller inject pattern (M1 自動 inject ZigZag verdict)
+- `backend/tests/test_ma_alignment.py` (9 tests, 全部 pass)
+
+**Frontend `adapter.mjs` M1 migration**:
+- 拎走 `analyzeMAAlignmentV2` (1081 行, line 6742-7823)
+- 換 fetch backend stub (line 6742)
+- Restore 3 個 frontend render function 由 backup: `renderMAAlignmentV2Result` / `getMAAlignmentV2Help` / `renderMAAlignmentV2ChartOverlay`
+- `maAlignmentV2Adapter.analyze` 變 `async fetch('/api/algorithms/run?algo=ma_alignment')`
+
+### Verify evidence (Phase 1+2, 2026-08-20)
+- **pytest 163/163 PASS** (ZigZag 11 + M1 9 + existing 143)
+- **curl `GET /api/algorithms/run?algo=ma_alignment&symbol=HK.00700`** 返: `algorithm: ma_alignment v2.0.0 / cycle: sideways / confidence: 0.204 / zigzagPoints: 316 / lastSwingHigh: 2026-08-05 497.8 / lastSwingLow: 2026-07-24 432.0` ✅
+- **Testing page renders M1 verdict card with backend data** (screenshot `phase2-ma-alignment-backend-verify-2026-08-20.png`)
+- **ZigZag 316 個 points 跟 frontend 拎返嘅一致** (同一份 K 線, 同 threshold 5%)
+
+### Spec 永久 rule 收穫 (5 個 new rule)
+- ✅ **Algorithm ABC contract** (`backend/algorithms/base.py`): `Algorithm.run(klines, options) → Verdict`, 每個 algorithm 必須 implement, 永久 rule
+- ✅ **Verdict dataclass shape** (`ok / points / meta / warnings / error`): 統一, frontend render function 拎 verdict.meta 自己做 UX
+- ✅ **Registry pattern** (`backend/algorithms/registry.py`): 全部 algorithm 必須 `register(name, cls)`, 永久 rule. 3 個 endpoint 自動 expose
+- ✅ **Caller inject pattern** (`algorithm_runner.py`): M1 要 ZigZag dependency, runner 自動 inject, M1 唔需要知道 backend 有邊個 algorithm. 永久 rule
+- ✅ **Python module naming underscore** (`ma_alignment` not `ma-alignment`): 跟 Python PEP 8, 永久 rule
+
+### Backup tag + 還原方法 (大少 2026-08-20 18:39 永久 rule)
+- **Tag**: `pre-zigzag-backend-refactor-2026-08-20` (annotated, at main HEAD `e45ecbe1`)
+- **Backup folder**: `backups/zigzag-frontend-2026-08-20/` (852K, 8 個 file)
+- **還原方法**: 詳見 `backups/zigzag-frontend-2026-08-20/RESTORE.md` (4 個 scenario A/B/C/D)
+- **.gitignore 加 `backups/`**: backup folder 唔 commit 入 git history (852K binary), tag 同 spec doc 已經記錄備份存在
+- **Apply 條件**: Phase 3+ 做之前必須確認 backup 仲喺度 (`git tag -l pre-zigzag-backend-refactor-2026-08-20` + folder 存在)
