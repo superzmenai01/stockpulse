@@ -116,7 +116,11 @@ async function fetchBackendZigZag(symbol, period, threshold) {
 // 大少 2026-08-20 12:01 direction flag refactor: ALGO_CACHE_BUST = '4.16.0' (adapter.mjs calculateZigZag 用 1 個 direction flag + 1 個 refValue + 1 個 refIdx + 1 個 loop 取代舊 2 variable + 2 loop; trigger metric changeFromRef 永遠 pre-calculate 喺 for loop 開頭對齊舊算法行為避免同日 noise; 4 隻 stock 拎 evidence 確認拎 point 100% 一樣; 永久 rule: 永遠用 clean state machine, 唔好再分 2 loop)
 // 大少 2026-08-20 19:17 Phase 1 ZigZag 加 M1 圖表 (backend 拎 data): ALGO_CACHE_BUST = '4.17.0' (testing-page.js 加 fetchBackendZigZag function 拎 Phase 1 backend /api/algorithms/run?algo=zigzag 嘅 verdict, runAlgorithm 撳跑 M1 (AS-03-MA) algorithm 嗰陣, 喺 frontend analyze 完成之後, await fetch backend ZigZag 拎 verdict, 將 backend verdict.points 注入 verdict.meta.zigzagPoints override frontend 拎嘅, 紫色 ZigZag 線 render 用 backend 拎 data, 證明 Phase 1 backend 整合 frontend 成功; fallback: backend 拎唔到用 frontend 拎嘅, 唔 crash; 凡人話: 將 backend 算法落 M1 chart, 大少撳跑 M1 → 紫色 ZigZag 線由 backend 計, frontend 拎嘅 fallback)
 // 大少 2026-08-20 19:50 Phase 1 拎走 frontend ZigZag (跟 adapter.mjs 4.18.0 同步): ALGO_CACHE_BUST = '4.18.0' (testing-page.js 同步 bump 因為 frontend M1 algorithm 拎走 ZigZag, runAlgorithm 之後 fetch backend ZigZag 已經變成唯一 source, fallback 拎走; ChartContainer.tsx + ElliottWaveTestPage.tsx 改 fetchBackendZigZag 拎 backend, 拎走 frontend calculateZigZag)
-const ALGO_CACHE_BUST = '4.18.0';
+// 大少 2026-08-20 20:42 Phase 3 M2 HL Structure 拎走 frontend: ALGO_CACHE_BUST = '4.19.0' (補返 Phase 3 漏做嘅 cache bust bump — frontend M2 analyzeHLStructure 拎走 367 行 + 4 個 helper, 換 fetch backend stub, 永久 rule 跟返 13:10 spec: 改 adapter.mjs 之後必同步 bump 2 個地方)
+// 大少 2026-08-20 20:50 Phase 4 M3 Trendline 拎走 frontend: ALGO_CACHE_BUST = '4.20.0' (補返 Phase 4 漏做嘅 cache bust bump — frontend M3 analyzeTrendline 拎走 506 行 + 7 個 helper, 換 fetch backend stub, 永久 rule 一致)
+// 大少 2026-08-20 21:30 Phase 5+6 M4 Indicators + M5 VolumePrice 拎走 frontend: ALGO_CACHE_BUST = '4.21.0' (Phase 5+6 combined, 拎走 M4 566 行 + M5 ~993 行 frontend, 換 2 個 fetch backend stub, 8 個 render function verdict.X 改 verdict.meta.X, 永久 rule 一致)
+// 大少 2026-08-20 21:24 Fix commit (補返 Phase 3+4+5+6 漏做嘅 cache bust bump): ALGO_CACHE_BUST = '4.21.1' (Phase 1+2 之後 4 個 phase 嘅 cache bust 從來冇做過, 大少 trigger「Doc 都改好了嗎」發現 spec doc 同 testing page code 唔對齊, 而家一齊補返 3 個 phase 漏做嘅 + 永久 rule 加 self-check: 改 adapter.mjs 之後 commit 之前 grep testing-page.js ALGO_CACHE_BUST + index.html ?v= 確認同步 bump, 唔好再漏做)
+const ALGO_CACHE_BUST = '4.21.1';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
