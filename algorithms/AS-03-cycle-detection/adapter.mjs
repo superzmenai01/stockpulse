@@ -7614,12 +7614,45 @@ function renderPositionDecisionEngine(verdict) {
   `;
 }
 
-// ---------- backTestAdapter export (M9 v0.6.0 — Sprint 3 sub-task 9.7 UI 升級 done) ----------
+// ---------- Phase 9 helper: parse backend string warnings → ModuleWarning object array ----------
+// 凡人話: backend algorithm run() 拎 string array warnings (format "CODE: message"), frontend _warnings 拎 ModuleWarning object array (with level / module_id / code / message / context / impact / fix)
+// 永久 rule: testing page 拎 verdict shape 對齊 backend Verdict contract, 警告 string array 必須 parse 做 ModuleWarning object array 畀 frontend render warning banner
+function _parseBackendWarnings(stringWarnings) {
+  if (!Array.isArray(stringWarnings)) return [];
+  return stringWarnings.map(s => {
+    if (!s || typeof s !== 'string') {
+      return makeWarning('warning', 'M9', 'UNKNOWN', String(s), {
+        issue: String(s),
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+      });
+    }
+    // 格式 "CODE: message" (e.g. "POST_FAILED: 0 validate samples")
+    const colonIdx = s.indexOf(':');
+    if (colonIdx === -1) {
+      return makeWarning('warning', 'M9', 'UNKNOWN', s, {
+        issue: s,
+        impact: 'Verdict 唔可信, 唔好落單',
+        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+      });
+    }
+    const code = s.substring(0, colonIdx).trim();
+    const message = s.substring(colonIdx + 1).trim();
+    // 大少 2026-08-14 12:10 Spec Sync #18: impact/fix 跟 CATEGORY_DISPLAY template
+    return makeWarning('warning', 'M9', code, message, {
+      issue: message,
+      impact: 'Verdict 唔可信, 唔好落單',
+      fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+    });
+  });
+}
+
+// ---------- backTestAdapter export (M9 v0.6.0 — Sprint 3 sub-task 9.7 UI 升級 done, Phase 9 backend port) ----------
 //   大少 2026-08-08 22:28 — 9.5 Testing page entry 09 — AS-03-BT
 //   9.6 — HK.00700 pilot + spec doc + ROADMAP + 4 fixes
 //   9.7 — M9 UI 升級 (3 SVG charts + 6 色標 + 永遠 full show + 2 個真實可 click button + 大少話你知 LLM hook)
-//   用 modules/back-test.ts (esbuild bundle .bundle.js, browser-compatible)
-//   跑 walk-forward CV (9.1-9.3) + 自動 POST optimal + forward return records 落 cache (9.4)
+//   Phase 9 (大少 2026-08-20 21:54) — 拎走 frontend backTestAdapter.analyze (210 行), 換 fetch backend /api/algorithms/run?algo=back_test
+//   永久 rule: 改 algorithms/AS-03-cycle-detection/adapter.mjs 之後, 必須同步 bump testing-page.js ALGO_CACHE_BUST + testing-page/index.html ?v=2.3.X
 //   Render 顯示: ⏰ header / 🎯 最佳參數 + Kelly pie / 📊 整體表現 + Walk-Forward bar / 📋 段細節 / 📜 過往判決 / 📖 大少話你知 / 🔄 Apply to M8
 export const backTestAdapter = {
   id: 'AS-03-BT',
@@ -7632,7 +7665,7 @@ export const backTestAdapter = {
     { key: 'stepDays', label: '跑判決步長 (每隔幾日跑一次)', type: 'number', default: 5, min: 1, max: 30 },
   ],
   // ============================================================================
-  //  M9 Back Test 主入口 — backTestAdapter.analyze (M9 v0.6.0)
+  //  M9 Back Test 主入口 — backTestAdapter.analyze (Phase 9 拎走 frontend chain, 換 fetch backend stub)
   //
   //  目的: 拎 M8 verdict 嘅歷史, 用 walk-forward CV (time-series cross-validation)
   //        重播之前嘅判決, 對比之後 5/10/20 日真實升跌, 同時自動搵出呢隻股票
@@ -7641,249 +7674,122 @@ export const backTestAdapter = {
   //  Input  : klines  = 標準化 K 線 array (window 預設 1260 日 = 5 年)
   //           options = { code, dataWindowDays=1260, stepDays=5, ... }
   //
-  //  Output : M9 Back Test Verdict, 包含:
-  //           - bestParams: { rSquared, sentiment6D, atrPercent, pearson, hurst, kellyFraction, ... }
-  //           - kellyFraction (octo/quarter/half) + Kelly pie SVG
-  //           - overallPerformance: 命中率 / 平均回報 / Sharpe / max drawdown
-  //           - walkForwardBars: 9.3 嘅 walk-forward CV bar chart
-  //           - folds: 每個 fold 嘅 (date, action, predictedReturn, actualReturn)
-  //           - history: 過去判決 verdict (cached forward_return_history)
-  //           - interpretation: 大少話你知 (plain language 解讀)
-  //           - applyToM8Button: 永久保留 1 個可 click button 「Apply to M8」
-  //           - _warnings: 5 個層級 inline 警告 (VERDICT_MISSING/LOW_SAMPLE_SIZE/POST_FAILED)
+  //  Output : M9 Back Test Verdict, shape 對齊 backend /api/algorithms/run response
+  //           - meta.walkForwardResult: 完整 walk-forward CV 結果 (frontend render 拎)
+  //           - meta.optimal: bestParams + avgValidateScore + stabilityScore
+  //           - meta.forwardReturnHistory: 過去 20 條 forward return 累積
+  //           - meta.postErrors: forward return POST 失敗 list
+  //           - _warnings: backend algorithm 注入 (POST_FAILED / LOW_SAMPLE_SIZE / VERDICT_MISSING)
   //
-  //  Algorithm 流程:
-  //    1. Normalize klines (backend 'time' string → 'timestamp' number)
-  //    2. 跑 9.1 fold split: walk-forward 切做 train/validate/test
-  //    3. 跑 9.2 對 M8 verdict 跑 5/10/20 日 forward return
-  //    4. 跑 9.3 walk-forward grid search over 5 個 adaptive params
-  //    5. 跑 9.4 自動 POST optimal params 落 /api/forward-returns 永久 cache
-  //    6. Render 6 個 section: ⏰header / 🎯Kelly pie / 📊整體表現 / 📋folds / 📜history / 📖解讀
+  //  Phase 9 永久 rule:
+  //    - backend M9 algorithm 拎 walk-forward CV + auto POST optimal + forward return records 落 cache
+  //    - frontend analyze 只係 1 個 fetch backend /api/algorithms/run?algo=back_test 嘅 stub
+  //    - renderResult 拎 backend verdict.meta.walkForwardResult 而唔係 frontend shape
+  //    - 永久 rule: testing page 拎 verdict shape 對齊 backend Verdict contract (ok / algorithm / version / symbol / period / klines_count / points / meta / warnings / error)
   //
   //  ⚠️ 永久 rule (大少 2026-08-10 22:28):
   //     - forward_return_history 永遠唔 delete (cache 永久保留)
   //     - 0 validate samples 唔可以 silent fail (要 fire POST_FAILED warning)
   //     - postErrors.length > 0 一定要 inline banner + 有 retry button
-  //  ⚠️ Cross-ref: modules/back-test.ts, build/back-test.bundle.js,
-  //                backend/services/adaptive_params_cache.py
+  //  ⚠️ Cross-ref: backend/algorithms/back_test/algorithm.py, backend/services/algorithm_runner.py
+  //                (Phase 9 backend port done, frontend chain 拎走)
   // ============================================================================
   analyze: async (klines, options = {}) => {
     const symbol = options.symbol || options.code || 'unknown';
 
-    // 0. Normalize klines: backend 用 'time' (ISO string), back-test.ts 用 'timestamp' (number)
+    // 0. Normalize klines: backend 用 'time' (ISO string), M9 algorithm 用 'timestamp' (number)
     //    將 'time' 轉做 'timestamp' (ms since epoch)
     const normalizedKlines = klines.map(k => {
       if (k.timestamp !== undefined && typeof k.timestamp === 'number') return k;
       if (k.time !== undefined) {
-        // time format: 'YYYY-MM-DD' or ISO string
-        const date = new Date(k.time);
-        return { ...k, timestamp: date.getTime() };
+        return { ...k, timestamp: new Date(k.time).getTime() };
       }
       return k;
     });
 
-    // 大少 2026-08-10 Bug 1 fix A.3 — debug log 記 K 線 / fold split 狀況
-    // 用嚟診斷「0 validate samples」嘅 root cause (data 太短 / window 太細)
-    // 大少 2026-08-10 07:35 fix: 擺去 normalizedKlines 之後, 避免 raw klines[0].timestamp 係 string/undefined 嘅 crash
     const klineCount = normalizedKlines.length;
-    const klineDateRange = klineCount > 0 ? {
-      start: new Date(normalizedKlines[0].timestamp).toISOString().substring(0, 10),
-      end: new Date(normalizedKlines[klineCount - 1].timestamp).toISOString().substring(0, 10),
-      days: Math.round((normalizedKlines[klineCount - 1].timestamp - normalizedKlines[0].timestamp) / 86400000),
-    } : null;
-    console.log(`[backTestAdapter] start analyze ${symbol}, klines=${klineCount}, range=${JSON.stringify(klineDateRange)}`);
+    console.log(`[backTestAdapter] start analyze ${symbol}, klines=${klineCount} (Phase 9: fetch backend stub)`);
 
-    // 1. Import back-test bundle (browser-compatible ESM)
-    // 大少 2026-08-10 08:45 fix: 加 ?v=2.6.6 cache bust (dataWindowDays 252 → 1260)
-    const backTest = await import('./build/back-test.bundle.js?v=2.6.6');
-    const { runWalkForwardCV, runAdaptiveWindow, runCoarseGrid, runFineTune, runReplay, scoreResult } = backTest;
-
-    // 2. 用 decisionEngineAdapter 做 decisionFn (內部 chain M1-M8)
-    // 但 testing page 唔可以直接 call adapter.analyze 因為太重 (會做 cache flow 等等)
-    // 所以用 analyzeDecisionEngine 直接 chain (skip cache, 純運算)
-    const decisionFn = async (kl, opts) => {
-      const synthResult = await analyzeDecisionEngine(kl, opts);
-      // 將 SynthesizerVerdict 轉 DecisionVerdict
-      const { DecisionEngine, DEFAULT_ADAPTIVE_PARAMS } = await import('./build/decision-engine.bundle.js?v=3.6.1');
-      const engine = new DecisionEngine();
-      return engine.decide({
-        synthesizerVerdict: synthResult,
-        moduleVerdicts: synthResult.module_verdicts,
-        marketData: opts.marketData ?? {},
-      });
-    };
-
-    // 3. 跑 Walk-Forward CV (3 folds rolling, 大少 22:28 揀 B)
-    //    adaptive window 自動處理 initialDays → finalDays
-    //    但 runWalkForwardCV 已經 internal 用 coarse grid + fine tune
-    let walkForwardResult;
+    // Phase 9 永久 rule: 拎走 frontend chain (import bundle + runWalkForwardCV + decisionFn + 2 個 POST), 換 1 個 fetch backend call
+    // Backend M9 algorithm 拎 walk-forward CV + auto POST optimal + forward return records 落 cache (永久 rule)
+    // 凡人話: 1 個 fetch call 拎 verdict, backend algorithm 已經做晒所有 chain
+    let resp;
     try {
-      walkForwardResult = await runWalkForwardCV({
-        klines: normalizedKlines,
-        decisionFn,
-        baseSymbol: symbol,
-        // 大少 2026-08-10 08:37 numFolds 1 + tuneRatio 0.6 fix:
-        // 3 folds × (tune 67 + validate 33) tune verdict 67 < HLStructure 99 bar gate
-        // 1 fold × tuneRatio 0.6: 252 條 → tune 151 (>99 ✅) + validate 101 (>99 ✅)
-        numFolds: 1,
-        tuneRatio: 0.6,
-        baseReplayConfig: { stepDays: options.stepDays ?? 5, lookbackDays: 60, holdDays: [5, 10, 20] },
-      });
+      resp = await fetch(`http://localhost:18792/api/algorithms/run?algo=back_test&symbol=${encodeURIComponent(symbol)}&period=1d&data_window_days=${options.dataWindowDays ?? 1260}`);
     } catch (e) {
-      console.error('[backTestAdapter] runWalkForwardCV failed:', e);
-      walkForwardResult = { folds: [], overall: { bestParams: { kelly: 0.25, rsiWeight: 0.20, ssiWeights: { ma: 0.4, hl: 0.3, tl: 0.3 } }, avgValidateScore: 0, stabilityScore: 0, totalValidateSamples: 0 } };
+      console.error('[backTestAdapter] fetch backend failed:', e);
+      // 大少 22:28 永久 rule: 唔 silent fail, fallback 拎 default verdict + fire POST_FAILED warning
+      return {
+        ok: false,
+        symbol,
+        algorithm: 'back_test',
+        version: '0.6.0',
+        period: '1d',
+        klines_count: klineCount,
+        points: [],
+        meta: { error: 'Backend fetch failed: ' + e.message },
+        warnings: [
+          makeWarning('critical', 'M9', 'POST_FAILED',
+            'Fetch backend /api/algorithms/run failed (Phase 9 backend stub)',
+            {
+              issue: 'Backend fetch exception: ' + e.message,
+              impact: 'Verdict 唔可信, 唔好落單',
+              fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+              context: { error: e.message, symbol },
+            }
+          ),
+        ],
+        error: e.message,
+        timestamp: Date.now(),
+      };
     }
 
-    // 4. POST optimal 落 cache (per-symbol, 30 日 expiry)
-    const optimal = walkForwardResult.overall;
-    if (optimal.bestParams && optimal.totalValidateSamples > 0) {
-      try {
-        await postJSON(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/back-test`, {
-          kelly: optimal.bestParams.kelly,
-          rsiWeight: optimal.bestParams.rsiWeight,
-          ssiWeights: optimal.bestParams.ssiWeights,
-          validation: { avgValidateScore: optimal.avgValidateScore, stabilityScore: optimal.stabilityScore, totalValidateSamples: optimal.totalValidateSamples },
-          window: { initialDays: 126, finalDays: 252, extendCount: walkForwardResult.folds.length > 0 ? 1 : 0 },
-          foldsCount: walkForwardResult.folds.length,
-        });
-      } catch (e) {
-        console.warn('[backTestAdapter] save optimal failed:', e);
-      }
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      console.error(`[backTestAdapter] backend resp not ok: ${resp.status} ${errText}`);
+      return {
+        ok: false,
+        symbol,
+        algorithm: 'back_test',
+        version: '0.6.0',
+        period: '1d',
+        klines_count: klineCount,
+        points: [],
+        meta: { error: `Backend HTTP ${resp.status}: ${errText}` },
+        warnings: [
+          makeWarning('critical', 'M9', 'POST_FAILED',
+            `Backend HTTP ${resp.status}`,
+            {
+              issue: 'Backend response not ok',
+              impact: 'Verdict 唔可信, 唔好落單',
+              fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+              context: { http_status: resp.status, symbol },
+            }
+          ),
+        ],
+        error: errText,
+        timestamp: Date.now(),
+      };
     }
 
-    // 4b. 9.7.3 — 拎 forward return history 從 cache (永久累積, 永遠 full show)
-    let forwardReturnHistory = [];
-    try {
-      const frResp = await fetch(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/forward-return?limit=20`);
-      if (frResp.ok) {
-        const frData = await frResp.json();
-        forwardReturnHistory = frData.history || [];
-      }
-    } catch (e) {
-      console.warn('[backTestAdapter] fetch forward return history failed:', e);
-    }
+    const verdict = await resp.json();
+    console.log(`[backTestAdapter] backend verdict: ok=${verdict.ok}, klines_count=${verdict.klines_count}, folds=${verdict.meta?.foldsCount ?? 0}, avgScore=${verdict.meta?.avgValidateScore ?? 0}`);
 
-    // 5. POST forward return records (累積, 永久保留)
-    //    對每 fold 嘅 validate set 跑 runReplay 拎 results, 逐條 POST
-    for (const fold of walkForwardResult.folds) {
-      try {
-        // Normalize fold.validateKlines (already normalized if from runWalkForwardCV, but be safe)
-        const normValidateKlines = fold.validateKlines.map(k => {
-          if (k.timestamp !== undefined && typeof k.timestamp === 'number') return k;
-          if (k.time !== undefined) {
-            return { ...k, timestamp: new Date(k.time).getTime() };
-          }
-          return k;
-        });
-        const summary = await runReplay(normValidateKlines, {
-          symbol,
-          klines: normValidateKlines,
-          holdDays: [5, 10, 20],
-          stepDays: 5,
-          lookbackDays: 0,  // 累積 (V1 fix)
-          params: { ...fold.bestParams },
-        }, decisionFn);
-        // 大少 2026-08-10 Bug 1 fix — 收集 POST 失敗訊息, 喺 UI banner 顯示 (唔再 silent fail)
-        fold.postErrors = [];
-        for (const r of summary.results) {
-          try {
-            await postJSON(`http://localhost:18792/api/adaptive-params/${encodeURIComponent(symbol)}/forward-return`, {
-              date: r.date,
-              action: r.action,
-              fwd5: r.forwardReturn5d,
-              fwd10: r.forwardReturn10d,
-              fwd20: r.forwardReturn20d,
-              hit: r.hit5d,
-            });
-          } catch (e) {
-            console.warn(`[backTestAdapter] fold ${fold.foldIndex} forward return POST failed:`, e);
-            fold.postErrors.push(e.message);
-          }
-        }
-      } catch (e) {
-        console.warn(`[backTestAdapter] fold ${fold.foldIndex} forward return save failed:`, e);
-      }
-    }
-
-    // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5b) — M9 Back Test
-    // 警告注入:
-    //   🟡 LOW_SAMPLE_SIZE: totalValidateSamples = 0 (大少 10:35 fix 嘅 0 samples bug)
-    //   🟡 POST_FAILED: postErrors.length > 0 (大少 10:35 fix 嘅 silent fail bug)
-    //   🔴 VERDICT_MISSING: folds.length = 0 (walkForwardCV 完全 fail)
-    //   🟡 LOW_SAMPLE_SIZE: forwardReturnHistory.length < 3 (累積樣本少)
-    //   🔵 CONFIG_DEFAULTS: dataWindowDays 用咗 default 1260 (唔係用戶自訂)
-    // 大少 2026-08-11 21:16 — A 改善 chain test 揭發 Bug: postErrors 喺呢度 local scope 冇 const 定義
-    //   (line 9284 設咗 fold.postErrors 但 line 9344 warning 注入用 local postErrors → ReferenceError)
-    //   1 行 surgical fix: 從 folds 抽返出嚟
-    const postErrors = walkForwardResult.folds.flatMap(f => f.postErrors || []);
-    const m9Warnings = [];
-    if (walkForwardResult.folds.length === 0) {
-      m9Warnings.push(makeWarning('critical', 'M9', 'VERDICT_MISSING',
-        'Walk-Forward CV 完全 fail, 0 個 fold',
-        {
-          issue: 'walkForwardResult.folds.length = 0',
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: '檢查 kline count 足唔足 (≥ 126 日), runReplay 邏輯, 跑時有冇 exception',
-          context: { folds_count: 0, total_validate_samples: optimal.totalValidateSamples },
-        }
-      ));
-    } else if (optimal.totalValidateSamples === 0) {
-      m9Warnings.push(makeWarning('warning', 'M9', 'LOW_SAMPLE_SIZE',
-        '0 validate samples (M9 結果唔可靠)',
-        {
-          issue: 'totalValidateSamples = 0 (即使 folds.length > 0)',
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { folds_count: walkForwardResult.folds.length, total_validate_samples: 0 },
-        }
-      ));
-    } else if (optimal.totalValidateSamples < 10) {
-      m9Warnings.push(makeWarning('warning', 'M9', 'LOW_SAMPLE_SIZE',
-        `validate samples 偏少 (${optimal.totalValidateSamples} 個)`,
-        {
-          issue: `totalValidateSamples = ${optimal.totalValidateSamples} < 10`,
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { total_validate_samples: optimal.totalValidateSamples, recommended: '>= 30' },
-        }
-      ));
-    }
-    if (postErrors && postErrors.length > 0) {
-      m9Warnings.push(makeWarning('warning', 'M9', 'POST_FAILED',
-        `${postErrors.length} 個 forward return POST 失敗`,
-        {
-          issue: 'POST 落 /api/adaptive-params/{symbol}/forward-return 失敗',
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { failed_count: postErrors.length, sample_error: postErrors[0] },
-        }
-      ));
-    }
-    if (forwardReturnHistory.length < 3) {
-      m9Warnings.push(makeWarning('info', 'M9', 'LOW_SAMPLE_SIZE',
-        `forward_return_history 累積樣本少 (${forwardReturnHistory.length} 個)`,
-        {
-          issue: `forwardReturnHistory.length = ${forwardReturnHistory.length} < 3`,
-          impact: 'Verdict 唔可信, 唔好落單',
-          fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-          context: { history_count: forwardReturnHistory.length, recommended: '>= 30' },
-        }
-      ));
-    }
-    // 大少 2026-08-14 23:15 — 永久 rule: 移除 CONFIG_DEFAULTS trigger (因為 testing page 默認 1260, user 永遠唔再「冇自訂」呢個 state, warning 已經多餘)
-    // 之前: if (options.dataWindowDays === undefined || options.dataWindowDays === 1260) → trigger CONFIG_DEFAULTS warning
-    // 之後: 永遠唔 trigger (user 喺 testing page 自己揀 default = 1260, 唔需要 system 提)
-
-    return {
+    // Phase 9 永久 rule: 為咗 renderResult 唔使改 (frontend render 拎 top-level field)
+    // Backend verdict 拎 meta.walkForwardResult / meta.optimal / meta.forwardReturnHistory / meta.postErrors
+    // 包返 top-level 畀 renderResult 直接拎, 唔使改 render 內部 field path
+    // Backend warnings 係 string array, frontend 期望 ModuleWarning object array (_warnings)
+    // 用 _parseBackendWarnings helper 將 string "CODE: message" parse 做 ModuleWarning
+    const frontendShape = {
+      ...verdict,
       symbol,
-      walkForwardResult,
-      optimal,
-      forwardReturnHistory,  // 9.7.3 永遠 full show
-      // 大少 2026-08-10 Bug 1 fix A.2 — collect 所有 fold POST 失敗訊息, 畀 UI banner 用
-      postErrors: walkForwardResult.folds.flatMap(f => f.postErrors || []),
-      _warnings: m9Warnings,  // 大少 2026-08-11 v1.0.0
-      timestamp: Date.now(),
+      walkForwardResult: verdict.meta?.walkForwardResult,
+      optimal: verdict.meta?.optimal,
+      forwardReturnHistory: verdict.meta?.forwardReturnHistory,
+      postErrors: verdict.meta?.postErrors || [],
+      _warnings: _parseBackendWarnings(verdict.warnings || []),
     };
+    return frontendShape;
   },
   renderResult: (result) => {
     if (!result || !result.walkForwardResult) {

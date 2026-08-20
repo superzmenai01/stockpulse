@@ -167,6 +167,65 @@ def run_algorithm(
         options["moduleVerdicts"] = module_verdicts
         logger.info(f"[Algorithm] M7 Synthesizer 拎 {len(module_verdicts)} 個 module verdict")
 
+    # 大少 2026-08-20 21:54 Phase 9 — M9 Back Test 拎 M7 Synthesizer verdict 做 chain context
+    # 凡人話: 跑 M9 之前, 自動跑 M7 Synthesizer 拎 verdict inject 落 options['moduleVerdicts']
+    #         同時拎 M8 decisionFn 落 options['decisionFn'] (Phase 10 done 之後自動 inject 真 M8, Phase 9 fallback _default_decision_fn)
+    # 永久 rule: M9 algorithm 唔可以直接 fetch K 線跑 M7/M8, 由 runner 統一 inject
+    if algo_name == "back_test":
+        # 1. Inject M7 Synthesizer verdict (chain rule: M7 → M9)
+        try:
+            from backend.algorithms.synthesizer import SynthesizerAlgorithm
+            synth_algo = SynthesizerAlgorithm()
+            synth_verdict = synth_algo.run(klines, {"period": period, "symbol": options.get("symbol", "")})
+            if synth_verdict.ok:
+                options["moduleVerdicts"] = synth_verdict.meta.get("module_verdicts", [])
+                logger.info(
+                    f"[Algorithm] M9 inject M7 Synthesizer verdict: "
+                    f"{len(options['moduleVerdicts'])} upstream modules"
+                )
+        except Exception as e:
+            # 永久 rule: dependency inject 失敗 fallback caller 拎 (唔 crash M9, M9 拎默認 empty moduleVerdicts)
+            logger.warning(
+                f"[Algorithm] M9 M7 Synthesizer inject 失敗, 繼續跑 (M9 verdict 會用默認 empty context): {e}"
+            )
+
+        # 2. Inject M8 decisionFn (chain rule: M8 → M9 → M8 final)
+        # Phase 9 開工時 M8 backend 仲未 port (Phase 10), fallback 為 _default_decision_fn
+        # Phase 10 done 之後, runner 自動 inject M8 backend algorithm instance 落 decisionFn
+        try:
+            from backend.algorithms.back_test.algorithm import _default_decision_fn
+            # Try to get M8 decision engine (Phase 10 done 之後, 會 import success)
+            try:
+                from backend.algorithms.decision_engine import DecisionEngineAlgorithm  # type: ignore
+                m8_algo = DecisionEngineAlgorithm()
+
+                def m8_decision_fn(klines_in: list, options_in: dict) -> dict:
+                    """凡人話: M8 decisionFn wrapper (Phase 10 done 之後自動 inject)"""
+                    v = m8_algo.run(klines_in, {"period": period, "symbol": options.get("symbol", ""), **options_in})
+                    if v.ok:
+                        return {
+                            "final_action": v.meta.get("final_action", "WAIT"),
+                            "state": v.meta.get("state", "SIDEWAYS"),
+                            "confidence": v.meta.get("confidence", 0.5),
+                            "cycle": v.meta.get("cycle", "sideways"),
+                            "cycleLabel": v.meta.get("cycleLabel", ""),
+                            "kelly_fraction": v.meta.get("kelly_fraction", "quarter"),
+                            "kelly_numeric": v.meta.get("kelly_numeric", 0.25),
+                            "kelly_position": v.meta.get("kelly_position", 0.25),
+                            "interpretation": v.meta.get("interpretation", ""),
+                            "warnings": v.warnings,
+                        }
+                    return {"final_action": "WAIT", "state": "SIDEWAYS", "confidence": 0.5}
+
+                options["decisionFn"] = m8_decision_fn
+                logger.info("[Algorithm] M9 inject M8 Decision Engine decisionFn (Phase 10 done)")
+            except ImportError:
+                # M8 backend 仲未 port (Phase 9 → Phase 10 過渡期), 用 fallback
+                options["decisionFn"] = _default_decision_fn
+                logger.info("[Algorithm] M9 inject _default_decision_fn (M8 仲未 port, Phase 9 fallback)")
+        except Exception as e:
+            logger.warning(f"[Algorithm] M9 decisionFn inject 失敗: {e}")
+
     logger.info(
         f"[Algorithm] Running {algo_name} v{algo.version} on {symbol} {period} "
         f"({len(klines)} klines, options={options})"
