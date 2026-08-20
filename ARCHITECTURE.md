@@ -1200,7 +1200,7 @@ AS-03 係 StockPulse 第一個完全實裝嘅 stock analysis algorithm (Module 1
     │
     ├─ Module 1: ma-alignment (v0.3.0 ✅ DONE — 19/19 tests pass)
     ├─ Module 2: hl-structure (v0.1.0 ✅ DONE)
-    ├─ Module 3: trendline (v0.1.0 ✅ DONE — 14/14 tests pass, 大少 #11031)
+    ├─ Module 3: trendline (v0.1.0 ✅ DONE frontend + Phase 4 backend Python v0.1.0, Spec Sync #23)
     ├─ Module 4: indicators (⏳ TBD)
     └─ Module 5: volume OBV (⏳ TBD — 等新 Model)
 ```
@@ -1409,7 +1409,7 @@ if (currentAdapter.renderChartOverlay) {
 |------|--------|------|---------|-----------|--------|
 | 01 | **均線系統週期判斷法 v2.1.0** (with Volume & Slope + 9 個 sub-scenario) | `modules/ma-alignment.ts` | **v2.1.0 (Spec Sync #19, 2026-08-15)** | ✅ | ✅ Production — **v2.1.0 升級** (大少 2026-08-15 06:20 trigger 揀項甲): v2.0 3 個 cycle state + 9 個 sub-scenario 細分 (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 弱升/弱跌 → Priority 4 上升回調/下跌反彈 → Default 橫行) + 14 個 output field (cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog) + 29 個凡人話 popup 註解 (跟 M7/M8/M9 一致 inline style) + 凡人話 12 步 step-by-step guide + Warning 注入 3 個 code (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state]). v2.0.0 3 cycles + 13 fields + 三階段信心調整 + 4 條 MA overlay (5/10/20/60, 大少 2026-08-08 09:50) + 凡人話 UX (大少 2026-08-08 10:28). **v2.2 待大少逐條 review 9 個 sub-scenario trigger 條件** (大少 2026-08-16 19:21 永久 rule, spec doc M1-V22-RESEARCH.md). |
 | 02 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
-| 03 | Trendline 趨勢線法 | `modules/trendline.ts` | v0.1.0 | ✅ | ✅ Production |
+| 03 | Trendline 趨勢線法 | `modules/trendline.ts` + `backend/algorithms/trendline/` | v0.1.0 (frontend) + **v0.1.0 (Phase 4 backend Python, Spec Sync #23, 2026-08-20)** | ✅ | ✅ Production — **v0.1.0 backend Python port** (大少 2026-08-20 20:50 trigger「搬M3加測試」): backend `trendline/algorithm.py` 27.3KB port frontend algorithm + 7 個 helper, 10 pytest pass, frontend `adapter.mjs` 拎走 506 行 `analyzeTrendline` + 7 個 helper, 換 fetch backend stub (34 行), 4 個 render function (`renderTrendlineResult` / `renderTrendlineRuleExplain` / `renderTrendlineChartOverlay` / `getTrendlineHelp`) 拎 `verdict.X` → `verdict.meta.X`, 5 隻 stock verify (HK.00700 騰訊 SIDEWAYS 0.65 / HK.00005 匯豐 UP 0.90 / US.AAPL SIDEWAYS 0.70 / US.MSFT UP 0.90 / US.GOOGL SIDEWAYS 0.65). Algorithm ABC contract 對 M3 應用 (Phase 1 永久 rule), caller inject pattern 唔需要 (M3 同 M2 一樣 standalone, framework 保留), frontend render 拎 `verdict.meta.*` (Phase 2 永久 rule). |
 | 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` | v1.0.0 | ✅ | ✅ Production (RSI + MACD + Bollinger + 背馳 + 衰竭) |
 | 05 | VolumePrice 成交量價格行為確認 | `modules/volume.ts` | v2.0.0 | ✅ | ✅ Production (v2.0 overwrite, 15 rules V1-V15) |
 | 06 | **Volatility 波動率收縮擴張** | `modules/volatility.ts` | **v1.0.0** | ✅ | ✅ Production (全新, 12 rules S1-S12, 5 setups, 3 failure modes) |
@@ -1687,6 +1687,7 @@ Fix: 改 `backend/services/adaptive_params_cache.py` save_params 用 try/except 
 
 | Date | Trigger | Commits | Doc updates |
 |------|---------|---------|-------------|
+| 2026-08-20 20:50 | **大少 2026-08-20 20:50 trigger「搬M3加測試」, Phase 4 — M3 Trendline (趨勢線法) 搬去 Python done (Spec Sync #23)** | Phase 4 commit (`feat(backend-algorithm-m3): Phase 4 — Trendline 搬去 Python` — backend `trendline/algorithm.py` 27.3KB port frontend algorithm + 7 個 helper + 10 pytest + frontend `adapter.mjs` 拎走 506 行 frontend + 換 fetch backend stub + 4 個 render function 拎 `verdict.X` → `verdict.meta.X` + 5 隻 stock verify) + Spec Sync #23 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §15.19 新 (Phase 4 M3 backend port + 5 隻 stock verify + 永久 rule 應用 + line number shift fix pattern), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection 加 M3 v0.1.0 status); PROJECT_SPEC §AS-03 (Backend Algorithm Framework subsection 加 M3 detail + caller inject 唔需要嘅 note); API §🐍 Algorithm Backend API (加 `trendline` schema); testing-page.js frontend call site 唔改 (`trendlineAdapter.analyze` 已經 fetch backend); adapter.mjs (M3 `analyzeTrendline` 拎走 506 行 + 7 個 helper + backend stub 加 34 行 + 4 個 render function 拎 `verdict.X` → `verdict.meta.X`); backend `trendline/algorithm.py` 1:1 port `modules/trendline.ts` 算法 |
 | 2026-08-20 20:42 | **大少 2026-08-20 20:35 trigger「搬M2加測試」, Phase 3 — M2 HL Structure (高低點結構法) 搬去 Python done (Spec Sync #22)** | Phase 3 commit (`feat(backend-algorithm-m2): Phase 3 — HL Structure 搬去 Python` — backend `hl_structure/algorithm.py` 25.8KB port 18 步算法 + 4 個 helper + 10 pytest + frontend `adapter.mjs` 拎走 367 行 frontend + 換 fetch backend stub + 3 個 render function 拎 `verdict.X` → `verdict.meta.X` + 5 張 stock screenshot) + Spec Sync #22 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §15.18 新 (Phase 3 M2 backend port + 5 隻 stock verify + 永久 rule 應用), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection 加 M2 v0.1.0 status); PROJECT_SPEC §AS-03 (Backend Algorithm Framework subsection 加 M2 detail + caller inject 唔需要嘅 note); API §🐍 Algorithm Backend API (加 `hl_structure` schema); testing-page.js frontend call site 唔改 (`hlStructureAdapter.analyze` 已經 fetch backend); adapter.mjs (M2 `analyzeHLStructure` 拎走 367 行 + 4 個 helper 拎走 87 行 + backend stub 加 35 行 + 3 個 render function 拎 `verdict.X` → `verdict.meta.X`); backend `hl_structure/algorithm.py` 1:1 port `modules/hl-structure.ts` 18 步算法 |
 | 2026-08-20 20:18 | **大少 2026-08-20 19:50 trigger「最終想把所有演算法搬去 backend」, Phase 1 (ZigZag framework) + Phase 2 (M1 MA Alignment 搬去 Python) done (Spec Sync #21)** | Phase 1 commit (`feat(backend-algorithm-framework): Phase 1 + ZigZag v1.0.0 + frontend migration` — 8 backend file + 4 frontend file + 11 pytest pass) + Phase 2 commit (`feat(backend-algorithm-ma-alignment): M1 v2.0.0 Python port + 9 tests pass` — 5 backend file + frontend `adapter.mjs` 拎走 1081 行) + Spec Sync #21 commit (本 commit — 4 份 spec doc 同步) | ARCHITECTURE §11 (Module 進度表 row 01 加 "Phase 2 backend Python v1.0.0" + 加 "獨立 backend — ZigZag v1.0.0" row) + §15.17 新 (Backend Algorithm Framework + Phase 1+2 + 5 個 new rule + backup tag 還原方法), §14 (本 row); README §🆕 主要功能模塊 (Backend Algorithm Framework subsection); PROJECT_SPEC §AS-03 (加 Backend Algorithm Framework subsection + 5 個 new rule); API §🧠 Algorithm Backend API 新章節 (`/api/algorithms/list`, `/health`, `/run`); `.gitignore` 加 `backups/` (852K 唔 commit); testing-page.js ALGO_CACHE_BUST '4.10.0' → '4.18.0' + M1 跑 backend override logic; testing-page/index.html ?v=2.3.64 → 2.3.72 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 `analyzeMAAlignmentV2` 1081 行拎走 + 換 fetch backend stub + restore 3 個 render function by backup); ChartContainer.tsx + ElliottWaveTestPage.tsx (ZigZag 152 行拎走 + fetch backend stub) |
 | 2026-08-19 11:42 | **大少 11:42 trigger「Update stockPulse」: ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動 + 4 個 fix commits (Spec Sync #20)** | `082090e8` + `415ce5f5` + `138dede5` + `402cb29b` + `97f29791` + `9f72b113` + `c72bdf3d` + `7567fe99` + `ca5ebe7d` + `77f595e5` + `d519037a` + `72ac75ba` + `79e026b6` + `1a2de578` + `07d824b5` + `ba98ac98` + (本 commit) | ARCHITECTURE §11 (M1 row v2.0.0 → v2.1.0 + 9 個 sub-scenario + 14 fields + 29 個凡人話 popup) + (zmen row v0.3.0 → v1.0 Layer 1 + Layer 2 雙層) + §15.16 新 (ZigZag 點順序號碼 + M1 v2.1.0 + zmen v1.0 + 3 個 UX 改動), §14 (本 row); M1-V22-RESEARCH.md (永久 rule ZigZag sequence 號碼 + renderDebugPanel 抽出去 + lightweight-charts v4 setMarkers 永久 rule + 改 chart overlay debug panel auto-update 永久 rule); testing-page.js ALGO_CACHE_BUST '4.7.0' → '4.10.0' + dropdown 把 zmen 排最尾 (72ac75ba) + chart 預設 zoom 半年 (79e026b6) + 3 個 date display fix fallback chain (1a2de578) + renderDebugPanel 抽出去 (07d824b5); testing-page/index.html ?v=2.3.55 → 2.3.64 (HTML cache bust sync 永久 rule 應用); adapter.mjs (M1 v2.1.0 9 個 sub-scenario + 14 fields + 凡人話 UX 082090e8 + M7 Level 1-6 138dede5 + zmen Layer 1+2 402cb29b + M9 popup 註解全面化 9f72b113 + ZigZag 點順序號碼 setMarkers 07d824b5) |
@@ -2541,3 +2542,55 @@ return = (actual_exit_price - entry_price) / entry_price
 ### 對應 commit (Phase 3)
 - `feat(backend-algorithm-m2): Phase 3 — HL Structure 搬去 Python` — backend port + frontend migration + 10 pytest + 5 張 screenshot
 - `docs(spec-sync-22): Phase 3 M2 backend framework — 4 份 spec doc 永久 rule 同步` — 本 commit
+
+## §15.19 — Phase 4 — M3 Trendline 搬去 Python (大少 2026-08-20 20:50 trigger, Spec Sync #23) [2026-08-20]
+
+### 大少 2026-08-20 20:50 trigger
+「搬M3加測試」, 大少啟動 M3 Trendline (趨勢線法) → Python backend migration, 跟返 Phase 3 (M2) pattern。
+
+### 凡人話點解 M3 同 M2 一樣唔需要 caller inject
+- M3 自己 derive support / resistance line + channel 拎 klines (Step 3-4 識別極值點 + 線性回歸)
+- M3 algorithm 拎 backend 拎 verdict 之後直接返 frontend 兼容 shape 喺 `verdict.meta.*`, 唔需要 runner inject
+- 凡人話: M3 同 M2 一樣係 standalone algorithm, 唔需要依賴其他 algorithm 嘅 output
+
+### Phase 4 設計決策
+- **Algorithm ABC contract** (跟 Phase 1+3 framework 永久 rule): `Algorithm.run(klines, options) → Verdict`
+- **Caller inject pattern** (Phase 2 永久 rule, M3 同 M2 唔需要 trigger, framework 保留畀之後 M4+ 用)
+- **Frontend `analyze` 變 fetch backend stub** (跟 M1+M2 pattern, 拎走 506 行 frontend + 7 個 helper)
+- **4 個 frontend render function 拎 `verdict.X` → `verdict.meta.X`**: 因為 backend verdict 拎 frontend 兼容 shape 喺 `meta.*`, frontend render 拎 `meta.*` 拎 backend verdict 對齊
+- **M3 frontend default 100 日** (2026-08-07 永久 rule, 對齊 backend `data_window_days=100`)
+
+### Phase 4 Implementation done
+
+**Backend (5 個 file)**:
+- `backend/algorithms/trendline/algorithm.py` (27.3KB, 1:1 port frontend `analyzeTrendline` + 7 個 helper, 606 行)
+- `backend/algorithms/trendline/config.py` (`DEFAULT_TRENDLINE_CONFIG` dict, 22 行)
+- `backend/algorithms/trendline/__init__.py`
+- `backend/algorithms/__init__.py` import `TrendlineAlgorithm` v0.1.0
+- `backend/tests/test_trendline.py` (10 tests: registry / uptrend / downtrend / sideways / insufficient data / insufficient extremes / verdict shape / evidence shape / state priority / matched rules format)
+
+**Frontend migration** (1 個 file):
+- `algorithms/AS-03-cycle-detection/adapter.mjs`: 拎走 `analyzeTrendline` + 7 個 helper (506 行, line 4296-4801), 換 `async fetch backend` stub (34 行), 4 個 render function (`renderTrendlineResult` / `renderTrendlineRuleExplain` / `renderTrendlineChartOverlay` / `getTrendlineHelp`) 拎 `verdict.X` → `verdict.meta.X` (跟 M1+M2 pattern)
+
+### Verify evidence (Phase 4, 2026-08-20)
+- **pytest 183/183 PASS** (10 個新 M3 + 173 個 existing, +10 從 Phase 3 嘅 173)
+- **backend curl `/api/algorithms/run?algo=trendline` 5 隻 stock 全部 verdict 完整**:
+  - HK.00700 騰訊 — SIDEWAYS 0.65 (support R²=0.44, resistance R²=0.90, 通道寬度 18.33%, %B=0.31, 8 個 evidence)
+  - HK.00005 匯豐 — UP 0.90 (8 個 evidence)
+  - US.AAPL — SIDEWAYS 0.70 (8 個 evidence)
+  - US.MSFT — UP 0.90 (8 個 evidence)
+  - US.GOOGL — SIDEWAYS 0.65 (8 個 evidence)
+- **撳跑掣 backend 5-20ms** (K 線 cache 暖咗), 0 crash 0 warning 注入
+- **Frontend render function 拎 `verdict.meta.*` 對齊 backend shape** (script 自動 transform 4 個 render function)
+
+### Spec 永久 rule 收穫 (Phase 4 拎到嘅 / 應用嘅)
+- ✅ **Algorithm ABC contract** 對 M3 應用 (Phase 1 永久 rule): `Algorithm.run(klines, options) → Verdict`
+- ✅ **Caller inject pattern** (Phase 2 永久 rule) — M3 同 M2 一樣唔需要 trigger, framework 保留
+- ✅ **Frontend `analyze` 變 fetch backend stub** (Phase 2 永久 rule, M3 跟 M1+M2 pattern)
+- ✅ **Frontend render function 拎 `verdict.meta.*`** (Phase 2 永久 rule, M3 4 個 render function 跟 M1+M2 同 pattern)
+- ✅ **pytest 寫每個新 algorithm** (永久 rule, M3 10 tests)
+- ✅ **凡人話 line number shift fix pattern**: 拎走舊 function 之前必須重新 grep 實際 line 位置, hardcode 舊 line number 一定錯 (Phase 3 之後 + 506 行 shift 嘅 fix 教訓)
+
+### 對應 commit (Phase 4)
+- `feat(backend-algorithm-m3): Phase 4 — Trendline 搬去 Python` — backend port + frontend migration + 10 pytest + 5 隻 stock verify
+- `docs(spec-sync-23): Phase 4 M3 backend framework — 4 份 spec doc 永久 rule 同步` — 本 commit

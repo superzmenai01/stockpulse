@@ -582,6 +582,15 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - 5 隻 stock comprehensive test + cap 圖: HK.00700 騰訊 / HK.00005 匯豐 / US.AAPL / US.MSFT / US.GOOGL
 - 凡人話: M2 拎 frontend 337 行 (analyzeHLStructure + 4 個 helper) 換 1 個 backend fetch stub, frontend 3 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
 
+**Phase 4 done (2026-08-20)**:
+- **Phase 4** (M3 Trendline 趨勢線法) v0.1.0: `backend/algorithms/trendline/`
+- M3 自己 derive support/resistance line + channel 拎 klines (線性回歸), **唔需要** caller inject
+- pytest 183/183 PASS (M3 10 + existing 173)
+- 5 隻 stock verify: HK.00700 騰訊 SIDEWAYS 0.65 / HK.00005 匯豐 UP 0.90 / US.AAPL SIDEWAYS 0.70 / US.MSFT UP 0.90 / US.GOOGL SIDEWAYS 0.65
+- 凡人話: M3 拎 frontend 506 行 (analyzeTrendline + 7 個 helper) 換 1 個 backend fetch stub, frontend 4 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
+
+**凡人話 line number shift fix pattern** (Phase 4 教訓, 大少 2026-08-20 20:50): 拎走舊 function 之前必須重新 grep 實際 line 位置, hardcode 舊 line number 一定錯 (Phase 3 之後 + 506 行 shift 嘅 fix 教訓)。
+
 **Backup tag + 還原方法** (大少 2026-08-20 18:39 永久 rule):
 - Tag: `pre-zigzag-backend-refactor-2026-08-20` (annotated)
 - Backup folder: `backups/zigzag-frontend-2026-08-20/` (852K, 8 個 file)

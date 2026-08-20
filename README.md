@@ -345,6 +345,13 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   - Frontend `adapter.mjs` 拎走 M2 `analyzeHLStructure` 367 行 + 4 個 helper 87 行, 換 fetch backend stub
   - 3 個 frontend render function (`renderHLStructureResult` / `renderHLStructureChartOverlay` / `getHLStructureHelp`) 拎 `verdict.X` → `verdict.meta.X` 拎 backend 兼容 shape
   - pytest 173/173 PASS (M2 10 + existing 163)
+- **Phase 4 done (2026-08-20)**:
+  - **Phase 4** (M3 Trendline 趨勢線法) v0.1.0 — `backend/algorithms/trendline/`
+  - M3 自己 derive support/resistance line + channel 拎 klines, **唔需要** caller inject (ZigZag dependency)
+  - Frontend `adapter.mjs` 拎走 M3 `analyzeTrendline` 506 行 + 7 個 helper, 換 fetch backend stub
+  - 4 個 frontend render function (`renderTrendlineResult` / `renderTrendlineRuleExplain` / `renderTrendlineChartOverlay` / `getTrendlineHelp`) 拎 `verdict.X` → `verdict.meta.X` 拎 backend 兼容 shape
+  - pytest 183/183 PASS (M3 10 + existing 173)
+  - 5 隻 stock verify: HK.00700 騰訊 SIDEWAYS 0.65 / HK.00005 匯豐 UP 0.90 / US.AAPL SIDEWAYS 0.70 / US.MSFT UP 0.90 / US.GOOGL SIDEWAYS 0.65
 - **凡人話:** 一個 source of truth, 之後 algorithm 加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
 
 ### ⚙️ Settings Page

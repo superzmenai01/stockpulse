@@ -665,6 +665,39 @@ Backend algorithm framework — 統一 algorithm 入口, frontend call backend �
 
 **Phase 3 — hl_structure (M2)**: 18 步算法 (跟 `modules/hl-structure.ts` 1:1 port), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (cycle / cycle_label / peaks / troughs / box_boundary / pattern_alert / price_position), 唔需要 caller inject dependency。
 
+**Response (trendline example, HK.00700):**
+```json
+{
+  "ok": true,
+  "algorithm": "trendline",
+  "version": "0.1.0",
+  "symbol": "HK.00700",
+  "period": "1d",
+  "klines_count": 300,
+  "meta": {
+    "moduleId": "trendline",
+    "timeframe": "1d",
+    "state": "SIDEWAYS",
+    "cycle_label": "橫行",
+    "confidence": 0.65,
+    "interpretation": "橫行: 觸發 I+J rules, 支撐 R²=0.44, 壓力 R²=0.90, 寬通道, %B=0.31",
+    "evidence": [
+      { "type": "support-slope", "label": "支撐線斜率: -0.4745", "value": -0.47, "threshold": 0, "passed": false },
+      { "type": "support-r2", "label": "支撐線 R²: 0.438", "value": 0.44, "threshold": 0.55, "passed": false },
+      { "type": "resistance-slope", "label": "壓力線斜率: 0.6304", "value": 0.63, "threshold": 0, "passed": false },
+      { "type": "resistance-r2", "label": "壓力線 R²: 0.904", "value": 0.90, "threshold": 0.55, "passed": true },
+      { "type": "channel", "label": "通道寬度: 18.33% (%B = 0.312)", "value": 0.18, "threshold": 0.03, "passed": false },
+      { "type": "support-breakout", "label": "支撐線: 無突破", "value": false, "passed": true },
+      { "type": "resistance-breakout", "label": "壓力線: 無突破", "value": false, "passed": true }
+    ]
+  },
+  "points": [],
+  "warnings": []
+}
+```
+
+**Phase 4 — trendline (M3)**: 線性回歸趨勢線法 (跟 `modules/trendline.ts` 1:1 port), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycle_label / confidence / interpretation / evidence), 唔需要 caller inject dependency。support line / resistance line / channel 全部 backend derive 拎 klines 線性回歸計。
+
 **Caller inject pattern**: M1 跑嗰陣 backend 自動跑 ZigZag 落同一份 klines + inject `zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSource` 落 M1 options, M1 唔需要知道 backend 有 ZigZag。
 
 **Algorithm ABC contract** (`backend/algorithms/base.py`):
