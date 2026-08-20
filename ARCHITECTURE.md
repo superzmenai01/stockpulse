@@ -2963,3 +2963,49 @@ M5 VolumePrice:
 ### 對應 commit
 - `feat(zigzag-auto-threshold): 自動/手動 切換 + 波動率自適應法自動計算` — testing-page.js 加 ~210 行 (純函數 + 4 個 handler + 初始化 + 撳跑算法 trigger) + testing-page/index.html UI 改 (radio + 顯示區 + popup style) + cache bust 4.27.0 → 4.28.0 / ?v=2.3.82 → 2.3.83 — 本 commit
 - `docs(spec-sync-33): ZigZag threshold 自動調整 — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.25 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「自動 mode 永遠跟 K 線自動計算」+「新股票冇 localStorage record → 自動 mode 預設」
+
+## §15.26 — ZigZag lookback 參數手動可調 (大少 2026-08-21 00:24 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」, Spec Sync #34) [2026-08-21]
+
+### 大少 00:24 trigger
+大少話「再加一個可手動調整的參數: lookback (看多少天, 預設 20 天), 也會有自動儲存功能」。
+
+**公式** (大少 trigger 公式延伸):
+- 自動 mode 計算 threshold 時用 lookback (預設 20) 取最近 N 日 K 線波動率
+- 每日波動率 = (high - low) / close
+- N 日平均 × 2.5 = threshold
+- Manual mode 唔影響 (大少自己改 threshold, lookback 唔參與計算)
+
+### 大少 why
+- 唔同股票特性需要唔同 lookback: 短線股 (日波動大) 用 5-10 日, 波段股 (騰訊/匯豐) 用 20 日 (default), 長線股用 60 日
+- 之前 lookback 寫死 20, 大少唔可以調
+- Spec Sync #33 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」+ 大少 trigger「也會有自動儲存功能」要求 localStorage 自動保存
+
+### Fix 範圍 (2 個 file)
+- **`testing-page/testing-page.js`**:
+  1. 加 `LS_KEY_LOOKBACK` + `LOOKBACK_DEFAULT=20` + `LOOKBACK_MIN=5` + `LOOKBACK_MAX=100` const
+  2. 加 `getLookback()` / `setLookback(v)` localStorage helper
+  3. `applyAutoThreshold()` 改用 `getLookback()` 動態取 (唔再 hardcode 20)
+  4. 撳「跑算法」嗰陣 auto mode 計算 (L860-877) 改用 `getLookback()`
+  5. `initThresholdModeUI()` 加 `lookbackEl.value = String(getLookback())` 初始化
+  6. Lookback input 即時改 handler (debounce 200ms, 改完即時重算, manual mode 唔影響)
+  7. 「重置為 20」掣 handler (一鍵 reset default)
+- **`testing-page/index.html`**:
+  1. 自動 mode 顯示區改: 加 lookback input (5-100, step 1) 內嵌喺 `(最近 N 日波動率 × 2.5)` 嗰個 label 入面
+  2. 加「重置為 20」掣
+
+### Cache bust
+- ALGO_CACHE_BUST 4.28.0 → 4.29.0
+- ?v=2.3.83 → 2.3.84 (testing-page.css + testing-page.js 兩個, 雖然 CSS 冇改但跟 HTML sync)
+
+### 永久 rule 收接 (testing page config UX 模式延伸)
+- ✅ **Lookback 預設 20 日, 範圍 5-100** (永久 rule): 大少 trigger 公式 default, 之後改 default 喺 `LOOKBACK_DEFAULT` const 改
+- ✅ **跟 Spec Sync #31 config input onChange handler pattern** (永久 rule): 即時 re-render + debounce 200ms 防 slider 連環拖動 spam
+- ✅ **跟 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」** (永久 rule): 改動即時 localStorage 儲存
+- ✅ **改完即時重算** (永久 rule): auto mode 觸發 `applyAutoThreshold`, manual mode 唔影響 (manual mode 大少自己改 threshold)
+- ✅ **加「重置為 20」掣** (永久 rule): 一鍵 reset default, 跟 Spec Sync #33 嘅「重置為自動」掣同 pattern
+- ✅ **localStorage key: `stockpulse.zigzag.lookback`** (永久 rule): 跟 Spec Sync #33 嘅 2 個 key (`thresholdMode` + `manualThreshold`) 同 prefix `stockpulse.zigzag.`
+- ✅ **對應 Spec Sync #33 永久 rule** (auto 計算) + Spec Sync #31 永久 rule (onChange handler) + Spec Sync #32 永久 rule (chart-control layout) 一致
+
+### 對應 commit
+- `feat(zigzag-lookback): lookback 參數手動可調 (5-100 日, 預設 20, 自動儲存)` — testing-page.js 加 ~40 行 (LS_KEY_LOOKBACK + 4 個 const + 2 個 helper + 2 個 handler + 初始化同步) + testing-page/index.html 自動 mode 顯示區改 (加 input + reset 掣) + cache bust 4.28.0 → 4.29.0 / ?v=2.3.83 → 2.3.84 — 本 commit
+- `docs(spec-sync-34): ZigZag lookback 參數手動可調 — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.26 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「Lookback 預設 20 日, 範圍 5-100」+「跟 Spec Sync #31 config input onChange handler pattern」

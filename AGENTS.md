@@ -388,6 +388,35 @@ if existing_history is not None:
 **對應 commit**: (即將 push, Spec Sync #33)
 **對應 doc**: ARCHITECTURE.md §15.25
 
+### Testing page ZigZag lookback 參數 永久 rule (大少 2026-08-21 00:24)
+
+**說明**: 大少 00:24 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」。Lookback = 取最近幾日 K 線計波動率, 預設 20 日, 大少可手動調 5-100 日, 跟返 Config UX 模式永久 rule 一致 (自動儲存 + 即時 re-render)。
+
+**公式** (大少 trigger 公式延伸):
+- 自動 mode 計算 threshold 時用 lookback (預設 20) 取最近 N 日 K 線波動率
+- 每日波動率 = (high - low) / close
+- N 日平均 × 2.5 = threshold
+- 手動 mode 唔影響 (大少自己改 threshold, lookback 唔參與計算)
+
+**永久 rule**:
+- ✅ Lookback 預設 20 日 (大少 trigger 公式 default), 範圍 5-100
+- ✅ 跟 Spec Sync #31 config input onChange handler pattern (即時 re-render)
+- ✅ 跟 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」, localStorage 自動保存
+- ✅ 改完即時重算 (auto mode 觸發 applyAutoThreshold, debounce 200ms 防 spam)
+- ✅ Manual mode 唔影響 (manual mode 大少自己改 threshold)
+- ✅ 加「重置為 20」掣 (一鍵 reset default)
+- ✅ localStorage key: `stockpulse.zigzag.lookback`
+- ✅ 跟 Spec Sync #33 永久 rule (auto 計算) 一致
+- ✅ 跟 Spec Sync #31 永久 rule (config input onChange handler) 一致
+- ✅ 跟 Spec Sync #32 永久 rule (chart-control layout) 一致
+
+**套用**:
+- 之後其他 algorithm config 都跟呢個 pattern: 自動/手動 + 額外參數 (lookback 等) + 重置掣 + localStorage + 即時 re-render
+- 改 testing-page.js 嗰陣同步 bump ALGO_CACHE_BUST + ?v= 2 個地方 (cache bust self-check 永久 rule 21:24)
+
+**對應 commit**: (即將 push, Spec Sync #34)
+**對應 doc**: ARCHITECTURE.md §15.26
+
 ### K-line Cache (永久 rule, 大少 #8602)
 
 ```python

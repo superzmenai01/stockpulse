@@ -614,6 +614,32 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 對應 commit: (即將 push, Spec Sync #33)
 對應 doc: ARCHITECTURE.md §15.25
 
+### Testing page ZigZag lookback 參數 (Spec Sync #34, 大少 2026-08-21 00:24)
+
+**大少 trigger**: 「再加一個可手動調整的參數: lookback (看多少天, 預設 20 天), 也會有自動儲存功能」。
+
+**公式** (大少 trigger 公式延伸):
+- 自動 mode 計算 threshold 時用 lookback (預設 20) 取最近 N 日 K 線波動率
+- 每日波動率 = (high - low) / close
+- N 日平均 × 2.5 = threshold
+- Manual mode 唔影響 (大少自己改 threshold, lookback 唔參與計算)
+
+**永久 rule**:
+- ✅ Lookback 預設 20 日, 範圍 5-100
+- ✅ 跟 Spec Sync #31 config input onChange handler pattern (即時 re-render + debounce 200ms)
+- ✅ 跟 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」
+- ✅ 改完即時重算 (auto mode 觸發 applyAutoThreshold, manual mode 唔影響)
+- ✅ 加「重置為 20」掣 (一鍵 reset default)
+- ✅ localStorage key: `stockpulse.zigzag.lookback`
+
+**Implementation**:
+- `testing-page/testing-page.js` 加 ~40 行: `LS_KEY_LOOKBACK` + `LOOKBACK_DEFAULT=20` + `LOOKBACK_MIN=5` + `LOOKBACK_MAX=100` + `getLookback()` / `setLookback()` helper + `applyAutoThreshold` 改用 `getLookback()` + 撳跑算法嗰陣 (L860-877) 改用 `getLookback()` + `initThresholdModeUI` 同步 lookback value + 2 個 handler (即時改 + 重置為 20)
+- `testing-page/index.html` 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣
+- Cache bust: ALGO_CACHE_BUST 4.28.0 → 4.29.0, ?v=2.3.83 → 2.3.84
+
+對應 commit: (即將 push, Spec Sync #34)
+對應 doc: ARCHITECTURE.md §15.26
+
 ### M9 popup 註解全面化 (Spec Sync #17, 大少 2026-08-13 07:23)
 
 **永久 rule (M7/M8/M9 verdict popup 一致性)**:
