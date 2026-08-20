@@ -98,6 +98,20 @@ function setManualThreshold(v) {
   localStorage.setItem(LS_KEY_MANUAL_THRESHOLD, String(v));
 }
 
+// 大少 2026-08-21 00:24 trigger — lookback 參數 (手動可調, 預設 20 日, 自動儲存)
+const LS_KEY_LOOKBACK = 'stockpulse.zigzag.lookback';
+const LOOKBACK_DEFAULT = 20;
+const LOOKBACK_MIN = 5;
+const LOOKBACK_MAX = 100;
+
+function getLookback() {
+  const v = parseInt(localStorage.getItem(LS_KEY_LOOKBACK), 10);
+  return Number.isFinite(v) && v >= LOOKBACK_MIN && v <= LOOKBACK_MAX ? v : LOOKBACK_DEFAULT;
+}
+function setLookback(v) {
+  localStorage.setItem(LS_KEY_LOOKBACK, String(v));
+}
+
 // ===== Algorithm Registry（永久 design）=====
 // 加新 algorithm: 寫 algorithms/AS-XX/adapter.mjs + 加 1 行去呢度
 //
@@ -187,8 +201,9 @@ function setManualThreshold(v) {
 // 大少 2026-08-20 22:08 Phase 10 M8 Decision Engine 拎走 frontend: ALGO_CACHE_BUST = '4.25.0' (frontend decisionEngineAdapter.analyze 拎走 340 行 chain (import bundle + 拎 cache + 拎 M1/zmen + calibrate + applyAdaptiveParams + decide + 9 個 warning 注入), 換 1 個 fetch backend /api/algorithms/run?algo=decision_engine stub, AS-03 進度 10/10 peer algorithm backend done — M1+M2+M3+M4+M5+M6+M7+M8+M9+ZigZag 全部 backend port 完成, 永久 rule self-check 確認: 改 adapter.mjs 之後必同步 bump 2 個地方, Phase 10 跟返冇漏)
 // 大少 2026-08-20 23:10 Bug fix — ZigZag threshold slider 即時 re-render: ALGO_CACHE_BUST = '4.26.0' (testing-page.js 重構 runAlgorithm L785-820 + 抽 refreshZigZagOverlay helper (override lastVerdict.meta + 清舊 ZigZag/extension series + renderChartOverlay 重畫紫色線 + renderDebugPanel 重 update) + 加 #zigzag-threshold input onChange handler (input + change event, debounce 200ms 防拖動 spam, sync value 入 currentOptions, 撳即時 call refreshZigZagOverlay); Bug: 之後 #zigzag-threshold input 完全冇 onChange handler, value 永遠唔入 currentOptions, 紫色線永遠用緊撳跑嗰陣嘅 5%, 違反 2026-08-19 13:03 永久 rule「改動 → 即時 re-render, 唔需要撳跑算法」; 永久 rule: testing page 所有 config input 必須有 onChange handler 同步入 currentOptions + 自動 re-render, 套用 M2/M3/M4 之後 config 全部跟; index.html hint 改「改完即時更新紫色線, 唔使撳跑算法」)
 // 大少 2026-08-20 23:20 — ZigZag controls + runStatus 搬到圖表上邊: ALGO_CACHE_BUST = '4.27.0' (index.html layout 改: #run-status + #zigzag-controls + #zigzag-sequence-controls 由 inputs section 搬去 chart-section 入面 chart container 之前, 排 ma-toggle-bar 之前, 大少 23:20 trigger「移到圖表上邊」, 一睇 chart 即刻見到即時更新 message 同 ZigZag 設定, 視線唔使離開 chart 向上望; testing-page.css .run-status margin-top 12px 改 margin-bottom 8px 因為已喺 chart-section 內, 唔再需要 margin-top; 永久 rule: 跟 chart 互動嘅 controls + status 永遠排喺 chart-section 入面 chart container 之前, 唔好散喺 inputs section)
+// 大少 2026-08-21 00:24 — ZigZag threshold lookback 參數 (手動可調): ALGO_CACHE_BUST = '4.29.0' (testing-page.js 加 LS_KEY_LOOKBACK + LOOKBACK_DEFAULT=20 + LOOKBACK_MIN=5 + LOOKBACK_MAX=100 + getLookback() + setLookback() localStorage helper, applyAutoThreshold 改用 getLookback() 動態取 (唔再 hardcode 20), 撳跑算法嗰陣 auto mode 計算 (L860-877) 改用 getLookback(), 初始化 UI (initThresholdModeUI) 加 lookbackEl value 同步, 加 lookback input 即時改 handler (debounce 200ms, 改完即時重算, manual mode 唔影響), 加「重置為 20」掣 handler; index.html 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣, 跟 Spec Sync #31 config input onChange handler pattern 一致; 對應大少 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」; 永久 rule: lookback 永遠跟 localStorage, 預設 20, 範圍 5-100, manual mode 唔影響, 改完即時重算 (auto mode 觸發 applyAutoThreshold); localStorage key `stockpulse.zigzag.lookback`)
 // 大少 2026-08-21 00:02 — ZigZag threshold 自動調整 (波動率自適應法): ALGO_CACHE_BUST = '4.28.0' (testing-page.js 加 autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5) + extractHLC(klines) 純函數 + localStorage 存取 helper (LS_KEY_THRESHOLD_MODE + LS_KEY_MANUAL_THRESHOLD) + applyAutoThreshold(code, period) 計算 + 即時 update 紫色線 + 初始化 UI (initThresholdModeUI 新股票冇 record → 自動 mode 預設) + mode 切換 handler (切 auto 即時計算, 切 manual 用最近 auto 結果) + 重算掣 + 重置為自動掣 + manual slider 即時改 (跟 spec sync #31 pattern, debounce 200ms) + 撳「跑算法」嗰陣 auto mode 自動計算 threshold (L841 之前) + 全部 localStorage 自動保存; index.html #zigzag-controls 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表 2.0/2.5/3.0-4.0) + 隱藏 #zigzag-threshold (跟 spec sync #31 兼容); index.html head 加 .multiplier-tooltip inline style block; 對應大少 trigger (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存; 永久 rule: 新股票冇 localStorage record → 自動 mode 預設, 倍數 2.5 hardcode, lookback 20 hardcode, 0.5%-20% clamp, localStorage key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`)
-const ALGO_CACHE_BUST = '4.28.0';
+const ALGO_CACHE_BUST = '4.29.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -846,7 +861,9 @@ async function runAlgorithm() {
     if (getThresholdMode() === 'auto' && Array.isArray(klines) && klines.length > 0) {
       const hlc = extractHLC(klines);
       if (hlc) {
-        const autoThreshold = autoThresholdVolatility(hlc.highs, hlc.lows, hlc.closes, 20, 2.5);
+        // 大少 2026-08-21 00:24 — lookback 用 getLookback() 動態取
+        const lookback = getLookback();
+        const autoThreshold = autoThresholdVolatility(hlc.highs, hlc.lows, hlc.closes, lookback, 2.5);
         if (autoThreshold != null) {
           const thresholdPct = +(autoThreshold * 100).toFixed(2);
           currentOptions.zigzagThreshold = thresholdPct;
@@ -855,7 +872,7 @@ async function runAlgorithm() {
           if (sliderEl) sliderEl.value = String(thresholdPct);
           const displayEl = document.getElementById('zigzag-auto-threshold-value');
           if (displayEl) displayEl.textContent = `${thresholdPct}%`;
-          runStatus.innerHTML = `✅ 已取到 ${actualCount} 日 K 線${countHint} · 🎯 自動 threshold = ${thresholdPct}% · 跑緊演算法...`;
+          runStatus.innerHTML = `✅ 已取到 ${actualCount} 日 K 線${countHint} · 🎯 自動 threshold = ${thresholdPct}% (${lookback} 日 × 2.5) · 跑緊演算法...`;
         }
       }
     }
@@ -1187,7 +1204,9 @@ async function applyAutoThreshold(code, period) {
   }
   const hlc = extractHLC(lastKlines);
   if (!hlc) return null;
-  const autoThreshold = autoThresholdVolatility(hlc.highs, hlc.lows, hlc.closes, 20, 2.5);
+  // 大少 2026-08-21 00:24 — lookback 用 getLookback() 動態取 (預設 20, 大少可手動調 5-100)
+  const lookback = getLookback();
+  const autoThreshold = autoThresholdVolatility(hlc.highs, hlc.lows, hlc.closes, lookback, 2.5);
   if (autoThreshold == null) {
     runStatus.innerHTML = `⚠️ 自動計算失敗 (K 線數據唔夠或格式錯誤)`;
     return null;
@@ -1200,7 +1219,7 @@ async function applyAutoThreshold(code, period) {
   currentOptions.zigzagThreshold = thresholdPct;
   const sliderEl = document.getElementById('zigzag-threshold');
   if (sliderEl) sliderEl.value = String(thresholdPct);
-  runStatus.innerHTML = `⏳ 自動計算 ZigZag threshold = ${thresholdPct}% (20 日波動率 × 2.5)...`;
+  runStatus.innerHTML = `⏳ 自動計算 ZigZag threshold = ${thresholdPct}% (${lookback} 日波動率 × 2.5)...`;
   const result = await refreshZigZagOverlay(code, period, thresholdPct);
   if (result && result.ok) {
     runStatus.innerHTML = `✅ 自動計算 ZigZag threshold = ${thresholdPct}% (${result.points.length} 個 points)`;
@@ -1213,7 +1232,7 @@ async function applyAutoThreshold(code, period) {
 // 大少 2026-08-21 00:02 trigger — 初始化 threshold mode (新股票冇 record → 自動 mode 預設)
 // 永久 rule (大少 00:02): 所有沒有記錄即新股票都會自動跑一次
 // 「新股票」= 冇 localStorage record → 自動 mode 預設
-// 初始化 UI: 同步 radio / 顯示區 / manual input
+// 初始化 UI: 同步 radio / 顯示區 / manual input / lookback
 function initThresholdModeUI() {
   const mode = getThresholdMode();
   document.querySelectorAll('input[name="zigzag-mode"]').forEach(r => {
@@ -1225,6 +1244,9 @@ function initThresholdModeUI() {
   if (manualDisplay) manualDisplay.style.display = (mode === 'manual') ? '' : 'none';
   const manualEl = document.getElementById('zigzag-manual-threshold');
   if (manualEl) manualEl.value = String(getManualThreshold());
+  // 大少 2026-08-21 00:24 — 初始化 lookback input value (跟 localStorage / default 20)
+  const lookbackEl = document.getElementById('zigzag-lookback');
+  if (lookbackEl) lookbackEl.value = String(getLookback());
   // 初始化 currentOptions.zigzagThreshold (跟 spec sync #31 default 一致)
   currentOptions.zigzagThreshold = mode === 'manual' ? getManualThreshold() : 5;
 }
@@ -1306,6 +1328,50 @@ if (resetAutoBtn) {
     if (autoDisplay) autoDisplay.style.display = '';
     if (manualDisplay) manualDisplay.style.display = 'none';
     if (lastKlines && lastChartRefs) {
+      const code = currentOptions.code;
+      const period = currentOptions.period || '1d';
+      if (code) await applyAutoThreshold(code, period);
+    }
+  });
+}
+
+// 大少 2026-08-21 00:24 trigger — Lookback 參數 (手動可調, 預設 20, 自動儲存)
+// 跟 Spec Sync #31 config input onChange handler pattern 一致
+// 改完即時重算 (debounce 200ms 防連環拖動 spam backend fetch)
+// 永久 rule: 跟 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」
+const lookbackEl = document.getElementById('zigzag-lookback');
+if (lookbackEl) {
+  let _lookbackDebounce = null;
+  const _onLookbackChange = () => {
+    const v = parseInt(lookbackEl.value, 10);
+    // 5-100 範圍 (跟 index.html input min/max 一致), invalid value 唔 trigger fetch
+    if (isNaN(v) || v < LOOKBACK_MIN || v > LOOKBACK_MAX) return;
+    setLookback(v);  // 跟 2026-08-19 13:03 永久 rule「每次更新都自動保存」
+    clearTimeout(_lookbackDebounce);
+    _lookbackDebounce = setTimeout(async () => {
+      // 撳跑算法之前冇 lastKlines, 跳過 (大少要撳「跑算法」先 render chart, 呢個只係「改完即時更新」)
+      if (!lastKlines || !lastChartRefs) return;
+      // manual mode 唔影響 (manual mode 大少自己改 threshold, lookback 唔參與計算)
+      if (getThresholdMode() !== 'auto') return;
+      const code = currentOptions.code;
+      const period = currentOptions.period || '1d';
+      if (!code) return;
+      await applyAutoThreshold(code, period);
+    }, 200);
+  };
+  lookbackEl.addEventListener('input', _onLookbackChange);
+  lookbackEl.addEventListener('change', _onLookbackChange);
+}
+
+// 大少 2026-08-21 00:24 trigger — 重置為 20 掣 (lookback 用, 一鍵 reset default)
+const lookbackResetBtn = document.getElementById('zigzag-lookback-reset-btn');
+if (lookbackResetBtn) {
+  lookbackResetBtn.addEventListener('click', async () => {
+    const el = document.getElementById('zigzag-lookback');
+    if (el) el.value = String(LOOKBACK_DEFAULT);
+    setLookback(LOOKBACK_DEFAULT);
+    // 即時重算
+    if (lastKlines && lastChartRefs && getThresholdMode() === 'auto') {
       const code = currentOptions.code;
       const period = currentOptions.period || '1d';
       if (code) await applyAutoThreshold(code, period);
