@@ -416,7 +416,8 @@ aside h4 {
 }
 
 .run-status {
-  margin-top: 12px;
+  margin-top: 0;
+  margin-bottom: 8px;
   font-size: 13px;
   color: #555;
   padding: 6px 10px;

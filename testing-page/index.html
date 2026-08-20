@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>股票演算法測試頁</title>
-  <link rel="stylesheet" href="testing-page.css?v=2.3.81">
+  <link rel="stylesheet" href="testing-page.css?v=2.3.82">
 </head>
 <body>
   <div class="container">
@@ -43,29 +43,6 @@
           <form id="inputs-form" onsubmit="return false;"></form>
           <button id="run-btn" class="primary-btn">跑算法</button>
           <button id="run-full-chain-btn" class="primary-btn" style="background:linear-gradient(90deg,#722ed1,#1890ff);margin-left:8px;" title="自動跑 M7(綜合) → M9(回測,拎最佳設定) → M8(最終判斷用最佳設定)">🚀 跑完整鏈條 (M7→M9→M8)</button>
-          <!-- 大少 2026-08-19 trigger — ZigZag 控制 (啟用 + threshold) -->
-          <div id="zigzag-controls" style="display:inline-block;margin-left:12px;font-size:13px;">
-            <label style="margin-right:8px;cursor:pointer;">
-              <input type="checkbox" id="zigzag-enabled" checked style="vertical-align:middle;">
-              啟用 ZigZag
-            </label>
-            <label style="margin-right:8px;">
-              Threshold %: <input type="number" id="zigzag-threshold" value="5" min="1" max="20" step="0.5" style="width:60px;">
-            </label>
-            <span style="color:#999;font-size:12px;">(改完即時更新紫色線, 唔使撳跑算法)</span>
-          </div>
-          <!-- 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 (1=最新, 2=紫色最後 1 個, ...) -->
-          <div id="zigzag-sequence-controls" style="display:inline-block;margin-left:12px;font-size:13px;margin-top:4px;">
-            <label style="margin-right:8px;cursor:pointer;">
-              <input type="checkbox" id="zigzag-sequence-enabled" style="vertical-align:middle;">
-              顯示 ZigZag 點順序號碼
-            </label>
-            <label style="margin-right:8px;">
-              顯示最近 <input type="number" id="zigzag-sequence-max-count" value="30" min="5" max="162" step="1" style="width:50px;"> 個
-            </label>
-            <span style="color:#999;font-size:12px;">(1 號=今日 close, 2 號=紫色最後 1 個, 倒序排)</span>
-          </div>
-          <div id="run-status" class="run-status"></div>
         </section>
 
         <section class="result">
@@ -81,6 +58,31 @@
             <p class="chart-note">
               撳完「跑算法」之後, 嗰隻股票嘅 K 線圖會自動顯示喺呢度。
             </p>
+          </div>
+          <!-- 大少 2026-08-20 23:20 trigger — ZigZag 控制 + 順序號碼 + runStatus 搬到圖表上邊 (chart-section 入面, chart container 之前) -->
+          <!-- 凡人話: 之前散喺 inputs section 跑算法掣下面, 大少要睇即時更新 message 同改 ZigZag 設定要離開 chart 向上望, 而家搬到 chart 上面, 視線一離開 chart 即刻見到 -->
+          <div id="run-status" class="run-status" style="margin-bottom:8px;"></div>
+          <!-- 大少 2026-08-19 trigger — ZigZag 控制 (啟用 + threshold) -->
+          <div id="zigzag-controls" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
+            <label style="margin-right:8px;cursor:pointer;">
+              <input type="checkbox" id="zigzag-enabled" checked style="vertical-align:middle;">
+              啟用 ZigZag
+            </label>
+            <label style="margin-right:8px;">
+              Threshold %: <input type="number" id="zigzag-threshold" value="5" min="1" max="20" step="0.5" style="width:60px;">
+            </label>
+            <span style="color:#999;font-size:12px;">(改完即時更新紫色線, 唔使撳跑算法)</span>
+          </div>
+          <!-- 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 (1=最新, 2=紫色最後 1 個, ...) -->
+          <div id="zigzag-sequence-controls" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
+            <label style="margin-right:8px;cursor:pointer;">
+              <input type="checkbox" id="zigzag-sequence-enabled" style="vertical-align:middle;">
+              顯示 ZigZag 點順序號碼
+            </label>
+            <label style="margin-right:8px;">
+              顯示最近 <input type="number" id="zigzag-sequence-max-count" value="30" min="5" max="162" step="1" style="width:50px;"> 個
+            </label>
+            <span style="color:#999;font-size:12px;">(1 號=今日 close, 2 號=紫色最後 1 個, 倒序排)</span>
           </div>
           <!-- 大少 2026-08-19 17:05 trigger — MA 線獨立 toggle 放喺圖表上邊 (即時生效) -->
           <div id="ma-toggle-bar" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
@@ -117,6 +119,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.81"></script>
+  <script type="module" src="testing-page.js?v=2.3.82"></script>
 </body>
 </html>
