@@ -417,20 +417,20 @@ if existing_history is not None:
 **對應 commit**: (即將 push, Spec Sync #34)
 **對應 doc**: ARCHITECTURE.md §15.26
 
-### Testing page ZigZag lookback 永遠顯示 永久 rule (大少 2026-08-21 00:31)
+### Testing page ZigZag lookback 永遠可改 永久 rule (大少 2026-08-21 00:38 改寫 00:31)
 
-**說明**: 大少 00:31 trigger「當轉成手動輸入時就不見了"最近 日波動率"」, 之前 lookback input 內嵌喺 auto mode 顯示區, manual mode 嗰陣隱藏咗。
+**改寫說明**: 大少 00:31 trigger「當轉成手動輸入時就不見了"最近 日波動率"」, 00:38 改寫為「這個參數不用 Disable」。之前 Spec Sync #35 嘅「manual mode 顯示但 disabled」規則錯咗, 大少 want Lookback 永遠可改。
 
-**永久 rule**:
+**永久 rule** (改寫後):
 - ✅ Lookback row 永遠顯示 (auto + manual mode 都見到, 做大少 reference 用)
-- ✅ Auto mode 嗰陣可改 (input enabled + reset btn enabled)
-- ✅ Manual mode 嗰陣顯示但 disabled (input.disabled=true + reset btn.disabled=true, 畀大少睇返用緊咩 lookback)
-- ✅ 切 mode 即時切可編輯狀態 (跟 Spec Sync #31 onChange handler pattern 一致)
-- ✅ page load 嗰陣 applyLookbackEditable() 同步狀態 (跟 localStorage mode 一致)
-- ✅ 套用: 之後其他 algorithm config 加 display 跟 mode 切換都跟呢個 pattern (auto 顯示, manual 都顯示但 disabled)
+- ✅ Lookback 永遠 enable (auto + manual mode 都可改, 拎走 Spec Sync #35 嘅「manual mode disabled」規則)
+- ✅ Manual mode 改完只係儲 localStorage, 唔 trigger 重算 (因為 manual mode 用大少 set 嘅 threshold, lookback 唔參與計算)
+- ✅ Auto mode 改完即時重算 (applyAutoThreshold 觸發, 紫色線即時 update)
+- ✅ 對應 Spec Sync #31 onChange handler pattern (auto + manual 都即時 localStorage 儲存)
+- ✅ 套用: 之後其他 algorithm config 永遠可改 (auto mode 改 trigger 重算, manual mode 改只係儲 settings)
 
-**對應 commit**: (即將 push, Spec Sync #35)
-**對應 doc**: ARCHITECTURE.md §15.27
+**對應 commit**: (即將 push, Spec Sync #36)
+**對應 doc**: ARCHITECTURE.md §15.28
 
 ### K-line Cache (永久 rule, 大少 #8602)
 

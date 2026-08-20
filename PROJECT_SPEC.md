@@ -660,6 +660,29 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 對應 commit: (即將 push, Spec Sync #35)
 對應 doc: ARCHITECTURE.md §15.27
 
+### Testing page ZigZag lookback 永遠可改 (Spec Sync #36, 大少 2026-08-21 00:38 改寫 #35)
+
+**大少 trigger 改寫**: 「當轉手動時,"最近 日波動率 × 2.5 (5-100) 重置為 20" 變成了 Disable, 這個參數不用 Disable」, 推翻之前 Spec Sync #35 嘅「manual mode 顯示但 disabled」規則。
+
+**永久 rule 改寫**:
+- ❌ 之前 (Spec Sync #35): Manual mode 顯示但 disabled (input.disabled=true + reset btn.disabled=true)
+- ✅ 而家 (Spec Sync #36): Lookback 永遠 enable (auto + manual mode 都可改)
+- ✅ Manual mode 改完只係儲 localStorage, 唔 trigger 重算 (因為 manual mode 用大少 set 嘅 threshold, lookback 唔參與計算)
+- ✅ Auto mode 改完即時重算 (applyAutoThreshold 觸發, 紫色線即時 update)
+- ✅ 套用: 之後其他 algorithm config 永遠可改 (auto mode 改 trigger 重算, manual mode 改只係儲 settings)
+
+**Implementation**:
+- `testing-page/testing-page.js` 拎走 `applyLookbackEditable()` helper (empty function, 冇 caller)
+- 拎走 `initThresholdModeUI()` / mode 切換 handler / reset auto 掣 對 `applyLookbackEditable()` 嘅 3 個 call
+- Lookback onChange handler 改: 永遠 `setLookback(v)` 儲 localStorage (auto + manual 都儲), 只係 auto mode 嗰陣 trigger `applyAutoThreshold` 即時重算
+- `testing-page/index.html` 冇改 (UI layout 一樣)
+- Cache bust: ALGO_CACHE_BUST 4.30.0 → 4.31.0, ?v=2.3.85 → 2.3.86
+
+**教訓 (大少 00:38 教訓)**: 「永遠可改」比「永遠 enable / 永久 enabled」重要, 大少 want config 永遠可改, 唔好為咗 display 用途而 disabled。
+
+對應 commit: (即將 push, Spec Sync #36)
+對應 doc: ARCHITECTURE.md §15.28
+
 ### M9 popup 註解全面化 (Spec Sync #17, 大少 2026-08-13 07:23)
 
 **永久 rule (M7/M8/M9 verdict popup 一致性)**:

@@ -3038,3 +3038,35 @@ M5 VolumePrice:
 ### 對應 commit
 - `fix(zigzag-lookback-visible): Lookback 永遠顯示 (manual mode 都見到)` — testing-page/index.html layout 改 (抽 lookback row 出嚟做獨立行) + testing-page.js 加 `applyLookbackEditable()` helper + 3 個地方 call (init / mode 切 / reset auto) + cache bust 4.29.0 → 4.30.0 / ?v=2.3.84 → 2.3.85 — 本 commit
 - `docs(spec-sync-35): Lookback 永遠顯示 — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.27 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「Lookback row 永遠顯示」+「Auto mode 可改, Manual mode 顯示但 disabled」
+
+## §15.28 — Lookback 永遠可改 (大少 2026-08-21 00:38 trigger 改寫 §15.27「這個參數不用 Disable」, Spec Sync #36) [2026-08-21]
+
+### 大少 00:38 trigger 改寫
+大少 00:38 trigger「當轉手動時,"最近 日波動率 × 2.5 (5-100) 重置為 20" 變成了 Disable, 這個參數不用 Disable」, 推翻之前 §15.27 / Spec Sync #35 嘅「manual mode 顯示但 disabled」規則。大少 want Lookback 永遠可改 (auto + manual mode 都可改), 拎走 Spec Sync #35 嘅 disabled toggle。
+
+### 改寫範圍 (testing-page.js)
+- 拎走 `applyLookbackEditable()` helper (empty function, 冇 caller)
+- 拎走 `initThresholdModeUI()` / mode 切換 handler / reset auto 掣 對 `applyLookbackEditable()` 嘅 3 個 call
+- Lookback onChange handler 改:
+  - 永遠 `setLookback(v)` 儲 localStorage (auto + manual mode 都儲, 跟 2026-08-19 13:03 永久 rule「每次更新都自動保存」)
+  - 只係 auto mode 嗰陣 trigger `applyAutoThreshold` 即時重算 (紫色線即時 update)
+  - manual mode 嗰陣只儲 localStorage, 唔 trigger 重算 (manual mode 用大少 set 嘅 threshold, lookback 唔參與計算)
+- index.html 冇改 (UI layout 一樣, 只係拎走 disabled 邏輯)
+
+### Cache bust
+- ALGO_CACHE_BUST 4.30.0 → 4.31.0
+- ?v=2.3.85 → 2.3.86
+
+### 永久 rule 收接 (改寫後)
+- ✅ **Lookback 永遠 enable** (永久 rule, 改寫 §15.27): 拎走 Spec Sync #35 嘅「manual mode 顯示但 disabled」規則, auto + manual mode 都可改
+- ✅ **Manual mode 改完只係儲 localStorage** (永久 rule): 唔 trigger 重算, 因為 manual mode 用大少 set 嘅 threshold (lookback 唔參與計算), 下次切 auto 先用新 lookback
+- ✅ **Auto mode 改完即時重算** (永久 rule): 跟 Spec Sync #31 onChange handler pattern, `applyAutoThreshold` 觸發紫色線即時 update
+- ✅ **套用: 之後其他 algorithm config 永遠可改** (永久 rule): 唔好加 manual mode disabled 邏輯, 因為大少 want 改得到就改得到 (改完儲 settings 已經夠, 唔需要禁用)
+- ✅ **教訓 (大少 00:38 教訓)**: 「永遠可改」比「永遠 enable / 永久 enabled」重要, 大少 want config 永遠可改, 唔好為咗 display 用途而 disabled
+- ❌ **拎走 (改寫)**:
+  - Spec Sync #35 嘅「Auto mode 嗰陣可改」+「Manual mode 嗰陣顯示但 disabled」分開規則 → 合併做「永遠 enable」
+  - Spec Sync #35 嘅「切 mode 即時切可編輯狀態」+「page load 嗰陣 applyLookbackEditable()」 → 拎走, 因為永遠 enable 冇切換
+
+### 對應 commit
+- `fix(zigzag-lookback-always-enabled): Lookback 永遠可改 (拎走 manual mode 嘅 disabled)` — testing-page.js 拎走 applyLookbackEditable() helper + 3 個 call + onChange handler 改寫 (auto 觸發重算, manual 只儲 localStorage) + cache bust 4.30.0 → 4.31.0 / ?v=2.3.85 → 2.3.86 — 本 commit
+- `docs(spec-sync-36): Lookback 永遠可改 — 4 份 spec doc 永久 rule 同步 (改寫 §15.27 / Spec Sync #35)` — ARCHITECTURE §15.28 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「Lookback 永遠 enable, auto + manual mode 都可改」+「manual mode 改完只係儲 localStorage」
