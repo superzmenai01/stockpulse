@@ -369,6 +369,15 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   - pytest 215/215 PASS (M6 11 + existing 204)
   - 5 隻 stock verify: 全部 SIDEWAYS 0.25 no_clear_setup (1-3 rules S1-S12 觸發, regime 全部 balanced)
   - AS-03 進度: 7 個 peer module (M1-M7) + ZigZag 共 8 個 algorithm, 完成 7 個, 剩 M7 Synthesizer 1 個
+- **Phase 8 done (2026-08-20)**:
+  - **Phase 8** (M7 Synthesizer 終極綜合判定) v1.0.0 — `backend/algorithms/synthesizer/` + `algorithm_runner.py` M1-M6 verdict dependency injection
+  - M7 拎 6 個 module standard verdict 拎綜合判定, algorithm_runner 自動跑 M1-M6 拎 verdict inject 落 options
+  - 5 個 sub-step: SSI 戰略強度 (consistency + confidence + rules) + TCM 戰術交叉驗證 (3 對 pair) + Alignment + Grade (8 個 A+/A/B+/B/C+/C/D/F) + Kelly 倉位 (half/quarter/octo)
+  - Frontend `adapter.mjs` 拎走 `expertRulesSynthesize` 54 行 + synth flow, 換 fetch backend stub
+  - 4 個 frontend render function 拎 `verdict.X` → `verdict.meta.X` 拎 backend 兼容 shape
+  - pytest 226/226 PASS (M7 11 + existing 215)
+  - 5 隻 stock verify: 全部 SIDEWAYS Grade A/B+ (alignment 1.0 / 0.833, SSI 61-72, kelly quarter)
+  - **AS-03 進度: 8/8 algorithm backend done** (M1+M2+M3+M4+M5+M6+M7+ZigZag, Sprint 2 拎 Decision Engine M8 port 拎返)
 - **凡人話:** 一個 source of truth, 之後 algorithm 加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
 
 ### ⚙️ Settings Page

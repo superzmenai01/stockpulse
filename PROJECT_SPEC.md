@@ -609,6 +609,17 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - 凡人話: M6 拎 frontend `analyzeVolatility` + helper 換 1 個 backend fetch stub, frontend 4 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
 - **AS-03 進度**: 7 個 peer module (M1-M7) + ZigZag 共 8 個 algorithm, 完成 7 個 (M1-M6 + ZigZag), 剩 M7 Synthesizer 1 個 (拎 M1-M6 全部 verdict 做綜合判定, port 完之後整個 AS-03 cycle flow 全部由 backend 驅動)
 
+**Phase 8 done (2026-08-20, 大少 21:30 揀 Phase 8 — M7 Synthesizer 拎齊)**:
+- **Phase 8** (M7 Synthesizer 終極綜合判定) v1.0.0: `backend/algorithms/synthesizer/` + `algorithm_runner.py` M1-M6 verdict dependency injection
+- M7 拎 6 個 module standard verdict interface (state / confidence / base_weight / max_drawdown_estimate / rules_fired), algorithm_runner 自動跑 M1-M6 拎 verdict 轉做 standard verdict interface inject 落 options
+- 5 個 sub-step: SSI 戰略強度 (consistency + confidence + rules) + TCM 戰術交叉驗證 (3 對 pair: ma-trendline / hl-volume / indicators-volatility) + Alignment + Grade 8 個評級 (A+/A/B+/B/C+/C/D/F) + Kelly 倉位 (half/quarter/octo 跟 avg max_drawdown_estimate 自動切)
+- pytest 226/226 PASS (M7 11 + existing 215)
+- 5 隻 stock verify: 全部 SIDEWAYS Grade A/B+ (alignment 1.0 / 0.833, SSI 61-72, kelly quarter)
+- 凡人話: M7 拎 frontend `expertRulesSynthesize` 54 行 + synth flow 拎 `moduleVerdicts` 嗰 part 換 1 個 backend fetch stub, frontend 4 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
+- **AS-03 進度: 8/8 algorithm backend done** (M1+M2+M3+M4+M5+M6+M7+ZigZag, Sprint 2 拎 Decision Engine (M8) port 拎返 Phase 9 拎)
+- **Algorithm runner 拎 M1-M6 verdict dependency injection 永久 rule** (Phase 8 教訓): `algo_name == 'synthesizer'` 嗰陣, runner 自動拎 6 個 upstream algo 拎 verdict, 轉做 standard verdict interface inject 落 options, Synthesizer 唔可以直接拎 K 線拎 M1-M6
+- **Synthesizer max_drawdown_estimate 拎 static 0.05** (M7 v1.0.0), Sprint 2 M8 拎 adaptive auto-calibrate
+
 **凡人話 line number shift fix pattern** (Phase 4 教訓, 大少 2026-08-20 20:50): 拎走舊 function 之前必須重新 grep 實際 line 位置, hardcode 舊 line number 一定錯 (Phase 3 之後 + 506 行 shift 嘅 fix 教訓)。
 
 **Backup tag + 還原方法** (大少 2026-08-20 18:39 永久 rule):

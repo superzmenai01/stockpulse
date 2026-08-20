@@ -775,6 +775,8 @@ Backend algorithm framework — 統一 algorithm 入口, frontend call backend �
 
 **Phase 7 — volatility (M6)**: BB / KC Squeeze + ATR 分解 + VCP 結構檢測法 (跟 `modules/volatility.ts` 1:1 port, 12 rules S1-S12 + 5 setup + 3 failure mode), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycleLabel / confidence / squeeze / vcpStructure / atrDecomposition / followThrough / setupType / matchedRules / failureMode / winProbability), 唔需要 caller inject dependency。AS-03 進度: 7 個 peer module (M1-M7) + ZigZag 共 8 個 algorithm, 完成 7 個, 剩 M7 Synthesizer 1 個。
 
+**Phase 8 — synthesizer (M7)**: 終極綜合判定 (跟 `modules/synthesizer.ts` 1:1 port, Plan A 拆返 M7+M8, 5 個 sub-step: SSI 戰略強度 + TCM 戰術交叉驗證 + Alignment + Grade 8 個評級 + Kelly 倉位), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycleLabel / confidence / ssi_score / ssi_breakdown / tcm_matrix / alignment_score / grade / grade_score / kelly_fraction / kelly_numeric / module_summary), caller inject pattern: `algorithm_runner` 自動拎 6 個 module standard verdict interface (state / confidence / base_weight / max_drawdown_estimate / rules_fired) inject 落 options, Synthesizer 唔可以直接拎 K 線拎 M1-M6。AS-03 進度: 8/8 algorithm backend done (M1+M2+M3+M4+M5+M6+M7+ZigZag, Sprint 2 拎 Decision Engine M8 port 拎返 Phase 9 拎)。
+
 **Caller inject pattern**: M1 跑嗰陣 backend 自動跑 ZigZag 落同一份 klines + inject `zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSource` 落 M1 options, M1 唔需要知道 backend 有 ZigZag。
 
 **Algorithm ABC contract** (`backend/algorithms/base.py`):
