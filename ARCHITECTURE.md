@@ -2663,6 +2663,7 @@ M5 VolumePrice:
 - ✅ **Combined feat commit 永久 rule** (大少 21:10 trigger「連做」): 同一 trigger 嘅多個 module 用 1 個 feat commit (例如 Phase 5+6 = 1 個 commit), 唔好分拆, 但 spec sync 仍然 1 個獨立 commit
 - ✅ **Backend register pattern 永久 rule** (Phase 5 fix 教訓): `register(instance)` 而唔係 `register("name", cls)`, 1 個 argument
 - ✅ **Backend port 流程永久 rule**: source file → algorithm.py (1:1 port) → config.py → __init__.py → __init__ import → tests → pytest pass → frontend migration → 5 stock verify
+- ✅ **Testing page cache bust self-check 永久 rule** (大少 2026-08-20 21:24 衍生, 跟之前 2026-08-09 13:10 testing page .mjs cache bust 永久 rule 但加強執行 step): 改 `algorithms/AS-03-cycle-detection/adapter.mjs` 之後, **commit 之前 grep** `testing-page.js` ALGO_CACHE_BUST + `index.html` ?v= 確認同步 bump。違規 = commit block (永久 rule 永久執行)。Phase 3+4+5+6 commit message 寫住「ALGO_CACHE_BUST 4.18.0 → ... + ?v=2.3.72 → ...」但實際 testing page code 從來冇做, 大少 21:24 揀 A 補返 + 加 self-check 永久 rule 防止再漏。Fix commit `f8ef53fd` 一齊補返 3 個 phase 漏做嘅 (4.18.0 → 4.19.0 M2 / 4.20.0 M3 / 4.21.0 M4+M5 / 4.21.1 fix)。
 
 ### 對應 commit (Phase 5+6)
 - `feat(backend-algorithm-m4-m5): Phase 5+6 — Indicators + VolumePrice 搬去 Python` — backend port + frontend migration + 21 pytest + 5 隻 stock verify
