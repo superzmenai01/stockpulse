@@ -357,6 +357,37 @@ if existing_history is not None:
 **對應 commit**: (即將 push, Spec Sync #32)
 **對應 doc**: ARCHITECTURE.md §15.24
 
+### Testing page ZigZag threshold 自動調整 永久 rule (大少 2026-08-21 00:02)
+
+**說明**: testing page ZigZag threshold 默認手動輸入 5%, 大少 2026-08-21 00:02 trigger「波動率自適應法」自動計算。新做法: 自動 mode 永遠跟 K 線自動計算 (取最近 20 日 high-low/close 波動率 × 2.5), 0.5%-20% clamp。手動 mode slider 即時改 (跟 spec sync #31 pattern)。新股票冇 localStorage record → 自動 mode 預設。對應大少 trigger 3 點: (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存。
+
+**公式** (大少 trigger 1:1):
+- 每日波動率 = (high - low) / close
+- 20 日平均 × 2.5 = threshold
+- Clamp: 0.5% - 20%
+- 倍數選擇 (popup 註解): 2.0 (短線, 靈敏) / 2.5 (波段, 推薦) / 3.0-4.0 (長線, 平滑)
+
+**永久 rule**:
+- ✅ 自動 mode = 取最近 20 日 K 線, 波動率 × 2.5, 0.5%-20% clamp
+- ✅ 手動 mode = slider 即時改, 1-20% 範圍, debounce 200ms
+- ✅ 撳「跑算法」嗰陣 auto mode 自動計算 (唔需要大少撳掣)
+- ✅ 切 mode 即時計算 + update 紫色線 (auto → 計算, manual → 用最近結果)
+- ✅ 撳「🔄 重算」掣: auto mode 用最新 K 線重計
+- ✅ 撳「重置為自動」掣: manual mode 一鍵切去 auto
+- ✅ localStorage 自動保存: `stockpulse.zigzag.thresholdMode` (auto/manual) + `stockpulse.zigzag.manualThreshold`
+- ✅ 新股票冇 localStorage record → 自動 mode 預設 (永久 rule: 大少 trigger 「新股票都會自動跑一次」)
+- ✅ popup 註解: 「? 倍數」hover 顯示倍數選擇表 (跟 M7/M8/M9 同樣 inline style block)
+- ✅ 對應 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」
+- ✅ 對應 Spec Sync #31 永久 rule (config input onChange handler)
+- ✅ 對應 Spec Sync #32 永久 rule (chart-control layout)
+
+**套用**:
+- 之後其他 algorithm 加 config (e.g. M2 ATR threshold, M4 RSI period) 都跟呢個 pattern: 自動/手動 切換 + 自動計算 + localStorage + popup
+- 改 testing-page.js 嗰陣同步 bump ALGO_CACHE_BUST + ?v= 2 個地方 (cache bust self-check 永久 rule 21:24)
+
+**對應 commit**: (即將 push, Spec Sync #33)
+**對應 doc**: ARCHITECTURE.md §15.25
+
 ### K-line Cache (永久 rule, 大少 #8602)
 
 ```python

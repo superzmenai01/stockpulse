@@ -2889,3 +2889,77 @@ M5 VolumePrice:
 ### 對應 commit
 - `fix(zigzag-controls-chart-top): ZigZag controls + runStatus 搬到圖表上邊` — testing-page/index.html layout 改 (3 個 element 搬去 chart-section + 視覺統一) + testing-page.css .run-status margin 改 + cache bust 4.26.0 → 4.27.0 / ?v=2.3.81 → 2.3.82 — 本 commit
 - `docs(spec-sync-32): ZigZag controls + runStatus 搬到圖表上邊 layout fix — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.24 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「跟 chart 互動嘅 controls + status 永遠排喺 chart-section 入面 chart container 之前」
+
+## §15.25 — ZigZag threshold 自動調整 (波動率自適應法, 大少 2026-08-21 00:02 trigger「波動率自適應法」, Spec Sync #33) [2026-08-21]
+
+### 大少 00:02 trigger
+大少提供「波動率自適應法」公式 + 3 點要求:
+
+1. **新股票自動跑一次** — 冇 localStorage record 嘅股票 → 自動 mode 預設
+2. **新增按制手動跑** — 加「自動/手動」切換 radio + 手動 slider 即時改
+3. **每次更新都自動保存** — localStorage 自動儲 mode + manual value
+
+公式 (大少 trigger 1:1):
+```python
+# 每日波動率 = (high - low) / close
+# 20 日平均 × 2.5 = threshold
+# Clamp: 0.5% - 20%
+```
+
+倍數選擇 (大少 trigger table):
+| 倍數      | 效果                   | 適合           |
+| ------- | -------------------- | ------------ |
+| 2.0     | 較靈敏, 轉折點較多          | 短線/日內交易     |
+| 2.5     | 平衡 (推薦)              | 波段操作        |
+| 3.0-4.0 | 較平滑, 轉折點較少          | 長線/趨勢判斷     |
+
+### 大少 why
+- 大少想免自己諗「呢隻股票應該用幾多 % threshold」, 自動計就最方便
+- 唔同股票波動率差好遠 (騰訊日均 1.5% vs 太古 0.5%), 固定 5% 對一隻可能太多, 對另一隻太少
+- 波動率自適應法係 standard technical analysis practice, 大少畀咗 formula 就要落實
+
+### Fix 範圍 (2 個 file)
+- **`testing-page/testing-page.js`** (新增 ~210 行):
+  1. `autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5)` 純函數 — 取最近 20 日 high-low/close 波動率 × 2.5, 0.5%-20% clamp
+  2. `extractHLC(klines)` fallback chain helper — K 線可能用 `high` / `High` / `HIGH` 同 `close` / `Close` / `CLOSE`
+  3. localStorage 存取 helper — `getThresholdMode()` / `setThresholdMode()` / `getManualThreshold()` / `setManualThreshold()`, key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`
+  4. `applyAutoThreshold(code, period)` — 取 K 線 + 計算 + 顯示結果 + `refreshZigZagOverlay` 即時 update 紫色線
+  5. `initThresholdModeUI()` 初始化 — 新股票冇 record → 自動 mode 預設, manual mode 預設用 localStorage value
+  6. Mode 切換 handler — 切 auto 即時計算 + update 紫色線, 切 manual 用最近一次 auto 結果 (有) 或 localStorage manual value
+  7. 「🔄 重算」掣 handler — auto mode 用最新 K 線重計
+  8. 「重置為自動」掣 handler — manual mode 一鍵切去 auto
+  9. Manual slider handler — 即時改 + debounce 200ms (跟 spec sync #31 pattern 一致)
+  10. 撳「跑算法」嗰陣 (L841 之前) auto mode 自動計算 threshold — 唔需要大少撳掣
+- **`testing-page/index.html`**:
+  1. Head 加 `.multiplier-tooltip` inline style block (跟 M7/M8/M9 popup 風格一致)
+  2. `#zigzag-controls` 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表) + 隱藏 #zigzag-threshold (跟 spec sync #31 handler 兼容)
+
+### Cache bust
+- ALGO_CACHE_BUST 4.27.0 → 4.28.0
+- ?v=2.3.82 → 2.3.83 (testing-page.css + testing-page.js 兩個, 雖然 CSS 冇改但跟 HTML sync)
+
+### 永久 rule 收接 (testing page config UX 模式延伸)
+- ✅ **自動 mode 永遠跟 K 線自動計算** (永久 rule): 撳「跑算法」嗰陣, auto mode 自動取最近 20 日 K 線波動率 × 2.5, 唔需要大少手動改
+- ✅ **手動 mode = slider 即時改** (永久 rule): 1-20% 範圍, debounce 200ms, 跟 spec sync #31 嘅 onChange handler pattern 一致
+- ✅ **新股票冇 localStorage record → 自動 mode 預設** (永久 rule): 大少 trigger 「新股票都會自動跑一次」, localStorage default = 'auto'
+- ✅ **localStorage 自動保存** (永久 rule): 跟 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」, key `stockpulse.zigzag.thresholdMode` (auto/manual) + `stockpulse.zigzag.manualThreshold` (number)
+- ✅ **popup 註解倍數選擇表** (永久 rule): 跟 M7/M8/M9 同樣 inline style block, hover 顯示 3 種倍數 (2.0 / 2.5 / 3.0-4.0) 同適合場景
+- ✅ **倍數 2.5 + lookback 20 hardcode** (永久 rule): 大少 trigger 公式 default, 之後如果想改倍數喺 source code 改 `autoThresholdVolatility` 最後一個 argument
+- ✅ **0.5%-20% clamp** (永久 rule): 防止極端波動率股票拎到太小或太大 threshold, 影響紫色線質量
+- ✅ **套用: 之後其他 algorithm config (M2 ATR threshold, M4 RSI period 等) 都跟呢個 pattern** (永久 rule): 自動/手動 切換 + 自動計算 + localStorage + popup 註解, 對應 2026-08-19 13:03 永久 rule
+- ✅ **跟 Spec Sync #31 永久 rule** (config input onChange handler) + Spec Sync #32 永久 rule (chart-control layout) 一致
+
+### 凡人話解釋
+> 大少, 我將 ZigZag threshold 改咗自動/手動切換模式。
+>
+> 自動 mode 撳「跑算法」嗰陣, 程式自動用最近 20 日 K 線波動率 × 2.5 計 threshold, 例如騰訊日均 1.5% 波動 → 自動用 3.75%, 太古日均 0.5% → 自動用 1.25%, 跟返大少 trigger 嘅公式。
+>
+> 手動 mode 大少可以自己改 slider 1-20%, 即時 update 紫色線。
+>
+> 撳「? 倍數」嗰度 hover 會見到 2.0/2.5/3.0-4.0 嘅解釋 (短線/波段/長線)。
+>
+> 新股票冇 localStorage 記錄 → 自動 mode 預設; 已 set 過嘅股票 → 記住返之前 mode 同 value。
+
+### 對應 commit
+- `feat(zigzag-auto-threshold): 自動/手動 切換 + 波動率自適應法自動計算` — testing-page.js 加 ~210 行 (純函數 + 4 個 handler + 初始化 + 撳跑算法 trigger) + testing-page/index.html UI 改 (radio + 顯示區 + popup style) + cache bust 4.27.0 → 4.28.0 / ?v=2.3.82 → 2.3.83 — 本 commit
+- `docs(spec-sync-33): ZigZag threshold 自動調整 — 4 份 spec doc 永久 rule 同步` — ARCHITECTURE §15.25 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「自動 mode 永遠跟 K 線自動計算」+「新股票冇 localStorage record → 自動 mode 預設」

@@ -575,6 +575,45 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 對應 commit: (即將 push, Spec Sync #32)
 對應 doc: ARCHITECTURE.md §15.24
 
+### Testing page ZigZag threshold 自動調整 (Spec Sync #33, 大少 2026-08-21 00:02)
+
+**大少 trigger**: 「波動率自適應法」公式 + 3 點要求: (1) 新股票冇 record → 自動 mode 預設, (2) 新增按制手動跑, (3) 每次更新都自動保存。
+
+**公式** (大少 trigger 1:1):
+- 每日波動率 = (high - low) / close
+- 20 日平均 × 2.5 = threshold
+- Clamp: 0.5% - 20%
+
+**凡人話解釋**: testing page ZigZag threshold 默認手動輸入 5%, 改用「波動率自適應法」自動計算。新做法: 自動 mode 永遠跟 K 線自動計算 (取最近 20 日 high-low/close 波動率 × 2.5), 0.5%-20% clamp。手動 mode slider 即時改 (跟 spec sync #31 pattern)。新股票冇 localStorage record → 自動 mode 預設。撳「? 倍數」hover 見到 2.0/2.5/3.0-4.0 嘅解釋。
+
+**永久 rule**:
+- ✅ 自動 mode = 取最近 20 日 K 線, 波動率 × 2.5, 0.5%-20% clamp
+- ✅ 手動 mode = slider 即時改, 1-20% 範圍, debounce 200ms
+- ✅ 撳「跑算法」嗰陣 auto mode 自動計算 (唔需要大少撳掣)
+- ✅ 切 mode 即時計算 + update 紫色線 (auto → 計算, manual → 用最近結果)
+- ✅ 撳「🔄 重算」掣: auto mode 用最新 K 線重計
+- ✅ 撳「重置為自動」掣: manual mode 一鍵切去 auto
+- ✅ localStorage 自動保存: `stockpulse.zigzag.thresholdMode` (auto/manual) + `stockpulse.zigzag.manualThreshold`
+- ✅ 新股票冇 localStorage record → 自動 mode 預設 (大少 trigger 「新股票都會自動跑一次」)
+- ✅ popup 註解: 「? 倍數」hover 顯示倍數選擇表 (跟 M7/M8/M9 同樣 inline style block)
+- ✅ 對應 2026-08-19 13:03 永久 rule「Config UX 模式: 自動+手動+自動儲存更新圖表」
+- ✅ 對應 Spec Sync #31 永久 rule (config input onChange handler) + Spec Sync #32 永久 rule (chart-control layout)
+
+**倍數選擇表** (popup 顯示):
+| 倍數      | 效果                   | 適合           |
+| ------- | -------------------- | ------------ |
+| 2.0     | 較靈敏, 轉折點較多          | 短線/日內交易     |
+| 2.5     | 平衡 (推薦)              | 波段操作        |
+| 3.0-4.0 | 較平滑, 轉折點較少          | 長線/趨勢判斷     |
+
+**Implementation**:
+- `testing-page/testing-page.js` 加 ~210 行: `autoThresholdVolatility()` 純函數 + `extractHLC()` fallback chain + localStorage 存取 helper (4 個) + `applyAutoThreshold()` 計算 + 即時 update 紫色線 + `initThresholdModeUI()` 初始化 + 4 個 handler (mode 切換 / 重算 / 重置 / manual slider) + 撳「跑算法」嗰陣 (L841 之前) auto mode 自動計算 trigger
+- `testing-page/index.html` 改: head 加 `.multiplier-tooltip` inline style block + `#zigzag-controls` 加「自動/手動」radio + 自動 mode 顯示區 + 手動 mode 顯示區 + 「? 倍數」popup + 隱藏 #zigzag-threshold
+- Cache bust: ALGO_CACHE_BUST 4.27.0 → 4.28.0, ?v=2.3.82 → 2.3.83
+
+對應 commit: (即將 push, Spec Sync #33)
+對應 doc: ARCHITECTURE.md §15.25
+
 ### M9 popup 註解全面化 (Spec Sync #17, 大少 2026-08-13 07:23)
 
 **永久 rule (M7/M8/M9 verdict popup 一致性)**:
