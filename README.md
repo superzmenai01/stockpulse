@@ -378,6 +378,29 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   - pytest 226/226 PASS (M7 11 + existing 215)
   - 5 隻 stock verify: 全部 SIDEWAYS Grade A/B+ (alignment 1.0 / 0.833, SSI 61-72, kelly quarter)
   - **AS-03 進度: 8/8 algorithm backend done** (M1+M2+M3+M4+M5+M6+M7+ZigZag, Sprint 2 拎 Decision Engine M8 port 拎返)
+- **Phase 9 done (2026-08-20 21:54, Spec Sync #29)**:
+  - **Phase 9** (M9 Back Test 回測驗證 — 時光機驗證官) v0.6.0 — `backend/algorithms/back_test/`
+  - M9 拎 M7 Synthesizer verdict + 6 個 module standard verdict, 跑 walk-forward CV (3 folds rolling, 大少 22:28 揀 B) 拎最佳 params (kelly + rsi weight + ssi weights)
+  - 5 個 sub-step: runReplay (歷史 K 線 replay 5/10/20 日後真實回報) + runCoarseGrid (9 candidates) + runFineTune (top 5 ±20% = 30 candidates) + runAdaptiveWindow (6→18 個月) + runWalkForwardCV (3 folds avg validate score + 穩定度)
+  - 跑完 walk-forward CV 自動 POST optimal 落 cache (30 日 expiry) + 逐條 forward return records 落 cache (永久保留, 半衰期 180 日 weighted)
+  - Frontend `adapter.mjs` 拎走 `backTestAdapter.analyze` 210 行 chain (import bundle + runWalkForwardCV + decisionFn + 2 個 POST optimal/forward-return), 換 fetch backend stub
+  - `algorithm_runner.py` M7 Synthesizer verdict inject (chain rule M7→M9) + M8 decisionFn inject fallback `_default_decision_fn` (Phase 10 done 之後自動拎真 M8)
+  - pytest 237/237 PASS (M9 11 + existing 226)
+  - 補返 Phase 8 漏做嘅 cache bust bump (4.22.0 → 4.23.0) + Phase 9 done (4.23.0 → 4.24.0)
+  - 凡人話: M9 自動用過去 K 線 replay 演算法嘅判決, 對比真實結果, 拎最佳 params + 累積過往表現
+  - **AS-03 進度: 9/9 peer algorithm backend done** (M1+M2+M3+M4+M5+M6+M7+M9+ZigZag, M8 Decision Engine 留待 Phase 10)
+- **Phase 10 done (2026-08-20 22:08, Spec Sync #30)**:
+  - **Phase 10** (M8 Decision Engine 終極綜合判斷引擎) v2.0.0 — `backend/algorithms/decision_engine/`
+  - M8 拎 M7 Synthesizer verdict + 6 個 module standard verdict + M9 optimal params, 拎 8 個 finalAction 決策樹 (BUY/ADD/HOLD/REDUCE/SELL/WAIT/TRAP/TRANSITION) + Trading card 4 個 fields (3 個 volatility bucket) + 短期走勢 9 個 scenarios (3×3) + LLM hook interpretation
+  - 9 個 step: 數據驗證 + majority state + weighted avg + raw RSI + applyAdaptiveParams 落 Synthesizer (M9 optimal override) + 8 finalAction 決策樹 (priority chain) + Trading card 3 bucket adaptive + 9 forecast scenarios + LLM hook + 組裝 output
+  - LLM hook 永久 rule (大少 13:30): `async generate_interpretation(ctx)` interface 預留, Sprint 2 用 hardcoded template (揸車比喻), 將來 swap 落 LLM call (OpenAI/MiniMax/Kimi 任何), 唔使改 decide() call site
+  - M8 verdict 永久 embed M9 optimal_data (AS-03 chain rule M9→M8, 撳 M8 即刻見到 M9 拎咩 optimal 設定)
+  - Frontend `adapter.mjs` 拎走 `decisionEngineAdapter.analyze` 340 行 chain (import bundle + 拎 cache + 拎 M1/zmen + calibrate + applyAdaptiveParams + decide + 9 個 warning 注入), 換 fetch backend stub
+  - `algorithm_runner.py` M8 fallback 自動改用真 M8 (Phase 9 `_default_decision_fn` fallback 退役, chain M7→M9→M8 完整 work)
+  - pytest 249/249 PASS (M8 12 + existing 237)
+  - cache bust bump (4.24.0 → 4.25.0)
+  - 凡人話: M8 拎 M7 + M9 verdict 做最終判斷, 拎 8 個 finalAction + 交易卡 + 走勢預測
+  - **AS-03 進度: 10/10 peer algorithm backend done** 🎉 (M1+M2+M3+M4+M5+M6+M7+M8+M9+ZigZag 全部 backend port 完成)
 - **凡人話:** 一個 source of truth, 之後 algorithm 加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
 
 ### ⚙️ Settings Page
