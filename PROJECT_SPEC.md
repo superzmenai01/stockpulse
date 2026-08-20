@@ -601,6 +601,14 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - **Backend register pattern 永久 rule** (Phase 5 fix 教訓): `register(instance)` 而唔係 `register("name", cls)`, 1 個 argument
 - **Backend port 流程永久 rule**: source file → algorithm.py (1:1 port) → config.py → __init__.py → __init__ import → tests → pytest pass → frontend migration → 5 stock verify
 
+**Phase 7 done (2026-08-20, 大少 21:30 trigger「Go」)**:
+- **Phase 7** (M6 Volatility 波動率收縮擴張) v1.0.0: `backend/algorithms/volatility/`
+- M6 自己 derive BB / KC / ATR / Squeeze / VCP 拎 klines, **唔需要** caller inject
+- pytest 215/215 PASS (M6 11 + existing 204)
+- 5 隻 stock verify: 全部 SIDEWAYS 0.25 no_clear_setup (1-3 rules S1-S12 觸發, regime 全部 balanced)
+- 凡人話: M6 拎 frontend `analyzeVolatility` + helper 換 1 個 backend fetch stub, frontend 4 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
+- **AS-03 進度**: 7 個 peer module (M1-M7) + ZigZag 共 8 個 algorithm, 完成 7 個 (M1-M6 + ZigZag), 剩 M7 Synthesizer 1 個 (拎 M1-M6 全部 verdict 做綜合判定, port 完之後整個 AS-03 cycle flow 全部由 backend 驅動)
+
 **凡人話 line number shift fix pattern** (Phase 4 教訓, 大少 2026-08-20 20:50): 拎走舊 function 之前必須重新 grep 實際 line 位置, hardcode 舊 line number 一定錯 (Phase 3 之後 + 506 行 shift 嘅 fix 教訓)。
 
 **Backup tag + 還原方法** (大少 2026-08-20 18:39 永久 rule):

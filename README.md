@@ -361,6 +361,14 @@ StockPulse backend 有個 `/api/network/info` endpoint，會自動偵測 LAN IP 
   - pytest 204/204 PASS (M4 10 + M5 11 + existing 183)
   - 5 隻 stock verify: M4 全部 SIDEWAYS + hold (RSI 44-63, MACD 全部負); M5 全部 SIDEWAYS + NEUTRAL (4-6 rules V1-V15 觸發)
   - 大少 21:10 trigger「連做」, 1 個 feat commit + 1 個 spec sync commit
+- **Phase 7 done (2026-08-20)**:
+  - **Phase 7** (M6 Volatility 波動率收縮擴張) v1.0.0 — `backend/algorithms/volatility/`
+  - M6 自己 derive BB / KC / ATR / Squeeze / VCP 拎 klines, **唔需要** caller inject
+  - Frontend `adapter.mjs` 拎走 M6 `analyzeVolatility` + helper, 換 fetch backend stub
+  - 4 個 frontend render function 拎 `verdict.X` → `verdict.meta.X` 拎 backend 兼容 shape
+  - pytest 215/215 PASS (M6 11 + existing 204)
+  - 5 隻 stock verify: 全部 SIDEWAYS 0.25 no_clear_setup (1-3 rules S1-S12 觸發, regime 全部 balanced)
+  - AS-03 進度: 7 個 peer module (M1-M7) + ZigZag 共 8 個 algorithm, 完成 7 個, 剩 M7 Synthesizer 1 個
 - **凡人話:** 一個 source of truth, 之後 algorithm 加 machine learning / Bayesian 容易, miniapp + cron + batch run 可以直接 reuse
 
 ### ⚙️ Settings Page

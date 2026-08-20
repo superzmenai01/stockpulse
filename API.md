@@ -773,6 +773,8 @@ Backend algorithm framework — 統一 algorithm 入口, frontend call backend �
 
 **Phase 6 — volume_price (M5)**: 成交量價格行為確認法 (跟 `modules/volume.ts` 1:1 port, 15 rules V1-V15), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycleLabel / confidence / signal / buyTimingScore / winProbability / volumeRegime / matchedRules / breakoutStatus / obvAnalysis), 唔需要 caller inject dependency。
 
+**Phase 7 — volatility (M6)**: BB / KC Squeeze + ATR 分解 + VCP 結構檢測法 (跟 `modules/volatility.ts` 1:1 port, 12 rules S1-S12 + 5 setup + 3 failure mode), frontend 拎 verdict 之後 render 拎 `verdict.meta.*` 拎 backend 兼容 shape (state / cycleLabel / confidence / squeeze / vcpStructure / atrDecomposition / followThrough / setupType / matchedRules / failureMode / winProbability), 唔需要 caller inject dependency。AS-03 進度: 7 個 peer module (M1-M7) + ZigZag 共 8 個 algorithm, 完成 7 個, 剩 M7 Synthesizer 1 個。
+
 **Caller inject pattern**: M1 跑嗰陣 backend 自動跑 ZigZag 落同一份 klines + inject `zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSource` 落 M1 options, M1 唔需要知道 backend 有 ZigZag。
 
 **Algorithm ABC contract** (`backend/algorithms/base.py`):
