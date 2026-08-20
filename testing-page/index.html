@@ -7,7 +7,36 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>股票演算法測試頁</title>
-  <link rel="stylesheet" href="testing-page.css?v=2.3.82">
+  <link rel="stylesheet" href="testing-page.css?v=2.3.83">
+  <style>
+    /* 大少 2026-08-21 00:02 trigger — popup 註解 (倍數選擇表) */
+    .multiplier-tooltip {
+      position: relative;
+      cursor: help;
+      color: #1890ff;
+      border-bottom: 1px dotted #1890ff;
+      margin-left: 4px;
+    }
+    .multiplier-tooltip:hover::after {
+      content: attr(data-help);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e1e1e;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: pre;
+      z-index: 1000;
+      pointer-events: none;
+      font-weight: normal;
+      line-height: 1.6;
+      min-width: 280px;
+      margin-bottom: 4px;
+    }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -63,15 +92,40 @@
           <!-- 凡人話: 之前散喺 inputs section 跑算法掣下面, 大少要睇即時更新 message 同改 ZigZag 設定要離開 chart 向上望, 而家搬到 chart 上面, 視線一離開 chart 即刻見到 -->
           <div id="run-status" class="run-status" style="margin-bottom:8px;"></div>
           <!-- 大少 2026-08-19 trigger — ZigZag 控制 (啟用 + threshold) -->
+          <!-- 大少 2026-08-21 00:02 trigger — 自動/手動 切換 + 自動計算 (波動率自適應法) -->
           <div id="zigzag-controls" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
             <label style="margin-right:8px;cursor:pointer;">
               <input type="checkbox" id="zigzag-enabled" checked style="vertical-align:middle;">
               啟用 ZigZag
             </label>
-            <label style="margin-right:8px;">
-              Threshold %: <input type="number" id="zigzag-threshold" value="5" min="1" max="20" step="0.5" style="width:60px;">
-            </label>
-            <span style="color:#999;font-size:12px;">(改完即時更新紫色線, 唔使撳跑算法)</span>
+            <span style="margin-right:8px;">
+              Threshold 模式:
+              <label style="cursor:pointer;margin-left:4px;">
+                <input type="radio" name="zigzag-mode" value="auto" checked style="vertical-align:middle;">
+                自動
+              </label>
+              <label style="cursor:pointer;margin-left:4px;">
+                <input type="radio" name="zigzag-mode" value="manual" style="vertical-align:middle;">
+                手動
+              </label>
+              <span class="multiplier-tooltip" data-help="倍數怎麼選？&#10;2.0  →  較靈敏, 轉折點較多 (短線/日內交易)&#10;2.5  →  平衡 (推薦, 波段操作)&#10;3.0-4.0  →  較平滑, 轉折點較少 (長線/趨勢判斷)">? 倍數</span>
+            </span>
+            <!-- 自動 mode 顯示區: 計算結果 + 重算掣 -->
+            <span id="zigzag-auto-display" style="margin-right:8px;">
+              計算結果: <strong id="zigzag-auto-threshold-value">--</strong>
+              <span style="color:#999;font-size:12px;">(20 日波動率 × 2.5)</span>
+              <button id="zigzag-recalc-btn" type="button" style="margin-left:8px;padding:2px 8px;background:#fff;border:1px solid #d9d9d9;border-radius:4px;cursor:pointer;">🔄 重算</button>
+            </span>
+            <!-- 手動 mode 顯示區: 輸入 + 重置掣 -->
+            <span id="zigzag-manual-display" style="margin-right:8px;display:none;">
+              設定: <input type="number" id="zigzag-manual-threshold" value="5" min="1" max="20" step="0.5" style="width:60px;"> %
+              <button id="zigzag-reset-auto-btn" type="button" style="margin-left:4px;padding:2px 8px;background:#fff;border:1px solid #d9d9d9;border-radius:4px;cursor:pointer;">重置為自動</button>
+            </span>
+            <!-- 隱藏 threshold input (跟原有 #zigzag-threshold 對齊, 保持 Spec Sync #31 handler 兼容) -->
+            <span style="display:none;">
+              <input type="number" id="zigzag-threshold" value="5" min="1" max="20" step="0.5" style="width:60px;">
+            </span>
+            <span style="color:#999;font-size:12px;display:block;margin-top:4px;">(改完即時更新紫色線, 唔使撳跑算法)</span>
           </div>
           <!-- 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 (1=最新, 2=紫色最後 1 個, ...) -->
           <div id="zigzag-sequence-controls" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
@@ -119,6 +173,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.82"></script>
+  <script type="module" src="testing-page.js?v=2.3.83"></script>
 </body>
 </html>

@@ -34,6 +34,70 @@ async function fetchBackendZigZag(symbol, period, threshold) {
   return await resp.json();
 }
 
+// ===== 大少 2026-08-21 00:02 trigger — ZigZag threshold 自動調整 (波動率自適應法) =====
+// 公式: ((high - low) / close) 最近 20 日平均 × 2.5, 0.5%-20% clamp
+// 跟大少 trigger 公式 1:1, 凡人話: 取近期波動率, 2.5 倍做 threshold
+// 對應永久 rule 2026-08-19 13:03「Config UX 模式: 自動+手動+自動儲存更新圖表」
+function autoThresholdVolatility(highs, lows, closes, lookback = 20, multiplier = 2.5) {
+  if (!Array.isArray(highs) || !Array.isArray(lows) || !Array.isArray(closes)) {
+    return null;
+  }
+  const n = Math.min(highs.length, lows.length, closes.length, lookback);
+  if (n < 2) return null;
+  let sumRange = 0;
+  let count = 0;
+  for (let i = highs.length - n; i < highs.length; i++) {
+    const h = Number(highs[i]);
+    const l = Number(lows[i]);
+    const c = Number(closes[i]);
+    if (!Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c) || c <= 0) continue;
+    sumRange += (h - l) / c;
+    count += 1;
+  }
+  if (count === 0) return null;
+  const avgVol = sumRange / count;
+  let threshold = avgVol * multiplier;
+  // 上下限保護: 0.5% - 20%
+  threshold = Math.max(threshold, 0.005);
+  threshold = Math.min(threshold, 0.20);
+  return threshold;
+}
+
+// 從 K 線取 high / low / close arrays (fallback chain, K 線可能用唔同名)
+function extractHLC(klines) {
+  if (!Array.isArray(klines) || klines.length === 0) return null;
+  const len = klines.length;
+  const highs = new Array(len);
+  const lows = new Array(len);
+  const closes = new Array(len);
+  for (let i = 0; i < len; i++) {
+    const k = klines[i];
+    highs[i] = Number(k.high ?? k.High ?? k.HIGH);
+    lows[i] = Number(k.low ?? k.Low ?? k.LOW);
+    closes[i] = Number(k.close ?? k.Close ?? k.CLOSE);
+  }
+  return { highs, lows, closes };
+}
+
+// localStorage 存取 — 跟 2026-08-19 13:03 永久 rule「自動儲存更新圖表」一致
+// 永久 rule (大少 2026-08-21 00:02): 新股票冇 record → 自動 mode 預設
+const LS_KEY_THRESHOLD_MODE = 'stockpulse.zigzag.thresholdMode';
+const LS_KEY_MANUAL_THRESHOLD = 'stockpulse.zigzag.manualThreshold';
+
+function getThresholdMode() {
+  return localStorage.getItem(LS_KEY_THRESHOLD_MODE) || 'auto';
+}
+function setThresholdMode(mode) {
+  localStorage.setItem(LS_KEY_THRESHOLD_MODE, mode);
+}
+function getManualThreshold() {
+  const v = parseFloat(localStorage.getItem(LS_KEY_MANUAL_THRESHOLD));
+  return Number.isFinite(v) && v >= 1 && v <= 20 ? v : 5;
+}
+function setManualThreshold(v) {
+  localStorage.setItem(LS_KEY_MANUAL_THRESHOLD, String(v));
+}
+
 // ===== Algorithm Registry（永久 design）=====
 // 加新 algorithm: 寫 algorithms/AS-XX/adapter.mjs + 加 1 行去呢度
 //
@@ -123,7 +187,8 @@ async function fetchBackendZigZag(symbol, period, threshold) {
 // 大少 2026-08-20 22:08 Phase 10 M8 Decision Engine 拎走 frontend: ALGO_CACHE_BUST = '4.25.0' (frontend decisionEngineAdapter.analyze 拎走 340 行 chain (import bundle + 拎 cache + 拎 M1/zmen + calibrate + applyAdaptiveParams + decide + 9 個 warning 注入), 換 1 個 fetch backend /api/algorithms/run?algo=decision_engine stub, AS-03 進度 10/10 peer algorithm backend done — M1+M2+M3+M4+M5+M6+M7+M8+M9+ZigZag 全部 backend port 完成, 永久 rule self-check 確認: 改 adapter.mjs 之後必同步 bump 2 個地方, Phase 10 跟返冇漏)
 // 大少 2026-08-20 23:10 Bug fix — ZigZag threshold slider 即時 re-render: ALGO_CACHE_BUST = '4.26.0' (testing-page.js 重構 runAlgorithm L785-820 + 抽 refreshZigZagOverlay helper (override lastVerdict.meta + 清舊 ZigZag/extension series + renderChartOverlay 重畫紫色線 + renderDebugPanel 重 update) + 加 #zigzag-threshold input onChange handler (input + change event, debounce 200ms 防拖動 spam, sync value 入 currentOptions, 撳即時 call refreshZigZagOverlay); Bug: 之後 #zigzag-threshold input 完全冇 onChange handler, value 永遠唔入 currentOptions, 紫色線永遠用緊撳跑嗰陣嘅 5%, 違反 2026-08-19 13:03 永久 rule「改動 → 即時 re-render, 唔需要撳跑算法」; 永久 rule: testing page 所有 config input 必須有 onChange handler 同步入 currentOptions + 自動 re-render, 套用 M2/M3/M4 之後 config 全部跟; index.html hint 改「改完即時更新紫色線, 唔使撳跑算法」)
 // 大少 2026-08-20 23:20 — ZigZag controls + runStatus 搬到圖表上邊: ALGO_CACHE_BUST = '4.27.0' (index.html layout 改: #run-status + #zigzag-controls + #zigzag-sequence-controls 由 inputs section 搬去 chart-section 入面 chart container 之前, 排 ma-toggle-bar 之前, 大少 23:20 trigger「移到圖表上邊」, 一睇 chart 即刻見到即時更新 message 同 ZigZag 設定, 視線唔使離開 chart 向上望; testing-page.css .run-status margin-top 12px 改 margin-bottom 8px 因為已喺 chart-section 內, 唔再需要 margin-top; 永久 rule: 跟 chart 互動嘅 controls + status 永遠排喺 chart-section 入面 chart container 之前, 唔好散喺 inputs section)
-const ALGO_CACHE_BUST = '4.27.0';
+// 大少 2026-08-21 00:02 — ZigZag threshold 自動調整 (波動率自適應法): ALGO_CACHE_BUST = '4.28.0' (testing-page.js 加 autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5) + extractHLC(klines) 純函數 + localStorage 存取 helper (LS_KEY_THRESHOLD_MODE + LS_KEY_MANUAL_THRESHOLD) + applyAutoThreshold(code, period) 計算 + 即時 update 紫色線 + 初始化 UI (initThresholdModeUI 新股票冇 record → 自動 mode 預設) + mode 切換 handler (切 auto 即時計算, 切 manual 用最近 auto 結果) + 重算掣 + 重置為自動掣 + manual slider 即時改 (跟 spec sync #31 pattern, debounce 200ms) + 撳「跑算法」嗰陣 auto mode 自動計算 threshold (L841 之前) + 全部 localStorage 自動保存; index.html #zigzag-controls 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表 2.0/2.5/3.0-4.0) + 隱藏 #zigzag-threshold (跟 spec sync #31 兼容); index.html head 加 .multiplier-tooltip inline style block; 對應大少 trigger (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存; 永久 rule: 新股票冇 localStorage record → 自動 mode 預設, 倍數 2.5 hardcode, lookback 20 hardcode, 0.5%-20% clamp, localStorage key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`)
+const ALGO_CACHE_BUST = '4.28.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -775,6 +840,25 @@ async function runAlgorithm() {
     }
 
     // 3. Run algorithm
+    // 大少 2026-08-21 00:02 trigger — 撳「跑算法」嗰陣, auto mode 自動計算 threshold
+    // 永久 rule: auto mode 永遠跟 K 線自動計算, 唔需要大少手動改
+    // 計算之後 sync 入 currentOptions.zigzagThreshold, 後面 M1 ZigZag override (L851) 用呢個 value
+    if (getThresholdMode() === 'auto' && Array.isArray(klines) && klines.length > 0) {
+      const hlc = extractHLC(klines);
+      if (hlc) {
+        const autoThreshold = autoThresholdVolatility(hlc.highs, hlc.lows, hlc.closes, 20, 2.5);
+        if (autoThreshold != null) {
+          const thresholdPct = +(autoThreshold * 100).toFixed(2);
+          currentOptions.zigzagThreshold = thresholdPct;
+          // sync 入 UI (隱藏 slider + 顯示 label)
+          const sliderEl = document.getElementById('zigzag-threshold');
+          if (sliderEl) sliderEl.value = String(thresholdPct);
+          const displayEl = document.getElementById('zigzag-auto-threshold-value');
+          if (displayEl) displayEl.textContent = `${thresholdPct}%`;
+          runStatus.innerHTML = `✅ 已取到 ${actualCount} 日 K 線${countHint} · 🎯 自動 threshold = ${thresholdPct}% · 跑緊演算法...`;
+        }
+      }
+    }
     const startTime = performance.now();
     const verdict = await currentAdapter.analyze(klines, currentOptions);
     const endTime = performance.now();
@@ -1091,6 +1175,173 @@ async function refreshZigZagOverlay(code, period, threshold) {
     console.warn('[ZigZag Backend] fetch 失敗, fallback 用 frontend 取嘅:', e);
     return null;
   }
+}
+
+// 大少 2026-08-21 00:02 trigger — 自動 mode 計算 + 即時 update 紫色線
+// 永久 rule: auto mode 永遠跟 K 線自動計算, 撳跑算法 / 切 mode / 撳重算 都會觸發
+// 對應永久 rule 2026-08-19 13:03「Config UX 模式: 自動+手動+自動儲存更新圖表」
+async function applyAutoThreshold(code, period) {
+  if (!lastKlines || !Array.isArray(lastKlines) || lastKlines.length === 0) {
+    runStatus.innerHTML = `⚠️ 未有 K 線數據, 請先撳「跑算法」`;
+    return null;
+  }
+  const hlc = extractHLC(lastKlines);
+  if (!hlc) return null;
+  const autoThreshold = autoThresholdVolatility(hlc.highs, hlc.lows, hlc.closes, 20, 2.5);
+  if (autoThreshold == null) {
+    runStatus.innerHTML = `⚠️ 自動計算失敗 (K 線數據唔夠或格式錯誤)`;
+    return null;
+  }
+  const thresholdPct = +(autoThreshold * 100).toFixed(2);
+  // 顯示計算結果
+  const displayEl = document.getElementById('zigzag-auto-threshold-value');
+  if (displayEl) displayEl.textContent = `${thresholdPct}%`;
+  // sync 入 currentOptions + 隱藏 threshold slider
+  currentOptions.zigzagThreshold = thresholdPct;
+  const sliderEl = document.getElementById('zigzag-threshold');
+  if (sliderEl) sliderEl.value = String(thresholdPct);
+  runStatus.innerHTML = `⏳ 自動計算 ZigZag threshold = ${thresholdPct}% (20 日波動率 × 2.5)...`;
+  const result = await refreshZigZagOverlay(code, period, thresholdPct);
+  if (result && result.ok) {
+    runStatus.innerHTML = `✅ 自動計算 ZigZag threshold = ${thresholdPct}% (${result.points.length} 個 points)`;
+  } else {
+    runStatus.innerHTML = `⚠️ 自動計算成功 (${thresholdPct}%) 但紫色線更新失敗, 用緊舊 threshold 嘅紫色線`;
+  }
+  return thresholdPct;
+}
+
+// 大少 2026-08-21 00:02 trigger — 初始化 threshold mode (新股票冇 record → 自動 mode 預設)
+// 永久 rule (大少 00:02): 所有沒有記錄即新股票都會自動跑一次
+// 「新股票」= 冇 localStorage record → 自動 mode 預設
+// 初始化 UI: 同步 radio / 顯示區 / manual input
+function initThresholdModeUI() {
+  const mode = getThresholdMode();
+  document.querySelectorAll('input[name="zigzag-mode"]').forEach(r => {
+    r.checked = (r.value === mode);
+  });
+  const autoDisplay = document.getElementById('zigzag-auto-display');
+  const manualDisplay = document.getElementById('zigzag-manual-display');
+  if (autoDisplay) autoDisplay.style.display = (mode === 'auto') ? '' : 'none';
+  if (manualDisplay) manualDisplay.style.display = (mode === 'manual') ? '' : 'none';
+  const manualEl = document.getElementById('zigzag-manual-threshold');
+  if (manualEl) manualEl.value = String(getManualThreshold());
+  // 初始化 currentOptions.zigzagThreshold (跟 spec sync #31 default 一致)
+  currentOptions.zigzagThreshold = mode === 'manual' ? getManualThreshold() : 5;
+}
+initThresholdModeUI();
+
+// 大少 2026-08-21 00:02 trigger — Mode 切換 handler
+// 切 auto: 即刻計算 + update 紫色線
+// 切 manual: 用最近一次 auto 計算結果 (有) 或 localStorage 嘅 manual value
+document.querySelectorAll('input[name="zigzag-mode"]').forEach(r => {
+  r.addEventListener('change', async (e) => {
+    if (!e.target.checked) return;
+    const mode = e.target.value;
+    setThresholdMode(mode);
+    const autoDisplay = document.getElementById('zigzag-auto-display');
+    const manualDisplay = document.getElementById('zigzag-manual-display');
+    if (mode === 'auto') {
+      if (autoDisplay) autoDisplay.style.display = '';
+      if (manualDisplay) manualDisplay.style.display = 'none';
+      // 即刻計算 + update 紫色線 (如果已經有 K 線)
+      if (lastKlines && lastChartRefs) {
+        const code = currentOptions.code;
+        const period = currentOptions.period || '1d';
+        if (code) await applyAutoThreshold(code, period);
+      }
+    } else {
+      if (autoDisplay) autoDisplay.style.display = 'none';
+      if (manualDisplay) manualDisplay.style.display = '';
+      // manual mode 預設 value = 最近一次 auto 計算結果 (有) 或 localStorage manual value
+      const displayVal = document.getElementById('zigzag-auto-threshold-value');
+      const recentAuto = displayVal ? displayVal.textContent : '--';
+      const v = (recentAuto && recentAuto !== '--')
+        ? parseFloat(recentAuto)
+        : getManualThreshold();
+      const manualInput = document.getElementById('zigzag-manual-threshold');
+      if (manualInput) manualInput.value = String(v);
+      currentOptions.zigzagThreshold = v;
+      setManualThreshold(v);
+      // 切 manual 即刻 update 紫色線 (唔等大少再改)
+      if (lastKlines && lastChartRefs) {
+        const code = currentOptions.code;
+        const period = currentOptions.period || '1d';
+        if (code) {
+          const result = await refreshZigZagOverlay(code, period, v);
+          if (result && result.ok) {
+            runStatus.innerHTML = `✅ 切到手動 mode, threshold=${v}% (${result.points.length} 個 points)`;
+          }
+        }
+      }
+    }
+  });
+});
+
+// 大少 2026-08-21 00:02 trigger — 重算掣 (auto mode 用, 用最新 K 線重計)
+const recalcBtn = document.getElementById('zigzag-recalc-btn');
+if (recalcBtn) {
+  recalcBtn.addEventListener('click', async () => {
+    if (!lastKlines || !lastChartRefs) {
+      runStatus.innerHTML = `⚠️ 請先撳「跑算法」再重算`;
+      return;
+    }
+    const code = currentOptions.code;
+    const period = currentOptions.period || '1d';
+    if (!code) {
+      runStatus.innerHTML = `⚠️ 未揀股票, 請先去上面揀`;
+      return;
+    }
+    await applyAutoThreshold(code, period);
+  });
+}
+
+// 大少 2026-08-21 00:02 trigger — 重置為自動掣 (manual mode 用, 一鍵切去 auto)
+const resetAutoBtn = document.getElementById('zigzag-reset-auto-btn');
+if (resetAutoBtn) {
+  resetAutoBtn.addEventListener('click', async () => {
+    document.querySelector('input[name="zigzag-mode"][value="auto"]').checked = true;
+    setThresholdMode('auto');
+    const autoDisplay = document.getElementById('zigzag-auto-display');
+    const manualDisplay = document.getElementById('zigzag-manual-display');
+    if (autoDisplay) autoDisplay.style.display = '';
+    if (manualDisplay) manualDisplay.style.display = 'none';
+    if (lastKlines && lastChartRefs) {
+      const code = currentOptions.code;
+      const period = currentOptions.period || '1d';
+      if (code) await applyAutoThreshold(code, period);
+    }
+  });
+}
+
+// 大少 2026-08-21 00:02 trigger — Manual slider 即時改 (跟 Spec Sync #31 #zigzag-threshold pattern 一致)
+// Debounce 200ms 防 slider 連環拖動 spam backend fetch
+const manualThresholdEl = document.getElementById('zigzag-manual-threshold');
+if (manualThresholdEl) {
+  let _manualDebounce = null;
+  const _onManualChange = () => {
+    const v = parseFloat(manualThresholdEl.value);
+    // 1-20% 範圍 (跟 index.html input min/max 一致), invalid value 唔 trigger fetch
+    if (isNaN(v) || v < 1 || v > 20) return;
+    currentOptions.zigzagThreshold = v;
+    setManualThreshold(v);  // 跟 2026-08-19 13:03 永久 rule「每次更新都自動保存」
+    clearTimeout(_manualDebounce);
+    _manualDebounce = setTimeout(async () => {
+      // 撳跑算法之前冇 lastVerdict, 跳過 (大少要撳「跑算法」先 render chart, 呢個只係「改完即時更新」)
+      if (!lastVerdict || !lastKlines || !lastChartRefs) return;
+      const code = currentOptions.code;
+      const period = currentOptions.period || '1d';
+      if (!code) return;
+      runStatus.innerHTML = `⏳ 即時更新 ZigZag (threshold=${v}%)...`;
+      const result = await refreshZigZagOverlay(code, period, v);
+      if (result && result.ok) {
+        runStatus.innerHTML = `✅ ZigZag 即時更新 (threshold=${v}%, ${result.points.length} 個 points)`;
+      } else {
+        runStatus.innerHTML = `⚠️ ZigZag 即時更新失敗, 用緊舊 threshold 嘅紫色線`;
+      }
+    }, 200);
+  };
+  manualThresholdEl.addEventListener('input', _onManualChange);
+  manualThresholdEl.addEventListener('change', _onManualChange);
 }
 
 // 大少 2026-08-20 23:10 trigger — ZigZag threshold slider 即時 re-render 永久 rule (Bug fix)
