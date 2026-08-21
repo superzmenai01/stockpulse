@@ -4539,6 +4539,7 @@ function renderMAAlignmentV2Result(verdict) {
     m1_volume_trend: '近期均量 / 前期均量: > 1.2 為放量 (錢跟緊), < 0.8 為縮量 (錢退緊), 中間為持平',
     m1_volume_signal: '成交量訊號: 從近期 / 前期均量比計出嘅標籤 (放量 / 縮量 / 持平), 用嚟判斷錢跟唔跟個走勢',
     m1_max_spread: '均線間最大價差百分比: 4 條均線之間嘅最大距離除以最低值。> 2% 視為有方向, < 2% 強制覆寫做橫行',
+    m1_threshold_pct: 'v2.2.0 起 (大少 2026-08-21 18:37) 用 adaptive thresholdPct: 該股 20 日真實波幅 (ATR%) × 1.5, clamp 0.5%-5%。Source = adaptive 即自動計, fixed 即手動輸入。低波動股 TP 細, 高波動股 TP 大 (capped 5%)。',
     m1_consecutive_days: '連續日數: 最近連續升 / 跌嘅日數, 到頂轉勢 / 到底轉勢嘅判定基礎 (≥ 4 日先 trigger)',
     m1_adjustment_log: '信心指數調整記錄: 算法根據成交量 / 斜率 / 走勢強度做咗咩 discount / boost, 例如「放量上漲信心提升」、「短期斜率負上升動能減弱」',
   };
@@ -4677,6 +4678,7 @@ function renderMAAlignmentV2Result(verdict) {
           ${hasConsecutiveDays ? `<div class="summary-row"><span>連續日數:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_consecutive_days}">${meta.consecutiveDays} 日</span></strong></div>` : ''}
           <div class="summary-row"><span>排列:</span> <strong>${arrangementLabel}</strong></div>
           <div class="summary-row"><span>Spread:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_max_spread}">${(meta.maxSpreadPct * 100).toFixed(2)}%</span></strong></div>
+          ${meta.thresholdPctUsedPctDisplay ? `<div class="summary-row"><span>Threshold (v2.2.0):</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_threshold_pct}">${meta.thresholdPctUsedPctDisplay} (${meta.thresholdPctSource === 'adaptive' ? 'adaptive, ATR=' + (meta.adaptiveAtrPctDisplay || '?') : meta.thresholdPctSource === 'fixed' ? 'fixed override' : meta.thresholdPctSource || '—'})</span></strong></div>` : ''}
           <div class="summary-row"><span>基礎信心:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_base_confidence}">${meta.baseConfidence}</span></strong></div>
         </div>
       </div>
@@ -4734,6 +4736,7 @@ momentumScore: ${meta.momentumScore}
 volumeTrendRatio: ${meta.volumeTrendRatio}
 volumeSignal: ${meta.volumeSignal}
 maxSpreadPct: ${meta.maxSpreadPct}
+thresholdPctUsed: ${meta.thresholdPctUsedPctDisplay || '—'} (source=${meta.thresholdPctSource || '—'}, ATR%=${meta.adaptiveAtrPctDisplay || '—'})
 baseConfidence: ${meta.baseConfidence}
 confidence: ${meta.confidence}
 lastDate: ${meta.lastDate}
@@ -4778,7 +4781,8 @@ function renderMAAlignmentV2DetailedExplanation(verdict) {
         } — 凡人話: 用之字第 1 點 → 第 2 點計斜率, 取代 v2.0 MA5 斜率 (Stage 2 先郁 trigger)</li>
         <li><strong>volumeTrendRatio</strong>: ${meta.volumeTrendRatio} — 近期均量 / 前期均量, &gt; 1.2 為放量, &lt; 0.8 為縮量</li>
         <li><strong>volumeSignal</strong>: ${meta.volumeSignalLabel || meta.volumeSignal} — 量能訊號</li>
-        <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比, &lt; 2% 強制覆寫做橫行</li>
+        <li><strong>maxSpreadPct</strong>: ${(meta.maxSpreadPct * 100).toFixed(2)}% — 各均線間最大價差百分比, &lt; thresholdPctUsed 強制覆寫做橫行</li>
+        <li><strong>thresholdPctUsed</strong>: ${meta.thresholdPctUsedPctDisplay || '—'} (source=${meta.thresholdPctSource || '—'}, ATR%=${meta.adaptiveAtrPctDisplay || '—'}, raw=${meta.adaptiveRawThreshold ? (meta.adaptiveRawThreshold * 100).toFixed(3) + '%' : '—'}) — v2.2.0 永久 rule (大少 2026-08-21 18:37): adaptive 模式用 20 日 ATR% × 1.5 自動計, clamp 0.5%-5%。每隻股唔同, 低波動 TP 細, 高波動 TP 大 (capped)</li>
         <li><strong>adjustmentLog</strong>: ${meta.adjustmentLog.length > 0 ? meta.adjustmentLog.join('；') : '(無調整)'} — 信心指數調整記錄</li>
         <li><strong>reason</strong>: ${meta.reason} — 綜合判斷理由</li>
         <li><strong>lastDate</strong>: ${meta.lastDate} — 數據截止日期</li>
@@ -5008,17 +5012,33 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // 凡人話: 紫色 ZigZag 拎到嘅係「確認咗嘅轉向點」, 但 K 線仲有最新嘅 close 仲未確認到下一個 peak/trough
           //   大少想紫色線最後接多一段深綠色線, 由最後 ZigZag point 連去今日 close, 即時見到趨勢延續
           // 凡人話警告: 呢段深綠色線**唔代表 algorithm 確認到轉向**, 只係 visualize 趨勢連貫
-          // 用深綠色 (#2E7D32) — 對比紫色, 唔撞任何 MA 線, 綠色有「現在 / 最新」嘅意思
+          // 用鮮綠色 (#00C853, Material Green A700) — 對比紫色, 唔撞任何 MA 線, 綠色有「現在 / 最新」嘅意思
+          // 大少 2026-08-21 11:20 trigger 由深綠色 #2E7D32 改成鮮綠色 #00C853, 跟紫色線有更明顯對比
+          //
+          // 大少 2026-08-21 11:14 trigger — Bug fix: Phase 1 (4.18.0) 拎走咗 _zigzagNormalizeDate helper,
+          //   但 line 5016 仲 call 緊佢 → ReferenceError, 紫色線 render 成功但深綠色 extension line 永遠 skip
+          //   改用 inline fallback chain (對齊 testing-page.js _getKlineDateForDebug 嘅 time/date/timestamp 邏輯)
           let greenMarkerTime = null;  // 大少 2026-08-19 11:15 — sequence 號碼 1 用
           if (klines && klines.length > 0) {
             const lastKline = klines[klines.length - 1];
             const lastClose = lastKline.close;
-            const lastDate = dateToTime(_zigzagNormalizeDate(lastKline));
+            // 凡人話: K 線 dict 嘅 date field 唔同 source 有唔同 field name (time/date/timestamp),
+            //   Phase 1 拎走 _zigzagNormalizeDate helper, 改用 inline fallback chain
+            const klineDateStr = lastKline.time || lastKline.date || lastKline.timestamp;
+            const lastDate = klineDateStr != null ? dateToTime(klineDateStr) : null;
             const lastZigzagPoint = zigzagSeries[zigzagSeries.length - 1];
+            console.log('[M1 v2.0] close extension check:', {
+              lastClose,
+              lastDate,
+              klineDateStr,
+              klineDateStrSource: lastKline.time ? 'time' : lastKline.date ? 'date' : 'timestamp',
+              lastZigzagPoint,
+              timeMatch: lastZigzagPoint?.time === lastDate,
+            });
             if (lastDate != null && Number.isFinite(lastClose) && lastZigzagPoint && lastZigzagPoint.time !== lastDate) {
               const extSeries = [lastZigzagPoint, { time: lastDate, value: lastClose }];
               const sExt = chart.addLineSeries({
-                color: '#2E7D32',  // 深綠色
+                color: '#00C853',  // 鮮綠色 (大少 2026-08-21 11:20 trigger 由 #2E7D32 改)
                 lineWidth: 1.5,
                 title: '收市延伸 (Close Ext.)',
                 priceLineVisible: false,
@@ -5068,7 +5088,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               const greenMarkers = greenMarkerTime != null ? [{
                 time: greenMarkerTime,
                 position: 'aboveBar',  // close 通常接近 high, 擺上面清楚啲
-                color: '#2E7D32',  // 深綠色字
+                color: '#00C853',  // 鮮綠色字 (大少 2026-08-21 11:20 trigger 由 #2E7D32 改)
                 shape: 'circle',
                 text: '1',
                 size: 1,
@@ -5119,7 +5139,7 @@ export const maAlignmentV2Adapter = {
     // 股票代碼 (大少 #10400 — testing page 統一 auto-complete, 跟首頁 StockSearch UX)
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
     { key: 'maPeriods', label: '均線週期列表', type: 'string', default: '5,10,20,60' },
-    { key: 'thresholdPct', label: '橫行判定閾值 (spread %)', type: 'number', default: 0.02 },
+    { key: 'thresholdPct', label: '橫行判定閾值 (留空 = adaptive, 數字 = 固定)', type: 'number', default: null, placeholder: '留空用 v2.2.0 adaptive' },
     { key: 'enableVolumeWeight', label: '啟用成交量加權', type: 'checkbox', default: true },
     { key: 'enableSlopeCheck', label: '啟用斜率動能', type: 'checkbox', default: true },
     { key: 'volumeLookback', label: '成交量回顧天數', type: 'number', default: 5, min: 3, max: 20 },
@@ -5505,6 +5525,57 @@ function decisionEngineComputeGrade(ssi_score, alignment_score) {
   };
 }
 
+// 大少 2026-08-21 12:04 — Stage 2 第一步: ZigZagSlope cross-module alignment enrichment
+// 凡人話: 拎 M1 verdict 嘅 meta.zigzagSlope 短期斜率做 cross-module alignment check
+//         M1 cycle UP + ZigZag 短期急跌 → 短期動能背馳 → 扣 alignment 5%
+//         M1 cycle DOWN + ZigZag 短期急升 → 短期反彈背馳 → 扣 alignment 5%
+// 對應 spec: MODULE-07-SYNTHESIZER.md v2.1.0 Level 4 cross-module alignment enrich
+// 對應 backend: backend/algorithms/synthesizer/algorithm.py:_compute_zigzag_alignment
+// Frontend aggregator 拎 standardVerdicts[0].module_specific.zigzagSlope (decisionEngineToStandardVerdict 已經將 M1 full meta 拎入 module_specific)
+function decisionEngineComputeZigzagAlignment(standardVerdicts) {
+  const ZIGZAG_DAILY_SLOPE_THRESHOLD = 2.0;  // 凡人話: 短期 dailySlope 門檻 (絕對值 > 2%/日 視為急變)
+  const ZIGZAG_PENALTY = 0.05;              // 凡人話: 每條 rule 嘅 alignment penalty (5%)
+
+  // 拎 M1 verdict 從 standardVerdicts
+  const m1Standard = standardVerdicts.find(v => v && v.module_id === 'ma-alignment');
+  if (!m1Standard) {
+    return { penalty: 0, reasons: [], m1_state: null, zigzag_slope: null };
+  }
+
+  const m1State = m1Standard.state;
+  const m1ModuleSpecific = m1Standard.module_specific || {};
+  const zigzagSlope = m1ModuleSpecific.zigzagSlope;
+
+  let penalty = 0;
+  const reasons = [];
+
+  if (zigzagSlope && zigzagSlope.ok && zigzagSlope.lastToToday) {
+    const lastToToday = zigzagSlope.lastToToday;
+    const dailySlope = lastToToday.dailySlope || 0;
+
+    // Rule 1: M1 UP + ZigZag 短期急跌 → 短期動能背馳
+    if (m1State === 'UP' && dailySlope < -ZIGZAG_DAILY_SLOPE_THRESHOLD) {
+      penalty += ZIGZAG_PENALTY;
+      reasons.push(
+        `M1 上升趨勢 (UP) 但 ZigZag 短期急跌 ${dailySlope.toFixed(2)}%/日 ` +
+        `(最後 1 點 ${lastToToday.from?.date || '?'} → 今日 ${lastToToday.to?.date || '?'}), ` +
+        `短期動能背馳, 扣 alignment ${ZIGZAG_PENALTY * 100}%`
+      );
+    }
+    // Rule 2: M1 DOWN + ZigZag 短期急升 → 短期反彈背馳
+    else if (m1State === 'DOWN' && dailySlope > ZIGZAG_DAILY_SLOPE_THRESHOLD) {
+      penalty += ZIGZAG_PENALTY;
+      reasons.push(
+        `M1 下跌趨勢 (DOWN) 但 ZigZag 短期急升 +${dailySlope.toFixed(2)}%/日 ` +
+        `(最後 1 點 ${lastToToday.from?.date || '?'} → 今日 ${lastToToday.to?.date || '?'}), ` +
+        `短期反彈背馳, 扣 alignment ${ZIGZAG_PENALTY * 100}%`
+      );
+    }
+  }
+
+  return { penalty, reasons, m1_state: m1State, zigzag_slope: zigzagSlope };
+}
+
 function decisionEngineComputeKelly(verdicts) {
   if (verdicts.length === 0) return { fraction: 'quarter', numeric: 0.25, position: 0.25 };
   const avgDD = verdicts.reduce((acc, v) => acc + v.max_drawdown_estimate, 0) / verdicts.length;
@@ -5584,7 +5655,17 @@ export async function analyzeDecisionEngine(klines, options = {}) {
   const { ssi_score, breakdown } = decisionEngineComputeSSI(standardVerdicts);
   const tcm_matrix = decisionEngineComputeTCM(standardVerdicts);
   const alignment_score = decisionEngineComputeAlignment(standardVerdicts);
-  const { grade, grade_score, reason } = decisionEngineComputeGrade(ssi_score, alignment_score);
+
+  // 大少 2026-08-21 12:04 — Stage 2 第一步: ZigZagSlope cross-module alignment enrichment
+  // 拎 M1 verdict 嘅 meta.zigzagSlope 做 cross-module alignment check
+  // 扣 alignment 但唔直接改 grade (跟 spec: Level 4 cross-module alignment enrich)
+  const zigzagAlignment = decisionEngineComputeZigzagAlignment(standardVerdicts);
+  const zigzag_alignment_penalty = zigzagAlignment.penalty;
+  const zigzag_alignment_reasons = zigzagAlignment.reasons;
+  const alignment_score_after_penalty = Math.max(0, alignment_score - zigzag_alignment_penalty);
+
+  // Step 4: Grade (用 penalty 後嘅 alignment_score)
+  const { grade, grade_score, reason } = decisionEngineComputeGrade(ssi_score, alignment_score_after_penalty);
   const { fraction, numeric, position } = decisionEngineComputeKelly(standardVerdicts);
 
   // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a) — M7 Synthesizer
@@ -5676,6 +5757,10 @@ export async function analyzeDecisionEngine(klines, options = {}) {
     ssi_breakdown: breakdown,
     tcm_matrix,
     alignment_score,
+    // 大少 2026-08-21 12:04 — Stage 2 第一步: ZigZagSlope enrichment
+    alignment_score_after_penalty,
+    zigzag_alignment_penalty,
+    zigzag_alignment_reasons,
     grade,
     grade_score,
     grade_reason: reason,
@@ -6463,7 +6548,8 @@ const TOOLTIPS = {
 export function renderDecisionEngineResult(verdict) {
   if (!verdict) return '<div class="result-error">無 verdict</div>';
 
-  const { ssi_score, ssi_breakdown, tcm_matrix, alignment_score, grade, grade_score, grade_reason, kelly_fraction, kelly_position, module_verdicts } = verdict;
+  // 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 zigzag_alignment_penalty + reasons 做 display
+  const { ssi_score, ssi_breakdown, tcm_matrix, alignment_score, alignment_score_after_penalty, zigzag_alignment_penalty, zigzag_alignment_reasons, grade, grade_score, grade_reason, kelly_fraction, kelly_position, module_verdicts } = verdict;
 
   // 6 個 module 嘅 breakdown (大少 2026-08-10 v4: 對齊 v3 + state-pill 統一 min-width + padding 8px)
   const stateTooltipMap = {
@@ -6556,9 +6642,17 @@ export function renderDecisionEngineResult(verdict) {
         <div style="font-size:14px;color:#999;margin-top:4px;">${grade_reason}</div>
         <div style="display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:14px;">
           <div class="m7-verdict-tooltip" data-help="${TOOLTIPS.ssi_label}">🟢 <strong>SSI</strong>: ${ssi_score.toFixed(1)} / 100</div>
-          <div class="m7-verdict-tooltip" data-help="${TOOLTIPS.alignment}">📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%</div>
+          <div class="m7-verdict-tooltip" data-help="${TOOLTIPS.alignment}">📐 <strong>Alignment</strong>: ${(alignment_score * 100).toFixed(1)}%${zigzag_alignment_penalty > 0 ? ` <span style="color:#EE5151;font-weight:600;">→ ${(alignment_score_after_penalty * 100).toFixed(1)}% (扣 ${(zigzag_alignment_penalty * 100).toFixed(0)}%)</span>` : ''}</div>
           <div class="m7-verdict-tooltip" data-help="${TOOLTIPS.kelly}">💰 <strong>Kelly</strong>: ${kellyLabel}</div>
         </div>
+        ${zigzag_alignment_reasons && zigzag_alignment_reasons.length > 0 ? `
+          <div class="m7-verdict-tooltip" data-help="Stage 2 第一步 (大少 2026-08-21): 拎 M1 嘅 ZigZagSlope 短期斜率做 cross-module alignment check, M1 上升但 ZigZag 急跌 (或 M1 下跌但 ZigZag 急升) 視為短期動能背馳, 扣 alignment 5% 一條 rule" style="margin-top:12px;padding:10px 14px;background:#fff1f0;border-left:4px solid #EE5151;border-radius:6px;font-size:13px;color:#333;text-align:left;">
+            <strong style="color:#EE5151;">⚠️ ZigZagSlope 短期動能背馳 (Stage 2 第一步):</strong>
+            <ul style="margin:6px 0 0 0;padding-left:20px;">
+              ${zigzag_alignment_reasons.map(r => `<li>${r}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
       </div>
 
       <!-- 6 個 Metric Mini-Cards (大少 2026-08-10 v2: 自訂 CSS tooltip + 大字 14px) -->

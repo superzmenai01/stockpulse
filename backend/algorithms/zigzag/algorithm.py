@@ -15,8 +15,9 @@ Algorithm: ref code 嘅 state machine (1 個 direction + 1 個 temp_extreme + 1 
 凡人話: 一個 algorithm 拎到 K 線之後, 逐條掃, 拎出 Peak (頂) 同 Trough (底) 兩種轉折點
 """
 
+import datetime
 import numpy as np
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from ..base import Algorithm, Verdict
 from ..registry import register
@@ -28,7 +29,7 @@ class ZigZagAlgorithm(Algorithm):
 
     收 K 線 (klines) + 自訂參數 (options), 返 Verdict:
     - points: list of {date, value, type: 'high'/'low', index}
-    - meta: {threshold, threshold_proportion, klines_count, points_count, lastSwingHigh, lastSwingLow}
+    - meta: {threshold, threshold_proportion, klines_count, points_count, lastSwingHigh, lastSwingLow, zigzagSlope}
     - warnings: Module Warning System v1.1.0 格式
 
     永久 rule (大少 2026-08-20):
@@ -99,6 +100,12 @@ class ZigZagAlgorithm(Algorithm):
         else:
             meta["lastSwingHigh"] = None
             meta["lastSwingLow"] = None
+
+        # 5.5. ZigZag 斜率 (大少 2026-08-21 11:26 trigger — Option A 補返 Phase 1 (4.18.0) 拎走咗嘅 frontend calcZigZagSlope)
+        # 凡人話: 用之字最後 2 個 confirmed point 計斜率, 雙斜率 prevToLast + lastToToday
+        # 對應 backup: backups/zigzag-frontend-2026-08-20/adapter.mjs:1646-1701
+        # 永久 rule (大少 2026-08-21 11:26): backend 補返 zigzagSlope, frontend 唔可以自己 algorithm
+        meta["zigzagSlope"] = self._calc_zigzag_slope(result['points'], klines)
 
         # 6. Warnings — Module Warning System v1.1.0 (凡人話: < 30 條 data 提示 sample size 細)
         # CATEGORY_DISPLAY template: system 類 impact "Verdict 唔可信, 唔好落單"
@@ -201,6 +208,145 @@ class ZigZagAlgorithm(Algorithm):
                     temp_extreme_price = highs[i]
 
         return {'points': points, 'labels': labels, 'trend': trend}
+
+    @staticmethod
+    def _calc_zigzag_slope(
+        points: List[tuple],
+        klines: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """凡人話: 用之字最後 2 個 confirmed point 計斜率 (Stage 1 framework, 4.11.0)
+
+        兩個 slope (對齊 frontend calcZigZagSlope 永久 rule):
+        - prevToLast: 倒數第 2 點 → 最後 1 點 (主要訊號, 反映轉向間距)
+        - lastToToday: 最後 1 點 → 今日 close (extended, 處理 lag tail 甩尾)
+
+        Args:
+            points: 之字 points (從 _zigzag_fit result 拎), list of (idx, price, ptype)
+                - ptype: 1=high (Peak), -1=low (Trough)
+            klines: K 線 data (用最後一條拎今日 close)
+
+        Returns:
+            dict: {
+                ok: bool,
+                prevToLast: {from: {date, value, type, index}, to: {...}, changePct, days, dailySlope},
+                lastToToday: 同 prevToLast structure (or None if 超過 60 日),
+                reason: str (when ok=False)
+            }
+
+        對應 backup: backups/zigzag-frontend-2026-08-20/adapter.mjs:1646-1701
+        永久 rule (大少 2026-08-21 11:26): 之字斜率永遠從最後 2 個 confirmed point 計, 唔好 trigger (Stage 1 framework 唔郁 trigger)
+        """
+        # 凡人話: 至少 2 個 point 先可以計斜率
+        if not points or len(points) < 2:
+            return {"ok": False, "reason": "之字 point 太少 (< 2)"}
+
+        # 拎最後 2 個 confirmed point
+        # points = [(idx, price, ptype), ...] — ptype 1=high, -1=low
+        last_idx, last_price, last_ptype = points[-1]
+        prev_idx, prev_price, prev_ptype = points[-2]
+
+        def _kline_date(idx: int) -> Optional[str]:
+            """凡人話: 拎 K 線 date (time/date/timestamp fallback chain, 對齊 adapter.mjs _zigzagNormalizeDate)"""
+            if idx < 0 or idx >= len(klines):
+                return None
+            k = klines[idx]
+            return k.get('time') or k.get('date') or k.get('timestamp')
+
+        def _parse_date(s: Any) -> Optional[datetime.date]:
+            """凡人話: parse date string/number → datetime.date (對齊 frontend dateToTime 邏輯)"""
+            if s is None:
+                return None
+            try:
+                if isinstance(s, (int, float)):
+                    # Unix timestamp (秒 or 毫秒)
+                    ts = s / 1000 if s > 1e12 else s
+                    return datetime.datetime.fromtimestamp(ts).date()
+                if isinstance(s, str):
+                    # ISO string (e.g. "2026-08-21" or "2026-08-21T09:00:00")
+                    # 取頭 10 個 char (YYYY-MM-DD) 避免 timezone 問題
+                    date_part = s[:10] if len(s) >= 10 else s
+                    return datetime.datetime.fromisoformat(date_part).date()
+            except (ValueError, TypeError, OSError):
+                return None
+            return None
+
+        last_date_str = _kline_date(last_idx)
+        prev_date_str = _kline_date(prev_idx)
+
+        if not last_date_str or not prev_date_str:
+            return {"ok": False, "reason": "日期無效 (缺失)"}
+
+        last_date = _parse_date(last_date_str)
+        prev_date = _parse_date(prev_date_str)
+
+        if not last_date or not prev_date:
+            return {"ok": False, "reason": f"日期解析失敗 (last={last_date_str!r}, prev={prev_date_str!r})"}
+
+        # 計日數 (大少 evidence: 太古 51 日, 騰訊 9 日 — 曆日計)
+        days = (last_date - prev_date).days
+        if days <= 0:
+            return {"ok": False, "reason": f"日期無效 (倒置或同日, days={days})"}
+
+        # 計升跌 (大少 evidence: 太古 +25.40%, 騰訊 -1.41%)
+        change_pct = ((last_price - prev_price) / prev_price) * 100
+        daily_slope = change_pct / days
+
+        # ptype 1=high, -1=low
+        last_type_str = "high" if last_ptype == 1 else "low"
+        prev_type_str = "high" if prev_ptype == 1 else "low"
+
+        result: Dict[str, Any] = {
+            "ok": True,
+            "prevToLast": {
+                "from": {
+                    "date": prev_date_str,
+                    "value": round(float(prev_price), 4),
+                    "type": prev_type_str,
+                    "index": int(prev_idx),
+                },
+                "to": {
+                    "date": last_date_str,
+                    "value": round(float(last_price), 4),
+                    "type": last_type_str,
+                    "index": int(last_idx),
+                },
+                "changePct": round(change_pct, 4),
+                "days": round(float(days), 2),
+                "dailySlope": round(daily_slope, 6),
+            },
+        }
+
+        # lastToToday: 最後 1 點 → 今日 close (Solution A: 處理 lag tail 甩尾)
+        if klines and len(klines) > 0:
+            last_kline = klines[-1]
+            today_date_str = _kline_date(len(klines) - 1)  # 用 _kline_date 同樣 fallback chain
+            today_close = last_kline.get('close')
+            if today_date_str and today_close is not None and isinstance(today_close, (int, float)):
+                today_date = _parse_date(today_date_str)
+                if today_date:
+                    last_to_today_days = (today_date - last_date).days
+                    # 凡人話: 1-60 日內先計 (超過 60 日當 stale, 唔可靠)
+                    if 0 < last_to_today_days < 60:
+                        ext_change_pct = ((float(today_close) - last_price) / last_price) * 100
+                        ext_daily_slope = ext_change_pct / last_to_today_days
+                        result["lastToToday"] = {
+                            "from": {
+                                "date": last_date_str,
+                                "value": round(float(last_price), 4),
+                                "type": last_type_str,
+                                "index": int(last_idx),
+                            },
+                            "to": {
+                                "date": today_date_str,
+                                "value": round(float(today_close), 4),
+                                "type": "today",
+                            },
+                            "changePct": round(ext_change_pct, 4),
+                            "days": round(float(last_to_today_days), 2),
+                            "dailySlope": round(ext_daily_slope, 6),
+                        }
+
+        return result
 
 
 # 自動 register 落 framework (凡人話: import 呢個 file 就自動 register)

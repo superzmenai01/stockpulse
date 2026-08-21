@@ -13,12 +13,18 @@ Algorithm: 5 sub-step (跟 synthesizer.ts 嘅 synthesize() 1:1 port 去 Python)
 - Step 3: Alignment Score 戰略戰術匹配度 (max_group_size / total_count)
 - Step 4: Grade 評級 (ssi_score × 0.6 + alignment × 100 × 0.4, 8 個 grade: A+/A/B+/B/C+/C/D/F)
 - Step 5: Kelly 倉位分數 (跟 avg max_drawdown_estimate 自動切 half/quarter/octo)
+- Step 3.5: ZigZagSlope Cross-Module Alignment Enrichment (大少 2026-08-21 12:04 Stage 2 第一步)
+  - 拎 M1 verdict 嘅 meta.zigzagSlope 嘅 lastToToday.dailySlope
+  - M1 cycle UP + ZigZag 短期急跌 (>2%/日) → alignment 扣 5% (短期動能背馳)
+  - M1 cycle DOWN + ZigZag 短期急升 (>2%/日) → alignment 扣 5% (短期反彈背馳)
+  - 對應 spec: MODULE-07-SYNTHESIZER.md v2.1.0 Level 4 cross-module alignment enrich
 
 Caller inject pattern (Phase 8 permanent rule):
 - 跑 synthesizer 之後, algorithm_runner 自動跑 M1-M6 拎 verdict
-- 將每個 verdict 轉做 standard verdict (state / confidence / base_weight / max_drawdown_estimate / rules_fired)
+- 將每個 verdict 轉做 standard verdict (state / confidence / base_weight / max_drawdown_estimate / rules_fired / meta)
 - 6 個 standard verdict 放落 options['moduleVerdicts']
 - Synthesizer 拎 options['moduleVerdicts'] 計 synth verdict
+- M1 verdict 嘅 meta (e.g. zigzagSlope) 透過 standard verdict 嘅 meta field 傳入
 
 凡人話: Synthesizer 唔拎 K 線, 拎 6 個 module verdict 拎綜合判定, 等於 1 個 senior 同事睇晒 6 個 junior 同事嘅分析再拎最終意見
 """
@@ -156,6 +162,87 @@ def _compute_alignment(verdicts: List[Dict[str, Any]]) -> float:
 
 
 # ============================================================
+# Step 3.5: ZigZagSlope Cross-Module Alignment Enrichment
+# 大少 2026-08-21 12:04 trigger — Stage 2 第一步
+# 凡人話: 拎 M1 verdict 嘅 zigzagSlope 短期斜率做 cross-module alignment check
+#         M1 cycle UP + ZigZag 短期急跌 → 短期動能背馳 → 扣 alignment
+#         M1 cycle DOWN + ZigZag 短期急升 → 短期反彈背馳 → 扣 alignment
+# 對應 spec: MODULE-07-SYNTHESIZER.md v2.1.0 Level 4 cross-module alignment enrich
+# ============================================================
+
+# 凡人話: 短期 dailySlope 門檻 (絕對值 > 2%/日 視為急變)
+ZIGZAG_ALIGNMENT_DAILY_SLOPE_THRESHOLD = 2.0
+
+# 凡人話: 每條 rule 嘅 alignment penalty (5%)
+ZIGZAG_ALIGNMENT_PENALTY_PER_RULE = 0.05
+
+
+def _compute_zigzag_alignment(verdicts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """ZigZagSlope cross-module alignment enrichment (Stage 2 第一步)
+
+    拎 M1 verdict 嘅 meta.zigzagSlope 嘅 lastToToday.dailySlope,
+    對 M1 state 做 cross-module alignment check:
+    - M1 state == "UP" + dailySlope < -2.0%/日 → 扣 5% (短期動能背馳)
+    - M1 state == "DOWN" + dailySlope > +2.0%/日 → 扣 5% (短期反彈背馳)
+
+    Returns:
+        dict: {
+            penalty: float (0 / 0.05 / 0.10),
+            reasons: List[str] (凡人話原因, display 畀大少睇),
+            m1_state: str | None,
+            zigzag_slope: dict | None (raw zigzagSlope meta, 方便 frontend display)
+        }
+    """
+    # 拎 M1 verdict
+    m1_verdict = next(
+        (v for v in verdicts if v.get("module_id") == "ma-alignment"),
+        None,
+    )
+    if not m1_verdict:
+        return {"penalty": 0.0, "reasons": [], "m1_state": None, "zigzag_slope": None}
+
+    m1_state = m1_verdict.get("state", "SIDEWAYS")
+    # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 M1 verdict 嘅 module_specific 拎 zigzagSlope
+    # (algorithm_runner.py 嗰處 inject 嘅 field 叫 `module_specific`, 對齊 frontend decisionEngineToStandardVerdict interface)
+    m1_module_specific = m1_verdict.get("module_specific") or {}
+    zigzag_slope = m1_module_specific.get("zigzagSlope")
+
+    penalty = 0.0
+    reasons: List[str] = []
+
+    if zigzag_slope and zigzag_slope.get("ok") and zigzag_slope.get("lastToToday"):
+        last_to_today = zigzag_slope["lastToToday"]
+        daily_slope = last_to_today.get("dailySlope", 0.0)
+
+        # Rule 1: M1 UP + ZigZag 短期急跌 → 短期動能背馳
+        if m1_state == "UP" and daily_slope < -ZIGZAG_ALIGNMENT_DAILY_SLOPE_THRESHOLD:
+            penalty += ZIGZAG_ALIGNMENT_PENALTY_PER_RULE
+            reasons.append(
+                f"M1 上升趨勢 ({m1_state}) 但 ZigZag 短期急跌 {daily_slope:.2f}%/日 "
+                f"(最後 1 點 {last_to_today.get('from', {}).get('date', '?')} → "
+                f"今日 {last_to_today.get('to', {}).get('date', '?')}), 短期動能背馳, "
+                f"扣 alignment {ZIGZAG_ALIGNMENT_PENALTY_PER_RULE * 100:.0f}%"
+            )
+
+        # Rule 2: M1 DOWN + ZigZag 短期急升 → 短期反彈背馳
+        elif m1_state == "DOWN" and daily_slope > ZIGZAG_ALIGNMENT_DAILY_SLOPE_THRESHOLD:
+            penalty += ZIGZAG_ALIGNMENT_PENALTY_PER_RULE
+            reasons.append(
+                f"M1 下跌趨勢 ({m1_state}) 但 ZigZag 短期急升 +{daily_slope:.2f}%/日 "
+                f"(最後 1 點 {last_to_today.get('from', {}).get('date', '?')} → "
+                f"今日 {last_to_today.get('to', {}).get('date', '?')}), 短期反彈背馳, "
+                f"扣 alignment {ZIGZAG_ALIGNMENT_PENALTY_PER_RULE * 100:.0f}%"
+            )
+
+    return {
+        "penalty": penalty,
+        "reasons": reasons,
+        "m1_state": m1_state,
+        "zigzag_slope": zigzag_slope,
+    }
+
+
+# ============================================================
 # Step 4: Grade 評級
 # ============================================================
 
@@ -285,8 +372,18 @@ class SynthesizerAlgorithm(Algorithm):
         # Step 3: Alignment
         alignment_score = _compute_alignment(verdicts)
 
-        # Step 4: Grade
-        grade, grade_score, grade_reason = _compute_grade(ssi_score, alignment_score)
+        # Step 3.5: ZigZagSlope Cross-Module Alignment Enrichment
+        # 大少 2026-08-21 12:04 — Stage 2 第一步
+        # 拎 M1 verdict 嘅 meta.zigzagSlope 做 cross-module alignment check
+        # 扣 alignment 但唔直接改 grade (跟 spec: Level 4 cross-module alignment enrich)
+        zigzag_alignment = _compute_zigzag_alignment(verdicts)
+        zigzag_alignment_penalty = zigzag_alignment["penalty"]
+        zigzag_alignment_reasons = zigzag_alignment["reasons"]
+        # alignment_score 扣 penalty (cap 0)
+        alignment_score_after_penalty = max(0.0, alignment_score - zigzag_alignment_penalty)
+
+        # Step 4: Grade (用 penalty 後嘅 alignment_score)
+        grade, grade_score, grade_reason = _compute_grade(ssi_score, alignment_score_after_penalty)
 
         # Step 5: Kelly
         kelly = _compute_kelly(verdicts)
@@ -347,6 +444,10 @@ class SynthesizerAlgorithm(Algorithm):
             "ssi_breakdown": ssi_breakdown,
             "tcm_matrix": tcm_matrix,
             "alignment_score": alignment_score,
+            # 大少 2026-08-21 12:04 — Stage 2 第一步: ZigZagSlope enrichment
+            "alignment_score_after_penalty": alignment_score_after_penalty,
+            "zigzag_alignment_penalty": zigzag_alignment_penalty,
+            "zigzag_alignment_reasons": zigzag_alignment_reasons,
             "grade": grade,
             "grade_score": grade_score,
             "grade_reason": grade_reason,

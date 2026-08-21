@@ -96,7 +96,19 @@ def run_algorithm(
     # 大少 2026-08-20 20:05 Phase 2 — M1 algorithm 拎 ZigZag data
     # 凡人話: 跑 algorithm 之前, 如果 algorithm 係 ma_alignment, 先拎 ZigZag verdict inject 落 options
     # 永久 rule: caller (runner service) 負責 algorithm 嘅 dependency inject, 唔好喺 algorithm 入面 fetch
-    if algo_name == "ma_alignment":
+    #
+    # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 ZigZagSlope 落 M1 options
+    # 之後 M7 Synthesizer 拎 M1 verdict 嘅 meta.zigzagSlope 做 cross-module alignment check
+    # (Stage 2 第一步 Level 4 cross-module alignment enrich)
+    # 永久 rule (Stage 2): Synthesizer 跑 M1 upstream 嗰陣都要 inject ZigZag (M1 內部拎 zigzagSlope)
+    def _inject_zigzag_for_ma_alignment(klines, options, label=""):
+        """凡人話: 拎 ZigZag verdict 注入落 M1 options (包括 zigzagSlope)
+
+        Args:
+            klines: K 線 data
+            options: 傳畀 ma_alignment algorithm 嘅 options dict (會 mutate)
+            label: log label (e.g. "M1 direct" / "M7→M1") 方便 debug
+        """
         try:
             from backend.algorithms.zigzag import ZigZagAlgorithm
             zigzag_algo = ZigZagAlgorithm()
@@ -107,14 +119,21 @@ def run_algorithm(
                 options["lastSwingHigh"] = zigzag_verdict.meta.get("lastSwingHigh")
                 options["lastSwingLow"] = zigzag_verdict.meta.get("lastSwingLow")
                 options["zigzagThreshold"] = zigzag_verdict.meta.get("threshold", threshold)
+                # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 ZigZagSlope 落 M1 options
+                options["zigzagSlope"] = zigzag_verdict.meta.get("zigzagSlope")
                 options["zigzagSource"] = "backend (Phase 1 v1.0.0, M1 dependency inject)"
                 logger.info(
-                    f"[Algorithm] M1 inject ZigZag: {len(zigzag_verdict.points)} points "
-                    f"from backend ({zigzag_verdict.meta.get('klines_count', 0)} klines)"
+                    f"[Algorithm] {label} inject ZigZag: {len(zigzag_verdict.points)} points "
+                    f"from backend ({zigzag_verdict.meta.get('klines_count', 0)} klines) "
+                    f"+ zigzagSlope: {bool(zigzag_verdict.meta.get('zigzagSlope'))}"
                 )
         except Exception as e:
             # 永久 rule: dependency inject 失敗 fallback caller 拎 (唔 crash algorithm)
-            logger.warning(f"[Algorithm] M1 ZigZag inject 失敗, 繼續跑 (verdict 會有 null ZigZag): {e}")
+            logger.warning(f"[Algorithm] {label} ZigZag inject 失敗, 繼續跑 (verdict 會有 null ZigZag): {e}")
+
+    # 直接 fetch M1 嗰處
+    if algo_name == "ma_alignment":
+        _inject_zigzag_for_ma_alignment(klines, options, label="M1 direct")
 
     # 大少 2026-08-20 21:30 Phase 8 — M7 Synthesizer 拎 M1-M6 全部 module verdict 做綜合判定
     # 凡人話: 跑 Synthesizer 之前, 自動跑 M1-M6 拎 verdict 然後轉做 standard verdict interface (state / confidence / base_weight / max_drawdown_estimate / rules_fired) inject 落 options
@@ -130,10 +149,31 @@ def run_algorithm(
             ("volatility", "volatility", 0.10),
         ]
         module_verdicts: list = []
+        # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 caller 嘅 threshold 傳畀 M1 upstream
+        # 之前 M7 inject M1 嗰陣 options 冇傳 threshold, M1 內部 ZigZag 拎 default 5% 但同 caller 唔 match
+        # (e.g. 020 嘅 chart 撳跑用 20% threshold, 但 M7 嗰處 inject M1 用 5% 拎唔到 zigzagSlope)
+        # 永久 rule: M7 inject M1/M2.. 時要保留 caller 嘅 options (threshold / data_window_days)
+        caller_threshold = options.get("threshold", 5)
+        caller_data_window_days = options.get("data_window_days", 1260)
         for upstream_name, module_id, base_weight in upstream_algos:
             try:
                 upstream_algo = get_algorithm(upstream_name)
-                upstream_verdict = upstream_algo.run(klines, {"period": period})
+                # 大少 2026-08-21 12:04 — Stage 2 第一步: ma_alignment 跑之前 inject ZigZag
+                # 否則 M1 verdict 拎唔到 zigzagSlope, M7 enrichment 失效
+                if upstream_name == "ma_alignment":
+                    upstream_options = {
+                        "period": period,
+                        "threshold": caller_threshold,
+                        "data_window_days": caller_data_window_days,
+                    }
+                    _inject_zigzag_for_ma_alignment(klines, upstream_options, label="M7→M1")
+                else:
+                    upstream_options = {
+                        "period": period,
+                        "threshold": caller_threshold,
+                        "data_window_days": caller_data_window_days,
+                    }
+                upstream_verdict = upstream_algo.run(klines, upstream_options)
                 if upstream_verdict.ok:
                     # Extract standard verdict fields from upstream verdict meta
                     upstream_meta = upstream_verdict.meta
@@ -153,6 +193,11 @@ def run_algorithm(
                         # M7 v1.0.0 拎 static max_drawdown_estimate, M8 Sprint 2 將 adaptive auto-calibrate
                         "max_drawdown_estimate": 0.05,
                         "rules_fired": rules_fired if isinstance(rules_fired, list) else [],
+                        # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 full meta 畀 M7 做 cross-module alignment
+                        # 例: M1 meta.zigzagSlope (2026-08-21 11:26 加返), M1 volumeSignal, M5 volRatio 等
+                        # 用 field name `module_specific` 對齊 frontend decisionEngineToStandardVerdict interface
+                        # 對應 spec: MODULE-07-SYNTHESIZER.md v2.1.0 Level 4 cross-module alignment enrich
+                        "module_specific": upstream_meta,
                     })
                     logger.info(
                         f"[Algorithm] M7 inject {module_id}: state={state} conf={confidence} "
