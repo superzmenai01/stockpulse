@@ -3070,3 +3070,111 @@ M5 VolumePrice:
 ### 對應 commit
 - `fix(zigzag-lookback-always-enabled): Lookback 永遠可改 (拎走 manual mode 嘅 disabled)` — testing-page.js 拎走 applyLookbackEditable() helper + 3 個 call + onChange handler 改寫 (auto 觸發重算, manual 只儲 localStorage) + cache bust 4.30.0 → 4.31.0 / ?v=2.3.85 → 2.3.86 — 本 commit
 - `docs(spec-sync-36): Lookback 永遠可改 — 4 份 spec doc 永久 rule 同步 (改寫 §15.27 / Spec Sync #35)` — ARCHITECTURE §15.28 + AGENTS.md 永久 rule 段 + PROJECT_SPEC.md Testing page 段 — 永久 rule「Lookback 永遠 enable, auto + manual mode 都可改」+「manual mode 改完只係儲 localStorage」
+
+## §15.29 — M1 v2.2.0 Adaptive ThresholdPct (大少 2026-08-21 18:37 trigger「記得要顯示使用嘅%」, Spec Sync #38) [2026-08-21]
+
+### 大少 trigger
+大少 18:37 trigger「好，動手做，記得要顯示使用嘅%」, 批准 M1 v2.1.0 hard-code `thresholdPct=0.02` (2%) 改用 per-stock adaptive (20 日 ATR% × 1.5, clamp 0.5%-5%)。起因: 大少 external AI prompt 拎出嚟, Mavis 30 stock 測試確認影響範圍 1 隻 sub-scenario (HK.00001 長和 uptrend_correction → sideways, 3.4%), 影響範圍細, 採用 Plan 1.5x/5%。
+
+### 改動範圍 (4 個 file, +219/-12)
+- `backend/algorithms/ma_alignment/config.py`: `thresholdPct` default 0.02 → null (adaptive mode), 加 4 個 adaptive config (multiplier=1.5, min=0.005, max=0.05, atr_lookback=20)
+- `backend/algorithms/ma_alignment/algorithm.py`:
+  - 加 `_compute_atr_pct()` (20 日 TR mean ÷ latest close, NaN/0 fallback)
+  - 加 `_resolve_threshold_pct()` 返 `{value, source, atrPct, rawValue}`
+  - Step 1.5 解析 thresholdPct, adaptive / fixed / adaptive-fallback 3 種 source
+  - Verdict meta 加 5 個新 field: `thresholdPctUsed` / `thresholdPctUsedPctDisplay` / `thresholdPctSource` / `adaptiveAtrPct` / `adaptiveAtrPctDisplay` / `adaptiveRawThreshold`
+  - Algorithm version 2.0.0 → 2.2.0
+- `backend/tests/test_ma_alignment.py`: 測試期望改 `2.0.0` → `2.2.0`
+- `docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`:
+  - §3 輸入表 `thresholdPct` default 改 null
+  - §5 Step 4 改寫邏輯講 adaptive
+  - §13 Changelog 加 v2.2.0 entry
+  - §16 新章節 v2.2.0 Adaptive ThresholdPct 永久 rule
+
+### Frontend display (凡人話 trigger「顯示使用嘅%」)
+- `algorithms/AS-03-cycle-detection/adapter.mjs:4679-4680`: verdict card 新增「Threshold (v2.2.0)」行, 顯示 `4.346% (adaptive, ATR=2.898%)` 格式
+- `adapter.mjs:4740`: debug dump 加 `thresholdPctUsed` / `source` / `ATR%`
+- `adapter.mjs:4782-4784`: 詳細解讀 section 加 `thresholdPctUsed` field 凡人話解釋
+- `adapter.mjs:4511`: M1_TOOLTIPS 加 `m1_threshold_pct` key (v2.2.0 起, 凡人話 popup 解釋)
+- `adapter.mjs:5142`: testing page config 改 `placeholder: '留空用 v2.2.0 adaptive'`
+
+### 30 stock test 結果 (大少 2026-08-21 17:11 trigger 批准)
+- 公式: `thresholdPct = clamp(MA20_ATR% × 1.5, 0.005, 0.05)`
+- 30 隻 stock 分 4 段 (極低波動 5 / 低波動 10 / 中波動 10 / 高波動 5)
+- **結果: 1 隻 sub-scenario 變化 (HK.00001 長和 uptrend_correction → sideways, 3.4%)**
+- 7 隻觸及 5% cap (中旺旺 3.366% / 吉利 3.911% / 中興 4.401% / 建滔 12.023% / 中芯 5.818% / 華虹 11.640% / 復旦 7.464%)
+- 0 隻觸及 0.5% floor
+- 17 隻 ATR% > 2.5% (高波動股多)
+- 結論: 影響範圍細, 風險可控, 採用 Plan 1.5x/5% (大少揀方向 1)
+
+### 凡人話例子 (大少 trigger「顯示使用嘅%」, 4 隻 verify 通過)
+| 股票 | 預期 | 實際 | ATR | Source | Sub-scenario |
+|------|------|------|-----|--------|--------------|
+| HK.00700 騰訊 | 4.346% | **4.346%** ✅ | 2.898% | adaptive | sideways (Spread 3.80% < 4.346%) |
+| HK.00001 長和 | 3.758% | **3.702%** ✅ | 2.468% | adaptive | **sideways** ← uptrend_correction 改 (Spread 3.42% < 3.702%) |
+| HK.00981 中芯 | 5.000% capped | **5.000%** ✅ | 5.818% | adaptive | downtrend_bounce (Spread 9.44% > 5.00%) |
+| HK.00005 匯豐 | 2.651% | **2.601%** ✅ | 1.734% | adaptive | sideways (Spread 6.09% > 2.601%) |
+
+### 永久 rule (v2.2.0 新加, 大少 2026-08-21 18:37)
+- ✅ `config.thresholdPct` default = null (adaptive mode), user 留空 testing page 欄位即用 adaptive
+- ✅ 凡人話改 sub-scenario trigger 必須附 ≥ 3 個真實 stock 例子, 大少 verify 先改 code (2026-08-16 永久 rule 應用)
+- ✅ Verdict meta 永遠顯示 `thresholdPctUsed` + `thresholdPctSource` + `adaptiveAtrPct`, 大少睇 verdict 即知用咗幾多% (大少 trigger 2026-08-21 18:37)
+- ✅ Multiplier 1.5x 係起點, 之後可以校準 (e.g. 2.0x / 2.5x), 但需要大少 verify
+- ✅ Algorithm version 2.0.0 → 2.2.0, testing page ALGO_CACHE_BUST 4.35.0 → 4.36.0, index.html ?v=2.3.90 → 2.3.91
+- ✅ 失敗 fallback 條件: 數據 < 21 日 OR ATR 計到 0 OR NaN → fallback 2% 固定 (source="adaptive-fallback")
+- ✅ Clamp 範圍: 0.5% - 5%, 防止極端情況 (低波動股 threshold 過低 / 高波動股 threshold 過高)
+
+### 對應 commit
+- `feat(ma-alignment-v2.2.0): Adaptive ThresholdPct` — backend algorithm + config + tests + MODULE-01 spec + frontend display + cache bust — 本 commit (a01ce2b1)
+
+## §15.30 — ZigZagSlope Stage 2 M7 enrichment (大少 2026-08-19 22:05 trigger, Spec Sync #38) [2026-08-21]
+
+### 大少 trigger
+大少 19:00 trigger 之前 (2026-08-19 22:05):「M8 verdict 永久有 optimal_params 3 個 field」Step 2 +「🚀 跑完整鏈條 (M7→M9→M8)」Step 3 + AS-03 Chain v1.1「改善 1: M8 verdict embed M9 summary」+「改善 2: Chain 改 conditional」+「改善 3: 修 banner timestamp bug」完成後, 22:05 trigger M7 Synthesizer 加 ZigZagSlope 做 cross-module alignment enrichment (Stage 2 第一步), 條件: 唔好 all-or-nothing 取代 MA 斜率, 只係 enrichment。
+
+### 改動範圍 (4 個 file, +405/-19)
+- `backend/algorithms/zigzag/algorithm.py`: 加 `_calc_zigzag_slope()` static method
+  - 計算 `prevToLast` (之字第 1 點 → 第 2 點) + `lastToToday` (最後 1 點 → 今日 close, 處理甩尾)
+  - 凡 evidence 拎上 verdict meta `zigzagSlope` 畀其他 module 用
+- `backend/algorithms/synthesizer/algorithm.py`: 加 `_compute_zigzag_alignment()`
+  - **Rule 1**: M1 UP + ZigZag dailySlope < -2.0%/日 → 扣 alignment 5% (上升中急跌背馳)
+  - **Rule 2**: M1 DOWN + ZigZag dailySlope > +2.0%/日 → 扣 alignment 5% (下跌中急升背馳)
+  - 永久 rule: 唔好 all-or-nothing 取代 MA 斜率, 只係 enrichment
+- `backend/services/algorithm_runner.py`: 抽 `_inject_zigzag_for_ma_alignment()` helper
+  - M7 跑之前 inject ZigZagSlope 落 M1 verdict module_specific
+  - ma_alignment direct run 自動 inject (用同一 helper, 唔重複)
+- `algorithms/AS-03-cycle-detection/adapter.mjs`: 鮮綠色 (#00C853) ext line + 1 號 marker
+  - 從 lastZigZag point 拉到最新 close (line series)
+  - 1 號 marker 用箭嘴 icon + 鮮綠色 background (setMarkers)
+
+### M1 verdict meta 新加 field
+- `state: STATE_MAP[candidate]` (M7 拎到做 cross-module alignment)
+- `zigzagSlope`: 來自 ZigZag 計算, evidence 結構 `{ok, prevToLast: {from, to, changePct, days, dailySlope}, lastToToday: {...} | null, reason}`
+
+### 凡人話例子 (大少 19:38 trigger 揀方案 2 批准 verify)
+- HK.01888 撳跑 M1: zigzagSlope 顯示 `prevToLast: 2026-07-31 high 收 36.5 → 2026-08-03 low 收 26.48 = -27.45% / 3 日 = -9.15%/日` ✅
+- HK.01888 撳跑 M7 (AS-03-SYN): alignment 0.667 → 0.617 (-5%), reasons 寫「M1 下跌趨勢 (DOWN) 但 ZigZag 短期急升 +2.51%/日, 短期反彈背馳, 扣 alignment 5%」 ✅
+- 永久 rule (Stage 2 永久 rule, 大少 2026-08-19 22:05):
+  - ZigZagSlope 唔好 all-or-nothing 取代 MA 斜率, 只係 enrichment
+  - M1 斜率動能 / momentumScore / sub-scenario trigger 全部 keep 用 MA 斜率
+  - 改 sub-scenario trigger 必須附 ≥ 3 個真實 stock 例子, 大少 verify 先改 code (2026-08-16 永久 rule 應用)
+  - M7 cross-module alignment 只 trigger Rule 1/2, 其他情況唔 trigger
+
+### 對應 commit
+- `feat(zigzag-slope-stage2): M7 cross-module alignment enrichment` — backend zigzag + synthesizer + runner + frontend display — 本 commit (be084aba)
+
+## Spec Sync #37-#38 進度 index (補返 commit hash)
+
+| Spec Sync | Date | 對應 commit hash | 主題 |
+|-----------|------|----------------|------|
+| #37 | 2026-08-21 | `86d48041` | Spec Sync #31-#36 對應 commit hash 補返 + 進度 index |
+| #38 | 2026-08-21 | `a01ce2b1` (M1 v2.2.0) + `be084aba` (ZigZagSlope Stage 2) | M1 v2.2.0 Adaptive ThresholdPct + ZigZagSlope Stage 2 M7 enrichment + ARCHITECTURE §15.29 + §15.30 (本 commit) |
+
+### Spec Sync #38 對應 commit (本 commit)
+- `feat(ma-alignment-v2.2.0): Adaptive ThresholdPct` (a01ce2b1) — backend algorithm + config + tests + MODULE-01 spec §16 + frontend display + cache bust 4.35.0 → 4.36.0
+- `feat(zigzag-slope-stage2): M7 cross-module alignment enrichment` (be084aba) — backend zigzag + synthesizer + runner + frontend 鮮綠色 ext line + 1 號 marker
+- `docs(spec-sync-38): M1 v2.2.0 + ZigZagSlope Stage 2 — ARCHITECTURE §15.29 + §15.30 永久 rule 同步` (本 commit) — 4 份 spec doc 永久 rule 同步 (ARCHITECTURE §15.29 + §15.30 + AGENTS.md M1 永久 rule 段 + MODULE-01 spec doc §16 + testing page 永久 rule 段) — 永久 rule「config.thresholdPct default = null (adaptive)」+「ZigZagSlope 只係 enrichment, 唔取代 MA 斜率」+「M7 cross-module alignment Rule 1/2 threshold 2.0%/日」
+
+### 套用情境
+- 之後其他 module (M2/M3/M4/M5/M6) 加 config 都跟呢個 pattern: 自動/手動 切換 + 自動計算 + localStorage + popup 註解 + 改 sub-scenario trigger 必須 30 stock verify + ≥ 3 隻人手 confirm
+- 之後 Stage 2 enrichment 加新 rule 都跟呢個 pattern: 唔好 all-or-nothing 取代現有 trigger, 只係 enrichment, 30 stock verify + ≥ 3 隻人手 confirm
