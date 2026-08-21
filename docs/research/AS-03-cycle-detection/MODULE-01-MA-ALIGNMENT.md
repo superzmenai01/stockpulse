@@ -62,7 +62,7 @@
 | `klines` | KLine[] | ✅ | — | 歷史 K 線, 按日期升序, 每條要有 `date`, `close`, `volume` |
 | `symbol` | string | ❌ | — | 股票代碼 (optional, for display) |
 | `maPeriods` | int[] | ❌ | `[5, 10, 20, 60]` | 均線週期列表 (預設 4 條) |
-| `thresholdPct` | float | ❌ | `0.02` | 橫行判定閾值 (價差百分比) |
+| `thresholdPct` | float / null | ❌ | `null` (adaptive) | 橫行判定閾值。`null` = 用 v2.2.0 adaptive 自動計 (20 日 ATR% × 1.5, clamp 0.5%-5%)。傳數字 = 固定 override |
 | `enableVolumeWeight` | bool | ❌ | `true` | 啟用成交量加權 |
 | `enableSlopeCheck` | bool | ❌ | `true` | 啟用斜率動能調整 |
 | `volumeLookback` | int | ❌ | `5` | 成交量比較區間長度 (日) |
@@ -139,9 +139,14 @@ for (const period of maPeriods) {
 
 ### Step 4: 橫行週期精細判定 (均線粘合檢查)
 - `max_spread_pct = (max(ma_values) - min(ma_values)) / min(ma_values)`
-- 若 `candidate IN [uptrend, downtrend]` AND `max_spread_pct < threshold_pct` (0.02):
+- `threshold_pct` 解析 (v2.2.0, 大少 2026-08-21 18:37):
+  - 若 `config.thresholdPct` 係 number → 用固定 (fixed override)
+  - 若 `config.thresholdPct` 係 `null` → adaptive mode: `thresholdPct = clamp(MA20_ATR% × 1.5, 0.5%, 5%)`
+  - 凡人話: 每隻股用自己最近 20 日真實波幅 (ATR%) 自動決定門檻, 低波動股門檻細, 高波動股門檻大
+- 若 `candidate IN [uptrend, downtrend]` AND `max_spread_pct < threshold_pct`:
   - 覆寫 → `candidate = "sideways"`
   - log: "均線雖有排列但過於靠近，視為橫行整理"
+- 詳細 adaptive 算法見 §15 (v2.2.0 Adaptive ThresholdPct)
 
 ### Step 5: 成交量趨勢計算 (僅 enable_volume_weight=true)
 - `recent_prices = price_data 最後 volume_lookback 筆`
@@ -389,6 +394,7 @@ confidence = ROUND(confidence, 4);
 | Date | Version | 改動 | Commit |
 |------|---------|------|--------|
 | 2026-08-15 | v2.1.0 | **9 個 sub-scenario extend** (大少 2026-08-15 揀項甲): 加 Step 5.5 9 個 sub-scenario 細分判定 (強上升 / 弱上升 / 橫行 / 弱下跌 / 強下跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 轉勢 → Priority 2 強趨勢 → Priority 3 弱趨勢 → Priority 4 過渡形態 → Default 橫行) + 14 個 output field (加 cyclePosition / cyclePositionLabel / consecutiveDays / volumeSignalLabel) + 9 個 sub-scenario 凡人話 popup 註解 (跟 M7/M8/M9 同樣 .m1-verdict-tooltip inline style) + 凡人話 12 步 step-by-step guide + 凡人話 strategy advice 對應 9 個 scenario + stateMap 9 個 sub-scenario map 返 3 個 high-level state + warning 注入 (FALLBACK_USED / THRESHOLD_BREACH / CONFLICT_STATE 跟 Spec Sync #18 template) | TBD |
+| 2026-08-21 | v2.2.0 | **Adaptive ThresholdPct** (大少 2026-08-21 18:37): 原本 hard-code `thresholdPct=0.02` (2%) 改用 per-stock adaptive (20 日 ATR% × 1.5, clamp 0.5%-5%)。每隻股用自己嘅 20 日真實波幅自動計, 低波動股門檻細, 高波動股門檻大 (capped 5%)。30 隻 stock test 證實影響範圍 1 隻 (HK.00001 長和 uptrend_correction → sideways, 3.4%)。Verdict meta 加 5 個新 field (`thresholdPctUsed` / `thresholdPctUsedPctDisplay` / `thresholdPctSource` / `adaptiveAtrPct` / `adaptiveAtrPctDisplay` / `adaptiveRawThreshold`) | TBD |
 | 2026-08-08 | v2.0.0 | 全新 module, 跟 docx Kimi v2.0 spec, 3 cycles + volume + slope 兩維度擴展 | TBD |
 | 2026-08-08 | — | 舊 v0.3.0 (10 rules A-J) 抽離做 zmen均算法 獨立算法 | `861bd921` |
 | 2026-08-08 | — | 舊 M1 文件 rename ma-alignment → zmen-ma-alignment | `861bd921` |
@@ -450,3 +456,72 @@ confidence = ROUND(confidence, 4);
 - ✅ **凡人話 warning context precision 統一**: number value 統一 4 位小數 + 去 trailing zero (parseFloat(v.toFixed(4))), object 仍然 JSON.stringify
 - ✅ **30 隻 stock comprehensive test** (10 港科技 + 10 港金融地產公用 + 10 港其他行業), 9 個 sub-scenario 觸發 8 個, 剩「強上升」+「到底轉勢」2 個 scenario 0 隻 (大市悶市合理)
 - ✅ **M1 v2.1.0 adapter version 2.0.0 → 2.1.0**, testing page ALGO_CACHE_BUST 4.6.3 → 4.7.0, index.html ?v=2.3.53 → 2.3.54
+
+## 16. v2.2.0 Adaptive ThresholdPct (大少 2026-08-21 18:37 揀方向 1)
+
+**凡人話解釋**: 之前 v2.1.0 用 fixed `thresholdPct=0.02` (2%) 硬編碼, 對唔同波動率嘅股票都係同一個門檻。低波動藍籌 (e.g. 1398 工行) 2% 太嚴, 高波動科技股 (e.g. 中芯) 2% 太鬆。v2.2.0 改用 per-stock adaptive 模式: 用該股票自己最近 20 日真實波幅 (ATR%) × 1.5 倍, 再 clamp 喺 0.5% - 5% 範圍。
+
+**核心公式** (Algorithm 內 `_resolve_threshold_pct()`):
+```
+thresholdPct = clamp(MA20_ATR% × 1.5, 0.005, 0.05)
+```
+
+| 符號 | 凡人話解釋 |
+|------|-----------|
+| `MA20_ATR%` | 20 日真實波幅 (TR) 平均值 ÷ 最新收盤價, 即「最近 20 天平均每日上落幾多%」 |
+| `× 1.5` | 倍數, 過濾「日常噪音」, 只捕捉比平常明顯更大嘅趨勢 |
+| `clamp(0.005, 0.05)` | 鎖死喺 0.5% (floor) - 5% (cap) 之間 |
+
+**ATR 計算** (跟 ma_alignment algorithm 入面 `_compute_atr_pct()`):
+```
+TR_t = max(High_t - Low_t, |High_t - Close_{t-1}|, |Low_t - Close_{t-1}|)
+ATR  = mean(TR_t for last 20 days)
+ATR% = ATR / Close_{latest}
+```
+
+**為什麼唔用 fixed 2%?** (凡人話例子)
+- 工行 1398 (~HK$4): 日內波動 ~0.8%, 2% 對佢嚟講係「好大件事」, 成個月都無一次觸發
+- 港交所 388 (~HK$300): 日內可波動 5-8%, 2% 係「日常操作」, 日日都觸發
+- Adaptive 令每隻股票有自己嘅「個人化門檻」, 唔會一刀切
+
+**30 隻 stock test 結果** (大少 2026-08-21 17:11 批准):
+- 公式: `thresholdPct = clamp(MA20_ATR% × 1.5, 0.005, 0.05)`
+- 30 stock 分 4 段: 極低波動 (5) / 低波動 (10) / 中波動 (10) / 高波動 (5)
+- 對比 adaptive vs fixed 2% 嘅 9 個 sub-scenario 觸發
+- **結果: 1 隻 sub-scenario 變化 (HK.00001 長和 uptrend_correction → sideways, 3.4%)**, 7 隻觸及 5% cap, 0 隻觸及 0.5% floor
+- 結論: 影響範圍細, 風險可控, 採用 Plan 1.5x/5% (大少揀方向 1)
+
+**Verdict meta 5 個新 field** (凡人話顯示用咗幾多%):
+| Field | Type | 凡人話解釋 |
+|-------|------|-----------|
+| `thresholdPctUsed` | float | 實際用咗嘅 threshold (0.005-0.05), 例如 0.043465 |
+| `thresholdPctUsedPctDisplay` | string | 顯示用嘅 % 文字, 例如 "4.346%" |
+| `thresholdPctSource` | string | "adaptive" / "fixed" / "adaptive-fallback" |
+| `adaptiveAtrPct` | float | 該股 20 日 ATR% (0.0169 即 1.69%) |
+| `adaptiveAtrPctDisplay` | string | ATR% 顯示文字, 例如 "2.898%" |
+| `adaptiveRawThreshold` | float | 未 clamp 嘅 threshold, 例如 0.0435 |
+
+**3 個 source 解釋**:
+- `adaptive`: 正常, 用 20 日 ATR% × 1.5 動態計
+- `fixed`: user 傳咗固定數字 (`config.thresholdPct` 係 number), 用 user override
+- `adaptive-fallback`: 數據不足 (< 21 日) 或 ATR 計到 0, fallback 用 2%
+
+**凡人話例子** (騰訊 HK.00700):
+- 20 日 ATR% = 2.898%
+- 2.898% × 1.5 = 4.347%
+- Clamp (0.5% - 5%) → 4.347% (已經喺範圍, 唔觸發 cap)
+- thresholdPctUsed: 4.347% (adaptive, ATR=2.898%)
+- 即係騰訊而家用 4.347% 做橫行判定門檻, 比 fixed 2% 嚴, 因為佢波動大
+
+**永久 Rule (v2.2.0 新加, 大少 2026-08-21 18:37)**:
+- ✅ `config.thresholdPct` default 由 `0.02` 改 `null` (adaptive mode)
+- ✅ 凡人話改 sub-scenario trigger 必須附 ≥ 3 個真實 stock 例子, 大少 verify 先改 code (2026-08-16 永久 rule 應用)
+- ✅ 30 stock test 結果 (1 隻 sub 變化 = 3.4%) 證實影響範圍細, 大少批准採用 Plan 1.5x/5%
+- ✅ Verdict meta 永遠顯示 `thresholdPctUsed` + `thresholdPctSource` + `adaptiveAtrPct`, 大少睇 verdict 即知用咗幾多% (大少 trigger 2026-08-21 18:37 「記得要顯示使用嘅%」)
+- ✅ Testing page config input 改 `placeholder: '留空用 v2.2.0 adaptive'`, user 留空即用 adaptive
+- ✅ Multiplier 1.5x 係起點, 之後可以校準 (e.g. 2.0x / 2.5x), 但需要大少 verify
+- ✅ M1 v2.2.0 algorithm version 2.1.0 → 2.2.0, testing page ALGO_CACHE_BUST 4.35.0 → 4.36.0, index.html ?v=2.3.90 → 2.3.91
+
+**測試覆蓋** (`backend/tests/test_ma_alignment.py`):
+- 9 個 pytest test 全部 pass (包括 registry 註冊, 9 個 sub-scenario 判定, ZigZag inject, verdict shape)
+- 1 隻 stock 觸發 sub-scenario 變化 (HK.00001 長和): `uptrend_correction → sideways`, 因為 adaptive TP 3.758% > max_spread_pct, 上升回調 trigger 條件 `max_spread_pct >= thresholdPct` 唔達標

@@ -51,7 +51,7 @@ def test_ma_alignment_registered_in_registry():
     assert "ma_alignment" in list_algorithms()
     algo = get_algorithm("ma_alignment")
     assert algo.name == "ma_alignment"
-    assert algo.version == "2.0.0"
+    assert algo.version == "2.2.0"  # v2.2.0 (大少 2026-08-21 18:37) — Adaptive ThresholdPct
 
 
 # ============================================================================

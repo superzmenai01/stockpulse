@@ -1,5 +1,5 @@
 """
-backend/algorithms/ma-alignment/algorithm.py — M1 MA Alignment v2.0 (大少 2026-08-20 20:05 Phase 2)
+backend/algorithms/ma-alignment/algorithm.py — M1 MA Alignment v2.0 (大少 2026-08-20 20:05 Phase 2, v2.2.0 adaptive 2026-08-21)
 
 凡人話: 拎 K 線 → 計算 MA5/MA10/MA20/MA60 → 判定 9 個 sub-scenario cycle + 6 個 cycle position
 
@@ -12,12 +12,17 @@ Algorithm: 8 個 step (跟 ma-alignment.ts 嘅 detect() method 1:1 port 去 Pyth
 - Step 1: Input validation
 - Step 2: 計算各週期 MA latest value
 - Step 3: MA ranks + candidate (uptrend / downtrend / sideways)
-- Step 4: Spread + 橫行精細判定
+- Step 4: Spread + 橫行精細判定 (v2.2.0: adaptive thresholdPct)
 - Step 5: Volume trend + signal
 - Step 5.5: 9 個 sub-scenario 細分判定 (大少 2026-08-15 永久 rule)
 - Step 6: MA slopes + momentum score
 - Step 7: Confidence (base × vol × slope, 三階段調整)
 - Step 8: 組裝 verdict (跟 frontend verdict shape 100% 兼容)
+
+v2.2.0 改動 (大少 2026-08-21 18:37):
+- thresholdPct 改用 adaptive (ATR% × 1.5, clamp 0.5%-5%)
+- 每隻股用自己嘅 20 日 ATR 自動計 threshold
+- Verdict meta 加 thresholdPctUsed / thresholdPctSource / adaptiveAtrPct 顯示
 """
 
 import numpy as np
@@ -26,6 +31,88 @@ from typing import List, Dict, Any
 from ..base import Algorithm, Verdict
 from ..registry import register
 from .config import DEFAULT_MA_ALIGNMENT_V2_CONFIG
+
+
+# ============================================================
+# v2.2.0 Adaptive ThresholdPct (大少 2026-08-21 18:37)
+# 凡人話: 用 20 日 ATR% 自動計 thresholdPct
+# ============================================================
+def _compute_atr_pct(klines: List[Dict[str, Any]], lookback: int = 20) -> float:
+    """凡人話: 計 20 日真實波幅 (ATR) ÷ 最新收盤價
+    
+    TR_t = max(High-Low, |High-Close_prev|, |Low-Close_prev|)
+    ATR% = mean(TR for last N days) / latest_close
+    
+    Returns:
+        float: 例如 0.0169 即 1.69%, 數據 < lookback+1 條返 0.0
+    """
+    if len(klines) < lookback + 1:
+        return 0.0
+    recent = klines[-(lookback + 1):]
+    trs: List[float] = []
+    for i in range(1, len(recent)):
+        h_l = float(recent[i]["high"]) - float(recent[i]["low"])
+        h_pc = abs(float(recent[i]["high"]) - float(recent[i-1]["close"]))
+        l_pc = abs(float(recent[i]["low"]) - float(recent[i-1]["close"]))
+        trs.append(max(h_l, h_pc, l_pc))
+    if not trs:
+        return 0.0
+    atr = float(np.mean(trs))
+    latest_close = float(recent[-1]["close"])
+    if latest_close <= 0:
+        return 0.0
+    return atr / latest_close
+
+
+def _resolve_threshold_pct(
+    cfg_threshold_pct: Any,
+    klines: List[Dict[str, Any]],
+    multiplier: float = 1.5,
+    min_pct: float = 0.005,
+    max_pct: float = 0.05,
+    atr_lookback: int = 20,
+) -> Dict[str, Any]:
+    """凡人話: 攞 actual thresholdPct + 來源資訊 (用嚟 verdict meta 顯示)
+    
+    Args:
+        cfg_threshold_pct: config 入面嘅 thresholdPct, None = adaptive, 數字 = 固定
+        klines: K 線 (用嚟計 ATR%)
+        multiplier, min_pct, max_pct, atr_lookback: adaptive config
+    
+    Returns:
+        dict: {
+            "value": float,        # 實際用咗嘅 threshold (0.005-0.05)
+            "source": str,         # "adaptive" / "fixed" / "adaptive-fallback"
+            "atrPct": float|None,  # ATR% (只用 adaptive mode)
+            "rawValue": float|None,  # 未 clamp 嘅 threshold (只用 adaptive mode)
+        }
+    """
+    # Case 1: User 傳咗 fixed 數字 → 用固定
+    if cfg_threshold_pct is not None and isinstance(cfg_threshold_pct, (int, float)):
+        return {
+            "value": float(cfg_threshold_pct),
+            "source": "fixed",
+            "atrPct": None,
+            "rawValue": None,
+        }
+    # Case 2: adaptive mode
+    atr_pct = _compute_atr_pct(klines, lookback=atr_lookback)
+    if atr_pct <= 0 or np.isnan(atr_pct):
+        # 數據不足 fallback 2%
+        return {
+            "value": 0.02,
+            "source": "adaptive-fallback",
+            "atrPct": 0.0,
+            "rawValue": 0.0,
+        }
+    raw = atr_pct * multiplier
+    value = max(min_pct, min(max_pct, raw))
+    return {
+        "value": value,
+        "source": "adaptive",
+        "atrPct": atr_pct,
+        "rawValue": raw,
+    }
 
 
 # ============================================================
@@ -84,9 +171,9 @@ def _round(value: float, decimals: int) -> float:
 
 
 class MAAlignmentV2Algorithm(Algorithm):
-    """M1 MA Alignment v2.0 algorithm (凡人話 contract)"""
+    """M1 MA Alignment v2.2.0 algorithm (凡人話 contract) - Adaptive ThresholdPct (大少 2026-08-21 18:37)"""
     name = "ma_alignment"
-    version = "2.0.0"
+    version = "2.2.0"
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         cfg = options.get("config", DEFAULT_MA_ALIGNMENT_V2_CONFIG)
@@ -98,6 +185,28 @@ class MAAlignmentV2Algorithm(Algorithm):
         min_length_for_slope = cfg["slopeLookback"] + max_period + 5 if cfg["enableSlopeCheck"] else 0
         min_length_for_vol = cfg["volumeLookback"] * 2 + 5 if cfg["enableVolumeWeight"] else 0
         required_length = max(min_length_for_ma, min_length_for_slope, min_length_for_vol)
+
+        # ============ Step 1.5: v2.2.0 Adaptive ThresholdPct 解析 (大少 2026-08-21 18:37) ============
+        # 凡人話: 如果 config thresholdPct 係 None, 用該股 20 日 ATR% × 1.5 動態計算
+        # 結果寫入 cfg["thresholdPct"] (overwrite), verdict meta 同時記錄 source/atrPct
+        threshold_resolution = _resolve_threshold_pct(
+            cfg_threshold_pct=cfg.get("thresholdPct"),
+            klines=klines,
+            multiplier=cfg.get("thresholdAdaptiveMultiplier", 1.5),
+            min_pct=cfg.get("thresholdMinPct", 0.005),
+            max_pct=cfg.get("thresholdMaxPct", 0.05),
+            atr_lookback=cfg.get("thresholdAtrLookback", 20),
+        )
+        cfg = dict(cfg)  # copy 避免污染 default
+        cfg["thresholdPct"] = threshold_resolution["value"]
+        if threshold_resolution["source"] == "adaptive":
+            adjustment_log.append(
+                f"v2.2.0 adaptive threshold: ATR%={threshold_resolution['atrPct']*100:.2f}% × 1.5 = {threshold_resolution['rawValue']*100:.2f}%, clamp 至 {threshold_resolution['value']*100:.2f}%"
+            )
+        elif threshold_resolution["source"] == "adaptive-fallback":
+            adjustment_log.append(
+                f"v2.2.0 adaptive fallback: 數據不足, 用 2% 固定"
+            )
 
         if len(klines) < required_length:
             return Verdict(
@@ -363,6 +472,10 @@ class MAAlignmentV2Algorithm(Algorithm):
             "symbol": options.get("symbol", "UNKNOWN"),
             "cycle": candidate,
             "cycleLabel": CYCLE_LABELS[candidate],
+            # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 high-level state 落 M1 verdict meta
+            # 之後 M7 Synthesizer 拎 M1 state 做 ZigZagSlope cross-module alignment check
+            # (Stage 2 第一步 Level 4 cross-module alignment enrich: M1 UP + ZigZag 急跌 → 扣 alignment)
+            "state": STATE_MAP[candidate],
             "cyclePosition": cycle_position,
             "cyclePositionLabel": POSITION_LABELS[cycle_position],
             "confidence": confidence,
@@ -386,6 +499,13 @@ class MAAlignmentV2Algorithm(Algorithm):
             ),
             "lastDate": last_date,
             "configUsed": cfg,
+            # v2.2.0 永久 rule (大少 2026-08-21 18:37) — 顯示實際用咗嘅 thresholdPct%
+            "thresholdPctUsed": _round(threshold_resolution["value"], 6),
+            "thresholdPctUsedPctDisplay": f"{threshold_resolution['value']*100:.3f}%",  # e.g. "2.543%"
+            "thresholdPctSource": threshold_resolution["source"],  # "adaptive" / "fixed" / "adaptive-fallback"
+            "adaptiveAtrPct": _round(threshold_resolution["atrPct"], 6) if threshold_resolution["atrPct"] is not None else None,
+            "adaptiveAtrPctDisplay": f"{threshold_resolution['atrPct']*100:.3f}%" if threshold_resolution["atrPct"] is not None else None,
+            "adaptiveRawThreshold": _round(threshold_resolution["rawValue"], 6) if threshold_resolution["rawValue"] is not None else None,
             # Phase 1 永久 rule — ZigZag 從 backend 注入 (大少 2026-08-15 framework contract)
             "zigzagPoints": zigzag_points,
             "lastSwingHigh": last_swing_high,
