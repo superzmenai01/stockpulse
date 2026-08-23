@@ -236,11 +236,9 @@ def run_algorithm(
     if algo_name == "ma_alignment":
         _inject_zigzag_for_ma_alignment(klines, options, label="M1 direct")
 
-    # 大少 2026-08-23 — TopBottomReversal 自動 inject ZigZag 拎峰谷
-    # 凡人話: TBR algorithm 需要 ZigZag 峰谷做頂底背離偵測, runner 自動 inject (跟 M1 pattern)
-    # 永久 rule: TBR algorithm 唔可以直接 fetch ZigZag, 由 runner 統一 inject
-    if algo_name == "top_bottom_reversal":
-        _inject_zigzag_for_ma_alignment(klines, options, label="TBR")
+    # 🚨 TBR algorithm 已退役 (大少 2026-08-23 18:14 trigger), 拎走 TBR inject ZigZag 改動
+    # 退役原因: 100 hot stocks 人手 check 確認至少 4 隻 false positive, 算法 noise 太多
+    # 詳見: AGENTS.md §到頂到底轉勢綜合評分 algorithm 永久 rule + ARCHITECTURE.md §15.31
 
     # 大少 2026-08-20 21:30 Phase 8 — M7 Synthesizer 拎 M1-M6 全部 module verdict 做綜合判定
     # 凡人話: 跑 Synthesizer 之前, 自動跑 M1-M6 拎 verdict 然後轉做 standard verdict interface (state / confidence / base_weight / max_drawdown_estimate / rules_fired) inject 落 options

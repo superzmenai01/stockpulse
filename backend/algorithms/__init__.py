@@ -33,7 +33,9 @@ from .volatility import VolatilityAlgorithm  # noqa: F401  (Phase 7 大少 2026-
 from .synthesizer import SynthesizerAlgorithm  # noqa: F401  (Phase 8 大少 2026-08-20 21:30)
 from .back_test import BackTestAlgorithm  # noqa: F401  (Phase 9 大少 2026-08-20 21:54)
 from .decision_engine import DecisionEngineAlgorithm  # noqa: F401  (Phase 10 大少 2026-08-20 22:08)
-from .top_bottom_reversal import TopBottomReversalAlgorithm  # noqa: F401  (大少 2026-08-23 到頂到底轉勢 testing page, 跟 extr_specs 框架)
+# 🚨 TBR algorithm 已退役 (大少 2026-08-23 18:14), 拎走 import
+# TBR file 已 archive 落 archive/algorithms/top_bottom_reversal_2026-08-23/
+# 之後大少人手 review 之後決定改良 / 拎 insight
 
 __all__ = [
     "Algorithm",
@@ -52,5 +54,5 @@ __all__ = [
     "SynthesizerAlgorithm",
     "BackTestAlgorithm",
     "DecisionEngineAlgorithm",
-    "TopBottomReversalAlgorithm",
+    # 🚨 TBR algorithm 已退役 (大少 2026-08-23 18:14), 拎走 __all__ entry
 ]

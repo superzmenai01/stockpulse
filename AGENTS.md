@@ -771,26 +771,58 @@ def _compute_fetch_max_count(period):
 
 對應 commit: (即將 push)
 
-### 到頂到底轉勢綜合評分 algorithm 永久 rule (大少 2026-08-23 08:08 trigger)
+### 到頂到底轉勢綜合評分 algorithm 永久 rule (大少 2026-08-23 08:08 trigger) — **🚨 算法退役 2026-08-23 18:14**
 
 **凡人話解釋**: 跟返 extr_specs 嗰套 15 分制評分 + 4 種背離偵測 + 6 個 K 線形態識別, 對稱到頂同到底, 暫時喺 testing page 獨立 sandbox 試, 之後再考慮 port 落 M1。
 
 **大少 trigger 08:08**:「我想測試 extr_specs 嗰套原整做法嘅效果, 起新 Testing Page『到頂到底轉勢』, 用佢嗰套 + StockPulse 已有數據 + 缺少嘅頂背離偵測 + K 線形態識別做測試, 除到頂外, 根據相同原理也做一套到底轉勢嘅出嚟測試」
 
-**永久 rule**:
-- ✅ Algorithm `top_bottom_reversal` v1.0.0 永久喺 backend (`backend/algorithms/top_bottom_reversal/algorithm.py`), 凡人話 contract 對齊其他 11 個 algorithm (Algorithm Backend-only 永久 rule)
-- ✅ 拎 K 線: KlineCache full flow (永久 rule, 跟 stale data fix)
-- ✅ 拎 ZigZag 峰谷: runner 自動 inject 落 options (跟 M1 pattern), 唔可以 algorithm 自己 fetch
-- ✅ 評分 0-15 (top + bottom 兩份) + 4 級強度 (STRONG ≥8 / MODERATE 5-7 / MILD 3-4 / NONE 0-2)
-- ✅ 6 個 K 線形態識別: 烏雲蓋頂 / 看跌吞沒 / 黃昏之星 (見頂) + 晨星 / 看漲吞沒 / 曙光初現 (見底) — 全部凡人話描述, frontend display 唔好再自己加英文 jargon
-- ✅ Module Warning System v1.1.0 統一 warning format (system 類 impact「Verdict 唔可信, 唔好落單」)
-- ✅ 改 algorithm / 改評分權重 / 改 K 線形態識別, 一律 backend side, frontend 唔郁
-- ✅ 改 M1 v2.1.0 「到頂轉勢」trigger 之前, 大少拎 stock 例子 review 先 (2026-08-16 19:21 永久 rule)
-- ✅ Testing page 獨立: `testing-page/top-bottom-reversal.html` (唔擺落 main page dropdown), 避免干擾 M1 testing page
-- ✅ 100 隻 stock 批量測試 script 跟返 `m1-100-stocks-test.mjs` pattern, 用 ThreadPoolExecutor 5 workers + KlineCache full flow
+**🚨 大少退役 trigger 18:14**「我覺得新的算法完全不能用, 不要加到 testing page」
 
-**對應 spec doc**: `docs/research/AS-03-cycle-detection/MODULE-TOP-BOTTOM-REVERSAL.md`
-**對應 commit**: Spec Sync #39 (即將 push)
+**退役原因 (凡人話)**: 大少 17:51-18:14 人手 check 100 hot stocks TBR 結果, 確認 13 隻 stock 之中至少 4 隻 false positive:
+- HK.00002 中電 (10 STRONG 見頂) — 大少: 8/21 仲升 1.2% 全日最高, 唔似見頂 (TBR 早 1-2 週 warning 誤導)
+- HK.02269 藥明 (7 MODERATE 見頂) — 大少: 3 個月升 37% 強勢股, TBR noise 觸發
+- HK.0388 港交所 (8 STRONG 見底) — 大少: 升勢中第二個浪, 短期 -2.8% 回調, 唔係真底
+- 其他 (估) — 強升股 / 升勢中調整 stock 容易 false positive
+
+**Root cause**: TBR v1.0.0 算法將「升勢中短期回調 -2.8% ~ -7%」誤判為「見頂/見底轉勢」, 因為:
+- RSI / KDJ 背離 trigger 對強勢股 noise
+- 短期回調 < 5% 唔應該觸發 STRONG
+- 強勢股 (> 20% 3 個月升幅) 應該降 1 級 (STRONG → MODERATE / MODERATE → NONE)
+- 兩個谷距離 < 20 個交易日唔應該觸發 (避免 trend 中 noise)
+
+**退役處理**:
+- ✅ TBR algorithm files archived 落 `archive/algorithms/top_bottom_reversal_2026-08-23/`
+  - `backend/algorithms/top_bottom_reversal/`
+  - `backend/algorithms/candlestick_patterns/`
+  - `testing-page/top-bottom-reversal.html`
+  - `docs/research/AS-03-cycle-detection/MODULE-TOP-BOTTOM-REVERSAL.md`
+  - `backend/scripts/tmp_research_top_bottom_reversal_100hot.py`
+  - `backend/scripts/tmp_research_top_bottom_reversal_100stocks.py`
+- ✅ Spec doc 保留喺 archive, 之後大少 review 拎 insight (candlestick pattern / RSI 改良)
+- ❌ TBR algorithm 唔再 commit, 唔 push, 唔加 testing page (大少 trigger)
+- ❌ M1 v2.1.0 「到頂轉勢」trigger 唔由 TBR 取代 (M1 維持連跌 4 日 simple trigger)
+
+**永久 rule (退役前) — 已失效**:
+- ~~Algorithm `top_bottom_reversal` v1.0.0 永久喺 backend (`backend/algorithms/top_bottom_reversal/algorithm.py`)~~ ← 退役
+- ~~拎 K 線: KlineCache full flow (永久 rule, 跟 stale data fix)~~ ← 算法退役
+- ~~拎 ZigZag 峰谷: runner 自動 inject 落 options (跟 M1 pattern)~~ ← 算法退役
+- ~~評分 0-15 (top + bottom 兩份) + 4 級強度~~ ← 算法退役
+- ~~6 個 K 線形態識別: 烏雲蓋頂 / 看跌吞沒 / 黃昏之星 (見頂) + 晨星 / 看漲吞沒 / 曙光初現 (見底)~~ ← 算法退役
+- ~~Module Warning System v1.1.0 統一 warning format (system 類 impact「Verdict 唔可信, 唔好落單」)~~ ← 算法退役
+- ~~改 algorithm / 改評分權重 / 改 K 線形態識別, 一律 backend side, frontend 唔郁~~ ← 算法退役
+- ~~改 M1 v2.1.0 「到頂轉勢」trigger 之前, 大少拎 stock 例子 review 先~~ ← M1 維持現狀
+- ~~Testing page 獨立: `testing-page/top-bottom-reversal.html` (唔擺落 main page dropdown)~~ ← testing page archived
+- ~~100 隻 stock 批量測試 script 跟返 `m1-100-stocks-test.mjs` pattern, 用 ThreadPoolExecutor 5 workers + KlineCache full flow~~ ← script archived
+
+**教訓 (新永久 rule, 大少 18:14 trigger 衍生)**:
+- ✅ Algorithm 改動要**多 stock 人手 review**先 commit, 唔可以單一 stock 100 hot stocks 結果就 commit
+- ✅ 凡人話: 100 hot stocks 結果有大少人手 check, false positive 發現先 fix, 唔可以 algorithm 自動 commit
+- ✅ 之後新 algorithm 必須**真實人手 review ≥ 5 隻 stock 例子** + 大少 confirm 先 commit
+- ✅ 對應 commit: Spec Sync #45 (TBR 退役 + archive + mark spec doc)
+
+**對應 spec doc (archived)**: `archive/algorithms/top_bottom_reversal_2026-08-23/docs/research/AS-03-cycle-detection/MODULE-TOP-BOTTOM-REVERSAL.md`
+**對應 commit**: Spec Sync #45 (TBR 退役 + archive)
 
 ### Stale Data 永久 fix rule (大少 2026-08-23 09:38 trigger)
 
