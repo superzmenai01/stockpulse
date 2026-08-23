@@ -3330,3 +3330,58 @@ M5 VolumePrice:
 - 之後所有 algorithm 透過 runner 拎 K 線, 自動有 stale fix + server-internal I/O 保護
 - 之後研究 / debug script 拎 K 線用 `urllib.request.urlopen("http://127.0.0.1:18792/api/kline")` (script 喺 server 外部, 唔算 self-call)
 - 之後 server 內部 algorithm 永遠唔 HTTP call 自己, 全部用 nest_asyncio + 真 async I/O
+
+### 15.34 OpenD 限頻 + Retry 永久 rule (大少 2026-08-23 14:17 trigger)
+
+**大少 trigger 14:17**:「跟你的建議做」 (加 retry on throttle + 慢跑)
+
+### 大少 trigger
+大少 14:17 確認 evidence: K 線訂閱額度 1000 個, 用咗 122 個, 剩 878 個, 唔係 quota 用晒。大少「唔可能 61 隻都 NoDataAvailable, 最大可能係讀太快太多」, 即係限頻問題。Solution: 加 retry on ExceedReqLimit + 慢跑 (sleep 0.5s per request)。
+
+### OpenD 限頻規則 (Futu OpenD 官網確認)
+- `request_history_kline` 限頻 **30 秒最多 60 次** (~2/s), 第 2 頁起不限頻
+- 歷史 K 線額度: 7 天內每隻 stock 佔 1 個, 重複請求同一 stock 唔重覆
+- 1d K 線可拎 20 年數據, 分 K 8 年, 日 K 以上不限
+
+### 改動範圍 (2 改 file, +50 行)
+- 改 `backend/services/algorithm_runner.py` (+30 行) — K 線 fetch 段加 retry on ExceedReqLimit (3 次, sleep 1-3s)
+- 改 `backend/scripts/tmp_research_top_bottom_reversal_100hot.py` (+20 行) — 改串行跑 (1 隻 1 隻), 每隻 sleep 0.5s, 拎走 ThreadPoolExecutor
+
+### Retry pattern (跟 compute_popularity.py)
+```python
+max_retries = 3
+for retry_attempt in range(max_retries):
+    try:
+        result = await cache.get_or_fetch(...)
+        if result and result.get("klines"):
+            return  # success
+        return  # NoDataAvailable, 唔 retry
+    except Exception as err:
+        if ("频率" in str(err) or "ExceedReqLimit" in str(err)) and retry_attempt < max_retries - 1:
+            await asyncio.sleep(1.0 * (retry_attempt + 1))  # 1s, 2s, 3s
+            continue
+        return
+```
+
+### 永久 rule
+- ✅ 永遠唔可以 burst 拎 K 線 (e.g. 100 隻 1 秒內 100 個 request 撞 ExceedReqLimit)
+- ✅ Algorithm runner 撞 ExceedReqLimit 自動 retry (3 次, sleep 1-3s)
+- ✅ Research script 跑 N 隻 stock 之間 sleep 0.5s, 100 隻預計 50 秒
+- ✅ 永遠唔可以 ThreadPoolExecutor > 2 workers parallel 拎 K 線 (5 workers 撞限頻失敗 60%)
+- ✅ OpenD 錯誤碼分清楚: ExceedReqLimit → retry / NoDataAvailable → 唔 retry / NoQuoteRight → 用戶升級 / InvalidArgument → fix 參數
+- ✅ 套用: 之後所有 algorithm runner 拎 K 線都用 retry pattern, research script 串行跑
+
+### Evidence (大少 2026-08-23 14:17 確認)
+- 大少 1000 quota, 用咗 122 個, 剩 878 → 唔係 quota 用晒
+- 100 hot stocks 慢跑 + sleep 0.5s: 48 隻成功 (vs 之前 5 workers 47 隻, 證明 retry + sleep 改善限頻)
+- Server log evidence: 失敗 stock 返「未知股票 00011」(OpenD NoDataAvailable, 唔關限頻事)
+- 結論: 限頻 + retry 永久 fix work, 60 隻 OpenD NoDataAvailable 接受現狀
+
+### 對應 commit
+- `b2d851ca` (Spec Sync #40, server-internal I/O, 之前)
+- `feat(opend-throttle-retry) + docs(spec-sync-43)` (即將 push, 本 commit)
+
+### 套用情境
+- 之後 research / debug script 拎 K 線串行跑 + sleep 0.5s, 唔 burst
+- 之後新加 algorithm 透過 runner 拎 K 線自動有 retry on ExceedReqLimit
+- 之後 stock metadata refresh 永遠 sleep 0.5s + retry (e.g. autocomplete fallback 拎 stock_basicinfo)

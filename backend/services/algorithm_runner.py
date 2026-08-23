@@ -107,7 +107,59 @@ def run_algorithm(
                     start=start_date, end=end_date, max_count=fetch_max
                 )
 
-            cache_result = asyncio.run(_fetch_via_get_or_fetch())
+            # 大少 2026-08-23 14:17 — OpenD 限頻 retry (跟 compute_popularity.py pattern)
+            # 永久 rule: request_history_kline 限頻 30s/60 (Futu OpenD 官網)
+            # 如果撞 ExceedReqLimit 自動 sleep + retry, 最多 3 次
+            # 大少 evidence: 100 隻 stock 1 秒內 100 個 request 撞限頻, 失敗 61 隻
+            cache_result = None
+            max_retries = 3
+
+            async def _fetch_with_throttle_retry():
+                """凡人話: 拎 K 線 + 撞 OpenD 限頻自動 sleep + retry (最多 3 次)"""
+                nonlocal cache_result
+                for retry_attempt in range(max_retries):
+                    cache_result = await cache.get_or_fetch(
+                        symbol, ctx, ktype, period=period,
+                        start=start_date, end=end_date, max_count=fetch_max
+                    )
+                    if cache_result and cache_result.get("klines"):
+                        return  # success
+                    # empty result, 可能係 NoDataAvailable, 唔 retry
+                    if cache_result is not None:
+                        return
+                    # None result 視為 error, retry (但係 cache.get_or_fetch 唔 return None)
+                    return
+
+            async def _fetch_with_retry_loop():
+                """凡人話: 拎 K 線 + retry on ExceedReqLimit (timeout 60s)"""
+                nonlocal cache_result
+                for retry_attempt in range(max_retries):
+                    try:
+                        cache_result = await cache.get_or_fetch(
+                            symbol, ctx, ktype, period=period,
+                            start=start_date, end=end_date, max_count=fetch_max
+                        )
+                        if cache_result and cache_result.get("klines"):
+                            return  # success
+                        # empty result, 可能係 NoDataAvailable, 唔 retry
+                        return
+                    except Exception as fetch_err:
+                        err_str = str(fetch_err)
+                        if ("频率" in err_str or "ExceedReqLimit" in err_str) and retry_attempt < max_retries - 1:
+                            wait_time = 1.0 * (retry_attempt + 1)  # 1s, 2s, 3s
+                            logger.warning(
+                                f"[Algorithm] {algo_name} OpenD throttle (attempt {retry_attempt+1}/{max_retries}), "
+                                f"sleep {wait_time}s + retry: {err_str[:100]}"
+                            )
+                            await asyncio.sleep(wait_time)
+                            continue
+                        logger.warning(
+                            f"[Algorithm] {algo_name} cache refresh failed: {type(fetch_err).__name__}: {err_str[:200]}"
+                        )
+                        return
+
+            asyncio.run(_fetch_with_retry_loop())
+
             if cache_result and cache_result.get("klines"):
                 klines = cache_result["klines"]
                 reason = "cold cache" if not is_stale and not cache_result.get("cached", False) else (

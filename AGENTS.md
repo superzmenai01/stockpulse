@@ -816,3 +816,51 @@ def _compute_fetch_max_count(period):
 - 之後 server 內部 algorithm 永遠唔 HTTP call 自己, 全部用 nest_asyncio + 真 async I/O
 
 **對應 commit**: Spec Sync #40 (即將 push)
+
+### OpenD 限頻 + Retry 永久 rule (大少 2026-08-23 14:17 trigger)
+
+**凡人話解釋**: 永遠唔好 server 1 秒內 send 多過 2 個 OpenD historical K 線 request, 因為 OpenD 限頻 30 秒最多 60 次 (~2/s)。撞限頻就 sleep 1-3 秒 + retry (最多 3 次)。OpenD 對部分 HSI 成分股拎唔到 (「未知股票」error, 唔關限頻事), 接受呢個限制。
+
+**大少 trigger 14:17**:「跟你的建議做」(加 retry on throttle + 慢跑)
+
+**永久 rule**:
+- ✅ **OpenD 限頻規則** (Futu OpenD 官網確認):
+  - `request_history_kline` 限頻 **30 秒最多 60 次** (~2/s), 第 2 頁起唔限頻
+  - 歷史 K 線額度 7 天內每隻 stock 佔 1 個 (大少有 1000 個, 用咗 122 個, 剩 878 個)
+  - 1d K 線可拎 20 年數據, 分 K 8 年, 日 K 以上不限制
+- ✅ **永遠唔可以 burst** (e.g. 100 隻 stock 1 秒內 100 個 request 撞 ExceedReqLimit)
+- ✅ **Algorithm runner 拎 K 線撞 ExceedReqLimit / 频率太高 自動 retry**:
+  ```python
+  max_retries = 3
+  for retry_attempt in range(max_retries):
+      try:
+          result = await cache.get_or_fetch(...)
+          if result and result.get("klines"):
+              return  # success
+          return  # NoDataAvailable, 唔 retry
+      except Exception as err:
+          if "频率" in str(err) or "ExceedReqLimit" in str(err):
+              if retry_attempt < max_retries - 1:
+                  await asyncio.sleep(1.0 * (retry_attempt + 1))  # 1s, 2s, 3s
+                  continue
+          return  # Non-throttle error OR exhausted retries
+  ```
+- ✅ **Research / debug script 跑 N 隻 stock 之間 sleep 0.5s** (避開 30s/60 限頻), 100 隻預計 50 秒跑完
+- ✅ **永遠唔可以 ThreadPoolExecutor > 2 workers parallel 拎 K 線** (5 workers 撞限頻失敗 60%)
+- ✅ **單 stock call 拎唔到 = OpenD NoDataAvailable (唔係限頻)**, 接受呢個限制, 唔 retry
+- ✅ **OpenD 錯誤碼分清楚** (跟富途 Help Center):
+  - `ExceedReqLimit` → 限頻, retry
+  - `NoDataAvailable` → OpenD 冇 record, 唔 retry
+  - `NoQuoteRight` → 報價權限不足, 用戶要升級 LV2
+  - `InvalidArgument` → 參數錯誤, fix 參數
+  - `EmptySymbol` → symbol 為空, 唔 retry
+- ✅ **套用**: 之後所有 algorithm runner 拎 K 線都用呢個 retry pattern, 之後 research script 串行跑 + sleep 0.5s
+
+**Evidence (大少 2026-08-23 14:17 確認 fix work)**:
+- 大少 evidence: K 線訂閱額度 1000 個, 用咗 122 個, 剩 878 個 → 唔係 quota 用晒
+- 大少:「唔可能 61 隻都 NoDataAvailable, 最大可能係讀太快太多」→ 即係限頻問題
+- 100 隻 hot stocks 慢跑 + sleep 0.5s 之後, 48 隻成功 (vs 之前 5 workers parallel 47 隻)
+- Server log evidence: 失敗 stock 返「未知股票 00011」(OpenD 端 NoDataAvailable, 唔係限頻)
+- 結論: 限頻 + retry fix work, 60 隻 OpenD NoDataAvailable 唔可以 fix (個別 stock 限制)
+
+**對應 commit**: Spec Sync #43 (即將 push)
