@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>到頂到底轉勢測試頁</title>
+  <!-- 大少 2026-08-23 trigger — testing page 永久 rule: cache bust 跟 testing-page.js 同步 bump -->
+  <link rel="stylesheet" href="testing-page.css?v=2.3.95">
+  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    /* === 凡人話 popup 註解 (跟 M7/M8/M9 同樣 inline style block) === */
+    .tbr-tooltip {
+      position: relative;
+      cursor: help;
+      color: #1890ff;
+      border-bottom: 1px dotted #1890ff;
+    }
+    .tbr-tooltip:hover::after {
+      content: attr(data-help);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e1e1e;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: pre;
+      z-index: 1000;
+      pointer-events: none;
+      font-weight: normal;
+      line-height: 1.6;
+      min-width: 280px;
+      margin-bottom: 4px;
+    }
+    /* === 強度 bar 樣式 === */
+    .strength-bar {
+      display: flex;
+      gap: 4px;
+      margin: 8px 0;
+    }
+    .strength-segment {
+      flex: 1;
+      height: 24px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: bold;
+      font-size: 12px;
+      opacity: 0.3;
+    }
+    .strength-segment.active {
+      opacity: 1;
+    }
+    .strength-none { background: #52c41a; }      /* 🟢 綠 */
+    .strength-mild { background: #fadb14; color: #333; } /* 🟡 黃 */
+    .strength-moderate { background: #fa8c16; } /* 🟠 橙 */
+    .strength-strong { background: #f5222d; }    /* 🔴 紅 */
+    /* === 信號清單 === */
+    .signal-list {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0;
+    }
+    .signal-list li {
+      padding: 6px 12px;
+      margin: 4px 0;
+      border-radius: 4px;
+      background: #f5f5f5;
+      font-size: 14px;
+    }
+    .signal-list li:hover {
+      background: #e6f7ff;
+    }
+    /* === 對比表 === */
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+    }
+    .compare-table th, .compare-table td {
+      border: 1px solid #d9d9d9;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    .compare-table th {
+      background: #fafafa;
+      font-weight: 600;
+    }
+    .compare-trigger { color: #f5222d; font-weight: bold; }
+    .compare-no-trigger { color: #52c41a; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🧪 到頂到底轉勢測試頁</h1>
+      <p class="subtitle">跟返 extr_specs 嗰套 15 分制評分 + 4 個背離偵測 + 6 個 K 線形態, 對稱到頂同到底, 對比 M1 v2.1.0 trigger</p>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="inputs">
+          <h2>輸入參數</h2>
+          <div>
+            <label>股票代碼</label>
+            <input type="text" id="stock-code" value="HK.00700" placeholder="例: HK.00700">
+          </div>
+          <div>
+            <label>時間週期</label>
+            <select id="period">
+              <option value="1d" selected>日線</option>
+              <option value="1w">週線</option>
+            </select>
+          </div>
+          <div>
+            <label>取數據日數 (5 年 K 線, 對齊永久 rule)</label>
+            <input type="number" id="data-window-days" value="1260" min="90" max="1260">
+          </div>
+          <div>
+            <label>ZigZag 過濾 noise 門檻 (%)</label>
+            <input type="number" id="zigzag-threshold" value="5" min="0.5" max="20" step="0.5">
+          </div>
+          <button id="run-btn" class="primary-btn">跑測試</button>
+          <button id="batch-btn" class="secondary-btn">跑 100 隻港股</button>
+        </section>
+
+        <section class="algo-info">
+          <h2>🛠️ 凡人話解</h2>
+          <p>呢個 page 跟返 <span class="tbr-tooltip" data-help="extr_specs 嗰度嘅文檔\n位置: docs/extr_specs/到頂轉勢/K线顶部反转判断算法.md\n核心: 4 個指標 (MACD/RSI/KDJ/成交量) + 頂背離偵測 + 3 個 K 線形態, 15 分制評分, 4 級強度">extr_specs 框架</span> 跑:</p>
+          <ul>
+            <li>🟢 <span class="tbr-tooltip" data-help="見頂 score 0-15 分\n≥8 強烈 / 5-7 中度 / 3-4 輕度 / 0-2 暫無\n4 種背離偵測 + 3 個 K 線形態\n凡人話: 股價升到頂, 多個指標一齊講見頂">見頂評分</span> (0-15 分)</li>
+            <li>🔵 <span class="tbr-tooltip" data-help="見底 score 0-15 分\n對稱見頂, 但用底背離 + 3 個 K 線見底形態\n凡人話: 股價跌到底, 多個指標一齊講見底">見底評分</span> (0-15 分)</li>
+            <li>📊 K 線圖 (4 MA + ZigZag + 形態標記)</li>
+            <li>🔍 對比 M1 v2.1.0 trigger</li>
+          </ul>
+        </section>
+      </aside>
+
+      <main class="main">
+        <!-- 1. 評分總覽 -->
+        <section class="score-overview">
+          <h2>📊 評分總覽</h2>
+          <div class="score-cards">
+            <div class="score-card top-score">
+              <h3>🔴 到頂轉勢</h3>
+              <div class="score-value" id="top-score-value">--</div>
+              <div class="score-strength" id="top-strength">未跑</div>
+              <div class="strength-bar">
+                <div class="strength-segment strength-none">綠 0-2</div>
+                <div class="strength-segment strength-mild">黃 3-4</div>
+                <div class="strength-segment strength-moderate">橙 5-7</div>
+                <div class="strength-segment strength-strong">紅 ≥8</div>
+              </div>
+            </div>
+            <div class="score-card bottom-score">
+              <h3>🟢 到底轉勢</h3>
+              <div class="score-value" id="bottom-score-value">--</div>
+              <div class="score-strength" id="bottom-strength">未跑</div>
+              <div class="strength-bar">
+                <div class="strength-segment strength-none">綠 0-2</div>
+                <div class="strength-segment strength-mild">黃 3-4</div>
+                <div class="strength-segment strength-moderate">橙 5-7</div>
+                <div class="strength-segment strength-strong">紅 ≥8</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. 信號清單 -->
+        <section class="signals-section">
+          <h2>📋 信號清單 (凡人話)</h2>
+          <div class="signals-container">
+            <div class="signals-col">
+              <h4>🔴 到頂信號</h4>
+              <ul class="signal-list" id="top-signals"></ul>
+            </div>
+            <div class="signals-col">
+              <h4>🟢 到底信號</h4>
+              <ul class="signal-list" id="bottom-signals"></ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. K 線圖 -->
+        <section class="chart-section">
+          <h2>📈 K 線圖 (4 條 MA + ZigZag)</h2>
+          <div id="chart-container" style="width: 100%; height: 500px;"></div>
+        </section>
+
+        <!-- 4. 對比表 -->
+        <section class="compare-section">
+          <h2>🔍 對比 M1 v2.1.0</h2>
+          <table class="compare-table" id="compare-table">
+            <thead>
+              <tr>
+                <th>框架</th>
+                <th>到頂判定</th>
+                <th>到底判定</th>
+                <th>備註</th>
+              </tr>
+            </thead>
+            <tbody id="compare-tbody">
+              <tr><td colspan="4" style="text-align: center; color: #888;">撳「跑測試」之後見到對比</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- 5. 100 隻結果分佈 -->
+        <section class="batch-results" id="batch-results" style="display: none;">
+          <h2>🐏 100 隻港股分佈</h2>
+          <div id="batch-summary"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // === 到頂到底轉勢 testing page (大少 2026-08-23) ===
+    // Backend: GET /api/algorithms/run?algo=top_bottom_reversal&symbol=HK.00700&period=1d&data_window_days=1260
+    // 凡人話: 先取 ZigZag 拎峰谷, 再跑 top_bottom_reversal 評分
+
+    const BACKEND_URL = 'http://127.0.0.1:18792';
+    let chart = null;
+    let candleSeries = null;
+    let ma5Series = null;
+    let ma10Series = null;
+    let ma20Series = null;
+    let ma60Series = null;
+    let zigzagSeries = null;
+    let currentVerdict = null;
+    let currentKlines = null;
+
+    document.getElementById('run-btn').addEventListener('click', runTest);
+    document.getElementById('batch-btn').addEventListener('click', runBatch100);
+
+    async function runTest() {
+      const code = document.getElementById('stock-code').value.trim();
+      const period = document.getElementById('period').value;
+      const dataWindowDays = parseInt(document.getElementById('data-window-days').value);
+      const threshold = parseFloat(document.getElementById('zigzag-threshold').value);
+
+      if (!code) {
+        alert('請填股票代碼');
+        return;
+      }
+
+      try {
+        // 1. 拎 K 線 (KlineCache full flow, 永久 rule)
+        const klines = await fetchKline(code, period, dataWindowDays);
+        currentKlines = klines;
+
+        // 2. 拎 ZigZag 峰谷 (從 backend algorithm 拎, 唔 frontend 計)
+        const zigzagVerdict = await fetchZigZag(code, period, dataWindowDays, threshold);
+        const zigzagPoints = zigzagVerdict.points || [];
+
+        // 3. 跑 top_bottom_reversal
+        const verdict = await fetchTopBottomReversal(code, period, dataWindowDays, zigzagPoints);
+        currentVerdict = verdict;
+
+        // 4. Render UI
+        renderScoreCards(verdict);
+        renderSignalList(verdict);
+        renderChart(klines, verdict, zigzagPoints);
+        renderCompareTable(verdict, code);
+      } catch (err) {
+        console.error('跑測試失敗:', err);
+        alert('跑測試失敗: ' + err.message);
+      }
+    }
+
+    async function fetchKline(code, period, dataWindowDays) {
+      const url = `${BACKEND_URL}/api/kline?code=${encodeURIComponent(code)}&period=${period}&count=${dataWindowDays}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`拎 K 線失敗: ${res.status}`);
+      const data = await res.json();
+      return data.klines || [];
+    }
+
+    async function fetchZigZag(code, period, dataWindowDays, threshold) {
+      const url = `${BACKEND_URL}/api/algorithms/run?algo=zigzag&symbol=${encodeURIComponent(code)}&period=${period}&data_window_days=${dataWindowDays}&threshold=${threshold}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`跑 ZigZag 失敗: ${res.status}`);
+      return await res.json();
+    }
+
+    async function fetchTopBottomReversal(code, period, dataWindowDays, zigzagPoints) {
+      // 凡人話: top_bottom_reversal 需要 ZigZag 峰谷, 由 frontend inject 落 options
+      const url = `${BACKEND_URL}/api/cycle/run/top-bottom-reversal` +
+                  `?symbol=${encodeURIComponent(code)}&period=${period}&data_window_days=${dataWindowDays}` +
+                  `&zigzag_points=${encodeURIComponent(JSON.stringify(zigzagPoints))}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        // fallback 改用 /api/algorithms/run
+        const fallbackUrl = `${BACKEND_URL}/api/algorithms/run?algo=top_bottom_reversal&symbol=${encodeURIComponent(code)}&period=${period}&data_window_days=${dataWindowDays}`;
+        const fallbackRes = await fetch(fallbackUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zigzagPoints })
+        });
+        if (!fallbackRes.ok) throw new Error(`跑 top_bottom_reversal 失敗: ${fallbackRes.status}`);
+        return await fallbackRes.json();
+      }
+      return await res.json();
+    }
+
+    function renderScoreCards(verdict) {
+      const meta = verdict.meta || {};
+      const topScore = meta.topScore || 0;
+      const topStrength = meta.topStrength || 'NONE';
+      const bottomScore = meta.bottomScore || 0;
+      const bottomStrength = meta.bottomStrength || 'NONE';
+
+      document.getElementById('top-score-value').textContent = `${topScore} / 15`;
+      document.getElementById('top-strength').textContent = getStrengthText(topStrength);
+      document.getElementById('bottom-score-value').textContent = `${bottomScore} / 15`;
+      document.getElementById('bottom-strength').textContent = getStrengthText(bottomStrength);
+
+      // 高亮強度 bar
+      highlightStrengthBar('top-score', topStrength);
+      highlightStrengthBar('bottom-score', bottomStrength);
+    }
+
+    function getStrengthText(strength) {
+      const map = {
+        'STRONG': '🔴 強烈',
+        'MODERATE': '🟠 中度',
+        'MILD': '🟡 輕度',
+        'NONE': '🟢 暫無'
+      };
+      return map[strength] || strength;
+    }
+
+    function highlightStrengthBar(scoreCardClass, strength) {
+      const card = document.querySelector('.' + scoreCardClass);
+      if (!card) return;
+      const segments = card.querySelectorAll('.strength-segment');
+      const idx = { 'NONE': 0, 'MILD': 1, 'MODERATE': 2, 'STRONG': 3 }[strength] ?? 0;
+      segments.forEach((s, i) => {
+        s.classList.toggle('active', i <= idx);
+      });
+    }
+
+    function renderSignalList(verdict) {
+      const meta = verdict.meta || {};
+      const topSignals = meta.topSignals || [];
+      const bottomSignals = meta.bottomSignals || [];
+
+      const topUl = document.getElementById('top-signals');
+      topUl.innerHTML = topSignals.length
+        ? topSignals.map(s => `<li>${s}</li>`).join('')
+        : '<li style="color: #888;">冇觸發到頂信號</li>';
+
+      const bottomUl = document.getElementById('bottom-signals');
+      bottomUl.innerHTML = bottomSignals.length
+        ? bottomSignals.map(s => `<li>${s}</li>`).join('')
+        : '<li style="color: #888;">冇觸發到底信號</li>';
+    }
+
+    function renderChart(klines, verdict, zigzagPoints) {
+      // 凡人話: 用 CDN lightweight-charts render K 線 + 4 MA + ZigZag (跟 testing-page.js 同樣 library)
+      if (!chart) {
+        chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
+          width: document.getElementById('chart-container').clientWidth,
+          height: 500,
+          layout: { background: { color: '#fff' }, textColor: '#333' },
+          grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
+          timeScale: { timeVisible: true, secondsVisible: false }
+        });
+        candleSeries = chart.addCandlestickSeries();
+        ma5Series = chart.addLineSeries({ color: '#f5222d', lineWidth: 1, title: 'MA5' });
+        ma10Series = chart.addLineSeries({ color: '#fa8c16', lineWidth: 1, title: 'MA10' });
+        ma20Series = chart.addLineSeries({ color: '#1890ff', lineWidth: 1, title: 'MA20' });
+        ma60Series = chart.addLineSeries({ color: '#722ed1', lineWidth: 1, title: 'MA60' });
+        zigzagSeries = chart.addLineSeries({ color: '#9c27b0', lineWidth: 2, title: 'ZigZag' });
+      }
+
+      // K 線
+      const candleData = klines.map(k => ({
+        time: k.time || k.date || k.timestamp,
+        open: k.open, high: k.high, low: k.low, close: k.close
+      }));
+      candleSeries.setData(candleData);
+
+      // 4 條 MA
+      const closes = klines.map(k => k.close);
+      ma5Series.setData(closes.map((c, i) => ({ time: candleData[i].time, value: ma(closes, 5)[i] })).filter(d => !isNaN(d.value)));
+      ma10Series.setData(closes.map((c, i) => ({ time: candleData[i].time, value: ma(closes, 10)[i] })).filter(d => !isNaN(d.value)));
+      ma20Series.setData(closes.map((c, i) => ({ time: candleData[i].time, value: ma(closes, 20)[i] })).filter(d => !isNaN(d.value)));
+      ma60Series.setData(closes.map((c, i) => ({ time: candleData[i].time, value: ma(closes, 60)[i] })).filter(d => !isNaN(d.value)));
+
+      // ZigZag
+      if (zigzagPoints.length) {
+        const zigData = zigzagPoints
+          .filter(p => p.index !== undefined)
+          .map(p => ({ time: candleData[p.index]?.time, value: p.value }))
+          .filter(d => d.time);
+        if (zigData.length) zigzagSeries.setData(zigData);
+      }
+
+      chart.timeScale().fitContent();
+    }
+
+    function ma(values, period) {
+      // 凡人話: 簡單移動平均線
+      const result = [];
+      for (let i = 0; i < values.length; i++) {
+        if (i < period - 1) { result.push(NaN); continue; }
+        const slice = values.slice(i - period + 1, i + 1);
+        result.push(slice.reduce((a, b) => a + b, 0) / period);
+      }
+      return result;
+    }
+
+    function renderCompareTable(verdict, code) {
+      const meta = verdict.meta || {};
+      const tbody = document.getElementById('compare-tbody');
+      const topScore = meta.topScore || 0;
+      const bottomScore = meta.bottomScore || 0;
+      const topStrength = meta.topStrength || 'NONE';
+      const bottomStrength = meta.bottomStrength || 'NONE';
+
+      tbody.innerHTML = `
+        <tr>
+          <td><strong>M1 v2.1.0 trigger</strong></td>
+          <td class="compare-no-trigger">連跌 4 日 (太脆弱)</td>
+          <td class="compare-no-trigger">連升 4 日 (太脆弱)</td>
+          <td>1 隻 stock 觸發 (騰訊 2%)</td>
+        </tr>
+        <tr>
+          <td><strong>新 extr_specs 框架</strong></td>
+          <td class="${topScore >= 3 ? 'compare-trigger' : 'compare-no-trigger'}">${topScore}/15 ${getStrengthText(topStrength)}</td>
+          <td class="${bottomScore >= 3 ? 'compare-trigger' : 'compare-no-trigger'}">${bottomScore}/15 ${getStrengthText(bottomStrength)}</td>
+          <td>15 分制 + 4 背離 + 6 形態</td>
+        </tr>
+      `;
+    }
+
+    async function runBatch100() {
+      const summary = document.getElementById('batch-summary');
+      summary.innerHTML = '<p>🐏 開始跑 100 隻港股... (後台 server-side 跑會更快, 等下可以整 Python script)</p>';
+      alert('100 隻 stock 批量測試會喺 backend 跑 (用 Python script call /api/cycle/run/top-bottom-reversal loop), 等我寫 server-side script');
+    }
+  </script>
+</body>
+</html>

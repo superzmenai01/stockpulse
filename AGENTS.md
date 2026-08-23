@@ -454,6 +454,42 @@ def _compute_fetch_max_count(period):
 - 用 `get_cur_kline()` 拎 today intraday partial bar (唔入 DB)
 - T-1 rule: 今日 bar 唔寫 DB,只喺 response 出
 
+### K-line 讀取一定要用 KlineCache full flow 永久 rule (大少 2026-08-22 23:20)
+
+**凡人話解釋**: 所有 research script / debug script / ad-hoc analysis 拎 K 線, 一定要用 backend `/api/kline` endpoint (透過 KlineCache full flow: check DB → 真 OpenD update → write DB → return with T-1), **永遠唔可以直接 instantiate KlineCache 然後用 mock context 拎 K 線**。
+
+**大少 trigger 23:20**: 「記住以後讀取數據一定要用這方法」
+- 大少 19:44 發現 1385 強下跌 trigger 嘅 MA 數值錯, root cause 係 `tmp_research_v23_subscenarios.py` 用咗 `mock_ctx` 拎空 OpenD, fall back to DB cache 拎 stale K 線
+- Stale K 線 → MA 計錯 → sub-scenario trigger 結論 false positive (1385/384/INTC 假強下跌, 00992 假創新高)
+- 真實數據用 HTTP call backend 拎到 T-1 8月21日 fresh K 線, 60 隻 v2.1 真實結果: 強升 5 隻, 強跌 1 隻, 弱升 6 隻, 弱跌 7 隻, 上升回調 4 隻, 下跌反彈 4 隻, 到底轉勢 3 隻, 到頂轉勢 0 隻, 橫行 30 隻
+
+**永久 rule**:
+- ✅ Research / debug / ad-hoc script 拎 K 線: **永遠用 HTTP call backend `/api/kline?code=...&period=...&count=...`**
+- ✅ 唔可以直接 `KlineCache().get_or_fetch(code, mock_ctx, ...)` 用 mock context 拎 K 線
+- ✅ 唔可以直接 query DB table (`SELECT * FROM kline_cache`) 拎 K 線 (會拎 stale)
+- ✅ 唔可以直接 call Futu OpenD `request_history_kline` 拎 K 線 (會 bypass cache)
+- ✅ Backend `/api/kline` 已經入面用咗 KlineCache full flow + 真 OpenD, response 入面 `mock:False / cached:False` 即係 fresh
+- ✅ 對齊 testing page (testing-page.js line 826 用 `BACKEND_URL/api/kline` 同一個 endpoint)
+- ✅ WINDOW_DAYS 預設 1260 (5 年, 對齊 testing page 默認, 2026-08-14 23:15 永久 rule)
+- ✅ 對應 trigger: 「tmp_research_v23_subscenarios.py 60 隻 stale K 線 false positive」事件
+- ✅ 之後所有 research script / debug 工具 / ad-hoc analysis 都跟呢個 pattern, 用 `urllib.request` call backend, 唔好再 instantiate KlineCache
+- ✅ 對應: tmp_research_v23_subscenarios_v4.py (用 urllib HTTP call backend) 同 tmp_research_v25_v21subscenarios.py (同一個 pattern)
+
+### Algorithm Backend-only + 模組化 永久 rule (大少 2026-08-22 23:20)
+
+**凡人話解釋**: 所有 algorithm (M1-M12 + zmen + 7 個 adaptive params) 永遠喺 backend 跑, frontend 唔可以重計 algorithm, 所有嘢 (K 線 / algorithm verdict / warning) 都要透過 module 化嘅 interface (backend API) 拎。
+
+**大少 trigger 23:20**: 「所有算法都是在 Backend 做, 所有東西都要模組化處理」
+
+**永久 rule**:
+- ✅ 所有 algorithm 計算永遠喺 backend (Python `algorithms/*/algorithm.py`), frontend 只 render verdict 唔重計
+- ✅ Research / debug script 跑 algorithm: 永遠 import backend algorithm (`from algorithms.ma_alignment.algorithm import MAAlignmentV2Algorithm`) 然後由 K 線 → verdict, 唔好自己重寫 MA / slope / volume 計算邏輯
+- ✅ 拎 algorithm output 一定由 `verdict.meta.<field>` 拎 (e.g. `maValues`, `maSlopes`, `volumeSignal`, `cycle`), 唔好 script 自己用 K 線重計
+- ✅ 模組化 interface: 對外統一用 backend API endpoint (e.g. `/api/kline`, `/api/cycle/run/{module}`), 唔好直接 call internal function
+- ✅ frontend `.mjs` (testing page) 對外 fetch backend, 唔可以直接 import backend algorithm (`from algorithms...`)
+- ✅ 之後加新 algorithm / 改 algorithm 嘅 calculation, 一律 backend side, frontend 唔郁
+- ✅ 對應 trigger: tmp_research_v23_subscenarios.py v3 mock + 自己重計 sub-scenario → false positive; v4 / v5 改用 backend algorithm + verdict meta 拎結果 → 100% 一致 production
+
 ### Backend Hot-Reload
 
 - ❌ 唔識 hot-reload
@@ -706,3 +742,43 @@ def _compute_fetch_max_count(period):
 - ✅ 改 Layer 1 10 條 rule 嗰陣, 必須一齊 update Layer 2 嘅 9 個 sub-scenario 規則 (永久 rule 同步)
 
 對應 commit: (即將 push)
+
+### 到頂到底轉勢綜合評分 algorithm 永久 rule (大少 2026-08-23 08:08 trigger)
+
+**凡人話解釋**: 跟返 extr_specs 嗰套 15 分制評分 + 4 種背離偵測 + 6 個 K 線形態識別, 對稱到頂同到底, 暫時喺 testing page 獨立 sandbox 試, 之後再考慮 port 落 M1。
+
+**大少 trigger 08:08**:「我想測試 extr_specs 嗰套原整做法嘅效果, 起新 Testing Page『到頂到底轉勢』, 用佢嗰套 + StockPulse 已有數據 + 缺少嘅頂背離偵測 + K 線形態識別做測試, 除到頂外, 根據相同原理也做一套到底轉勢嘅出嚟測試」
+
+**永久 rule**:
+- ✅ Algorithm `top_bottom_reversal` v1.0.0 永久喺 backend (`backend/algorithms/top_bottom_reversal/algorithm.py`), 凡人話 contract 對齊其他 11 個 algorithm (Algorithm Backend-only 永久 rule)
+- ✅ 拎 K 線: KlineCache full flow (永久 rule, 跟 stale data fix)
+- ✅ 拎 ZigZag 峰谷: runner 自動 inject 落 options (跟 M1 pattern), 唔可以 algorithm 自己 fetch
+- ✅ 評分 0-15 (top + bottom 兩份) + 4 級強度 (STRONG ≥8 / MODERATE 5-7 / MILD 3-4 / NONE 0-2)
+- ✅ 6 個 K 線形態識別: 烏雲蓋頂 / 看跌吞沒 / 黃昏之星 (見頂) + 晨星 / 看漲吞沒 / 曙光初現 (見底) — 全部凡人話描述, frontend display 唔好再自己加英文 jargon
+- ✅ Module Warning System v1.1.0 統一 warning format (system 類 impact「Verdict 唔可信, 唔好落單」)
+- ✅ 改 algorithm / 改評分權重 / 改 K 線形態識別, 一律 backend side, frontend 唔郁
+- ✅ 改 M1 v2.1.0 「到頂轉勢」trigger 之前, 大少拎 stock 例子 review 先 (2026-08-16 19:21 永久 rule)
+- ✅ Testing page 獨立: `testing-page/top-bottom-reversal.html` (唔擺落 main page dropdown), 避免干擾 M1 testing page
+- ✅ 100 隻 stock 批量測試 script 跟返 `m1-100-stocks-test.mjs` pattern, 用 ThreadPoolExecutor 5 workers + KlineCache full flow
+
+**對應 spec doc**: `docs/research/AS-03-cycle-detection/MODULE-TOP-BOTTOM-REVERSAL.md`
+**對應 commit**: Spec Sync #39 (即將 push)
+
+### Stale Data 永久 fix rule (大少 2026-08-23 09:38 trigger)
+
+**凡人話解釋**: Algorithm runner 原本純讀 DB, warm cache 永遠拎 stale (新交易日冇補返)。Fix: 每次 check `last_kline date >= T-1` 確保 fresh, 唔夠 fresh 就 trigger HTTP call `/api/kline` 拎 fresh + 寫 DB, 跟 KlineCache full flow 永久 rule。
+
+**大少 trigger 09:38**:「如果 DB 有數據, 但那些數據是舊的, 意思是沒有更新到最新的數據例如上個交易日是沒有了的或最近一個星期的交易數據是沒有記錄到的, 這點在你的流程上有沒有機制去解決這問題?」
+
+**永久 rule**:
+- ✅ Algorithm runner 取 K 線, 永遠要 check `last_kline date >= T-1` 確保 fresh
+- ✅ 唔可以純讀 DB, 因為 warm cache 會拎 stale (新交易日冇補返)
+- ✅ 兩種情況 trigger `/api/kline` HTTP call 拎 fresh + 寫 DB:
+  - (1) Cold cache (klines 空)
+  - (2) Warm cache 但 stale (last_kline < T-1)
+- ✅ Timeout 60s → 180s (細股 OpenD fetch 慢)
+- ✅ 跟 KlineCache full flow 永久 rule: 永遠用 HTTP call backend `/api/kline`, 唔可以直接 instantiate KlineCache 用 mock context 拎
+- ✅ 套用: 之後所有 algorithm (M1-M12 + zmen + TBR) 透過 runner 拎 K 線, 自動有 stale fix 保護
+- ⚠️ 60 隻 stock 失敗 root cause 係 server self-call 撞牆 (細股 OpenD fetch > 3 分鐘), 唔係 stale data 問題, 之後 server reliability fix 解決
+
+**對應 commit**: Spec Sync #39 (即將 push)

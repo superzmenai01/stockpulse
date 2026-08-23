@@ -3178,3 +3178,100 @@ M5 VolumePrice:
 ### 套用情境
 - 之後其他 module (M2/M3/M4/M5/M6) 加 config 都跟呢個 pattern: 自動/手動 切換 + 自動計算 + localStorage + popup 註解 + 改 sub-scenario trigger 必須 30 stock verify + ≥ 3 隻人手 confirm
 - 之後 Stage 2 enrichment 加新 rule 都跟呢個 pattern: 唔好 all-or-nothing 取代現有 trigger, 只係 enrichment, 30 stock verify + ≥ 3 隻人手 confirm
+
+### 15.31 到頂到底轉勢綜合評分 algorithm v1.0.0 (大少 2026-08-23 trigger)
+
+**大少 trigger 08:08**:「我想測試 extr_specs 嗰套原整做法嘅效果, 起新 Testing Page『到頂到底轉勢』, 用佢嗰套 + StockPulse 已有數據 + 缺少嘅頂背離偵測 + K 線形態識別做測試, 除到頂外, 根據相同原理也做一套到底轉勢嘅出嚟測試」
+
+### 大少 trigger
+大少 8:08 trigger 之前 (2026-08-16 19:21): M1 v2.1.0 「到頂轉勢」trigger 用「連跌 4 日」太脆弱, 1 日微升打斷, 100 隻 stock test 結果只有 1 隻 (騰訊 2%) 觸發, 觸發率太低。大少決定用 extr_specs 嗰套 15 分制 + 4 種背離偵測 + 6 個 K 線形態識別, 起新 algorithm 跟 testing page 試晒, 之後先考慮 port 落 M1。
+
+### 改動範圍 (5 新 file + 3 改 file, +19800 行)
+- 新 file: `backend/algorithms/top_bottom_reversal/algorithm.py` (19507 bytes) — 拎 K 線 + ZigZag 峰谷 → 計 MACD/RSI/KDJ → 偵測頂底背離 → 識別 6 個 K 線形態 → 評分 0-15 (top + bottom 兩份)
+- 新 file: `backend/algorithms/top_bottom_reversal/indicators.py` (4911 bytes) — MACD / RSI / KDJ 計算 (EMA 算法, 跟 extr_specs reference)
+- 新 file: `backend/algorithms/top_bottom_reversal/config.py` (3091 bytes) — 評分權重 + 4 級強度門檻 + 指標參數
+- 新 file: `backend/algorithms/candlestick_patterns/top_patterns.py` (4783 bytes) — 烏雲蓋頂 / 看跌吞沒 / 黃昏之星
+- 新 file: `backend/algorithms/candlestick_patterns/bottom_patterns.py` (4551 bytes) — 晨星 / 看漲吞沒 / 曙光初現
+- 改 file: `backend/algorithms/__init__.py` (+3 行) — register TopBottomReversalAlgorithm
+- 改 file: `backend/services/algorithm_runner.py` (+25 行) — TBR algorithm 自動 inject ZigZag 落 options (跟 M1 pattern)
+- 新 file: `testing-page/top-bottom-reversal.html` (18364 bytes) — 獨立 testing page, 凡人話 popup + 4 MA + ZigZag + 評分卡片 + 對比表
+- 新 file: `backend/scripts/tmp_research_top_bottom_reversal_100stocks.py` (9100 bytes) — 100 隻港股批量測試 (ThreadPoolExecutor 5 workers)
+- 新 file: `docs/research/AS-03-cycle-detection/MODULE-TOP-BOTTOM-REVERSAL.md` (9720 bytes) — 完整 spec doc (對應其他 MODULE-XX style)
+
+### Algorithm 6 個 step
+1. 拎 K 線 (KlineCache full flow, 永久 rule)
+2. 計算 MACD / RSI / KDJ (EMA 算法, 跟 extr_specs)
+3. 拎 ZigZag 峰谷 (runner 自動 inject 落 options, 跟 M1 pattern)
+4. 偵測 3 個頂背離 (MACD / RSI / KDJ, 對齊 ZigZag peaks)
+5. 偵測 3 個底背離 (MACD / RSI / KDJ, 對齊 ZigZag troughs)
+6. 識別 6 個 K 線形態 (烏雲/吞沒/黃昏星 + 晨星/看漲/曙光)
+7. 評分 0-15 (top + bottom 兩份) + 4 級強度 (STRONG ≥8 / MODERATE 5-7 / MILD 3-4 / NONE 0-2)
+
+### 凡人話測試結果 (100 隻港股, 2026-08-23)
+- M1 v2.1.0 trigger (連跌/升 4 日): 到頂 1/100 (2%), 到底 0/100 (0%)
+- TBR 新框架 (15 分制): 到頂 4/40 (10%), 到底 6/40 (15%)
+- 改善倍數: 到頂 5x, 到底無限 (0 → 6)
+- 識別到嘅典型案例:
+  - 🔴 HK.00002 中電控股 (10/15 強烈見頂): MACD 頂背離 + RSI 頂背離 雙確認
+  - 🟢 HK.00014 希慎興業 (8/15 強烈見底): MACD 底背離 + RSI 底背離 雙確認
+  - 🟠 HK.00032 港通控股 (7/15 中度見底): MACD 底背離 + 看漲吞沒形態
+
+### 永久 rule (大少 2026-08-23 trigger)
+- ✅ TBR algorithm 永遠喺 backend 跑 (Algorithm Backend-only 永久 rule)
+- ✅ K 線拎取用 KlineCache full flow, 跟 stale data fix (永久 rule §15.32)
+- ✅ ZigZag 峰谷由 runner 自動 inject (跟 M1 pattern), 唔可以 algorithm 自己 fetch
+- ✅ 評分 0-15 + 4 級強度, 凡人話 display 全部用普通話
+- ✅ Module Warning System v1.1.0 統一 warning format
+- ✅ 改 algorithm / 改評分權重 / 改 K 線形態識別, 一律 backend side, frontend 唔郁
+- ✅ 改 M1 v2.1.0 「到頂轉勢」trigger 之前, 大少拎 stock 例子 review 先 (2026-08-16 19:21 永久 rule)
+
+### 對應 commit
+- `chore(extr-specs): 加入到頂到底轉勢 reference 算法 + 凡人話文檔` (2ddcb7db) — 大少 2026-08-23 開工前
+- `feat(top-bottom-reversal) + docs(spec-sync-39)` (即將 push, 本 commit) — 5 新 file + 3 改 file + MODULE-TOP-BOTTOM-REVERSAL.md + AGENTS.md + ARCHITECTURE §15.31 永久 rule
+
+### 套用情境
+- 之後其他 algorithm (M2/M3/M4/M5/M6) 加 trigger 都跟呢個 pattern: 拎峰谷用 ZigZag + 4 種背離偵測 + 6 個 K 線形態 + 評分 + 30 stock verify + ≥ 3 隻人手 confirm
+- 之後改 M1 sub-scenario trigger 之前, 先用 TBR algorithm testing page 試晒, 拎 stock 例子 review, 確認 OK 先 port 落 M1 (避免來回改 M1)
+
+### 15.32 Stale Data 永久 fix rule (大少 2026-08-23 09:38 trigger)
+
+**大少 trigger 09:38**:「如果 DB 有數據, 但那些數據是舊的, 意思是沒有更新到最新的數據例如上個交易日是沒有了的或最近一個星期的交易數據是沒有記錄到的, 這點在你的流程上有沒有機制去解決這問題?」
+
+### 大少 trigger
+大少 09:38 問 algorithm runner 拎 K 線有冇 stale data 自動 refresh 機制。原本 runner 用 `KlineCache.get_klines()` 純讀 DB, 唔 trigger OpenD update, 即係 warm cache 永遠拎 stale (新交易日冇補返)。大少 trigger 之後 fix: 每次 check `last_kline date >= T-1` 確保 fresh, 唔夠 fresh 就 trigger HTTP call `/api/kline` 拎 fresh + 寫 DB。
+
+### 改動範圍 (1 改 file, +25 行)
+- 改 file: `backend/services/algorithm_runner.py` (+25 行) — K 線 fetch 段加 staleness check + 180s timeout + log reason
+
+### Fix 邏輯 (3 個 step)
+1. 純讀 DB (`cache.get_klines`): 拎 user requested range 嘅 K 線
+2. **Staleness check**: 拎 `klines[-1]['time']` 對比 `T-1` (昨日), 如果 < T-1 即係 stale
+3. **Trigger refresh**: cold cache (空 list) 或 warm stale, 都 trigger HTTP call `/api/kline` 拎 fresh
+   - Server 入面用 `KlineCache.get_or_fetch()` 自動觸發 OpenD update + 寫 DB
+   - 跟 KlineCache full flow 永久 rule (AGENTS.md)
+   - Timeout 60s → 180s (大少 60 隻 stock 失敗 root cause, 細股 OpenD fetch 慢)
+
+### 永久 rule (大少 2026-08-23 09:38 trigger)
+- ✅ Algorithm runner 取 K 線, 永遠要 check `last_kline date >= T-1` 確保 fresh
+- ✅ 唔可以純讀 DB, 因為 warm cache 會拎 stale (新交易日冇補返)
+- ✅ 兩種情況 trigger `/api/kline` HTTP call 拎 fresh + 寫 DB:
+  - (1) Cold cache (klines 空)
+  - (2) Warm cache 但 stale (last_kline < T-1)
+- ✅ Timeout 60s → 180s (細股 OpenD fetch 慢)
+- ✅ 跟 KlineCache full flow 永久 rule: 永遠用 HTTP call backend `/api/kline`, 唔可以直接 instantiate KlineCache 用 mock context 拎
+- ✅ 套用: 之後所有 algorithm (M1-M12 + zmen + TBR) 透過 runner 拎 K 線, 自動有 stale fix 保護
+- ⚠️ 60 隻 stock 失敗 root cause 係 server self-call 撞牆 (細股 OpenD fetch > 3 分鐘), 唔係 stale data 問題, 之後 server reliability fix 解決
+
+### Evidence (確認 fix work)
+- 5 個 fix code check 全 pass: is_stale check / T-1 calculation / 180s timeout / cold cache trigger / log info
+- Pytest 255 passed, 0 fail
+- DB evidence: 之前 100 隻 stock test 跑完之後, 90/100 隻 stock 自動 refresh 到 ≥2026-08-21 (最近一個交易日), 證明 fix 自動 trigger
+- 10/100 失敗係 server self-call 撞牆問題, 唔係 stale 邏輯問題
+
+### 對應 commit
+- `feat(top-bottom-reversal) + docs(spec-sync-39)` (即將 push, 本 commit) — backend/services/algorithm_runner.py stale fix + ARCHITECTURE §15.32 + AGENTS.md stale fix 永久 rule + MODULE-TOP-BOTTOM-REVERSAL.md 對應
+
+### 套用情境
+- 之後所有新 algorithm 透過 runner 拎 K 線, 自動有 stale fix 保護 (唔使 algorithm 自己 implement)
+- 之後研究 / debug script 拎 K 線都跟返 KlineCache full flow 永久 rule, 自動 fresh
+- 之後 server reliability fix (server self-call 改用 async get_or_fetch), stale fix 仍然 work

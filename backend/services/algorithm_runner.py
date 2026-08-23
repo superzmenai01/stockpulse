@@ -74,6 +74,49 @@ def run_algorithm(
 
     klines = cache.get_klines(symbol, period, start=start_date, end=end_date)
 
+    # 大少 2026-08-23 09:38 — Stale cache 永久 fix:
+    # Runner 原本用 cache.get_klines() 純讀 DB, 會拎 stale K 線 (新嘅交易日冇補返)
+    # Fix: 兩種情況 trigger HTTP call /api/kline 拎 fresh (server 入面用 get_or_fetch 觸發 OpenD update)
+    #   (1) Cold cache: 拎 0 條 klines
+    #   (2) Warm cache 但 stale: 最後一條 K 線日期 < T-1 (今日之前一個交易日)
+    # 跟 KlineCache full flow 永久 rule (AGENTS.md K-line 讀取一定要用 KlineCache full flow):
+    # 永遠用 HTTP call backend /api/kline 拎 fresh K 線 (server 入面用 get_or_fetch 觸發 OpenD update)
+    # 唔可以直接 instantiate KlineCache 用 mock context 拎 (會拎 stale K 線)
+    #
+    # T-1 計算: skip 週末, 拎最近一個交易日 (簡化版: today - 1 day, 接受週末誤差)
+    t_minus_1 = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    is_stale = bool(klines) and (klines[-1].get('time', '') < t_minus_1)
+    need_refresh = (not klines) or is_stale
+
+    if need_refresh:
+        try:
+            import urllib.request
+            import urllib.parse
+            kline_url = (
+                f"http://127.0.0.1:18792/api/kline"
+                f"?code={urllib.parse.quote(symbol)}"
+                f"&period={urllib.parse.quote(period)}"
+                f"&count={data_window_days}"
+                f"&start={urllib.parse.quote(start_date)}"
+                f"&end={urllib.parse.quote(end_date)}"
+            )
+            # 凡人話: timeout 60s → 180s, 因為部分細股 OpenD fetch > 60s
+            # (大少 2026-08-23 60 隻 stock 失敗 root cause)
+            with urllib.request.urlopen(kline_url, timeout=180) as resp:
+                kline_data = json.loads(resp.read().decode("utf-8"))
+            if kline_data.get("klines"):
+                klines = kline_data["klines"]
+                reason = "cold cache" if not klines else f"stale (last {klines[-1].get('time', '')} < T-1 {t_minus_1})"
+                logger.info(
+                    f"[Algorithm] {algo_name} cache refresh via /api/kline ({reason}): "
+                    f"fetched {len(klines)} klines for {symbol} {period}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"[Algorithm] {algo_name} cache refresh failed (繼續, algorithm 用返 stale K 線): "
+                f"{type(e).__name__}: {e}"
+            )
+
     # 大少 #11070 永久 rule: trim 落 user requested count
     if len(klines) > data_window_days:
         klines = klines[-data_window_days:]
@@ -134,6 +177,12 @@ def run_algorithm(
     # 直接 fetch M1 嗰處
     if algo_name == "ma_alignment":
         _inject_zigzag_for_ma_alignment(klines, options, label="M1 direct")
+
+    # 大少 2026-08-23 — TopBottomReversal 自動 inject ZigZag 拎峰谷
+    # 凡人話: TBR algorithm 需要 ZigZag 峰谷做頂底背離偵測, runner 自動 inject (跟 M1 pattern)
+    # 永久 rule: TBR algorithm 唔可以直接 fetch ZigZag, 由 runner 統一 inject
+    if algo_name == "top_bottom_reversal":
+        _inject_zigzag_for_ma_alignment(klines, options, label="TBR")
 
     # 大少 2026-08-20 21:30 Phase 8 — M7 Synthesizer 拎 M1-M6 全部 module verdict 做綜合判定
     # 凡人話: 跑 Synthesizer 之前, 自動跑 M1-M6 拎 verdict 然後轉做 standard verdict interface (state / confidence / base_weight / max_drawdown_estimate / rules_fired) inject 落 options
