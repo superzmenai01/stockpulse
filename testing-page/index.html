@@ -7,8 +7,15 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>股票演算法測試頁</title>
-  <link rel="stylesheet" href="testing-page.css?v=2.3.91">
+  <link rel="stylesheet" href="testing-page.css?v=2.3.95">
   <style>
+    /* 大少 2026-08-22 23:35 trigger — chart 上方顯示股票名稱 + 號碼 */
+    .stock-name-display {
+      font-size: 18px;
+      color: #555;
+      font-weight: 500;
+      margin-left: 8px;
+    }
     /* 大少 2026-08-21 00:02 trigger — popup 註解 (倍數選擇表) */
     .multiplier-tooltip {
       position: relative;
@@ -83,7 +90,7 @@
 
         <section class="chart-section">
           <div class="chart-header">
-            <h2>📈 股票 K 線圖</h2>
+            <h2>📈 股票 K 線圖 <span id="stock-name-display" class="stock-name-display"></span></h2>
             <p class="chart-note">
               撳完「跑算法」之後, 嗰隻股票嘅 K 線圖會自動顯示喺呢度。
             </p>
@@ -178,6 +185,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.91"></script>
+  <script type="module" src="testing-page.js?v=2.3.95"></script>
 </body>
 </html>

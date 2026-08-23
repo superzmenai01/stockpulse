@@ -15,10 +15,21 @@
 //       function renderResult(verdict) → HTML string
 //       function getHelp() → HTML string (optional)
 //
-// Backend: 從 StockPulse backend (localhost:18792) 攞 K 線 + 股票搜尋
+// Backend: 從 StockPulse backend (port 18792) 攞 K 線 + 股票搜尋
 // CORS: backend 已 enable allow_origins=["*"] 開發階段
-
-const BACKEND_URL = 'http://localhost:18792';
+// 大少 2026-08-22 07:18 fix: BACKEND_URL 改用 window.location.hostname 自動 detect,
+//   之前寫死 localhost, 手機打 192.168.1.125:8765 嘅時候 fetch localhost:18792 = 打去手機自己, 永遠 404
+//   用 dynamic hostname 嘅好處: 電腦 localhost 自動指返自己, 手機內網 IP 自動指 Mac, 唔使改 code
+//   同時 support ?backend= URL 覆寫, 畀特殊 case (例如 VPN / 別嘅機器) 用
+const _backendOverride = new URLSearchParams(window.location.search).get('backend');
+const BACKEND_URL = _backendOverride || `http://${window.location.hostname}:18792`;
+// 大少 2026-08-22 07:23 fix #2: 同步 set window.BACKEND_URL global, 畀 adapter.mjs 6 個 module 拎
+//   (M1/M2/M3/M4/M5/M6 等 analyze* 函數 內部 fetch backend 用 window.BACKEND_URL || 'http://localhost:18792' fallback,
+//    之前 testing-page.js 從來冇 set, 所以手機上面 6 個 module 全部 fetch localhost:18792 = 手機自己, 永遠 fetch fail)
+//   對應 adapter.mjs 6 處 hardcode line 2186/2640/2983/3463/3971/4484
+window.BACKEND_URL = BACKEND_URL;
+// Debug helper: 大少撳開個 page 想睇 backend URL 實際指去邊, console.log 呢個就見到
+console.log(`[testing-page] BACKEND_URL = ${BACKEND_URL} (hostname: ${window.location.hostname})`);
 
 // 大少 2026-08-20 19:17 Phase 1 — Backend ZigZag 整合 M1 chart
 // 凡人話: testing page 撳跑 M1 嗰陣, fetch backend /api/algorithms/run?algo=zigzag 拎 verdict,
@@ -209,7 +220,8 @@ function setLookback(v) {
 // 大少 2026-08-21 00:31 — Lookback 永遠顯示 (manual mode 都見到): ALGO_CACHE_BUST = '4.30.0' (index.html #zigzag-controls layout 改: 抽 lookback row 出嚟做獨立行 #zigzag-lookback-row 永遠顯示, 自動 mode 顯示區唔再包 lookback input (改放 lookback row 入面), 整 row 「最近 [N] 日波動率 × 2.5 (5-100) [重置為 20]」; testing-page.js 加 applyLookbackEditable() helper (auto mode lookbackEl.disabled=false, manual mode lookbackEl.disabled=true + reset btn 都 disabled), initThresholdModeUI() page load 嗰陣 call, mode 切換 handler call, reset auto 掣 call; 對應大少 trigger「當轉成手動輸入時就不見了"最近 日波動率"」)
 // 大少 2026-08-21 00:24 — ZigZag threshold lookback 參數 (手動可調): ALGO_CACHE_BUST = '4.29.0' (testing-page.js 加 LS_KEY_LOOKBACK + LOOKBACK_DEFAULT=20 + LOOKBACK_MIN=5 + LOOKBACK_MAX=100 + getLookback() + setLookback() localStorage helper, applyAutoThreshold 改用 getLookback() 動態取 (唔再 hardcode 20), 撳跑算法嗰陣 auto mode 計算 (L860-877) 改用 getLookback(), 初始化 UI (initThresholdModeUI) 加 lookbackEl value 同步, 加 lookback input 即時改 handler (debounce 200ms, 改完即時重算, manual mode 唔影響), 加「重置為 20」掣 handler; index.html 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣, 跟 Spec Sync #31 config input onChange handler pattern 一致; 對應大少 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」; 永久 rule: lookback 永遠跟 localStorage, 預設 20, 範圍 5-100, manual mode 唔影響, 改完即時重算 (auto mode 觸發 applyAutoThreshold); localStorage key `stockpulse.zigzag.lookback`)
 // 大少 2026-08-21 00:02 — ZigZag threshold 自動調整 (波動率自適應法): ALGO_CACHE_BUST = '4.28.0' (testing-page.js 加 autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5) + extractHLC(klines) 純函數 + localStorage 存取 helper (LS_KEY_THRESHOLD_MODE + LS_KEY_MANUAL_THRESHOLD) + applyAutoThreshold(code, period) 計算 + 即時 update 紫色線 + 初始化 UI (initThresholdModeUI 新股票冇 record → 自動 mode 預設) + mode 切換 handler (切 auto 即時計算, 切 manual 用最近 auto 結果) + 重算掣 + 重置為自動掣 + manual slider 即時改 (跟 spec sync #31 pattern, debounce 200ms) + 撳「跑算法」嗰陣 auto mode 自動計算 threshold (L841 之前) + 全部 localStorage 自動保存; index.html #zigzag-controls 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表 2.0/2.5/3.0-4.0) + 隱藏 #zigzag-threshold (跟 spec sync #31 兼容); index.html head 加 .multiplier-tooltip inline style block; 對應大少 trigger (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存; 永久 rule: 新股票冇 localStorage record → 自動 mode 預設, 倍數 2.5 hardcode, lookback 20 hardcode, 0.5%-20% clamp, localStorage key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`)
-const ALGO_CACHE_BUST = '4.36.0';
+// 大少 2026-08-22 23:35 — Chart 上方加股票名稱 + 號碼: ALGO_CACHE_BUST = '4.37.0' (testing-page.js 加 updateStockNameDisplay(code) function 喺 runAlgorithm 之後 call, fetch backend /api/stocks/{code} 拎 stock name, 寫入 chart-header 嘅 #stock-name-display span, format: "{code} - {name}" + fallback 顯示 code only, 凡人話: 大少撳跑完 algorithm 視線一落到 chart 即刻見到呢隻股票係邊隻, 唔使對住 "HK.00823" 估, 對齊股票名 00823 領展 / 00700 騰訊 之類; index.html chart-header h2 加 <span id="stock-name-display"> + CSS .stock-name-display style (大少 font size 18px + 灰色 + margin-left 8px), 用 backend 既有 /api/stocks/{code} endpoint 唔需要新加; 永久 rule: testing page 顯示 stock name 永遠由 backend /api/stocks/{code} 拎, 唔好 frontend hardcode map, 配合 stock metadata refresher script 補返 hot list missing 嗰啲 stock; 對應 stocks table 補返: HK.00823 領展 + US.NXP 等 2 隻, 1 個 OpenD batch snapshot call, 唔浪費額度)
+const ALGO_CACHE_BUST = '4.37.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -791,6 +803,18 @@ async function runAlgorithm() {
     return;
   }
 
+  // 大少 2026-08-22 07:25 fix #3: 自動補 HK. prefix (手機 user 唔需要記 prefix)
+  // 例: 輸入 "00981" → 自動變 "HK.00981" (港股 5 位數字, backend K 線 endpoint 必須有 market prefix 先識拎)
+  // 已經有 prefix (HK. / US. / SH. / SZ.) 唔重覆補
+  // 永久 rule: 純 5-6 位數字 = 預設港股, 因為 StockPulse testing page 主要用 HK 股票
+  const _rawCode = currentOptions.code.trim();
+  if (/^\d{5,6}$/.test(_rawCode)) {
+    const normalized = `HK.${_rawCode}`;
+    console.log(`[testing-page] Auto-prefix 股票代碼: ${_rawCode} → ${normalized}`);
+    currentOptions.code = normalized;
+    if (codeInputEl) codeInputEl.value = normalized;
+  }
+
   runStatus.innerHTML = '⏳ 撈緊 K 線數據...';
   resultPanel.innerHTML = '';
 
@@ -933,6 +957,11 @@ async function runAlgorithm() {
     // Trading card 最左加新 column「最新股價」(date/time 上 + price 下)
     startRealTimePrice(code);
 
+    // 3.6 大少 2026-08-22 23:35 — chart 上方顯示股票名稱 + 號碼
+    // 凡人話: 撳跑完 algorithm 之後, fetch /api/stocks/{code} 拎 stock name, 寫入 chart-header
+    // 既唔需要 restart backend, 又唔會 block render (fetch 失敗 fallback 顯示 code only)
+    updateStockNameDisplay(code);
+
     // 4. 大少 #10431 — 撳完 test 後 render K 線圖表（full width）
     const chartRefs = renderChart(klines, code, period);
 
@@ -978,6 +1007,32 @@ async function runAlgorithm() {
 // Full width、height 600px。撳完「跑算法」後 auto-call。
 
 let chartInstance = null;
+
+// 大少 2026-08-22 23:35 — Chart 上方顯示股票名稱 + 號碼
+// 凡人話: 撳跑完 algorithm 之後, fetch backend /api/stocks/{code} 拎 stock name, 寫入 chart-header
+// fetch 失敗 fallback 顯示 code only (唔 crash); 用 backend 既有 endpoint, 唔需要新加
+async function updateStockNameDisplay(code) {
+  const el = document.getElementById('stock-name-display');
+  if (!el) return;
+  if (!code) {
+    el.textContent = '';
+    return;
+  }
+  // 即時顯示 code (避免空白)
+  el.textContent = `· ${code}`;
+  el.style.color = '#888';
+  try {
+    const resp = await fetch(`${BACKEND_URL}/api/stocks/${encodeURIComponent(code)}`);
+    if (!resp.ok) return;  // fallback 留 code
+    const data = await resp.json();
+    const name = data?.name;
+    if (name && name !== code) {
+      el.textContent = `· ${code} ${name}`;
+    }
+  } catch (e) {
+    // fetch 失敗 fallback 留 code
+  }
+}
 
 function renderChart(klines, code, period) {
   const container = document.getElementById('chart-container');
@@ -1649,6 +1704,18 @@ async function runFullChain() {
   if (!currentOptions.code) {
     runStatus.innerHTML = '❌ 請揀或者輸入股票代碼';
     return;
+  }
+
+  // 大少 2026-08-22 07:25 fix #3: 自動補 HK. prefix (手機 user 唔需要記 prefix)
+  // 例: 輸入 "00981" → 自動變 "HK.00981" (港股 5 位數字, backend K 線 endpoint 必須有 market prefix 先識拎)
+  // 已經有 prefix (HK. / US. / SH. / SZ.) 唔重覆補
+  // 永久 rule: 純 5-6 位數字 = 預設港股, 因為 StockPulse testing page 主要用 HK 股票
+  const _rawCode = currentOptions.code.trim();
+  if (/^\d{5,6}$/.test(_rawCode)) {
+    const normalized = `HK.${_rawCode}`;
+    console.log(`[testing-page] Auto-prefix 股票代碼: ${_rawCode} → ${normalized}`);
+    currentOptions.code = normalized;
+    if (codeInputEl) codeInputEl.value = normalized;
   }
 
   runStatus.innerHTML = '⏳ 撈緊 K 線數據...';
