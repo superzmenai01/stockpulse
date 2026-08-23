@@ -526,6 +526,34 @@ def _compute_fetch_max_count(period):
 
 ---
 
+### KlineCache qfq 拆股前復權 bug fix 永久 rule (大少 2026-08-23 15:33, Spec Sync #44)
+
+**大少 trigger**:「B, 全部一至用 qfq」 + 「不復權，前復權，後復權有什麼分別？一搬人使用那個最好？」(前復權 qfq 適合一般人, 對齊富途 app 預設)
+
+**凡人話解釋**: OpenD 嘅 qfq (前復權) K 線對拆股前早期數據有 bug (返 negative OHLC, e.g. `o=-0.36, h=-0.27, l=-0.36, c=-0.31`)。KlineCache 之前用 `if o < 0 or h < 0 or l < 0 or c < 0` skip 任何一個負值嘅 K 線, 結果拆股前復權 bug 嗰日 K 線**全部 skip 走** (e.g. `o=0.07, h=0.07, l=-0.02, c=0.02` 一個負值就 skip), 56 隻 hot stocks 0 條寫入 cache。
+
+**改動 (2 個地方):**
+1. **Skip 邏輯 `or` → `and`** (line 212): 改為 `if o < 0 and h < 0 and l < 0 and c < 0` (全部負值先 skip, 否則寫入)。拆股前復權 bug 嗰日 (e.g. open 負但 high 正) 寫入, 避免錯過 100% 嘅 K 線。
+2. **qfq 拎 0 條 fallback raw** (新增): KlineCache 對 qfq 拎唔到 (即係 negative OHLC skip 走所有) 嘅 stock, fallback 用 `autype='none'` 拎 raw K 線。影響: 拆股前用 raw (真實值), 拆股後用 qfq (對齊富途 app), K 線 trend 連貫。
+
+**凡 人話:** 拆股前復權 bug 嗰日 K 線值錯 (negative), 我哋改用 raw K 線 (真實值, 派息日會見大陰燭但係真實); 拆股後 qfq 正常, 對齊富途 app 預設。
+
+**永久 rule (Spec Sync #44):**
+- ✅ KlineCache skip 條件: `if o < 0 AND h < 0 AND l < 0 AND c < 0` (全部負值先 skip, 唔係任何一個)
+- ✅ KlineCache qfq 拎 0 條 → fallback `autype='none'` (raw) 再拎一次寫入
+- ✅ 全部 stock 統一用 qfq (對齊富途 app 預設), 拆股前 fallback raw (OpenD qfq bug)
+- ✅ 對應 commit: 即將 push (Spec Sync #44)
+- ✅ 對應 doc: ARCHITECTURE.md §15.35
+- ✅ 對應 evidence: 100 hot stocks 入 K 線 cache 51/107 → **105/107** ✅ (剩 2 隻 OpenD 真 NoDataAvailable: HK.00011 + HK.01821)
+- ✅ 之前 100 hot stocks TBR 失敗嘅 60 隻之中, 56 隻 hot stocks 而家有 K 線, 預期 TBR 全部 105 隻可以跑
+
+**對應 trigger (2026-08-23 15:23 ~ 15:33):**
+- 「B, 全部一至用 qfq」 ← 大少揀方案
+- 「我想問個問題，現在我在富途app看到的K圖是後覆權嗎？」 ← 大少想知 qfq 對齊富途 app
+- 「不復權，前復權，後復權有什麼分別？一搬人使用那個最好？」 ← qfq 適合一般人
+
+---
+
 ## Critical Pitfalls (避開!)
 
 - ❌ Backend hot-reload 假設 → 寫完一定要手動 restart

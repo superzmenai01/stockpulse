@@ -152,6 +152,8 @@ class KlineCache:
 
         大少 #8551: retry 2 attempts on ret != 0 OR data is None (網絡抖動 robustness).
         大少 #8573: normalize time 為 date-only (防止 DB mixed format → fromisoformat 爆).
+        大少 #14000 (2026-08-23): skip 邏輯 `or` → `and` (全部負值先 skip, 拆股前復權 bug 嗰日寫入),
+                                  + qfq 拎 0 條 fallback raw (`autype='none'`)。
         """
         ret = -1
         data = None
@@ -162,6 +164,8 @@ class KlineCache:
             # 對 HK.00700 完全唔 work (hang timeout),所以 keep qfq fetch。
             # Defensive: 喺 _fetch_klines 過濾負值/極端 close 嘅 row (skip 不入 cache)。
             # 影響: HK.00700 早期 (2006-2014 拆股前) 唔見咗,但拆股後 (2014+) 數據正常。
+            # 大少 #14000 (2026-08-23): skip 條件改 `or` → `and` (全部負值先 skip),
+            #   拆股前復權 bug 嗰日 (e.g. open 負但 high 正) 寫入, 避免錯過 100% 嘅 K 線。
             ret, data, _ = ctx.request_history_kline(
                 code=code, ktype=ktype, autype='qfq',
                 max_count=max_count, start=start, end=end,
@@ -209,11 +213,13 @@ class KlineCache:
             # (例 HK.00700 2006-07-24 返 open=-20.88)。Defensive filter 跳過
             # 任何 OHLC 為負值嘅 row (唔入 cache, 唔返 response)。
             # 影響: HK.00700 拆股前 2006-2014 數據會被 filter,但拆股後正常。
-            if o < 0 or h < 0 or l < 0 or c < 0:
+            # 大少 #14000 (2026-08-23): skip 條件改 `or` → `and` (全部負值先 skip),
+            #   拆股前復權 bug 嗰日 (e.g. open 負但 high 正) 寫入, 避免錯過 100% 嘅 K 線。
+            if o < 0 and h < 0 and l < 0 and c < 0:
                 skipped_invalid += 1
                 logger.warning(
-                    f"KLineCache skip negative OHLC {code} {time_str}: "
-                    f"o={o}, h={h}, l={l}, c={c} (OpenD qfq 復權 bug)"
+                    f"KLineCache skip all-negative OHLC {code} {time_str}: "
+                    f"o={o}, h={h}, l={l}, c={c} (OpenD qfq 復權 bug, fallback raw next)"
                 )
                 continue
             klines.append({
@@ -226,8 +232,54 @@ class KlineCache:
             })
         if skipped_invalid:
             logger.info(
-                f"KLineCache {code} period={period}: filtered {skipped_invalid} invalid rows"
+                f"KLineCache {code} period={period}: filtered {skipped_invalid} all-negative rows"
             )
+
+        # 大少 #14000 (2026-08-23): qfq 拎唔到 K 線 (拆股前復權 bug 影響 100% K 線)
+        # → fallback 用 autype='none' (raw 不復權) 拎返真實 K 線值。
+        # 影響: 拆股前用 raw K 線 (真實值), 拆股後用 qfq K 線 (對齊富途 app 預設)。
+        if not klines and skipped_invalid > 0 and data is not None and len(data) > 0:
+            # data 有但全部被 skip → fallback raw
+            logger.warning(
+                f"KLineCache {code} period={period}: qfq all-negative OHLC, "
+                f"fallback to autype='none' (raw) for {len(data)} rows"
+            )
+            try:
+                ret_raw, data_raw, _ = ctx.request_history_kline(
+                    code=code, ktype=ktype, autype='none',
+                    max_count=max_count, start=start, end=end,
+                )
+                if ret_raw == 0 and data_raw is not None:
+                    for _, row in data_raw.iterrows():
+                        time_str = str(row['time_key'])
+                        if ' ' in time_str:
+                            time_str = time_str.split(' ')[0]
+                        elif 'T' in time_str:
+                            time_str = time_str.split('T')[0]
+                        try:
+                            o = float(row['open'])
+                            h = float(row['high'])
+                            l = float(row['low'])
+                            c = float(row['close'])
+                            v = int(row['volume'])
+                        except (TypeError, ValueError):
+                            continue
+                        klines.append({
+                            'time': time_str,
+                            'open': o,
+                            'high': h,
+                            'low': l,
+                            'close': c,
+                            'volume': v,
+                        })
+                    logger.info(
+                        f"KLineCache {code} period={period}: fallback raw got {len(klines)} klines"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"KLineCache fallback raw fetch failed for {code}: {e}"
+                )
+
         return klines
 
     @staticmethod
