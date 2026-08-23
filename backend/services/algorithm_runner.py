@@ -74,42 +74,48 @@ def run_algorithm(
 
     klines = cache.get_klines(symbol, period, start=start_date, end=end_date)
 
-    # 大少 2026-08-23 09:38 — Stale cache 永久 fix:
+    # 大少 2026-08-23 09:38 + 13:19 — Stale cache 永久 fix (Option A 真 async get_or_fetch):
     # Runner 原本用 cache.get_klines() 純讀 DB, 會拎 stale K 線 (新嘅交易日冇補返)
-    # Fix: 兩種情況 trigger HTTP call /api/kline 拎 fresh (server 入面用 get_or_fetch 觸發 OpenD update)
+    # Fix: 兩種情況 trigger 真 async get_or_fetch (server 內部做, 唔 HTTP call 自己, 避免 self-call 撞牆)
     #   (1) Cold cache: 拎 0 條 klines
     #   (2) Warm cache 但 stale: 最後一條 K 線日期 < T-1 (今日之前一個交易日)
     # 跟 KlineCache full flow 永久 rule (AGENTS.md K-line 讀取一定要用 KlineCache full flow):
-    # 永遠用 HTTP call backend /api/kline 拎 fresh K 線 (server 入面用 get_or_fetch 觸發 OpenD update)
+    # 用 cache.get_or_fetch() 拎 fresh K 線 (觸發 OpenD update → write DB → return)
     # 唔可以直接 instantiate KlineCache 用 mock context 拎 (會拎 stale K 線)
+    # 唔可以 server 自己 HTTP call 自己 (5 workers + 細股 OpenD fetch > 3 分鐘 = 撞牆, 100 隻 stock test 60 隻失敗)
     #
     # T-1 計算: skip 週末, 拎最近一個交易日 (簡化版: today - 1 day, 接受週末誤差)
+    # 永久 rule (大少 2026-08-23 13:19): 以後所有數據處理都喺 server 內部做
     t_minus_1 = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     is_stale = bool(klines) and (klines[-1].get('time', '') < t_minus_1)
     need_refresh = (not klines) or is_stale
 
     if need_refresh:
         try:
-            import urllib.request
-            import urllib.parse
-            kline_url = (
-                f"http://127.0.0.1:18792/api/kline"
-                f"?code={urllib.parse.quote(symbol)}"
-                f"&period={urllib.parse.quote(period)}"
-                f"&count={data_window_days}"
-                f"&start={urllib.parse.quote(start_date)}"
-                f"&end={urllib.parse.quote(end_date)}"
-            )
-            # 凡人話: timeout 60s → 180s, 因為部分細股 OpenD fetch > 60s
-            # (大少 2026-08-23 60 隻 stock 失敗 root cause)
-            with urllib.request.urlopen(kline_url, timeout=180) as resp:
-                kline_data = json.loads(resp.read().decode("utf-8"))
-            if kline_data.get("klines"):
-                klines = kline_data["klines"]
-                reason = "cold cache" if not klines else f"stale (last {klines[-1].get('time', '')} < T-1 {t_minus_1})"
+            import asyncio
+            import nest_asyncio
+            nest_asyncio.apply()  # patch asyncio, 令 asyncio.run() 喺 running event loop 入面 work
+            from backend.futu_conn import get_quote_ctx
+            from backend.api.kline import get_kline_type
+            ctx = get_quote_ctx()
+            ktype = get_kline_type(period)
+            fetch_max = KlineCache._compute_fetch_max_count(period)
+
+            async def _fetch_via_get_or_fetch():
+                return await cache.get_or_fetch(
+                    symbol, ctx, ktype, period=period,
+                    start=start_date, end=end_date, max_count=fetch_max
+                )
+
+            cache_result = asyncio.run(_fetch_via_get_or_fetch())
+            if cache_result and cache_result.get("klines"):
+                klines = cache_result["klines"]
+                reason = "cold cache" if not is_stale and not cache_result.get("cached", False) else (
+                    f"stale (last {klines[-1].get('time', '')} < T-1 {t_minus_1})" if is_stale else "fresh"
+                )
                 logger.info(
-                    f"[Algorithm] {algo_name} cache refresh via /api/kline ({reason}): "
-                    f"fetched {len(klines)} klines for {symbol} {period}"
+                    f"[Algorithm] {algo_name} cache refresh via get_or_fetch ({reason}): "
+                    f"fetched {len(klines)} klines for {symbol} {period} (cached={cache_result.get('cached')})"
                 )
         except Exception as e:
             logger.warning(

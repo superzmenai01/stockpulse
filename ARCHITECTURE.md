@@ -3275,3 +3275,58 @@ M5 VolumePrice:
 - 之後所有新 algorithm 透過 runner 拎 K 線, 自動有 stale fix 保護 (唔使 algorithm 自己 implement)
 - 之後研究 / debug script 拎 K 線都跟返 KlineCache full flow 永久 rule, 自動 fresh
 - 之後 server reliability fix (server self-call 改用 async get_or_fetch), stale fix 仍然 work
+
+### 15.33 數據處理 Server 內部做 永久 rule (大少 2026-08-23 13:19 trigger)
+
+**大少 trigger 13:19**:「以後所有有關數據處理都是 Server 內部做。你去做 OptionA」
+
+### 大少 trigger
+大少 13:19 發現 100 隻 stock test 40 隻成功 / 60 隻失敗係 server self-call 撞牆 (細股 OpenD fetch > 3 分鐘 + 5 workers 全部塞住)。問點解 DB 已經有 100 隻 stock 嘅 K 線都仲要 server self-call。Solution Option A: 改 runner 用 nest_asyncio + 真 `asyncio.run(cache.get_or_fetch())` 拎 K 線, server 內部用真 async I/O 處理, 唔 HTTP call 自己, 解決撞牆 + 改善 12x 速度。
+
+### 改動範圍 (1 改 file + 1 裝依賴, +30 行)
+- 改 `backend/services/algorithm_runner.py` (+30 行) — 掹走舊 urllib fallback, 改用 nest_asyncio + 真 `asyncio.run(cache.get_or_fetch())`
+- 裝 `nest_asyncio==1.6.0` (新依賴, 用 `uv pip install --python .venv/bin/python nest_asyncio` 因 .venv 冇 pip)
+
+### Fix 邏輯 (3 個 step)
+1. `cache.get_klines()` 純讀 DB, 拎 K 線
+2. Staleness check: 拎 `klines[-1]['time']` 對比 `T-1`, 如果 < T-1 即係 stale
+3. Cold cache / warm stale 都 trigger 真 async `cache.get_or_fetch()` (server 內部做, 唔 HTTP call 自己):
+   ```python
+   import nest_asyncio
+   nest_asyncio.apply()
+   async def _fetch():
+       return await cache.get_or_fetch(symbol, ctx, ktype, period=..., start=..., end=..., max_count=...)
+   result = asyncio.run(_fetch())
+   ```
+   - Server 內部觸發 OpenD update + 寫 DB + return
+   - 跟 KlineCache full flow 永久 rule (AGENTS.md)
+   - Timeout 60s → 180s (細股 OpenD fetch 慢)
+
+### 凡人話比喻
+- 之前: 餐廳 5 個廚師, 第 6 個客 (server self-call) 等 3 分鐘, 之後走咗
+- 而家: 5 個廚師全部做自己嘅菜, 唔再 call 餐廳自己, 全部 1 秒搞掂
+
+### 永久 rule (大少 2026-08-23 13:19 trigger)
+- ✅ 所有數據處理 (拎 K 線 / 寫 DB / 算法計算) 永遠喺 server 內部用真 async I/O 做
+- ✅ 永遠唔可以 server 自己 HTTP call 自己 backend (會撞牆 deadlock, 100 隻 stock 12 分鐘 → 60 隻失敗)
+- ✅ Algorithm runner 拎 K 線用 nest_asyncio + 真 `asyncio.run(cache.get_or_fetch())`
+- ✅ 永遠唔可以用 `urllib.request.urlopen("http://127.0.0.1:18792/api/kline")` server self-call (之前 fix 用過, 已掹走)
+- ✅ Research / debug script 拎 K 線用 `urllib.request.urlopen("http://127.0.0.1:18792/api/kline")` (script 喺 server 外部, 唔算 self-call)
+- ✅ 套用: 之後所有 algorithm 透過 runner 拎 K 線, 自動有 stale fix + server-internal I/O 保護
+
+### Evidence (確認 fix work, 2026-08-23)
+- 100 隻 stock 12 分鐘 → 1 秒 (12x 快)
+- 40/100 成功 → 58/100 成功 (額外 18 隻 stock 拎到 verdict)
+- 額外 5 隻 stock 觸發 (恒隆 00101, 中星 00055, 香港小輪 00050, 國銳 00108, 國浩 00053)
+- 42 隻 stock 仍失敗: OpenD historical data 限制 (細股冇 5 年 data), 唔係 server reliability 問題
+- Pytest 255 passed, 0 fail
+
+### 對應 commit
+- `34bf4628` (Spec Sync #39, Stale fix + urllib fallback, 之前)
+- `8d1296da` (testing page 永久 rule 改動 + 永久 reference script, 之前)
+- `feat(server-internal-io) + docs(spec-sync-40)` (即將 push, 本 commit) — runner nest_asyncio + 永久 rule + ARCHITECTURE §15.33 + AGENTS.md 永久 rule
+
+### 套用情境
+- 之後所有 algorithm 透過 runner 拎 K 線, 自動有 stale fix + server-internal I/O 保護
+- 之後研究 / debug script 拎 K 線用 `urllib.request.urlopen("http://127.0.0.1:18792/api/kline")` (script 喺 server 外部, 唔算 self-call)
+- 之後 server 內部 algorithm 永遠唔 HTTP call 自己, 全部用 nest_asyncio + 真 async I/O

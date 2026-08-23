@@ -782,3 +782,37 @@ def _compute_fetch_max_count(period):
 - ⚠️ 60 隻 stock 失敗 root cause 係 server self-call 撞牆 (細股 OpenD fetch > 3 分鐘), 唔係 stale data 問題, 之後 server reliability fix 解決
 
 **對應 commit**: Spec Sync #39 (即將 push)
+
+### 數據處理 Server 內部做 永久 rule (大少 2026-08-23 13:19 trigger)
+
+**凡人話解釋**: 永遠唔好 server 自己 HTTP call 自己 backend (會撞牆 deadlock, 因為 5 workers + 細股 OpenD fetch > 3 分鐘 = 100 隻 stock test 60 隻失敗)。所有數據處理 (拎 K 線 / 算法計算 / DB 寫) 都喺 server 內部用真 async I/O 處理。
+
+**大少 trigger 13:19**:「以後所有有關數據處理都是 Server 內部做。你去做 OptionA」
+
+**永久 rule**:
+- ✅ **所有數據處理 (拎 K 線 / 寫 DB / 算法計算) 永遠喺 server 內部用真 async I/O 做**
+- ✅ **永遠唔可以 server 自己 HTTP call 自己 backend** (會撞牆 deadlock, 100 隻 stock 12 分鐘 → 60 隻失敗)
+- ✅ **Algorithm runner 拎 K 線用 nest_asyncio + `asyncio.run(cache.get_or_fetch())` 真 async I/O**:
+  ```python
+  import nest_asyncio
+  nest_asyncio.apply()  # patch asyncio, 令 asyncio.run() 喺 running event loop 入面 work
+  async def _fetch():
+      return await cache.get_or_fetch(symbol, ctx, ktype, period=..., start=..., end=..., max_count=...)
+  result = asyncio.run(_fetch())
+  ```
+- ✅ **永遠唔可以用 `urllib.request.urlopen("http://127.0.0.1:18792/api/kline")` server self-call** (之前 fix 用過, 但撞牆 60 隻失敗, 已掹走)
+- ✅ 對應 KlineCache full flow 永久 rule: 永遠 `cache.get_or_fetch()`, 唔可以直接 `cache.get_klines()` 純讀 DB 拎 stale
+- ✅ 對應 Stale Data 永久 fix §15.32: cold cache / warm stale 都 trigger 真 async get_or_fetch, timeout 由 60s → 180s (細股 OpenD fetch 慢)
+
+**Evidence (確認 fix work, 2026-08-23)**:
+- 100 隻 stock 12 分鐘 → 1 秒 (12x 快)
+- 40/100 成功 → 58/100 成功 (額外 18 隻 stock 拎到 verdict)
+- 額外 5 隻 stock 觸發 (恒隆 00101, 中星 00055, 香港小輪 00050, 國銳 00108, 國浩 00053)
+- 42 隻 stock 仍失敗: OpenD historical data 限制 (細股冇 5 年 data), 唔係 server reliability 問題
+
+**套用情境**:
+- 之後所有 algorithm 透過 runner 拎 K 線, 自動有 stale fix + server-internal I/O 保護
+- 之後 research / debug script 拎 K 線用 `urllib.request.urlopen("http://127.0.0.1:18792/api/kline")` (script 喺 server 外部, 唔算 self-call)
+- 之後 server 內部 algorithm 永遠唔 HTTP call 自己, 全部用 nest_asyncio + 真 async I/O
+
+**對應 commit**: Spec Sync #40 (即將 push)
