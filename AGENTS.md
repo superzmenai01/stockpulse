@@ -490,6 +490,57 @@ def _compute_fetch_max_count(period):
 - ✅ 之後加新 algorithm / 改 algorithm 嘅 calculation, 一律 backend side, frontend 唔郁
 - ✅ 對應 trigger: tmp_research_v23_subscenarios.py v3 mock + 自己重計 sub-scenario → false positive; v4 / v5 改用 backend algorithm + verdict meta 拎結果 → 100% 一致 production
 
+### M1 純 MA Alignment + 之字 Frontend Inject 永久 rule (大少 2026-08-30 01:04, C 方案 phase 2)
+
+**凡人話解釋**: 之後 M1 algorithm 純 MA alignment, 之字 points 由 testing page frontend 自己 inject 落 `verdict.meta.zigzagPoints` (`applyFrontendZigZagOverlay` line 1424 已經做緊), 唔再靠 backend `_inject_zigzag_for_ma_alignment` 自動 inject。 之字全部 frontend 計 (testing page `calculateZigZagFrontend` + adapter.mjs `renderMAAlignmentV2ChartOverlay`)。
+
+**大少 trigger 01:04**: 之後 M1 algorithm 拎走 backend ZigZag 依賴, 之字全部 frontend 計, Spec Sync #46 永久 rule 改。
+
+**永久 rule**:
+- ✅ 之後 M1 algorithm 純 MA alignment, 拎走之字 trigger sub-scenario (Spec Sync #46 改)
+- ✅ Testing page `applyFrontendZigZagOverlay` 自己 inject 落 `lastVerdict.meta.zigzagPoints = frontendPoints` (line 1424)
+- ✅ ZigZag-testing page frontend `zigzag-testing.js` 拎 backend `/api/zigzag-testing/run` endpoint 拎 verdict, 1-to-1 port frontend 算法 (`backend/algorithms/zigzag_testing/algorithm.py`)
+- ✅ 之後新加 algorithm / chart overlay 全部用 frontend inject, 唔好再依賴 backend inject
+- ✅ 之後 frontend 唔需要靠 backend 拎之字
+- ✅ 拎走清單 (commit `d3331a0d`): `backend/algorithms/zigzag/` (3 file) + `tests/test_zigzag.py` + `algorithm_runner.py` `_inject_zigzag_for_ma_alignment` (含 2 個 call site) + M1 algorithm ZigZag 5 個 field + 對應 test
+- ✅ 之後 M1 純 MA alignment 仍然 work, 8 個 M1 test 仍然 pass (拎走 ZigZag 唔影響)
+
+對應 commit: `d3331a0d` (refactor C 方案 phase 2)
+對應 doc: ARCHITECTURE.md §3.7
+
+### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
+
+**凡人話解釋**: 之前 backend KlineCache response 有 2 種 time format 混雜 (date-only `"2026-08-26"` vs datetime `"2026-08-26 00:00:00"`), 同一日 2 個 entry time field 唔同, 之字 points 撞 time 嗰陣 Lightweight Charts 4.2.3 silent reject 破壞 chart state, 紫線飛上去。
+
+**3 個 fix**:
+1. `get_klines` 加 dedupe by date (`time[:10]` 做 key 統一) → 拎走 5 個 T-1 重複 entry
+2. Deduped 拎 LAST entry (後寫入嗰個係 normalized value 對齊 frontend)
+3. `get_or_fetch` 永遠 INSERT all fetched (< today), `INSERT OR REPLACE` 撞 unique key 自動 override stale row, DB 入面永遠只有 fresh value
+
+**永久 rule**:
+- ✅ 凡 backend K 線相關 dedupe, 永遠用 `date[:10]` 做 key (唔好用 full time)
+- ✅ Backend K 線 response 統一 date-only format (datetime format 拎走, 由 service layer normalize)
+- ✅ KlineCache `get_or_fetch` 永遠 INSERT all fetched (< today), INSERT OR REPLACE 撞 unique key 自動 override stale row
+- ✅ 之後新加 KlineCache caller / 算法永遠假設 K 線 response 已經 unique by date + normalized
+- ✅ 之字 points 對齊 K 線真實 high/low (wick extreme), 紫線 peak / trough 對齊 candlestick
+
+對應 commit: `9eb3fce1` + `1a3a29eb` + `a8b7543b`
+對應 doc: ARCHITECTURE.md §3.6
+
+### Testing Page 之字 Points Dedupe + Try/Catch 永久 rule (大少 2026-08-30 01:21, B 方案 v2)
+
+**凡人話解釋**: 雖然 A3 治本 fix 之後 backend K 線 response 已經 normalized 對齊, 但 frontend 之字 line setData 嗰陣, 撞 duplicate time 仍然會令 Lightweight Charts 4.2.3 silent reject + 破壞 chart internal state, frontend 永遠要防。
+
+**永久 rule**:
+- ✅ Testing page `applyFrontendZigZagOverlay` (line 1412 之後) 之字 points 拎到之後, sort + dedupe by date (`date[:10]` 做 key 統一), 揀 first entry 保留, warning log 拎走幾多個 duplicate
+- ✅ Adapter.mjs `renderMAAlignmentV2ChartOverlay` 之字 series 拎到之後, sort + dedupe by time, 揀 first entry 保留, warning log 拎走幾多個 duplicate
+- ✅ Adapter.mjs 之字 line `s.setData()` 必須 try/catch 包住, silent reject 嗰陣拎走 series 拎走, 唔破壞 chart state
+- ✅ 之後 frontend 永遠要 defensive (A3 治本 fix 之後 backend 拎 normalized, 但 frontend 不能假設 backend 永遠啱)
+- ✅ 之後 testing page 第二次跑 stock 唔再 silent reject 破壞 chart state
+
+對應 commit: `14dac54c`
+對應 doc: ARCHITECTURE.md §3.6 + §3.7
+
 ### Backend Hot-Reload
 
 - ❌ 唔識 hot-reload
