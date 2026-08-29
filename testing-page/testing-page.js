@@ -363,6 +363,18 @@ function setLookback(v) {
 // 大少 2026-08-21 00:24 — ZigZag threshold lookback 參數 (手動可調): ALGO_CACHE_BUST = '4.29.0' (testing-page.js 加 LS_KEY_LOOKBACK + LOOKBACK_DEFAULT=20 + LOOKBACK_MIN=5 + LOOKBACK_MAX=100 + getLookback() + setLookback() localStorage helper, applyAutoThreshold 改用 getLookback() 動態取 (唔再 hardcode 20), 撳跑算法嗰陣 auto mode 計算 (L860-877) 改用 getLookback(), 初始化 UI (initThresholdModeUI) 加 lookbackEl value 同步, 加 lookback input 即時改 handler (debounce 200ms, 改完即時重算, manual mode 唔影響), 加「重置為 20」掣 handler; index.html 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣, 跟 Spec Sync #31 config input onChange handler pattern 一致; 對應大少 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」; 永久 rule: lookback 永遠跟 localStorage, 預設 20, 範圍 5-100, manual mode 唔影響, 改完即時重算 (auto mode 觸發 applyAutoThreshold); localStorage key `stockpulse.zigzag.lookback`)
 // 大少 2026-08-21 00:02 — ZigZag threshold 自動調整 (波動率自適應法): ALGO_CACHE_BUST = '4.28.0' (testing-page.js 加 autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5) + extractHLC(klines) 純函數 + localStorage 存取 helper (LS_KEY_THRESHOLD_MODE + LS_KEY_MANUAL_THRESHOLD) + applyAutoThreshold(code, period) 計算 + 即時 update 紫色線 + 初始化 UI (initThresholdModeUI 新股票冇 record → 自動 mode 預設) + mode 切換 handler (切 auto 即時計算, 切 manual 用最近 auto 結果) + 重算掣 + 重置為自動掣 + manual slider 即時改 (跟 spec sync #31 pattern, debounce 200ms) + 撳「跑算法」嗰陣 auto mode 自動計算 threshold (L841 之前) + 全部 localStorage 自動保存; index.html #zigzag-controls 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表 2.0/2.5/3.0-4.0) + 隱藏 #zigzag-threshold (跟 spec sync #31 兼容); index.html head 加 .multiplier-tooltip inline style block; 對應大少 trigger (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存; 永久 rule: 新股票冇 localStorage record → 自動 mode 預設, 倍數 2.5 hardcode, lookback 20 hardcode, 0.5%-20% clamp, localStorage key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`)
 // 大少 2026-08-22 23:35 — Chart 上方加股票名稱 + 號碼: ALGO_CACHE_BUST = '4.37.0' (testing-page.js 加 updateStockNameDisplay(code) function 喺 runAlgorithm 之後 call, fetch backend /api/stocks/{code} 拎 stock name, 寫入 chart-header 嘅 #stock-name-display span, format: "{code} - {name}" + fallback 顯示 code only, 凡人話: 大少撳跑完 algorithm 視線一落到 chart 即刻見到呢隻股票係邊隻, 唔使對住 "HK.00823" 估, 對齊股票名 00823 領展 / 00700 騰訊 之類; index.html chart-header h2 加 <span id="stock-name-display"> + CSS .stock-name-display style (大少 font size 18px + 灰色 + margin-left 8px), 用 backend 既有 /api/stocks/{code} endpoint 唔需要新加; 永久 rule: testing page 顯示 stock name 永遠由 backend /api/stocks/{code} 拎, 唔好 frontend hardcode map, 配合 stock metadata refresher script 補返 hot list missing 嗰啲 stock; 對應 stocks table 補返: HK.00823 領展 + US.NXP 等 2 隻, 1 個 OpenD batch snapshot call, 唔浪費額度)
+// 大少 2026-08-30 07:48 — 紫色 ZigZag line setData time field business day object fix: ALGO_CACHE_BUST = '4.41.2'
+// adapter.mjs 紫色 ZigZag line setData 嗰陣, time field 改用 business day object { year, month, day },
+//  唔再用 timestamp (number), 對齊 candlestick 對 1d 嘅 business day 對齊邏輯
+// 大少 reload 撳跑 HK.00981 嗰陣, 4.41.0 body middle fix work (value 由 65.55 改 67.30),
+//  但 x 軸位置仲喺 8月25日 K 線同 8月26日 K 線中間
+// Root cause: Lightweight Charts 4.2.3 對 line series 嘅 1d timestamp 對齊 reference point 同 candlestick
+//  series 唔一致, 用 business day object 拎 time field 對齊 candlestick 1d 對齊邏輯, 確保 P 點 plot 喺 K 線左邊
+// 同時 fix extension line time field 統一用 business day object (避免 setData type 衝突 silent reject)
+// 4.41.0 保留 (value 改用 K 線 body middle, 4.41.2 加 time 改用 business day object, 兩者一齊 fix)
+// 對應 Spec Sync: ARCHITECTURE.md §15.38 補丁 (4.41.0 嘅 body middle fix 加 business day object time fix)
+// 對應 commit: 紫色 ZigZag line setData time field business day object fix
+// 對齊永久 rule: 改 testing-page.js + adapter.mjs 之後必同步 bump 2 個地方 cache bust
 // 大少 2026-08-30 07:48 — 紫色 ZigZag render verify debug log: ALGO_CACHE_BUST = '4.41.1'
 // adapter.mjs 紫色 ZigZag line setData 嗰陣, 加 console.log dump 最後 3 個 P 點嘅 time + value
 // 對比 K 線對應 date 嘅 K 線 data (time + open + high + low + close)
@@ -393,7 +405,7 @@ function setLookback(v) {
 // renderMAAlignmentV2ChartOverlay) + try/catch 包住 s.setData 拎走 silent reject 破壞 chart state
 // 對齊永久 rule: 改 testing-page.js + adapter.mjs 之後必同步 bump 2 個地方 cache bust
 // (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X, 永久 rule cache bust self-check)
-const ALGO_CACHE_BUST = '4.41.1';
+const ALGO_CACHE_BUST = '4.41.2';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

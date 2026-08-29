@@ -4987,20 +4987,19 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           if (typeof d === 'string') return Math.floor(new Date(d).getTime() / 1000);
           return null;
         };
-        // 大少 2026-08-30 07:20 trigger 方案 B: 紫色 ZigZag line render 改用 K 線 body middle
-        // 凡人話原因: P 點 algorithm 拎 wick tip (high/low), 視覺上紫色點 plot 喺 wick tip 突出 K 線外面
-        // (例如 8月25日 K 線 wick tip 65.55 同 body 66.75 差 1.2, 紫色 P 點 plot 喺 65.55, label 突出
-        //  K 線外面, 視覺上「喺 8月25日同 8月26日 K 線中間」, 大少 trigger「P2 喺兩支竹中間, 請修正」)
-        // Fix: render layer 改用 K 線 body middle ((open + close) / 2), 視覺上 plot 喺 K 線 body 入面
-        // 算法 trigger 邏輯唔改 (4.15.0 永久 rule 保留, 因為 trigger 需要拎 wick extreme 拎 trough/peak)
-        // 紫色 sequence marker label position 唔改 (4.12.0 永久 rule 保留), 跟紫色 line 嘅 value plot,
-        //  即係 plot 喺 K 線 body middle 附近, 唔突出
-        // verdict.meta.zigzagPoints 唔改 (繼續拎 wick tip), 畀 debug panel + algorithm 內部用
-        // 鮮綠色 extension line 唔改 (已經用 lastClose)
-        // 永久 rule (4.41.0 改寫): 紫色 ZigZag line render value 永遠用 K 線 body middle,
-        //  唔好直接用 algorithm meta.zigzagPoints 拎 wick tip value (會 plot 喺 wick tip 突出)
-        //  除非 K 線 missing fallback 至用 algorithm 拎 wick tip
-        // 對應 Spec Sync: ARCHITECTURE.md §15 紫色 ZigZag render section (待補)
+        // 大少 2026-08-30 07:48 補丁 — 紫色 ZigZag line setData time field 改用 business day object
+        // 凡人話原因: 大少 reload 撳跑 HK.00981 嗰陣, 4.41.0 body middle fix work (value 由 65.55 改 67.30, 高咗 1.75),
+        //  但 x 軸位置仲喺 8月25日 K 線同 8月26日 K 線中間, 大少 trigger「P2 仲喺兩支竹中間, 比原來高咗, 做好咗要自動檢動」
+        // Root cause: Lightweight Charts 4.2.3 對 line series 嘅 1d timestamp 對齊 reference point 同 candlestick series
+        //  唔一致 (line series 對齊 end-of-day, candlestick 對齊 start-of-day), 即係 timestamp 1787587200 (8月25日 00:00:00 UTC)
+        //  對 line series 對齊 8月25日 K 線右邊 (接近 8月26日 K 線左邊), 對 candlestick 對齊 8月25日 K 線左邊
+        // Fix: P 點 time field 改用 business day object { year, month, day }, Lightweight Charts 直接 business day 對齊
+        //  (同 candlestick 對 1d 嘅 business day 對齊邏輯一致), 確保 P 點 x 軸 plot 喺 K 線左邊同 K 線對齊
+        // 對齊永久 rule: 紫色 ZigZag line setData time field 用 business day object, 唔好用 timestamp (number)
+        //  K 線 missing 嗰陣 fallback 落 dateToTime 拎 timestamp (避免 null)
+        // 對應 4.41.0 body middle fix: 保留 (value 改用 K 線 body middle, time 改用 business day object, 兩者一齊 fix)
+        // 對應 Spec Sync: ARCHITECTURE.md §15.38 (補丁, 4.41.0 嘅 body middle fix 加 business day object time fix)
+        // 對應 commit: 紫色 ZigZag line setData time field business day object fix (1 個 commit)
         const _zigzagKlineByDate = new Map();
         for (const _zk of (klines || [])) {
           const _zdateStr = _zk.time || _zk.date || _zk.timestamp;
@@ -5010,18 +5009,26 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
         }
         let zigzagSeries = verdict.meta.zigzagPoints
           .map(p => {
-            const _time = dateToTime(p.date);
-            if (_time == null) return null;
-            // Render 用 K 線 body middle, fallback 落 algorithm 拎嘅 wick tip (K 線 missing 嗰陣)
-            const _kl = _zigzagKlineByDate.get(String(p.date || '').slice(0, 10));
+            const _dateKey = String(p.date || '').slice(0, 10);
+            const _dateParts = _dateKey.split('-').map(Number);
+            const _year = _dateParts[0];
+            const _month = _dateParts[1];
+            const _day = _dateParts[2];
+            if (!_year || !_month || !_day) return null;
+            // Render 用 K 線 body middle (4.41.0 保留), fallback 落 algorithm 拎嘅 wick tip (K 線 missing 嗰陣)
+            const _kl = _zigzagKlineByDate.get(_dateKey);
             let _renderValue = p.value;
             if (_kl && Number.isFinite(_kl.open) && Number.isFinite(_kl.close)) {
               _renderValue = (_kl.open + _kl.close) / 2;
             }
-            return { time: _time, value: _renderValue };
+            return { time: { year: _year, month: _month, day: _day }, value: _renderValue };
           })
           .filter(p => p != null && Number.isFinite(p.value))
-          .sort((a, b) => a.time - b.time);
+          .sort((a, b) => {
+            if (a.time.year !== b.time.year) return a.time.year - b.time.year;
+            if (a.time.month !== b.time.month) return a.time.month - b.time.month;
+            return a.time.day - b.time.day;
+          });
         // 大少 2026-08-30 01:21 — B 方案 v2 治標 frontend defensive:
         // 之字 points 拎 setData 嗰陣, 撞 duplicate time 會令 Lightweight Charts 4.2.3
         // silent reject + 破壞 chart state, 拎 dedupe by time (1st 嗰個) 拎走連續撞
@@ -5070,9 +5077,10 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               const _last3 = zigzagSeries.slice(-3);
               console.log('[M1 v2.0] 🔍 紫色 ZigZag 最後 3 個 P 點 (auto verify 對齊 K 線):');
               for (const _p of _last3) {
-                const _pDate = new Date(_p.time * 1000).toISOString().slice(0, 10);
+                // 大少 2026-08-30 07:48 補丁 — time field 改用 business day object, 拎返 ISO date 拎 K 線對應
+                const _pDate = `${_p.time.year}-${String(_p.time.month).padStart(2, '0')}-${String(_p.time.day).padStart(2, '0')}`;
                 const _kl = _zigzagKlineByDate.get(_pDate);
-                console.log(`  P 點 time=${_p.time} (${_pDate}) value=${_p.value} ${_kl ? `, K線對應: O=${_kl.open} H=${_kl.high} L=${_kl.low} C=${_kl.close}` : ', K線對應: ❌ 揾唔到 K 線'}`);
+                console.log(`  P 點 time={year:${_p.time.year}, month:${_p.time.month}, day:${_p.time.day}} (${_pDate}) value=${_p.value} ${_kl ? `, K線對應: O=${_kl.open} H=${_kl.high} L=${_kl.low} C=${_kl.close}` : ', K線對應: ❌ 揾唔到 K 線'}`);
               }
               // 同時 dump K 線最後 5 條嘅 setData time, 對比 P 點最後 1 個 time
               // 凡人話: 確認 P 點 time 同 K 線 time 對齊 (如果 K 線用 UTC 0 點, P 點 plot 喺 K 線左邊;
@@ -5105,6 +5113,10 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // 大少 2026-08-21 11:14 trigger — Bug fix: Phase 1 (4.18.0) 拎走咗 _zigzagNormalizeDate helper,
           //   但 line 5016 仲 call 緊佢 → ReferenceError, 紫色線 render 成功但深綠色 extension line 永遠 skip
           //   改用 inline fallback chain (對齊 testing-page.js _getKlineDateForDebug 嘅 time/date/timestamp 邏輯)
+          //
+          // 大少 2026-08-30 07:48 補丁 — extension line time field 統一用 business day object,
+          //   對齊 P 點 setData 嘅 time field 格式, 避免 type 衝突 silent reject
+          //   之前用 timestamp (number), 同 P 點 setData 用 business day object 唔同, 會 silent reject
           let greenMarkerTime = null;  // 大少 2026-08-19 11:15 — sequence 號碼 1 用
           if (klines && klines.length > 0) {
             const lastKline = klines[klines.length - 1];
@@ -5112,18 +5124,22 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             // 凡人話: K 線 dict 嘅 date field 唔同 source 有唔同 field name (time/date/timestamp),
             //   Phase 1 拎走 _zigzagNormalizeDate helper, 改用 inline fallback chain
             const klineDateStr = lastKline.time || lastKline.date || lastKline.timestamp;
-            const lastDate = klineDateStr != null ? dateToTime(klineDateStr) : null;
+            // 統一拎成 business day object 對齊 P 點 setData (4.41.2 補丁)
+            const lastDateObj = (() => {
+              if (klineDateStr == null) return null;
+              let _d = null;
+              if (typeof klineDateStr === 'string') {
+                _d = new Date(klineDateStr);
+              } else if (typeof klineDateStr === 'number') {
+                _d = new Date(klineDateStr > 1e12 ? klineDateStr : klineDateStr * 1000);
+              }
+              if (!_d || isNaN(_d.getTime())) return null;
+              return { year: _d.getUTCFullYear(), month: _d.getUTCMonth() + 1, day: _d.getUTCDate() };
+            })();
             const lastZigzagPoint = zigzagSeries[zigzagSeries.length - 1];
-            console.log('[M1 v2.0] close extension check:', {
-              lastClose,
-              lastDate,
-              klineDateStr,
-              klineDateStrSource: lastKline.time ? 'time' : lastKline.date ? 'date' : 'timestamp',
-              lastZigzagPoint,
-              timeMatch: lastZigzagPoint?.time === lastDate,
-            });
-            if (lastDate != null && Number.isFinite(lastClose) && lastZigzagPoint && lastZigzagPoint.time !== lastDate) {
-              const extSeries = [lastZigzagPoint, { time: lastDate, value: lastClose }];
+            if (lastDateObj != null && Number.isFinite(lastClose) && lastZigzagPoint && lastZigzagPoint.time &&
+                (lastZigzagPoint.time.year !== lastDateObj.year || lastZigzagPoint.time.month !== lastDateObj.month || lastZigzagPoint.time.day !== lastDateObj.day)) {
+              const extSeries = [lastZigzagPoint, { time: lastDateObj, value: lastClose }];
               const sExt = chart.addLineSeries({
                 color: '#00C853',  // 鮮綠色 (大少 2026-08-21 11:20 trigger 由 #2E7D32 改)
                 lineWidth: 1.5,
@@ -5134,8 +5150,8 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               });
               sExt.setData(extSeries);
               chartRefs.maV2LineSeries.zigzagExtension = sExt;
-              greenMarkerTime = lastDate;  // 記低 嚟做 sequence 號碼 1
-              console.log('[M1 v2.0] ✅ 深綠色 close extension series added: 連去', lastClose, '@', lastDate);
+              greenMarkerTime = lastDateObj;  // 記低 嚟做 sequence 號碼 1 (business day object)
+              console.log('[M1 v2.0] ✅ 深綠色 close extension series added: 連去', lastClose, '@', lastDateObj.year + '-' + lastDateObj.month + '-' + lastDateObj.day);
             } else {
               console.log('[M1 v2.0] ℹ️ close extension skip: lastDate 或 lastClose 無效, 或已同 ZigZag 最後 point 重疊');
             }
