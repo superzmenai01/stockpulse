@@ -76,6 +76,14 @@ class KlineCache:
 
         大少 #7987: ORDER BY time ASC (oldest first) — chart expects ASC.
         Filter by start/end if provided.
+
+        大少 2026-08-29 23:55 — dedupe by time (永久 rule):
+        之前 HK.00941 K 線 cache 出現 duplicate entries (e.g. 2026-08-24 出現 2 次,
+        high=80.10 同 83.00), 之字 algorithm 拎到第二個 entry 嘅極端 value,
+        紫線飛上去。喺 service layer dedupe, 1 個 fix 解決所有 caller
+        (api/kline.py, api/zigzag_testing.py, frontend testing page, chart)
+        一勞永逸, 之後 frontend 唔再需要 defensive code。
+        保留第一個 entry (T-1 intraday update 唔會撞原本 K 線, 第一個係 stable value)。
         """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row  # 大少 #8511: fix ValueError (dict(row) on default Row)
@@ -90,7 +98,31 @@ class KlineCache:
                 sql += " AND time <= ?"
                 params.append(end)
             sql += " ORDER BY time ASC"
-            return [dict(row) for row in conn.execute(sql, params).fetchall()]
+            raw = [dict(row) for row in conn.execute(sql, params).fetchall()]
+            # 大少 2026-08-29 23:55: dedupe by date (保留第一個 entry)
+            # 之前 dedupe by full time 唔 work 因為 backend response 有 2 種 time format
+            # 混雜 (date-only "2026-08-26" vs datetime "2026-08-26 00:00:00"),
+            # 同 date 嘅 2 個 entry time field 唔同, 用 time[:10] 拎 date part 統一 key
+            seen_dates = set()
+            deduped = []
+            duplicate_count = 0
+            for k in raw:
+                t = k.get('time')
+                if t is None:
+                    deduped.append(k)  # 無 time 嘅 entry 保留 (defensive)
+                    continue
+                date_key = t[:10]  # 統一 YYYY-MM-DD
+                if date_key not in seen_dates:
+                    seen_dates.add(date_key)
+                    deduped.append(k)
+                else:
+                    duplicate_count += 1
+            if duplicate_count > 0:
+                logger.warning(
+                    f"[KlineCache] dedupe {code} {period}: 拎走 {duplicate_count} 個 duplicate K-line "
+                    f"({len(raw)} → {len(deduped)} 條, 保留第一個 entry per date)"
+                )
+            return deduped
         finally:
             conn.close()
 
@@ -384,8 +416,10 @@ class KlineCache:
                 rows_to_insert = [k for k in fetched if k['time'] < today]
                 if rows_to_insert:
                     self._insert_klines(code, period, rows_to_insert)
+                # 大少 2026-08-30 00:25: 用 date[:10] 做 key 統一, 避免 time format 混雜
+                # (date-only "2026-08-26" vs datetime "2026-08-26 00:00:00") 撞 duplicate
                 for k in fetched:
-                    all_klines_dict[k['time']] = k
+                    all_klines_dict[k['time'][:10]] = k
                 fetch_count = len(fetched)
                 cached_flag = False
             else:
@@ -438,10 +472,11 @@ class KlineCache:
                         )
 
                 # Merge cached (user-range) + fetched (user-range filtered)
+                # 大少 2026-08-30 00:25: 用 date[:10] 做 key 統一, 避免 time format 混雜撞 duplicate
                 for k in cached:
-                    all_klines_dict[k['time']] = k
+                    all_klines_dict[k['time'][:10]] = k
                 for k in fetched:
-                    all_klines_dict[k['time']] = k
+                    all_klines_dict[k['time'][:10]] = k
 
                 # 大少 #8551: partial failure log warning
                 expected = (datetime.date.fromisoformat(fetch_end)
@@ -457,11 +492,12 @@ class KlineCache:
 
             # Step 4: Fix 3 — today's real-time from get_cur_kline (independent of path)
             # 跟 T-1 rule: today NEVER written to DB.
-            # Append 去 all_klines_dict (key = today), 跟住會 overwrite history fetch 嘅 today bar.
+            # Append 去 all_klines_dict (key = today[:10]), 跟住會 overwrite history fetch 嘅 today bar.
+            # 大少 2026-08-30 00:25: 用 date[:10] 做 key 統一, 避免 time format 混雜撞 duplicate
             if today_in_range:
                 today_bar = await self._fetch_today_bar(ctx, code, ktype, period)
                 if today_bar:
-                    all_klines_dict[today_bar['time']] = today_bar
+                    all_klines_dict[today_bar['time'][:10]] = today_bar
 
             all_klines = sorted(all_klines_dict.values(), key=lambda k: k['time'])
 
