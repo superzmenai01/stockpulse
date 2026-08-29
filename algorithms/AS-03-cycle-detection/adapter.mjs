@@ -4982,19 +4982,9 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
   if (zigzagEnabled) {
     try {
       if (verdict.meta && Array.isArray(verdict.meta.zigzagPoints) && verdict.meta.zigzagPoints.length >= 2) {
-        // 大少 2026-08-29 22:40 — Bug fix: 統一 UTC midnight parse (跟 testing-page.js normalizeTime 一致)
-        //   凡人話: ZigZag point.date 拎自 K 線原始 time/date/timestamp field, backend KlineCache response
-        //     有 2 種 format 混雜 (1255 條 "2026-08-28" date-only + 5 條 "2026-08-28 00:00:00" datetime)
-        //   `new Date("2026-08-28")` 用 UTC 解析 (1787875200), `new Date("2026-08-28 00:00:00")` 用 HKT 解析 (1787846400, 早 8 小時)
-        //   2 種 format 拎到 timestamp 唔一致 → ZigZag line series setData 時間錯亂 → Lightweight Charts silent reject
-        //   仲會 trigger chart internal state 破壞, 抹走 candlestick 嘅 visual render (大少 22:35 trigger: 「撳 ZigZag Off 有圖, On 又無圖」)
-        // 永久 fix: 統一 strip 時間部分 + 強制 UTC midnight parse
         const dateToTime = (d) => {
           if (typeof d === 'number') return d > 1e12 ? Math.floor(d / 1000) : d;
-          if (typeof d === 'string') {
-            const dateOnly = d.split(' ')[0];  // "2026-08-28 00:00:00" → "2026-08-28"
-            return Math.floor(new Date(dateOnly + 'T00:00:00Z').getTime() / 1000);
-          }
+          if (typeof d === 'string') return Math.floor(new Date(d).getTime() / 1000);
           return null;
         };
         const zigzagSeries = verdict.meta.zigzagPoints
