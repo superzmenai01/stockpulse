@@ -453,24 +453,26 @@ class KlineCache:
                     fetched = [k for k in fetched if k['time'] <= end]
                 fetch_count = len(fetched)
 
-                # Fix 4: 對標 OpenD dates vs FULL cache times (唔係 user range)
-                fetched_times = {row['time'] for row in fetched}
-                missing_dates = fetched_times - cached_times
-
-                if missing_dates:
-                    # 大少 #7983: today excluded — kept in response only, never in DB
-                    missing_klines = [
-                        k for k in fetched
-                        if k['time'] in missing_dates and k['time'] < today
-                    ]
-                    if missing_klines:
-                        inserted = self._insert_klines(code, period, missing_klines)
-                        sample = sorted([k['time'] for k in missing_klines])[:5]
-                        logger.info(
-                            f"KLineCache gap-fill {code} period={period}: "
-                            f"filled {inserted} missing dates "
-                            f"(sample: {sample}{'...' if len(missing_klines) > 5 else ''})"
-                        )
+                # 大少 2026-08-30 00:50 A3 治本 fix: 永遠 INSERT fetched (< today) 入 DB,
+                # INSERT OR REPLACE 撞 unique key (code, period, time) 自動 override 返 stale row
+                # 之前 gap-fill 邏輯只 INSERT missing_dates, 但係 DB raw 84.0 嗰個 row 同 fetched
+                # normalized 81.10 嗰個 entry time 撞 unique key (兩者都係 "2026-08-17" date-only),
+                # 因為 missing_dates 唔包 "2026-08-17" (raw row 已經喺度), normalized 嗰個 row 從未寫入。
+                # 改: 永遠 INSERT fetched (< today), INSERT OR REPLACE 撞到 unique key 自動 override 返
+                # stale value, DB 入面永遠只有 fresh OpenD value, 之字 algorithm 拎 normalized value
+                # 對齊 frontend KlineCache response, 紫線對齊 K 線。
+                # 大少 #7983: today excluded — kept in response only, never in DB
+                refresh_klines = [k for k in fetched if k['time'] < today]
+                if refresh_klines:
+                    inserted = self._insert_klines(code, period, refresh_klines)
+                    refreshed_count = len(refresh_klines)
+                    skipped_count = inserted - refreshed_count
+                    sample = sorted([k['time'] for k in refresh_klines])[:5]
+                    logger.info(
+                        f"KLineCache refresh {code} period={period}: "
+                        f"INSERT OR REPLACE {refreshed_count} dates (override stale values, "
+                        f"sample: {sample}{'...' if refreshed_count > 5 else ''})"
+                    )
 
                 # Merge cached (user-range) + fetched (user-range filtered)
                 # 大少 2026-08-30 00:25: 用 date[:10] 做 key 統一, 避免 time format 混雜撞 duplicate
