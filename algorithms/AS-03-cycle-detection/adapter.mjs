@@ -4987,10 +4987,30 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           if (typeof d === 'string') return Math.floor(new Date(d).getTime() / 1000);
           return null;
         };
-        const zigzagSeries = verdict.meta.zigzagPoints
+        let zigzagSeries = verdict.meta.zigzagPoints
           .map(p => ({ time: dateToTime(p.date), value: p.value }))
           .filter(p => p.time != null && Number.isFinite(p.value))
           .sort((a, b) => a.time - b.time);
+        // 大少 2026-08-30 01:21 — B 方案 v2 治標 frontend defensive:
+        // 之字 points 拎 setData 嗰陣, 撞 duplicate time 會令 Lightweight Charts 4.2.3
+        // silent reject + 破壞 chart state, 拎 dedupe by time (1st 嗰個) 拎走連續撞
+        // 雖然 A3 治本 fix 之後 backend K 線 response 已經 normalized, 但 frontend 之字
+        // line silent reject 嗰陣破壞 chart internal state 嘅 risk 仍然有
+        const _seenZigzagTimes = new Set();
+        const _dedupedZigzagSeries = [];
+        for (const p of zigzagSeries) {
+          if (!_seenZigzagTimes.has(p.time)) {
+            _seenZigzagTimes.add(p.time);
+            _dedupedZigzagSeries.push(p);
+          }
+        }
+        if (_dedupedZigzagSeries.length !== zigzagSeries.length) {
+          console.warn(
+            `[M1 v2.0] dedupe 拎走 ${zigzagSeries.length - _dedupedZigzagSeries.length} 個 ` +
+            `duplicate time point (保留 first entry per time)`
+          );
+        }
+        zigzagSeries = _dedupedZigzagSeries;
 
         if (zigzagSeries.length >= 2) {
           // ============ 大少 2026-08-19 09:40 trigger — 紫色 ZigZag 折線 (原本 peak/trough) ============
@@ -5004,9 +5024,18 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             lastValueVisible: true,
             lineStyle: 0,  // 實線
           });
-          s.setData(zigzagSeries);
-          chartRefs.maV2LineSeries.zigzag = s;
-          console.log('[M1 v2.0] ✅ 紫色 ZigZag line series added:', zigzagSeries.length, '個 points, color: #9C27B0');
+          // 大少 2026-08-30 01:21 — B 方案 v2: try/catch 包住 s.setData 拎走 silent reject,
+          // 如果仍然撞 duplicate time 嗰陣 Lightweight Charts 4.2.3 拋 Value is null, 拎走
+          // 嗰個 series, 唔破壞 chart state (之後 chart 仍然 render, 只係冇之字線)
+          try {
+            s.setData(zigzagSeries);
+            chartRefs.maV2LineSeries.zigzag = s;
+            console.log('[M1 v2.0] ✅ 紫色 ZigZag line series added:', zigzagSeries.length, '個 points, color: #9C27B0');
+          } catch (setDataErr) {
+            console.warn('[M1 v2.0] ⚠️ 紫色 ZigZag setData 失敗, 拎走 series (避免破壞 chart state):', setDataErr.message);
+            try { chart.removeSeries(s); } catch (e) { /* ignore */ }
+            chartRefs.maV2LineSeries.zigzag = null;
+          }
 
           // ============ 大少 2026-08-19 09:40 trigger — 深綠色 close extension 線 (連去今日收市) ============
           // 凡人話: 紫色 ZigZag 拎到嘅係「確認咗嘅轉向點」, 但 K 線仲有最新嘅 close 仲未確認到下一個 peak/trough

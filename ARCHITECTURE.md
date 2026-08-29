@@ -267,6 +267,139 @@ get_or_fetch(code, ctx, ktype, period, start, end)
 
 ---
 
+## 3.6 KlineCache K 線 Dedupe + A3 治本 Fix (大少 2026-08-30)
+
+### 背景
+
+大少 2026-08-29 22:40 reject v4.42.3 candlestick fix approach 之後, 之字 algorithm 拎 K 線
+high/low 拎錯 value (紫線飛上去), 之後 v4.39.0 嗰個 state 仲有呢個 issue。
+
+大少 2026-08-30 00:55 trigger 「紫線飛上去」 排查, 搵到真正根 cause: backend K 線 cache
+有重複 entry (e.g. 2026-08-24 出現 2 次, high=80.10 同 83.00), 之字 algorithm 拎第二個
+entry 嘅極端 value, 紫線飛上去。
+
+### 三層 Root Cause
+
+1. **Backend KlineCache response** 有 2 種 time format 混雜
+   (date-only `"2026-08-26"` vs datetime `"2026-08-26 00:00:00"`), 同一個 date 嘅
+   2 個 entry time field 唔同, 用 full time 做 dedupe key 唔 work。
+
+2. **DB 入面同日 K 線有 2 個 entry 共存**:
+   - 較早寫入 (date-only `"2026-08-17"`): high=84.0 (raw OpenD, stale)
+   - 較後寫入 (datetime `"2026-08-17 00:00:00"`): high=81.10 (normalized, 對齊 frontend)
+   因為 SQL 寫入嗰陣 2 種 time format 唔撞 unique key, 變咗 2 條 row 共存。
+
+3. **之字 algorithm 拎 raw 嗰個 row** (`get_klines` 拎 first/last entry 都係 raw
+   因為只有 1 個 row 寫入成功), frontend 拎 normalized 嗰個 value (從
+   `get_or_fetch` merge override 嗰個), 2 個 path 唔一致, 紫線飛上去。
+
+### Fix (3 個 commit)
+
+#### Commit `9eb3fce1` (大少 2026-08-30 00:23) — dedupe by date (time[:10]) 治 K 線 response 重複 entry
+
+- `KlineCache.get_klines` 內 dedupe loop 拎 `time[:10]` 做 key 統一
+- 拎走 5 個 T-1 嗰 5 日重複 entry (2026-08-24 至 28)
+- 對 frontend KlineCache response 嚟講係治標
+
+#### Commit `1a3a29eb` (大少 2026-08-30 00:30) — dedupe by date 拎 LAST entry (normalized value)
+
+- 由 first entry 改為 last entry, 因為 DB 入面同日 K 線 2 個 entry 嗰陣
+  後寫入嗰個係 normalized value
+- 之後 `get_or_fetch` 內部 merge 4 個地方都用 `time[:10]` 做 key 統一
+
+#### Commit `a8b7543b` (大少 2026-08-30 00:50) — A3 治本 fix, INSERT OR REPLACE 永遠 override stale row
+
+- 改 `get_or_fetch` 內部 gap-fill 邏輯, 由「INSERT missing_dates 嗰啲」改為
+  「INSERT all fetched (< today)」
+- 因為 `_insert_klines` SQL 已經係 `INSERT OR REPLACE`, 撞 unique key
+  (code, period, time) 自動 override 返 stale row
+- 之後 DB 入面永遠只有 fresh OpenD value, 之字 algorithm 拎 fresh value
+  對齊 frontend KlineCache response, 紫線對齊 K 線
+
+### 永久 Rule (大少 2026-08-30)
+
+- ✅ KlineCache `get_or_fetch` 永遠 INSERT all fetched (< today), 唔淨係
+  missing_dates
+- ✅ INSERT OR REPLACE 撞 unique key 自動 override stale row
+- ✅ DB 入面永遠只有 fresh value, 之字 algorithm 拎 normalized value 對齊
+  frontend
+- ✅ 之後新加 KlineCache caller 都拎 fresh value, 唔需要再 defensive
+
+### Verify (大少 2026-08-30 00:49)
+
+- 之字 algorithm P 點 value 對齊 K 線真實 high/low:
+  - 2026-08-17 P=81.10 對齊 K.high=81.10 ✅ (之前拎 84.00, A3 fix 後拎 81.10)
+  - 2026-08-13 P=78.30 對齊 K.low=78.30 ✅
+  - 2026-07-30 P=82.05 對齊 K.high=82.05 ✅
+- 紫線 peak 全部對齊 K 線 candlestick 真實 high (wick extreme)
+- 紫線 trough 全部對齊 K 線 candlestick 真實 low (wick extreme)
+- 紫線唔再飛上去 (之前 Y 軸 90, 而家 70-87 對齊 K 線範圍)
+- 鮮綠線 78.95 → 79.40 對齊 K 線最後 close ✅
+
+### Source
+
+- `backend/services/kline_cache.py` — 主要改動 (3 個 commit)
+- `backend/services/algorithm_runner.py` — M1 拎走 ZigZag inject (見 §3.7)
+- `backend/algorithms/zigzag/` — 拎走 (見 §3.7)
+
+---
+
+## 3.7 M1 純 MA Alignment + 之字 Frontend Inject (C 方案 phase 2, 大少 2026-08-30 01:04)
+
+### 背景
+
+大少 2026-08-30 01:04 trigger C 方案 phase 2: 之後 M1 algorithm 純 MA alignment,
+之字 points 由 testing page frontend 自己 inject 落 `verdict.meta.zigzagPoints`
+(`applyFrontendZigZagOverlay` line 1424 已經做緊)。
+
+之前 backend `_inject_zigzag_for_ma_alignment` 自動 inject ZigZag 落 M1 options
+(Phase 1 嗰陣大少 8-15 拎 framework contract), 之後 testing page frontend 拎返
+frontend ZigZag, 之後 backend inject 變成重複 (frontend 自己 inject, backend 又 inject),
+拎走 backend inject 乾淨啲。
+
+### 拎走清單 (commit `d3331a0d`)
+
+| 位置 | 拎走咩 |
+|------|------|
+| `backend/algorithms/zigzag/` (整個 folder) | Phase 1 舊嘅 3 file (algorithm.py / config.py / __init__.py) |
+| `backend/tests/test_zigzag.py` | 整個 file |
+| `backend/algorithms/__init__.py` | 拎走 ZigZagAlgorithm import + __all__ entry |
+| `backend/services/algorithm_runner.py` | 拎走 `_inject_zigzag_for_ma_alignment` function + 2 個 call site (M1 direct + M7→M1) |
+| `backend/algorithms/ma_alignment/algorithm.py` | 拎走 ZigZag 5 個 field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSlope / zigzagSource / zigzagPointsCount) |
+| `backend/tests/test_ma_alignment.py` | 拎走 `backend.algorithms.zigzag` import + `test_ma_alignment_with_zigzag_inject` 嗰個 test function |
+
+### 永久 Rule (Spec Sync #46 改)
+
+- ✅ **M1 algorithm 純 MA alignment, 之字 points 由 frontend inject**
+- ✅ testing page `applyFrontendZigZagOverlay` (line 1424) 自己 inject
+  落 `lastVerdict.meta.zigzagPoints = frontendPoints`
+- ✅ zigzag-testing page (frontend `zigzag-testing.js`) 拎 backend
+  `/api/zigzag-testing/run` endpoint 拎 verdict, 1-to-1 port frontend 算法
+  (`backend/algorithms/zigzag_testing/algorithm.py` 入面, 8-29 19:34 trigger
+  1-to-1 port frontend)
+- ✅ 之後新加 algorithm / chart overlay 全部用 frontend inject, 唔好再
+  依賴 backend inject
+- ✅ 之後 frontend 唔需要靠 backend 拎之字
+- ✅ 之後 M1 純 MA alignment, 拎走之字 trigger sub-scenario (Spec Sync #46
+  永久 rule 改)
+
+### Verify
+
+- 8 個 M1 test 仍然 pass (M1 純 MA alignment 仍然 work, 拎走 ZigZag 唔影響)
+- Frontend testing page 之字線 render OK (已經 frontend 自己 inject)
+- Frontend zigzag-testing page 之字線 render OK (backend endpoint 拎 verdict)
+
+### Source
+
+- `backend/algorithms/__init__.py` — 拎走 ZigZagAlgorithm import
+- `backend/services/algorithm_runner.py` — 拎走 `_inject_zigzag_for_ma_alignment`
+- `backend/algorithms/ma_alignment/algorithm.py` — 拎走 ZigZag 5 個 field
+- `backend/algorithms/zigzag/` — 整個 folder 拎走
+- `backend/tests/test_zigzag.py` — 整個 file 拎走
+- `backend/tests/test_ma_alignment.py` — 拎走 ZigZag inject test
+
+---
+
 ## 4. Algorithm Pipeline (AS02 detail)
 
 ```
