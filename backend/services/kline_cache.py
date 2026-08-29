@@ -99,28 +99,29 @@ class KlineCache:
                 params.append(end)
             sql += " ORDER BY time ASC"
             raw = [dict(row) for row in conn.execute(sql, params).fetchall()]
-            # 大少 2026-08-29 23:55: dedupe by date (保留第一個 entry)
-            # 之前 dedupe by full time 唔 work 因為 backend response 有 2 種 time format
-            # 混雜 (date-only "2026-08-26" vs datetime "2026-08-26 00:00:00"),
-            # 同 date 嘅 2 個 entry time field 唔同, 用 time[:10] 拎 date part 統一 key
-            seen_dates = set()
-            deduped = []
+            # 大少 2026-08-30 00:30: dedupe by date, 保留 LAST entry 而唔係 first
+            # Root cause: DB 入面撞到 2 個 K 線 entry 共存
+            # - 較早寫入 (date-only "2026-08-17"): high=84.0 (raw OpenD, stale)
+            # - 較後寫入 (datetime "2026-08-17 00:00:00"): high=81.10 (normalized, 對齊 frontend)
+            # 因為 SQL 寫入嗰陣 2 種 time format 唔撞 unique key, 變咗 2 條 row 共存
+            # 之字 algorithm 用 raw 嗰個, 拎 high=84.0, 紫線飛上去
+            # ORDER BY time ASC 排到 raw 嗰個排前, normalized 嗰個排後
+            # 所以 dedupe 要拎 last entry (datetime format, normalized value) 至啱
+            seen_dates: dict[str, dict] = {}
             duplicate_count = 0
             for k in raw:
                 t = k.get('time')
                 if t is None:
-                    deduped.append(k)  # 無 time 嘅 entry 保留 (defensive)
-                    continue
+                    continue  # 無 time 嘅 entry 拎走 (defensive)
                 date_key = t[:10]  # 統一 YYYY-MM-DD
-                if date_key not in seen_dates:
-                    seen_dates.add(date_key)
-                    deduped.append(k)
-                else:
+                if date_key in seen_dates:
                     duplicate_count += 1
+                seen_dates[date_key] = k  # 永遠 overwrite, 即係拎 last entry
+            deduped = sorted(seen_dates.values(), key=lambda k: k['time'][:10])
             if duplicate_count > 0:
                 logger.warning(
                     f"[KlineCache] dedupe {code} {period}: 拎走 {duplicate_count} 個 duplicate K-line "
-                    f"({len(raw)} → {len(deduped)} 條, 保留第一個 entry per date)"
+                    f"({len(raw)} → {len(deduped)} 條, 保留最後寫入 entry per date, 對齊 normalized value)"
                 )
             return deduped
         finally:
