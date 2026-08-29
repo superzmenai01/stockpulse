@@ -81,13 +81,6 @@
           <button id="run-full-chain-btn" class="primary-btn" style="background:linear-gradient(90deg,#722ed1,#1890ff);margin-left:8px;" title="自動跑 M7(綜合) → M9(回測,拎最佳設定) → M8(最終判斷用最佳設定)">🚀 跑完整鏈條 (M7→M9→M8)</button>
         </section>
 
-        <section class="result">
-          <h2>結果</h2>
-          <div id="result-panel">
-            <p style="color: #888;">填好輸入參數, 撳「跑算法」就會見到結果</p>
-          </div>
-        </section>
-
         <section class="chart-section">
           <div class="chart-header">
             <h2>📈 股票 K 線圖 <span id="stock-name-display" class="stock-name-display"></span></h2>
@@ -173,6 +166,13 @@
           </div>
           <div id="chart-container"></div>
         </section>
+
+        <section class="result">
+          <h2>結果</h2>
+          <div id="result-panel">
+            <p style="color: #888;">填好輸入參數, 撳「跑算法」就會見到結果</p>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -185,6 +185,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.95"></script>
+  <script type="module" src="testing-page.js?v=2.3.97"></script>
 </body>
 </html>

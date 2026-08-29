@@ -3451,3 +3451,64 @@ for retry_attempt in range(max_retries):
 - 之後 algorithm 入面有 K 線 trend 連貫 (qfq + raw 混合), 唔影響技術分析
 - 之後 testing page UI 註明 K 線用 qfq (對齊富途 app 預設), 拆股前嗰日 K 線值係 raw (可能同富途 app 略異)
 - 之後跑 100 hot stocks TBR 預期 105 隻可以 verdict (剩 2 隻 NoDataAvailable)
+
+### 15.36 Testing Page UX 改動永久 rule (大少 2026-08-29 08:35, Spec Sync #45)
+
+### 大少 trigger
+「先做一些調到：
+1. 在 Testing Page 裡把股票 K 線圖整個搬到在『輸入股票』和『結果』中間，所有算法都這樣做。方便睇。
+2. 股票代碼第二次再輸入時都要 Del 之前的資料才能重新輸入很麻煩，所以當點輸入框時自動 Selected 所有內容，那我打字輸入時便可直接 Recover 舊有的字。
+3. 增加兩個 HotKey 功能。在輸入股票時彈出的 Autocomplete 加兩個功能，第一個，Keyboard 按『Tab』制時會選 Autocomplete List 的選項，再按『Tab』時就會去下一個，當按 Space 或 Enter 制時就會直接跑法算。第二個功能是當輸入 bmwmmf 時彈出的 Autocomplete List，Keyboard 按『Space』制就直接選第一個選項 + 跑算法。」
+
+### 凡人話解釋
+3 個 testing page UX 改善，全部 client-side frontend 改動，唔影響 backend API。
+
+### 改動範圍 (3 改 file)
+| File | 改動 |
+|---|---|
+| `testing-page/index.html` | chart-section 搬到 result-section 之前 (新 layout: inputs → chart → result) + ?v=2.3.96 → ?v=2.3.97 |
+| `testing-page/testing-page.js` | 加 input-code onfocus 自動 select all + Autocomplete HotKey (Tab/Enter/Space + bmwmmf 特殊 case) + ALGO_CACHE_BUST 4.38.0 → 4.39.0 |
+| `testing-page/testing-page.css` | 唔改 (用原有 `.ac-option.highlighted` class) |
+
+### 改動 1 — Chart-section 搬到中間
+- **原本 layout**: inputs (股票代碼) → result → chart-section
+- **新 layout**: inputs → chart-section → result
+- **凡人話**: 大少撳完「跑算法」想即刻睇 K 線圖, 原本要 scroll 落去最底先見到, 而家 K 線圖喺輸入同結果中間, 撳完即時睇到
+- **適用範圍**: 所有算法 (M1-M12 + zmen + 7 個 adaptive params) 因為 chart-section 喺 main 入面, 唔係 algorithm-specific
+
+### 改動 2 — 股票代碼輸入框 onfocus 自動 select all
+- **做法**: `input-code` element 嘅 `focus` event listener → 用 `setTimeout(..., 0)` 確保 focus 完成後 select 全部內容
+- **效果**: 大少第二次輸入股票代碼時, 點輸入框即時選中所有舊內容, 打字即覆蓋, 唔需要 Del 舊資料
+
+### 改動 3 — Autocomplete HotKey 3 個 shortcut
+
+| 鍵 | 行為 | 條件 |
+|---|---|---|
+| **Tab** | highlight 下一個 option (用 `.highlighted` CSS class, 同 hover 一樣藍色) | dropdown 顯示中 + 有 options |
+| **Enter** | 跑算法 (有 highlight 先選 highlighted) | 任何時候 |
+| **Space** | 跑算法 | 任何時候 |
+| **Space (特殊)** | 選 dropdown 第 1 個 + 跑算法 | input value === 'bmwmmf' (case-insensitive) + dropdown 顯示中 |
+
+**Implementation 細節**:
+- `currentHighlightIndex` 變數追蹤 highlight index (-1 = 冇)
+- `applyHighlight(options)` helper 用現有 `.highlighted` CSS class + `scrollIntoView` 確保可見
+- `selectOption(opt)` helper 抽出嚟畀 mouse click + hotkey 共用
+- 每次新搜尋 (`search` function) 重置 highlight index
+- **副作用**: Space 鍵會 preventDefault, 唔會喺 input 入面加空白 (大少要喺輸入框度打空白嘅話改用 mouse)
+
+### 永久 rule
+- ✅ Testing page chart-section 永遠排喺 inputs 同 result 中間 (唔好搬返去 result 後面)
+- ✅ 股票代碼輸入框永遠 onfocus 自動 select all (唔好用 mouse click Del 舊資料)
+- ✅ Autocomplete Tab/Enter/Space HotKey 永遠 work
+- ✅ `bmwmmf` + Space 特殊 trigger 保留
+- ✅ 改 testing-page.js 之後同步 bump ALGO_CACHE_BUST + ?v= 2 個地方 (cache bust self-check 永久 rule)
+- ✅ 用現有 `.highlighted` CSS class, 唔好新加 CSS class (保持 codebase 一致)
+
+### 對應 commit
+即將 push (Spec Sync #45)
+
+### 套用情境
+- 之後 testing page 任何 UX 改動, 全部 client-side frontend 改動, 唔需要 restart backend
+- 之後任何 algorithm 加新嘅 chart 互動 control, 排喺 chart-section 入面 chart-container 之前 (跟 Spec Sync #32 chart-control layout 永久 rule)
+- 之後 StockPulse 其他 input 欄位 (e.g. paper trading, trade journal) 可以套用 onfocus auto-select pattern
+- 之後 StockPulse 其他 autocomplete 可以套用 Tab/Enter/Space HotKey pattern

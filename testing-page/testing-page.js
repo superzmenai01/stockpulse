@@ -221,7 +221,7 @@ function setLookback(v) {
 // 大少 2026-08-21 00:24 — ZigZag threshold lookback 參數 (手動可調): ALGO_CACHE_BUST = '4.29.0' (testing-page.js 加 LS_KEY_LOOKBACK + LOOKBACK_DEFAULT=20 + LOOKBACK_MIN=5 + LOOKBACK_MAX=100 + getLookback() + setLookback() localStorage helper, applyAutoThreshold 改用 getLookback() 動態取 (唔再 hardcode 20), 撳跑算法嗰陣 auto mode 計算 (L860-877) 改用 getLookback(), 初始化 UI (initThresholdModeUI) 加 lookbackEl value 同步, 加 lookback input 即時改 handler (debounce 200ms, 改完即時重算, manual mode 唔影響), 加「重置為 20」掣 handler; index.html 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣, 跟 Spec Sync #31 config input onChange handler pattern 一致; 對應大少 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」; 永久 rule: lookback 永遠跟 localStorage, 預設 20, 範圍 5-100, manual mode 唔影響, 改完即時重算 (auto mode 觸發 applyAutoThreshold); localStorage key `stockpulse.zigzag.lookback`)
 // 大少 2026-08-21 00:02 — ZigZag threshold 自動調整 (波動率自適應法): ALGO_CACHE_BUST = '4.28.0' (testing-page.js 加 autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5) + extractHLC(klines) 純函數 + localStorage 存取 helper (LS_KEY_THRESHOLD_MODE + LS_KEY_MANUAL_THRESHOLD) + applyAutoThreshold(code, period) 計算 + 即時 update 紫色線 + 初始化 UI (initThresholdModeUI 新股票冇 record → 自動 mode 預設) + mode 切換 handler (切 auto 即時計算, 切 manual 用最近 auto 結果) + 重算掣 + 重置為自動掣 + manual slider 即時改 (跟 spec sync #31 pattern, debounce 200ms) + 撳「跑算法」嗰陣 auto mode 自動計算 threshold (L841 之前) + 全部 localStorage 自動保存; index.html #zigzag-controls 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表 2.0/2.5/3.0-4.0) + 隱藏 #zigzag-threshold (跟 spec sync #31 兼容); index.html head 加 .multiplier-tooltip inline style block; 對應大少 trigger (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存; 永久 rule: 新股票冇 localStorage record → 自動 mode 預設, 倍數 2.5 hardcode, lookback 20 hardcode, 0.5%-20% clamp, localStorage key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`)
 // 大少 2026-08-22 23:35 — Chart 上方加股票名稱 + 號碼: ALGO_CACHE_BUST = '4.37.0' (testing-page.js 加 updateStockNameDisplay(code) function 喺 runAlgorithm 之後 call, fetch backend /api/stocks/{code} 拎 stock name, 寫入 chart-header 嘅 #stock-name-display span, format: "{code} - {name}" + fallback 顯示 code only, 凡人話: 大少撳跑完 algorithm 視線一落到 chart 即刻見到呢隻股票係邊隻, 唔使對住 "HK.00823" 估, 對齊股票名 00823 領展 / 00700 騰訊 之類; index.html chart-header h2 加 <span id="stock-name-display"> + CSS .stock-name-display style (大少 font size 18px + 灰色 + margin-left 8px), 用 backend 既有 /api/stocks/{code} endpoint 唔需要新加; 永久 rule: testing page 顯示 stock name 永遠由 backend /api/stocks/{code} 拎, 唔好 frontend hardcode map, 配合 stock metadata refresher script 補返 hot list missing 嗰啲 stock; 對應 stocks table 補返: HK.00823 領展 + US.NXP 等 2 隻, 1 個 OpenD batch snapshot call, 唔浪費額度)
-const ALGO_CACHE_BUST = '4.37.0';
+const ALGO_CACHE_BUST = '4.39.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -438,6 +438,15 @@ async function init() {
   }
   // 大少 11:07: 加 Trade Journal section (Stage 1+ MVP)
   renderTradeJournalSection();
+  // 大少 2026-08-29 07:51 trigger — 股票代碼輸入框 onfocus 自動 select all
+  // 凡人話: 大少第二次輸入股票代碼時, 點輸入框自動選中所有舊內容, 打字即可覆蓋
+  const codeInputEl = document.getElementById('input-code');
+  if (codeInputEl) {
+    codeInputEl.addEventListener('focus', () => {
+      // 用 setTimeout 確保 focus 完成後先 select (避免某些 browser race condition)
+      setTimeout(() => codeInputEl.select(), 0);
+    });
+  }
 }
 
 async function onAlgorithmChange() {
@@ -679,6 +688,29 @@ function renderAutocomplete(input) {
 
   let debounceTimer;
   let abortController;
+  // 大少 2026-08-29 08:31 trigger — HotKey: Tab 鍵 highlight 下一個 option
+  let currentHighlightIndex = -1;
+
+  // 應用 highlight 樣式 (CSS class, 跟原有 .ac-option.highlighted 一致)
+  const applyHighlight = (options) => {
+    options.forEach((opt, idx) => {
+      if (idx === currentHighlightIndex) {
+        opt.classList.add('highlighted');
+        opt.scrollIntoView({ block: 'nearest' });
+      } else {
+        opt.classList.remove('highlighted');
+      }
+    });
+  };
+
+  // 選 option 嘅 helper (提取做函數方便 hotkey + mouse 共用)
+  const selectOption = (opt) => {
+    const code = opt.dataset.code;
+    inputEl.value = code;
+    currentOptions[input.key] = code;
+    dropdown.style.display = 'none';
+    currentHighlightIndex = -1;
+  };
 
   // Market auto-detect (跟首頁邏輯)
   const detectMarket = (value) => {
@@ -734,12 +766,11 @@ function renderAutocomplete(input) {
         opt.addEventListener('mousedown', (e) => {
           // 用 mousedown 而唔係 click — 避免 blur 先 trigger 收埋 dropdown
           e.preventDefault();
-          const code = opt.dataset.code;
-          inputEl.value = code;
-          currentOptions[input.key] = code;
-          dropdown.style.display = 'none';
+          selectOption(opt);
         });
       });
+      // 大少 2026-08-29 08:31 trigger — 每次新搜尋重置 highlight index
+      currentHighlightIndex = -1;
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('[autocomplete] error:', err);
@@ -762,6 +793,42 @@ function renderAutocomplete(input) {
   inputEl.addEventListener('focus', () => {
     if (inputEl.value.trim()) {
       search(inputEl.value);
+    }
+  });
+
+  // 大少 2026-08-29 08:31 trigger — HotKey 功能
+  // Tab 鍵 highlight 下一個 option (第 1 撳 = 第 1 個, 第 2 撳 = 第 2 個, ...)
+  // Enter / Space 鍵直接跑算法
+  // 特殊: 輸入 "bmwmmf" 撳 Space → 自動選 dropdown 第 1 個 + 跑算法
+  inputEl.addEventListener('keydown', (e) => {
+    const value = inputEl.value.trim();
+    const dropdownVisible = dropdown.style.display !== 'none';
+    const options = dropdown.querySelectorAll('.ac-option');
+
+    if (e.key === 'Tab') {
+      // Tab 鍵: highlight 下一個 option
+      if (dropdownVisible && options.length > 0) {
+        e.preventDefault();  // 避免 default Tab 行為 (跳去下一個 input)
+        currentHighlightIndex = (currentHighlightIndex + 1) % options.length;
+        applyHighlight(options);
+      }
+      // dropdown 冇顯示 / 冇 options 嘅情況, 畀 default Tab 行為
+    } else if (e.key === 'Enter') {
+      // Enter 鍵: 跑算法
+      e.preventDefault();  // 避免 form submit
+      if (dropdownVisible && currentHighlightIndex >= 0 && options[currentHighlightIndex]) {
+        // 有 highlight: 選 highlighted option + 跑算法
+        selectOption(options[currentHighlightIndex]);
+      }
+      runAlgorithm();
+    } else if (e.key === ' ') {
+      // Space 鍵
+      e.preventDefault();  // 避免加空白
+      if (value.toLowerCase() === 'bmwmmf' && dropdownVisible && options.length > 0) {
+        // 特殊 trigger: bmwmmf + Space → 選第 1 個 + 跑算法
+        selectOption(options[0]);
+      }
+      runAlgorithm();
     }
   });
 
