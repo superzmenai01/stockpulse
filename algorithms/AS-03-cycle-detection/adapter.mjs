@@ -4987,9 +4987,40 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           if (typeof d === 'string') return Math.floor(new Date(d).getTime() / 1000);
           return null;
         };
+        // 大少 2026-08-30 07:20 trigger 方案 B: 紫色 ZigZag line render 改用 K 線 body middle
+        // 凡人話原因: P 點 algorithm 拎 wick tip (high/low), 視覺上紫色點 plot 喺 wick tip 突出 K 線外面
+        // (例如 8月25日 K 線 wick tip 65.55 同 body 66.75 差 1.2, 紫色 P 點 plot 喺 65.55, label 突出
+        //  K 線外面, 視覺上「喺 8月25日同 8月26日 K 線中間」, 大少 trigger「P2 喺兩支竹中間, 請修正」)
+        // Fix: render layer 改用 K 線 body middle ((open + close) / 2), 視覺上 plot 喺 K 線 body 入面
+        // 算法 trigger 邏輯唔改 (4.15.0 永久 rule 保留, 因為 trigger 需要拎 wick extreme 拎 trough/peak)
+        // 紫色 sequence marker label position 唔改 (4.12.0 永久 rule 保留), 跟紫色 line 嘅 value plot,
+        //  即係 plot 喺 K 線 body middle 附近, 唔突出
+        // verdict.meta.zigzagPoints 唔改 (繼續拎 wick tip), 畀 debug panel + algorithm 內部用
+        // 鮮綠色 extension line 唔改 (已經用 lastClose)
+        // 永久 rule (4.41.0 改寫): 紫色 ZigZag line render value 永遠用 K 線 body middle,
+        //  唔好直接用 algorithm meta.zigzagPoints 拎 wick tip value (會 plot 喺 wick tip 突出)
+        //  除非 K 線 missing fallback 至用 algorithm 拎 wick tip
+        // 對應 Spec Sync: ARCHITECTURE.md §15 紫色 ZigZag render section (待補)
+        const _zigzagKlineByDate = new Map();
+        for (const _zk of (klines || [])) {
+          const _zdateStr = _zk.time || _zk.date || _zk.timestamp;
+          if (_zdateStr != null) {
+            _zigzagKlineByDate.set(String(_zdateStr).slice(0, 10), _zk);
+          }
+        }
         let zigzagSeries = verdict.meta.zigzagPoints
-          .map(p => ({ time: dateToTime(p.date), value: p.value }))
-          .filter(p => p.time != null && Number.isFinite(p.value))
+          .map(p => {
+            const _time = dateToTime(p.date);
+            if (_time == null) return null;
+            // Render 用 K 線 body middle, fallback 落 algorithm 拎嘅 wick tip (K 線 missing 嗰陣)
+            const _kl = _zigzagKlineByDate.get(String(p.date || '').slice(0, 10));
+            let _renderValue = p.value;
+            if (_kl && Number.isFinite(_kl.open) && Number.isFinite(_kl.close)) {
+              _renderValue = (_kl.open + _kl.close) / 2;
+            }
+            return { time: _time, value: _renderValue };
+          })
+          .filter(p => p != null && Number.isFinite(p.value))
           .sort((a, b) => a.time - b.time);
         // 大少 2026-08-30 01:21 — B 方案 v2 治標 frontend defensive:
         // 之字 points 拎 setData 嗰陣, 撞 duplicate time 會令 Lightweight Charts 4.2.3
