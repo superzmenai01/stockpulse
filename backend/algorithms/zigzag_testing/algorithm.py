@@ -1,0 +1,461 @@
+"""
+backend/algorithms/zigzag_testing/algorithm.py — ZigZag Testing Algorithm (大少 2026-08-29 19:34)
+
+凡人話: 1-to-1 port testing-page.js 嘅 ZigZag 算法去 Python backend,
+目的係俾大少對比新後台 vs 舊前台拎到嘅結果係咪一致。
+
+對應 source (frontend):
+- backups/zigzag-frontend-2026-08-20/adapter.mjs:1505-1625 (calculateZigZag 核心算法)
+- testing-page.js:52-75 (autoThresholdVolatility)
+- testing-page.js:78-91 (extractHLC fallback chain)
+- testing-page.js 4.9.0/4.10.0 (P 點順序號碼 marker, 1=最新, 倒序排)
+- testing-page.js 4.33.0 (鮮綠線 #00C853 最後 close extension line)
+- testing-page.js 4.15.0 (大少 fix: 之字拎 point 同 trigger 都用 high/low 對齊, 唔好用 close)
+
+Algorithm flow (1-to-1 對齊 frontend):
+1. extractHLC 拎 high / low / close arrays (fallback chain: high/High/HIGH, low/Low/LOW, close/Close/CLOSE)
+2. autoThresholdVolatility 計自動 threshold (formula: avg((high-low)/close, lookback N) × 2.5, clamp 0.5%-20%)
+3. calculateZigZag 拎 ZigZag points (peak/trough, 拎 value 用 high/low, trigger 都用 high/low)
+4. 加鮮綠線 extension_line (從最後 ZigZag point → K 線最後 close, 顏色 #00C853)
+5. 加 P 點 sequence (1=最新, 倒序排, 用 testing page 4.9.0 marker 邏輯)
+
+永久 rule (大少 2026-08-29 19:34):
+- 永遠唔好動 testing-page.js / index.html / backend/algorithms/zigzag/algorithm.py
+- 新模組獨立 1-to-1 port, 對齊 frontend 拎到嘅結果
+- 拎 K 線: KlineCache full flow (T-1 normalized, 跟 /api/kline endpoint 對齊)
+"""
+
+import datetime
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# 凡人話: 對齊 testing-page.js:78-91 extractHLC
+# ============================================================
+def extract_hlc(klines: List[Dict[str, Any]]) -> Optional[Dict[str, List[float]]]:
+    """凡人話: 從 K 線取 high / low / close arrays (fallback chain, K 線可能用唔同名)
+
+    對應 frontend: testing-page.js:78-91 extractHLC
+    """
+    if not klines or len(klines) == 0:
+        return None
+    n = len(klines)
+    highs = [0.0] * n
+    lows = [0.0] * n
+    closes = [0.0] * n
+    for i, k in enumerate(klines):
+        # 大少 trigger: high / High / HIGH fallback chain
+        h = k.get('high', k.get('High', k.get('HIGH')))
+        l = k.get('low', k.get('Low', k.get('LOW')))
+        c = k.get('close', k.get('Close', k.get('CLOSE')))
+        try:
+            highs[i] = float(h) if h is not None else 0.0
+            lows[i] = float(l) if l is not None else 0.0
+            closes[i] = float(c) if c is not None else 0.0
+        except (ValueError, TypeError):
+            return None
+    return {"highs": highs, "lows": lows, "closes": closes}
+
+
+# ============================================================
+# 凡人話: 對齊 testing-page.js:52-75 autoThresholdVolatility
+# ============================================================
+def auto_threshold_volatility(
+    highs: List[float],
+    lows: List[float],
+    closes: List[float],
+    lookback: int = 20,
+    multiplier: float = 2.5,
+) -> Optional[float]:
+    """凡人話: 自動計 threshold (formula: avg((high-low)/close, lookback N) × 2.5, clamp 0.5%-20%)
+
+    對應 frontend: testing-page.js:52-75 autoThresholdVolatility
+    """
+    if not highs or not lows or not closes:
+        return None
+    n = min(len(highs), len(lows), len(closes), lookback)
+    if n < 2:
+        return None
+    sum_range = 0.0
+    count = 0
+    for i in range(len(highs) - n, len(highs)):
+        h = highs[i]
+        l = lows[i]
+        c = closes[i]
+        if h is None or l is None or c is None or c <= 0:
+            continue
+        try:
+            h_f = float(h)
+            l_f = float(l)
+            c_f = float(c)
+        except (ValueError, TypeError):
+            continue
+        if not (h_f == h_f and l_f == l_f and c_f == c_f):  # NaN check
+            continue
+        sum_range += (h_f - l_f) / c_f
+        count += 1
+    if count == 0:
+        return None
+    avg_vol = sum_range / count
+    threshold = avg_vol * multiplier
+    # 上下限保護: 0.5% - 20%
+    threshold = max(threshold, 0.005)
+    threshold = min(threshold, 0.20)
+    return threshold
+
+
+# ============================================================
+# 凡人話: 對齊 testing-page.js:843 附近 _zigzagNormalizeDate
+# ============================================================
+def _zigzag_normalize_date(kline: Dict[str, Any]) -> str:
+    """凡人話: 拎 K 線 date (time/date/timestamp fallback chain, 對齊 adapter.mjs _zigzagNormalizeDate)
+
+    對應 frontend: backups/zigzag-frontend-2026-08-20/adapter.mjs:843 _zigzagNormalizeDate
+    永久 rule (大少 2026-08-19 10:15): 唔好直接拎 klines[].date, fallback chain
+    """
+    return (
+        kline.get('time')
+        or kline.get('date')
+        or kline.get('timestamp')
+        or ''
+    )
+
+
+# ============================================================
+# 凡人話: 對齊 backups/zigzag-frontend-2026-08-20/adapter.mjs:1505-1625 calculateZigZag
+# ============================================================
+def calculate_zigzag(
+    klines: List[Dict[str, Any]],
+    threshold_percent: float = 5,
+) -> List[Dict[str, Any]]:
+    """凡人話: ZigZag 轉向點識別 (1-to-1 port frontend 算法)
+
+    對應 frontend: backups/zigzag-frontend-2026-08-20/adapter.mjs:1505-1625 calculateZigZag
+
+    大少 4.15.0 fix: 拎 point 用 high/low, trigger 都用 high/low (唔好用 close)
+    大少 4.16.0 refactor: 1 個 direction flag + 1 個 ref value (原本 2 variable + 2 loop)
+
+    拎 point value 用 high / low 對齊 K 線真實 high / low (跟 testing page 4.15.0 永久 rule)
+
+    Returns:
+        list of {date, value, type: 'high' | 'low', index}
+    """
+    if not klines or len(klines) < 2:
+        return []
+
+    result = []
+    threshold = threshold_percent / 100.0
+
+    # 拎第一個 point: 永遠用 klines[0].low (frontend 算法 1-to-1)
+    result.append({
+        "date": _zigzag_normalize_date(klines[0]),
+        "value": klines[0]['low'],
+        "type": 'low',
+        "index": 0,
+    })
+
+    last_swing_high = klines[0]['high']
+    last_swing_low = klines[0]['low']
+    last_swing_idx = 0
+    # inUptrend 用 klines[1].close vs klines[0].close 對齊決定初始方向 (frontend 算法 1-to-1)
+    in_uptrend = klines[1]['close'] > klines[0]['close']
+
+    # 第一個 loop: 找第一個顯著高/低點 (frontend algorithm.mjs:1523-1568)
+    for i in range(1, len(klines)):
+        # 大少 4.15.0 fix: 用 high/low 拎 point 同 trigger (唔好用 close)
+        change_from_high = (klines[i]['low'] - last_swing_high) / last_swing_high   # 用 low 對 high
+        change_from_low = (klines[i]['high'] - last_swing_low) / last_swing_low     # 用 high 對 low
+
+        if in_uptrend:
+            if klines[i]['high'] > last_swing_high:
+                last_swing_high = klines[i]['high']
+                last_swing_low = klines[i]['low']
+                last_swing_idx = i
+            if change_from_high <= -threshold:
+                result.append({
+                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
+                    "value": last_swing_high,
+                    "type": 'high',
+                    "index": last_swing_idx,
+                })
+                in_uptrend = False
+                last_swing_low = klines[i]['low']
+                last_swing_high = klines[i]['high']
+                last_swing_idx = i
+                break
+        else:
+            if klines[i]['low'] < last_swing_low:
+                last_swing_low = klines[i]['low']
+                last_swing_high = klines[i]['high']
+                last_swing_idx = i
+            if change_from_low >= threshold:
+                result.append({
+                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
+                    "value": last_swing_low,
+                    "type": 'low',
+                    "index": last_swing_idx,
+                })
+                in_uptrend = True
+                last_swing_low = klines[i]['low']
+                last_swing_high = klines[i]['high']
+                last_swing_idx = i
+                break
+
+    if len(result) <= 1:
+        return result
+
+    # 第二個 loop: 繼續追蹤轉向點 (frontend algorithm.mjs:1572-1609)
+    for i in range(last_swing_idx + 1, len(klines)):
+        change_from_high = (klines[i]['low'] - last_swing_high) / last_swing_high
+        change_from_low = (klines[i]['high'] - last_swing_low) / last_swing_low
+
+        if in_uptrend:
+            if klines[i]['high'] > last_swing_high:
+                last_swing_high = klines[i]['high']
+                last_swing_idx = i
+            if change_from_high <= -threshold:
+                result.append({
+                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
+                    "value": last_swing_high,
+                    "type": 'high',
+                    "index": last_swing_idx,
+                })
+                in_uptrend = False
+                last_swing_low = klines[i]['low']
+                last_swing_idx = i
+        else:
+            if klines[i]['low'] < last_swing_low:
+                last_swing_low = klines[i]['low']
+                last_swing_idx = i
+            if change_from_low >= threshold:
+                result.append({
+                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
+                    "value": last_swing_low,
+                    "type": 'low',
+                    "index": last_swing_idx,
+                })
+                in_uptrend = True
+                last_swing_high = klines[i]['high']
+                last_swing_idx = i
+
+    # 添加最後一個有效轉向點 (frontend algorithm.mjs:1611-1622)
+    last_date = _zigzag_normalize_date(klines[last_swing_idx])
+    if result[-1]['date'] != last_date:
+        result.append({
+            "date": last_date,
+            "value": last_swing_high if in_uptrend else last_swing_low,
+            "type": 'high' if in_uptrend else 'low',
+            "index": last_swing_idx,
+        })
+
+    return result
+
+
+# ============================================================
+# 凡人話: 對齊 testing-page.js 4.33.0 鮮綠線 #00C853 (close extension)
+# ============================================================
+def build_extension_line(
+    points: List[Dict[str, Any]],
+    klines: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """凡人話: 由最後 ZigZag point 連去 K 線最後 close (鮮綠線 #00C853)
+
+    對應 frontend: testing-page.js 4.33.0 + 4.34.0 鮮綠色 close extension line
+    大少 trigger: 大少見到紫色 ZigZag 拎到嘅 peak/trough 之後, 想加一條鮮綠線由最後
+    ZigZag point 連去 K 線最後 close, 即時見到趨勢延續
+    大少 4.33.0 fix: 顏色由 #2E7D32 改 #00C853 (鮮綠色, Material Green A700)
+
+    Returns:
+        {from: {date, value, type, index}, to: {date, value, type: 'today'}, color: '#00C853'}
+        or None if 冇足夠 data
+    """
+    if not points or not klines or len(klines) == 0:
+        return None
+    last_point = points[-1]
+    last_kline = klines[-1]
+    last_close = last_kline.get('close')
+    if last_close is None:
+        return None
+    try:
+        last_close = float(last_close)
+    except (ValueError, TypeError):
+        return None
+    return {
+        "from": {
+            "date": last_point.get('date', ''),
+            "value": float(last_point.get('value', 0)),
+            "type": last_point.get('type', ''),
+            "index": last_point.get('index', 0),
+        },
+        "to": {
+            "date": _zigzag_normalize_date(last_kline),
+            "value": last_close,
+            "type": "today",
+        },
+        "color": "#00C853",  # 鮮綠色 (testing-page.js 4.33.0)
+    }
+
+
+# ============================================================
+# 凡人話: 對齊 testing-page.js 4.9.0/4.10.0 P 點順序號碼 (1=最新, 倒序排)
+# ============================================================
+def assign_sequence_numbers(
+    points: List[Dict[str, Any]],
+    klines: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """凡人話: 為每個 ZigZag point 加 sequence 號碼, 1=最新, 倒序排
+
+    對應 frontend: testing-page.js 4.9.0/4.10.0
+    大少 trigger: 每個點加順序號碼, 由最新開始, 包括最後嗰條綠色線
+    testing page marker: high → aboveBar, low → belowBar, close → aboveBar
+
+    1 號 = 今日 close 鮮綠色 (extension_line.to)
+    2 號 = 紫色最後 1 個 ZigZag point (points[-1])
+    3 號 = 紫色倒數第 2 個 ZigZag point (points[-2])
+    ... 倒序排
+
+    Returns:
+        points copy with `sequence` field (1-based, 1 = 最新)
+    """
+    if not points:
+        return []
+
+    n = len(points)
+    # 倒序排: 1 = points[-1] (最後一個 = 最新), 2 = points[-2], ...
+    sequence_points = []
+    for seq in range(1, n + 1):
+        p = points[n - seq]  # 倒序取
+        p_copy = dict(p)
+        p_copy['sequence'] = seq
+        sequence_points.append(p_copy)
+    return sequence_points
+
+
+# ============================================================
+# 凡人話: 對齊 testing-page.js 4.12.0 marker 排位 (high → aboveBar, low → belowBar)
+# ============================================================
+def point_marker_position(point_type: str) -> str:
+    """凡人話: 拎 marker 排位 (testing page 4.12.0 永久 rule)
+
+    high → aboveBar (Peak 號碼喺上)
+    low → belowBar (Trough 號碼喺下)
+    today (extension) → aboveBar (1 號 marker 喺上)
+    """
+    if point_type == 'high' or point_type == 'today':
+        return 'aboveBar'
+    return 'belowBar'
+
+
+# ============================================================
+# 凡人話: 對齊 testing-page.js 4.13.0 紫線顏色 #A020F0
+# ============================================================
+ZIGZAG_LINE_COLOR = "#A020F0"  # 紫色 (testing page chart ZigZag 線)
+EXTENSION_LINE_COLOR = "#00C853"  # 鮮綠色 (testing page 4.33.0)
+
+
+# ============================================================
+# 凡人話: 主 entry — 統一由 runner 拎 K 線 + 計 ZigZag
+# ============================================================
+def run_zigzag_testing(
+    klines: List[Dict[str, Any]],
+    threshold_mode: str = "auto",
+    manual_threshold: Optional[float] = None,
+    lookback: int = 20,
+    multiplier: float = 2.5,
+) -> Dict[str, Any]:
+    """凡人話: 跑 ZigZag testing 算法 (1-to-1 對齊 frontend calculateZigZag)
+
+    對應 frontend: testing-page.js 撳跑 algorithm 嗰陣嘅 ZigZag flow
+    對應舊 backend: backend/algorithms/zigzag/algorithm.py (但唔同, 呢個係 1-to-1 port frontend)
+
+    Args:
+        klines: K 線 data (從 KlineCache full flow 拎, T-1 normalized)
+        threshold_mode: 'auto' / 'manual' (對齊 testing page LS_KEY_THRESHOLD_MODE)
+        manual_threshold: 手動 mode 用, 1-20 (對齊 testing page LS_KEY_MANUAL_THRESHOLD)
+        lookback: 自動 mode 計 threshold 用, 5-100 (對齊 testing page LS_KEY_LOOKBACK)
+        multiplier: 自動 mode 倍數, 預設 2.5 (testing page auto 公式)
+
+    Returns:
+        {
+            "ok": bool,
+            "points": [{date, value, type, index, sequence}],
+            "threshold": float (實際用嘅 threshold, %),
+            "threshold_mode": str,
+            "klines_count": int,
+            "extension_line": {from, to, color} or None,
+            "sequence_count": int,
+            "error": str or None
+        }
+    """
+    if not klines or len(klines) < 2:
+        return {
+            "ok": False,
+            "points": [],
+            "threshold": 0.0,
+            "threshold_mode": threshold_mode,
+            "klines_count": len(klines) if klines else 0,
+            "extension_line": None,
+            "sequence_count": 0,
+            "error": f"數據太少 ({len(klines) if klines else 0} 條), 至少要 2 條先可以計",
+        }
+
+    # 1. extractHLC
+    hlc = extract_hlc(klines)
+    if not hlc:
+        return {
+            "ok": False,
+            "points": [],
+            "threshold": 0.0,
+            "threshold_mode": threshold_mode,
+            "klines_count": len(klines),
+            "extension_line": None,
+            "sequence_count": 0,
+            "error": "K 線 data 拎 high/low/close 失敗 (需要每個 kline dict 有 'high' / 'low' / 'close' field)",
+        }
+
+    # 2. 拎 threshold (對齊 testing-page.js 邏輯)
+    if threshold_mode == "manual" and manual_threshold is not None:
+        threshold_percent = float(manual_threshold)
+        logger.info(f"[ZigZag Testing] manual mode: threshold = {threshold_percent}%")
+    else:
+        # auto mode: 自動計
+        auto_t = auto_threshold_volatility(
+            hlc["highs"], hlc["lows"], hlc["closes"],
+            lookback=lookback, multiplier=multiplier
+        )
+        if auto_t is None:
+            return {
+                "ok": False,
+                "points": [],
+                "threshold": 0.0,
+                "threshold_mode": threshold_mode,
+                "klines_count": len(klines),
+                "extension_line": None,
+                "sequence_count": 0,
+                "error": "auto threshold 計算失敗 (K 線 data 唔夠)",
+            }
+        threshold_percent = auto_t * 100  # 轉做 %
+        logger.info(f"[ZigZag Testing] auto mode: threshold = {threshold_percent:.2f}% ({lookback} 日 × {multiplier})")
+
+    # 3. calculateZigZag
+    points = calculate_zigzag(klines, threshold_percent)
+
+    # 4. 加 sequence 號碼 (testing-page.js 4.9.0/4.10.0)
+    points_with_seq = assign_sequence_numbers(points, klines)
+
+    # 5. 鮮綠線 extension (testing-page.js 4.33.0)
+    extension_line = build_extension_line(points, klines)
+
+    return {
+        "ok": True,
+        "points": points_with_seq,
+        "threshold": round(threshold_percent, 4),
+        "threshold_mode": threshold_mode,
+        "klines_count": len(klines),
+        "extension_line": extension_line,
+        "sequence_count": len(points_with_seq),
+        "error": None,
+    }

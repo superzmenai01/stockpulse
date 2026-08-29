@@ -24,6 +24,7 @@ from api.adaptive_params import router as adaptive_params_router  # Sprint 2 sub
 from api.trade_journal import router as trade_journal_router  # Stage 1+ MVP, 大少 11:07
 from api.stock_price import router as stock_price_router  # Stage 1+ 即時股價, 大少 15:45
 from api.algorithms import router as algorithms_router  # Phase 1 — Algorithm framework (大少 2026-08-20 18:51)
+from api.zigzag_testing import router as zigzag_testing_router  # 大少 2026-08-29 19:34 — ZigZag Testing 新後台 (對比新前台 vs testing page 舊)
 from models.saved_runs import init_saved_runs_table
 from models.llm_settings import init_llm_settings_table
 from models.algorithm_dq_log import init_algorithm_dq_log_table
@@ -91,6 +92,7 @@ app.include_router(adaptive_params_router)  # already has prefix="/api/adaptive-
 app.include_router(trade_journal_router)  # Stage 1+ MVP, 大少 11:07
 app.include_router(stock_price_router)  # Stage 1+ 即時股價, 大少 15:45
 app.include_router(algorithms_router)  # Phase 1 — Algorithm framework (大少 2026-08-20 18:51), prefix=/api/algorithms
+app.include_router(zigzag_testing_router)  # 大少 2026-08-29 19:34 — ZigZag Testing 新後台, prefix=/api/zigzag-testing
 app.include_router(ws_router, prefix="/ws")
 
 @app.get("/api/health")

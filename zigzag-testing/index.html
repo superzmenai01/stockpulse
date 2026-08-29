@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>ZigZag Testing — 新後台 vs 舊前台對比 (大少 2026-08-29 19:34)</title>
+  <link rel="stylesheet" href="zigzag-testing.css?v=1.0.0">
+  <!-- 對齊 testing page CDN: lightweight-charts v4.2.3 (testing page 用緊呢個 version) -->
+  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    /* 大少 2026-08-21 00:02 trigger — popup 註解 (倍數選擇表) */
+    .multiplier-tooltip {
+      position: relative;
+      cursor: help;
+      color: #1890ff;
+      border-bottom: 1px dotted #1890ff;
+      margin-left: 4px;
+    }
+    .multiplier-tooltip:hover::after {
+      content: attr(data-help);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e1e1e;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: pre;
+      z-index: 1000;
+      pointer-events: none;
+      font-weight: normal;
+      line-height: 1.6;
+      min-width: 280px;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🧪 ZigZag Testing — 新後台 vs 舊前台對比</h1>
+      <p class="subtitle">大少 2026-08-29 19:34 trigger: 開 1 個新後台 (1-to-1 port frontend calculateZigZag), 拎到嘅嘢 vs 舊 testing page (frontend 計) 對比</p>
+    </header>
+
+    <div class="layout">
+      <main class="main">
+        <section class="chart-section">
+          <div class="chart-header">
+            <h2>📈 股票 K 線圖 <span id="stock-name-display" class="stock-name-display"></span></h2>
+            <p class="chart-note">
+              撳完「跑 ZigZag」之後, 嗰隻股票嘅 K 線圖 + 紫線 ZigZag + 鮮綠線 extension + P 點會自動顯示喺呢度。
+            </p>
+          </div>
+
+          <!-- 大少 2026-08-20 23:20 trigger — runStatus 搬到圖表上邊 (chart-section 入面, chart container 之前) -->
+          <div id="run-status" class="run-status" style="margin-bottom:8px;"></div>
+
+          <!-- 大少 2026-08-21 00:02 trigger — ZigZag 自動/手動 threshold 切換 (對齊 testing page UX) -->
+          <div id="zigzag-controls" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
+            <label style="margin-right:12px;cursor:pointer;">
+              <input type="radio" name="threshold-mode" value="auto" id="mode-auto" checked style="vertical-align:middle;">
+              自動 (波動率自適應)
+            </label>
+            <label style="margin-right:12px;cursor:pointer;">
+              <input type="radio" name="threshold-mode" value="manual" id="mode-manual" style="vertical-align:middle;">
+              手動
+            </label>
+            <span id="auto-mode-info" style="margin-right:12px;">
+              最近 <input type="number" id="lookback-input" min="5" max="100" step="1" value="20" style="width:50px;padding:2px 4px;"> 日波動率 × <span class="multiplier-tooltip" data-help="倍數選擇:\n  2.0 — 短線, 靈敏\n  2.5 — 波段, 推薦 (預設)\n  3.0-4.0 — 長線, 平滑">2.5</span> (5-100) <button type="button" id="reset-lookback-btn" style="margin-left:4px;padding:2px 8px;cursor:pointer;">重置為 20</button>
+            </span>
+            <span id="manual-mode-info" style="display:none;margin-right:12px;">
+              Threshold <input type="number" id="manual-threshold-input" min="1" max="20" step="0.1" value="5" style="width:60px;padding:2px 4px;"> % <button type="button" id="reset-manual-btn" style="margin-left:4px;padding:2px 8px;cursor:pointer;">重置為 5</button>
+            </span>
+            <span style="margin-right:12px;color:#888;">→</span>
+            <label style="margin-right:8px;cursor:pointer;">
+              <input type="checkbox" id="show-sequence" checked style="vertical-align:middle;">
+              顯示 ZigZag 點順序號碼
+            </label>
+            <span>顯示最近 <input type="number" id="sequence-max-count" min="1" max="50" step="1" value="30" style="width:50px;padding:2px 4px;"> 個</span>
+            <button type="button" id="recalc-btn" style="margin-left:8px;padding:2px 8px;cursor:pointer;">🔄 重算</button>
+          </div>
+
+          <!-- 跑 ZigZag 掣 + 股票代碼輸入 -->
+          <div style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;display:flex;gap:8px;align-items:center;">
+            <label style="font-weight:500;">股票代碼:</label>
+            <input type="text" id="input-code" placeholder="HK.00941 / HK.00700 / US.INTC" value="HK.00941" style="padding:6px 10px;border:1px solid #d9d9d9;border-radius:4px;width:200px;font-size:13px;">
+            <button type="button" id="run-btn" style="padding:6px 20px;background:#1890ff;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:500;font-size:13px;">跑 ZigZag</button>
+            <span style="color:#888;font-size:12px;">(新後台 endpoint: /api/zigzag-testing/run)</span>
+          </div>
+
+          <!-- 對比 panel (左: 舊 testing page, 右: 新後台) -->
+          <div id="compare-panel" style="background:#fffbe6;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px;border:1px solid #ffe58f;display:none;">
+            <strong>🔍 對比提示:</strong>
+            <span>開多 1 個 tab 去 <a href="../testing-page/index.html" target="_blank" style="color:#1890ff;">http://localhost:8765/testing-page/index.html</a> 跑同一隻股票, 對比:</span>
+            <ul style="margin:4px 0 0 16px;padding:0;">
+              <li>P 點 value + date (frontend 拎 84.95 @ 7/30 vs backend 拎 78.95 @ 8/28 = K 線 source 唔同嘅 evidence)</li>
+              <li>紫線連線形狀 (1-to-1 對齊 frontend 算法)</li>
+              <li>鮮綠線最後 close extension</li>
+              <li>Threshold (auto 模式兩個 page 應該都係 2.88% 左右)</li>
+            </ul>
+          </div>
+
+          <div id="chart-container" style="height:600px;background:white;border-radius:4px;"></div>
+
+          <!-- Debug panel: 對比驗證最緊要, 顯示 backend verdict 完整 P 點列表 + K 線 high/low 對比 -->
+          <div id="debug-panel" style="margin-top:12px;background:#1e1e1e;color:#fff;padding:12px;border-radius:6px;font-family:monospace;font-size:12px;line-height:1.6;display:none;">
+            <div style="margin-bottom:8px;"><strong style="color:#00C853;">📊 Backend Verdict Debug</strong></div>
+            <div id="debug-summary"></div>
+            <div id="debug-points"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="zigzag-testing.js?v=1.0.0"></script>
+</body>
+</html>
