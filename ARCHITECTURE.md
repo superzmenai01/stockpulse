@@ -267,6 +267,40 @@ get_or_fetch(code, ctx, ktype, period, start, end)
 
 ---
 
+### 3.6 Testing Page K 線圖 Frontend Data Fix (大少 2026-08-29 22:00)
+
+**凡人話解釋**: testing page 撳跑 algorithm 之後 K 線圖空白, chart-candle-debug 顯示 1260 條 K 線 100% 啱 (sort 連續, 唔重複), 但 candlestick 視覺上 render 唔出。
+
+**真正 root cause**: backend KlineCache response 有 2 種 time format 混雜 (5 條 datetime 格式 `"2026-08-28 00:00:00"` 混入 1255 條 date-only `"2026-08-28"`):
+- `new Date("2026-08-28")` (date-only) → UTC 凌晨 → 1787875200
+- `new Date("2026-08-28 00:00:00")` (datetime) → HKT 凌晨 → 1787846400 (早 8 小時)
+
+5 條 datetime 排喺同日 date-only 8 小時前, sort 結果時間唔連續 (8/27 → 8/28 HKT → 8/28 UTC), Lightweight Charts 4.2.3 setData silently reject 整個 data set, 0 條 K 線 render。
+
+**chart-candle-debug 嘅 dup=✅ 係誤導**: 兩種 timestamp 唔同所以 `Set size = length`, 但 sort 已經錯亂, 唔係真 unique。
+
+**永久 fix (testing page frontend, v4.42.0)**:
+1. `normalizeTime` 統一 strip 時間部分 + 強制 UTC midnight parse: `t.split(' ')[0] + 'T00:00:00Z'`
+2. `candleData` dedupe by time: `arr.findIndex(x => x.time === d.time) === i`
+3. 拎 `chartRefs` → `lastChartRefs` 修 Spec Sync #32 inner setTimeout marker re-set ReferenceError (testing page scope 用 `lastChartRefs` 唔係 `chartRefs`)
+
+**永久 rule**:
+- 凡人話: 任何 backend 數據 (K 線 / 指標) frontend 處理都必須統一 UTC parse, 唔可以假設 backend 已經 dedupe / 統一 format
+- frontend dedupe by time 永遠係最後防線
+- testing page scope 全部用 `lastChartRefs` 唔係 `chartRefs` (chartRefs 唔存在呢個 scope, HEAD v4.39.0 bug)
+
+**Open follow-up**:
+- Candlestick 視覺 render 仲有 Lightweight Charts 4.2.3 internal issue (frontend data 100% 啱, setData 唔 throw, 但 candlestick visual 仲係 render 唔到)
+- 建議: 1-to-1 investigate Lightweight Charts 4.2.3 silent reject 原因, 或者升級去 5.x
+- screenshot tool crash 阻礙 visual verify, 需要 console access 進一步 trace
+
+**對應**:
+- `testing-page/testing-page.js` line 1265-1280 `normalizeTime` + line 1290 dedupe + line 1371 chartRefs fix
+- `ALGO_CACHE_BUST = '4.42.0'`, `?v=2.3.113`
+- Commit: 6ec043a6 (frontend data fix only)
+
+---
+
 ## 4. Algorithm Pipeline (AS02 detail)
 
 ```
