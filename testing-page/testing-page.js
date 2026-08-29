@@ -363,7 +363,7 @@ function setLookback(v) {
 // 大少 2026-08-21 00:24 — ZigZag threshold lookback 參數 (手動可調): ALGO_CACHE_BUST = '4.29.0' (testing-page.js 加 LS_KEY_LOOKBACK + LOOKBACK_DEFAULT=20 + LOOKBACK_MIN=5 + LOOKBACK_MAX=100 + getLookback() + setLookback() localStorage helper, applyAutoThreshold 改用 getLookback() 動態取 (唔再 hardcode 20), 撳跑算法嗰陣 auto mode 計算 (L860-877) 改用 getLookback(), 初始化 UI (initThresholdModeUI) 加 lookbackEl value 同步, 加 lookback input 即時改 handler (debounce 200ms, 改完即時重算, manual mode 唔影響), 加「重置為 20」掣 handler; index.html 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣, 跟 Spec Sync #31 config input onChange handler pattern 一致; 對應大少 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」; 永久 rule: lookback 永遠跟 localStorage, 預設 20, 範圍 5-100, manual mode 唔影響, 改完即時重算 (auto mode 觸發 applyAutoThreshold); localStorage key `stockpulse.zigzag.lookback`)
 // 大少 2026-08-21 00:02 — ZigZag threshold 自動調整 (波動率自適應法): ALGO_CACHE_BUST = '4.28.0' (testing-page.js 加 autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5) + extractHLC(klines) 純函數 + localStorage 存取 helper (LS_KEY_THRESHOLD_MODE + LS_KEY_MANUAL_THRESHOLD) + applyAutoThreshold(code, period) 計算 + 即時 update 紫色線 + 初始化 UI (initThresholdModeUI 新股票冇 record → 自動 mode 預設) + mode 切換 handler (切 auto 即時計算, 切 manual 用最近 auto 結果) + 重算掣 + 重置為自動掣 + manual slider 即時改 (跟 spec sync #31 pattern, debounce 200ms) + 撳「跑算法」嗰陣 auto mode 自動計算 threshold (L841 之前) + 全部 localStorage 自動保存; index.html #zigzag-controls 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表 2.0/2.5/3.0-4.0) + 隱藏 #zigzag-threshold (跟 spec sync #31 兼容); index.html head 加 .multiplier-tooltip inline style block; 對應大少 trigger (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存; 永久 rule: 新股票冇 localStorage record → 自動 mode 預設, 倍數 2.5 hardcode, lookback 20 hardcode, 0.5%-20% clamp, localStorage key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`)
 // 大少 2026-08-22 23:35 — Chart 上方加股票名稱 + 號碼: ALGO_CACHE_BUST = '4.37.0' (testing-page.js 加 updateStockNameDisplay(code) function 喺 runAlgorithm 之後 call, fetch backend /api/stocks/{code} 拎 stock name, 寫入 chart-header 嘅 #stock-name-display span, format: "{code} - {name}" + fallback 顯示 code only, 凡人話: 大少撳跑完 algorithm 視線一落到 chart 即刻見到呢隻股票係邊隻, 唔使對住 "HK.00823" 估, 對齊股票名 00823 領展 / 00700 騰訊 之類; index.html chart-header h2 加 <span id="stock-name-display"> + CSS .stock-name-display style (大少 font size 18px + 灰色 + margin-left 8px), 用 backend 既有 /api/stocks/{code} endpoint 唔需要新加; 永久 rule: testing page 顯示 stock name 永遠由 backend /api/stocks/{code} 拎, 唔好 frontend hardcode map, 配合 stock metadata refresher script 補返 hot list missing 嗰啲 stock; 對應 stocks table 補返: HK.00823 領展 + US.NXP 等 2 隻, 1 個 OpenD batch snapshot call, 唔浪費額度)
-const ALGO_CACHE_BUST = '4.39.0';
+const ALGO_CACHE_BUST = '4.42.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1263,16 +1263,24 @@ function renderChart(klines, code, period) {
   }
 
   // K 線 field name 正規化（backend 可能用唔同名）
+  // 大少 2026-08-29 22:00 — 真正 root cause: backend KlineCache response 5 條 datetime 格式
+  //   "2026-08-28 00:00:00" 混入 1255 條 date-only "2026-08-28"。
+  //   `new Date("2026-08-28")` 用 UTC 解析 (1787875200), `new Date("2026-08-28 00:00:00")` 用 HKT 解析 (1787846400, 早 8 小時)
+  //   5 條 datetime 排喺 date-only 8 小時前, sort 結果時間唔連續, Lightweight Charts setData silently reject 整個 data set, 0 條 K 線 render
+  //   chart-candle-debug 嘅 dup=✅ 係誤導: 兩種 timestamp 唔同所以 Set size = length, 但 sort 已經錯亂
+  // 永久 fix: 統一 strip 時間部分, 強制 UTC midnight parse (凡人話: 唔理 backend 傳 "2026-08-28" 定 "2026-08-28 00:00:00", 當 UTC 凌晨處理)
   const normalizeTime = (t) => {
     if (typeof t === 'number') {
       return t > 1e12 ? Math.floor(t / 1000) : t;  // ms → s
     }
     if (typeof t === 'string') {
-      return Math.floor(new Date(t).getTime() / 1000);  // ISO → s
+      const dateOnly = t.split(' ')[0];  // "2026-08-28 00:00:00" → "2026-08-28"
+      return Math.floor(new Date(dateOnly + 'T00:00:00Z').getTime() / 1000);  // 強制 UTC midnight
     }
     return null;
   };
 
+  // 大少 2026-08-29 22:00 — root cause 已統一 UTC parse, dedupe 拎走 5 條同日 dup entry (datetime + date-only 兩種 format 對同一日拎到同一 UTC timestamp)
   const candleData = klines
     .map((k) => ({
       time: normalizeTime(k.timestamp ?? k.time ?? k.date),
@@ -1282,6 +1290,7 @@ function renderChart(klines, code, period) {
       close: k.close,
     }))
     .filter((d) => d.time != null && [d.open, d.high, d.low, d.close].every(Number.isFinite))
+    .filter((d, i, arr) => arr.findIndex(x => x.time === d.time) === i)  // dedupe by time, 保留首 entry
     .sort((a, b) => a.time - b.time);
 
   if (candleData.length === 0) {
@@ -1306,6 +1315,7 @@ function renderChart(klines, code, period) {
     },
     rightPriceScale: {
       borderColor: '#d9d9d9',
+      autoScale: true,  // 大少 2026-08-29 21:46 — explicit autoscale 確保 6 個月可見範圍入面 candlestick 渲染到
     },
     autoSize: true,
   });
@@ -1319,6 +1329,12 @@ function renderChart(klines, code, period) {
     wickDownColor: '#ef5350',
   });
   candleSeries.setData(candleData);
+  // 大少 2026-08-29 21:45 debug: 試返 v4.40.6 嗰個 debug div 喺 container 入面 position:absolute 嘅 setup
+  const _dbgDiv = document.createElement('div');
+  _dbgDiv.id = 'chart-candle-debug';
+  _dbgDiv.style.cssText = 'position:absolute;top:8px;left:8px;z-index:100;background:rgba(255,235,59,0.92);color:#000;padding:4px 8px;font-size:10px;font-family:monospace;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);pointer-events:none;line-height:1.3;max-width:300px;';
+  _dbgDiv.innerHTML = `<strong>🟡 ${candleData.length} bars</strong> | asc=${candleData.every((d, i) => i === 0 || d.time >= candleData[i-1].time) ? '✅' : '❌'} dup=${candleData.length !== new Set(candleData.map(d => d.time)).size ? '❌' : '✅'} | range ${JSON.stringify(chart.timeScale().getVisibleLogicalRange())}`;
+  container.appendChild(_dbgDiv);
 
   // Volume series (下方 histogram)
   const volumeData = candleData.map((d, i) => {
@@ -1355,10 +1371,11 @@ function renderChart(klines, code, period) {
     // 大少 2026-08-19 16:43 fix — v4.2.3 setVisibleLogicalRange 嗰陣會清 marker state
     // (凡人話: chart fit 落半年範圍嗰陣, 啱啱落嘅 sequence 號碼 marker 會跟住丟失)
     // 50ms 後再 set 返一次, 確保 persist
+    // 大少 2026-08-29 22:00 fix: HEAD v4.39.0 用 `chartRefs.zigzagSequenceMarkers` 拋 ReferenceError (chartRefs 唔存在呢個 scope, testing page 用 `lastChartRefs`)
     setTimeout(() => {
-      if (chartRefs.zigzagSequenceMarkers && chartRefs.candleSeries && typeof chartRefs.candleSeries.setMarkers === 'function') {
+      if (lastChartRefs && lastChartRefs.zigzagSequenceMarkers && lastChartRefs.candleSeries && typeof lastChartRefs.candleSeries.setMarkers === 'function') {
         try {
-          chartRefs.candleSeries.setMarkers(chartRefs.zigzagSequenceMarkers.markers);
+          lastChartRefs.candleSeries.setMarkers(lastChartRefs.zigzagSequenceMarkers.markers);
           console.log('[Chart] 🛠️ re-set markers after setVisibleLogicalRange (確保 persist)');
         } catch (e) { /* ignore */ }
       }
