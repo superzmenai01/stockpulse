@@ -19,7 +19,9 @@ import pytest
 from backend.algorithms.ma_alignment.algorithm import MAAlignmentV2Algorithm
 from backend.algorithms.ma_alignment.config import DEFAULT_MA_ALIGNMENT_V2_CONFIG
 from backend.algorithms import get_algorithm, list_algorithms
-from backend.algorithms.zigzag.algorithm import ZigZagAlgorithm
+# 大少 2026-08-30 01:04 — 拎走 backend.algorithms.zigzag import (C 方案 phase 2)
+# 之後 M1 純 MA alignment, 之字 points 由 frontend inject
+# Spec Sync #46 永久 rule 改: M1 純 MA alignment
 
 
 def make_klines(prices, volume_base=1000, start_date=(2024, 1, 1)):
@@ -152,44 +154,9 @@ def test_ma_alignment_all_sub_scenarios_in_meta():
 
 
 # ============================================================================
-# Test: ZigZag dependency inject
-# ============================================================================
-
-def test_ma_alignment_with_zigzag_inject():
-    """凡人話: M1 拎 ZigZag 從 options inject (caller contract)"""
-    # 用波動 K 線 (sin wave 風格), 拎到 ZigZag peak/trough
-    import math
-    prices = [100 + 10 * math.sin(i * 0.3) for i in range(80)]
-    klines = make_klines(prices, volume_base=1000)
-
-    # 先拎 ZigZag verdict
-    zigzag_algo = ZigZagAlgorithm()
-    zigzag_verdict = zigzag_algo.run(klines, {"threshold": 5})
-    # 確認 ZigZag 拎到 points
-    assert len(zigzag_verdict.points) > 0, f"ZigZag 拎到 0 points, prices={prices[:5]}"
-
-    # 拎 ZigZag 數據 inject 落 M1 options
-    options = {
-        "config": DEFAULT_MA_ALIGNMENT_V2_CONFIG,
-        "symbol": "TEST",
-        "zigzagPoints": zigzag_verdict.points,
-        "lastSwingHigh": zigzag_verdict.meta.get("lastSwingHigh"),
-        "lastSwingLow": zigzag_verdict.meta.get("lastSwingLow"),
-        "zigzagThreshold": zigzag_verdict.meta.get("threshold", 5),
-        "zigzagSource": "backend (Phase 1 v1.0.0)",
-    }
-
-    algo = MAAlignmentV2Algorithm()
-    verdict = algo.run(klines, options)
-
-    assert verdict.ok
-    # 確認 ZigZag 5 個 field 拎得到
-    assert verdict.meta["zigzagPoints"] is not None
-    assert len(verdict.meta["zigzagPoints"]) > 0
-    assert verdict.meta["zigzagSource"] == "backend (Phase 1 v1.0.0)"
-    assert verdict.meta["lastSwingHigh"] is not None
-    assert verdict.meta["lastSwingLow"] is not None
-    assert verdict.meta["zigzagPointsCount"] > 0
+# 大少 2026-08-30 01:04 — 拎走 test_ma_alignment_with_zigzag_inject 嗰段 (C 方案 phase 2)
+# 之後 M1 純 MA alignment, 之字 points 由 frontend inject
+# Spec Sync #46 永久 rule 改: M1 純 MA alignment
 
 
 # ============================================================================

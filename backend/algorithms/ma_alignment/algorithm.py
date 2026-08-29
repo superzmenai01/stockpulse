@@ -463,18 +463,15 @@ class MAAlignmentV2Algorithm(Algorithm):
             or klines[-1].get("timestamp") or None
         )
 
-        # ZigZag 從 options inject (Phase 1 已經搬去 backend, runner service 拎 verdict inject)
-        zigzag_points = options.get("zigzagPoints")
-        last_swing_high = options.get("lastSwingHigh")
-        last_swing_low = options.get("lastSwingLow")
+        # 大少 2026-08-30 01:04 — 拎走 M1 ZigZag 依賴 (C 方案 phase 2):
+        # 之後 M1 純 MA alignment, 之字 points 由 testing page frontend 自己 inject
+        # (applyFrontendZigZagOverlay line 1424 verdict.meta.zigzagPoints = frontendPoints)
+        # Spec Sync #46 永久 rule 改: M1 純 MA alignment, 之字 points 由 frontend inject
 
         meta: Dict[str, Any] = {
             "symbol": options.get("symbol", "UNKNOWN"),
             "cycle": candidate,
             "cycleLabel": CYCLE_LABELS[candidate],
-            # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 high-level state 落 M1 verdict meta
-            # 之後 M7 Synthesizer 拎 M1 state 做 ZigZagSlope cross-module alignment check
-            # (Stage 2 第一步 Level 4 cross-module alignment enrich: M1 UP + ZigZag 急跌 → 扣 alignment)
             "state": STATE_MAP[candidate],
             "cyclePosition": cycle_position,
             "cyclePositionLabel": POSITION_LABELS[cycle_position],
@@ -506,14 +503,8 @@ class MAAlignmentV2Algorithm(Algorithm):
             "adaptiveAtrPct": _round(threshold_resolution["atrPct"], 6) if threshold_resolution["atrPct"] is not None else None,
             "adaptiveAtrPctDisplay": f"{threshold_resolution['atrPct']*100:.3f}%" if threshold_resolution["atrPct"] is not None else None,
             "adaptiveRawThreshold": _round(threshold_resolution["rawValue"], 6) if threshold_resolution["rawValue"] is not None else None,
-            # Phase 1 永久 rule — ZigZag 從 backend 注入 (大少 2026-08-15 framework contract)
-            "zigzagPoints": zigzag_points,
-            "lastSwingHigh": last_swing_high,
-            "lastSwingLow": last_swing_low,
-            "zigzagThreshold": options.get("zigzagThreshold", 5),
-            "zigzagSlope": options.get("zigzagSlope"),
-            "zigzagSource": options.get("zigzagSource", "backend (Phase 1 v1.0.0)"),
-            "zigzagPointsCount": len(zigzag_points) if zigzag_points else 0,
+            # 大少 2026-08-30 01:04 — 拎走 ZigZag 5 個 field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSlope / zigzagSource)
+            # Spec Sync #46 永久 rule 改: M1 純 MA alignment, 之字 points 由 frontend inject
         }
 
         # Warnings (跟 Module Warning System v1.1.0)
