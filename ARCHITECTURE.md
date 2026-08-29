@@ -299,6 +299,35 @@ get_or_fetch(code, ctx, ktype, period, start, end)
 - `ALGO_CACHE_BUST = '4.42.0'`, `?v=2.3.113`
 - Commit: 6ec043a6 (frontend data fix only)
 
+### 3.7 Candlestick 視覺 Render 真正 Fix (大少 2026-08-29 22:35 trigger)
+
+**凡人話解釋**: 大少 trigger「撳 ZigZag Off 有圖, On 又無圖」, frontend K 線 UTC fix 完之後 (v4.42.0) candlestick 仲係 render 唔出嘅真正 root cause 終於搵到。
+
+**Root cause**: testing page frontend K 線 UTC 統一 (v4.42.0) 之後, `verdict.meta.zigzagPoints` 嘅 date 拎自 K 線原始 time/date/timestamp field, 仍然有 2 種 format 混雜。`adapter.mjs` 嘅 `dateToTime` 函數喺 renderMAAlignmentV2ChartOverlay 入面用 `new Date(p.date)` 解析 (line 4990-4993), 跟 testing page normalizeTime 撞同一個 bug:
+- `new Date("2026-08-28")` (date-only) → UTC 凌晨 1787875200
+- `new Date("2026-08-28 00:00:00")` (datetime) → HKT 凌晨 1787846400 (早 8 小時)
+
+ZigZag line series `setData(zigzagSeries)` 拎到混雜 timestamp → sort 唔連續 → Lightweight Charts 4.2.3 silent reject, **同時破壞 chart internal state, 抹走 candlestick 嘅 visual render state**。
+
+**為咩 Off 有圖 On 無圖**:
+- Off 嗰陣 `zigzagEnabled = false` skip 紫色線 addLineSeries, candlestick 冇被破壞 → 視覺 OK
+- On 嗰陣紫色線 silent reject 嗰陣破壞 chart state → 抹走 candlestick 視覺
+
+**永久 fix (v4.42.3)**:
+- `adapter.mjs` line 4990-4993 嘅 `dateToTime` 統一 strip 時間部分 + 強制 UTC midnight parse
+- 跟 testing page normalizeTime (v4.42.0) 完全一致: `t.split(' ')[0] + 'T00:00:00Z'`
+
+**永久 rule (跨 module 統一, 最重要)**:
+- 凡 frontend 任何 date/time string 解析永遠 strip `' '` 拎 date-only + 加 `'T00:00:00Z'` 強制 UTC
+- testing page `normalizeTime` + adapter.mjs `dateToTime` 統一用同一個 pattern
+- 之後新加 module 嘅 chart overlay 全部跟呢個 pattern
+- 凡人話: 唔好信 backend 統一 format, frontend 自己防
+
+**對應**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 4990-5004 `dateToTime` UTC fix
+- `ALGO_CACHE_BUST = '4.42.3'`, `?v=2.3.116`
+- Commit: 24c7d8f1 (frontend + adapter 統一 UTC fix)
+
 ---
 
 ## 4. Algorithm Pipeline (AS02 detail)
