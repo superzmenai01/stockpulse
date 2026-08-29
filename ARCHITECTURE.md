@@ -3512,3 +3512,61 @@ for retry_attempt in range(max_retries):
 - 之後任何 algorithm 加新嘅 chart 互動 control, 排喺 chart-section 入面 chart-container 之前 (跟 Spec Sync #32 chart-control layout 永久 rule)
 - 之後 StockPulse 其他 input 欄位 (e.g. paper trading, trade journal) 可以套用 onfocus auto-select pattern
 - 之後 StockPulse 其他 autocomplete 可以套用 Tab/Enter/Space HotKey pattern
+
+### 15.37 M1 Sub-scenario Trigger 用 Backend ZigZag + P1/P2/P3/P4 Indexing 永久 rule (大少 2026-08-29 15:42, Spec Sync #46)
+
+### 大少 trigger
+1. 8月25-29日 4 次跑 215 隻 stock 對比到頂/到底轉勢, 但 stock list 結論全部錯 (Mavis 自己重新 implement 咗 ZigZag, indexing 方向反轉咗)
+2. 大少附 K 線圖 trigger: 「zigzag P1的位置是在最新價格那邊，P2就是在接近P1的高底位，如此類推，請記下這個規則，修改所有用到P1,P2,P3…的地方」
+3. 大少跟住 trigger: 「那個功能在M1裡的某個功能，你參考他是怎樣計算的，最好能直接用上他取得p1,p2,p3…的位置，這樣就必定可以一致性了」
+
+### 凡人話解釋
+M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每個 point 有 `index` 1-based 編號 (1=最舊, N=最新), 仲已經計好 `meta.zigzagSlope.lastToToday` (P1 → today 嘅 slope) 同 `prevToLast` (P3 → P1 嘅 slope)。之前 Mavis 自己重新 implement ZigZag, 結果:
+- Indexing 方向反轉 (P1 變咗最舊, P4 變咗最新)
+- ZigZagSlope 計算用 P3 → P4 (最舊到第三新) 而唔係 P1 → today (最近一段)
+- 215 隻 stock 嘅結論全部錯, 之前 5 隻「到頂轉勢」stock 全部跌入「強上升」pattern
+
+### 永久 rule (M1 Sub-scenario Trigger + ZigZag Indexing)
+
+- ✅ **M1 sub-scenario trigger 一律用 backend ZigZag endpoint** (`/api/algorithms/run?algo=zigzag&symbol=...&period=...&threshold=...`)
+  - 唔可以自己 re-implement ZigZag algorithm (會同 M1 不一致)
+  - 凡人話: backend 已經有就取用, 唔好自己整
+  - 套用: 之後 M1/M7/zmen/其他 algorithm 嘅所有 ZigZag-based trigger
+
+- ✅ **ZigZag P1/P2/P3/P4 indexing 永久 rule** (大少 2026-08-29 14:32 trigger):
+  - **P1 = 最新嗰個 ZigZag point** (response `points` 嘅最後一個, idx 最大, 最右邊)
+  - **P2 = 第二新嗰個** (response `points` 倒數第 2 個, idx 倒數第 2 大)
+  - **P3 = 第三新嗰個** (response `points` 倒數第 3 個)
+  - **P4 = 第四新嗰個** (response `points` 倒數第 4 個)
+  - 對應凡人話: P1 喺最新價格嗰邊, P2 接近 P1 嘅高底位, 如此類推
+
+- ✅ **Trigger condition 凡人話對齊 (大少 trigger 規則)**:
+  - 強上升 / 上升趨勢 = **P1 > P3** (新 high > 舊 high) + **P2 > P4** (新 low > 舊 low)
+  - 強下跌 / 下跌趨勢 = **P1 < P3** + **P2 < P4**
+  - **到頂轉勢 (decelerating_up, 仲升緊但見頂)** = P1 > P3 + P2 > P4 + `lastToToday.changePct < -3%` (最近一段由 P1 跌到 today 超過 3%)
+  - **到底轉勢 (decelerating_down, 仲跌緊但見底)** = P1 < P3 + P2 < P4 + `lastToToday.changePct > +3%` (最近一段由 P1 升到 today 超過 3%)
+
+- ✅ **ZigZagSlope 一律用 backend `meta.zigzagSlope.lastToToday.changePct`** (P1 → today 嘅 slope)
+  - 唔可以自己用 (P1 - P2) / P2 計 (會同 M1 算法唔一致)
+  - 唔可以自己用 (P3 - P4) / P4 計 (反映嘅係舊段, 唔係最近一段)
+  - 凡人話: 用 backend 已經計好嘅 changePct, 確保 100% 一致
+
+- ✅ **改 ZigZag trigger 之前必先 verify backend response**:
+  - 寫 trigger code 之前, 用 curl 撳 backend endpoint 直接 verify P1/P2/P3/P4 indexing 同 expected 一致
+  - 凡人話對齊: 「新 high 比較舊 high」對應 `P1 > P3` 因為 P1 係新, P3 係舊
+  - 唔好用記憶/直覺寫 condition, 一定要對返 response `index` 同「舊 vs 新」嘅 logical direction
+
+### 教訓 (8月25-29日 trigger)
+
+- 凡人話解釋: Mavis 自己重新 implement ZigZag 嗰陣, 將 `zzp[-1/-2/-3/-4]` 解讀成 P4/P3/P2/P1 (反轉), 寫 condition `P1 < P3` 以為「高點越來越高」(強上升), 實際係「高點越來越低」(跌勢)
+- 之前 4 次跑 (8月25-29日) stock list 結論 100% 錯, 13 隻「到頂轉勢」+ 8 隻「到底轉勢」(用 backend 正確 trigger) 取代之前 5 隻 + 8 隻 (用錯 indexing)
+- 之前「HK.00027 銀河娛樂係到頂轉勢」嘅解釋錯晒, 銀河其實真係到頂轉勢, 但凡人話解釋用咗錯誤 indexing 嘅 P1/P3 數值 (P1=35.94, P3=37.30 → P1<P3 講成「高點越來越高」實際係「高點越來越低」)
+- 永久 fix: 之後任何 ZigZag-based trigger 必須用 backend endpoint, 唔可以自己 re-implement, 確保 stock list 結論同 M1 algorithm 100% 一致
+
+### 對應 commit
+即將 push (Spec Sync #46)
+
+### 套用情境
+- 之後 M1/M7/zmen/其他 algorithm 加 ZigZag-based trigger, 一律 call backend endpoint 取 P1/P2/P3/P4
+- 之後 research script / testing script 拎 K 線 + ZigZag, 一律 backend endpoint (跟 2026-08-22 23:20 「K-line + Algorithm Backend-only」永久 rule 一致)
+- 之後凡人話解釋 stock 點解中 trigger, 用 backend response 嘅真實 P1/P2/P3/P4 數值對齊凡人話描述
