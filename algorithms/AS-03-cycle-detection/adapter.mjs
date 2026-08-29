@@ -5062,6 +5062,33 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             s.setData(zigzagSeries);
             chartRefs.maV2LineSeries.zigzag = s;
             console.log('[M1 v2.0] ✅ 紫色 ZigZag line series added:', zigzagSeries.length, '個 points, color: #9C27B0');
+            // 大少 2026-08-30 07:48 — 自動 verify 紫色 ZigZag P 點 x 軸對齊 K 線 (debug log)
+            // 撳跑完 algorithm 嗰陣, 自動 dump 最後 3 個 P 點嘅 time + value 對比 K 線對應 date 嘅 K 線 data
+            // 凡人話: 大少撳跑 HK.00981 睇 console 拎 actual plot data, 確認 P 點 x 軸 y 軸位置
+            // 輸出範例: P 點 time=1787587200 (2026-08-25) value=67.30, K線對應: O=66.75 H=68.2 L=65.55 C=67.85
+            if (zigzagSeries.length > 0) {
+              const _last3 = zigzagSeries.slice(-3);
+              console.log('[M1 v2.0] 🔍 紫色 ZigZag 最後 3 個 P 點 (auto verify 對齊 K 線):');
+              for (const _p of _last3) {
+                const _pDate = new Date(_p.time * 1000).toISOString().slice(0, 10);
+                const _kl = _zigzagKlineByDate.get(_pDate);
+                console.log(`  P 點 time=${_p.time} (${_pDate}) value=${_p.value} ${_kl ? `, K線對應: O=${_kl.open} H=${_kl.high} L=${_kl.low} C=${_kl.close}` : ', K線對應: ❌ 揾唔到 K 線'}`);
+              }
+              // 同時 dump K 線最後 5 條嘅 setData time, 對比 P 點最後 1 個 time
+              // 凡人話: 確認 P 點 time 同 K 線 time 對齊 (如果 K 線用 UTC 0 點, P 點 plot 喺 K 線左邊;
+              //  如果 K 線用 UTC noon 對齊, P 點 plot 喺 K 線中段; 等)
+              const _klineTimes = [];
+              for (let _i = Math.max(0, klines.length - 5); _i < klines.length; _i++) {
+                const _k = klines[_i];
+                const _kDate = String(_k.time || _k.date || _k.timestamp).slice(0, 10);
+                const _kTime = dateToTime(_kDate);
+                if (_kTime != null) _klineTimes.push({ date: _kDate, time: _kTime, o: _k.open, h: _k.high, l: _k.low, c: _k.close });
+              }
+              console.log('[M1 v2.0] 🔍 K 線最後 5 條 setData time (對比 P 點 time 拎 x 軸對齊 reference):');
+              for (const _kt of _klineTimes) {
+                console.log(`  K線 date=${_kt.date} time=${_kt.time} O=${_kt.o} H=${_kt.h} L=${_kt.l} C=${_kt.c}`);
+              }
+            }
           } catch (setDataErr) {
             console.warn('[M1 v2.0] ⚠️ 紫色 ZigZag setData 失敗, 拎走 series (避免破壞 chart state):', setDataErr.message);
             try { chart.removeSeries(s); } catch (e) { /* ignore */ }
