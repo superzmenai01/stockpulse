@@ -92,7 +92,7 @@ def test_back_test_insufficient_data():
     assert verdict.ok
     assert verdict.meta["state"] == "SIDEWAYS"
     assert verdict.meta["confidence"] == 0
-    assert any("INSUFFICIENT_DATA" in w for w in verdict.warnings)
+    assert any(w.get("code") == "INSUFFICIENT_DATA" for w in verdict.warnings)
 
 
 def test_back_test_replay_basic():

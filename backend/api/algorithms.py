@@ -153,3 +153,43 @@ async def health():
         "version": "1.0.0",
         "available": list_algorithms(),
     }
+
+
+@router.get("/progress/{request_id}")
+async def get_algorithm_progress(request_id: str):
+    """凡人話: 拎 algorithm progress (M9 跑 30-60 秒嗰陣 frontend polling 拎 progress)
+
+    永久 rule (大少 2026-08-31 P0-5):
+    - request_id 永久由 caller (e.g. spawn_m9_with_progress) 拎
+    - response 包含 status (running / completed / failed) + stage label + percent
+    - 完成後 verdict_dict 包含完整 M9 verdict (frontend polling 拎到 render 結果)
+    - TTL 1 小時, 超時自動清
+    """
+    from backend.services.algorithm_progress import get_progress
+    progress = get_progress(request_id)
+    if progress is None:
+        raise HTTPException(404, f"Request ID {request_id} 唔存在或已過期 (TTL 1 小時)")
+    return progress
+
+
+@router.get("/progress")
+async def list_active_progress():
+    """凡人話: 拎全部 active 嘅 algorithm progress request (debug / monitoring 用)"""
+    from backend.services.algorithm_progress import _PROGRESS_STORE
+    import time as _time
+    now = _time.time()
+    active = [
+        {
+            "request_id": rid,
+            "algo_name": p.get("algo_name"),
+            "symbol": p.get("symbol"),
+            "status": p.get("status"),
+            "stage": p.get("stage"),
+            "percent": p.get("percent"),
+            "started_at": p.get("started_at"),
+            "age_seconds": round(now - p.get("started_at", now), 1),
+        }
+        for rid, p in _PROGRESS_STORE.items()
+        if p.get("status") == "running"
+    ]
+    return {"active_requests": active, "count": len(active)}

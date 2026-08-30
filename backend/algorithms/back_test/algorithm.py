@@ -561,14 +561,34 @@ def run_walk_forward_cv(options: Dict[str, Any]) -> Dict[str, Any]:
     base_symbol = options["baseSymbol"]
     decision_fn = options["decisionFn"]
     base_replay_config = options.get("baseReplayConfig", {})
+    # 永久 rule (大少 2026-08-31 P0-5): walk-forward CV emit fine-grained progress
+    progress_callback: Optional[Callable] = options.get("progress_callback")
+
+    def _emit_progress(stage: str, percent: int, extra: Optional[Dict[str, Any]] = None):
+        if not progress_callback:
+            return
+        stage_dict = {"stage": stage, "percent": percent}
+        if extra:
+            stage_dict.update(extra)
+        try:
+            progress_callback(stage_dict)
+        except Exception:
+            pass  # 唔 crash fold 跑
 
     # 1. Split klines into n folds
     folds = _split_folds(base_klines, num_folds)
+    _emit_progress("walk_forward_cv_folds_split", 15, {"num_folds": len(folds)})
 
     # 2. For each fold, tune + validate
     fold_results: List[Dict[str, Any]] = []
 
     for i, fold_klines in enumerate(folds):
+        # 永久 rule P0-5: emit fold 進度 (fold 1/3 → 25%, fold 2/3 → 50%, fold 3/3 → 75%)
+        _emit_progress(
+            "walk_forward_cv_fold",
+            20 + int(60 * (i / max(len(folds), 1))),
+            {"fold": i + 1, "total_folds": len(folds)},
+        )
         tune_end = int(len(fold_klines) * tune_ratio)
         tune_klines = fold_klines[:tune_end]
         validate_klines = fold_klines[tune_end:]
@@ -792,8 +812,34 @@ class BackTestAlgorithm(Algorithm):
         # M7 verdict inject (chain rule, M9 拎 M7 verdict 做 context)
         module_verdicts: List[Dict[str, Any]] = options.get("moduleVerdicts", [])
 
+        # 永久 rule (大少 2026-08-31 P0-5): M9 必須 emit progress stage 落 options['progress_callback']
+        # 之前 M9 跑 30-60 秒冇 feedback, 而家 frontend polling 拎 progress
+        # 對齊 ARCHITECTURE §15.42 永久 rule
+        progress_callback: Optional[Callable] = options.get("progress_callback")
+        # 永久 rule P0-5: M9 verdict 必須包含 progress_log 落 meta, frontend 撳跑完之後 render progress timeline
+        # (之前冇呢個 field, frontend 唔知 M9 跑到邊度)
+        progress_log: List[Dict[str, Any]] = []
+
+        def _emit_progress(stage: str, percent: int, extra: Optional[Dict[str, Any]] = None):
+            """凡人話: 拎 stage label 推到 progress_callback + progress_log"""
+            import time as _time
+            stage_dict = {
+                "stage": stage,
+                "percent": percent,
+                "timestamp": _time.time(),
+            }
+            if extra:
+                stage_dict.update(extra)
+            progress_log.append(stage_dict)
+            if progress_callback:
+                try:
+                    progress_callback(stage_dict)
+                except Exception as cb_err:
+                    logger.warning(f"[M9] progress_callback 失敗: {cb_err}")
+
         # Step 0: 數據驗證 (need ≥ 126 日 / 6 個月)
         min_data = self.cfg["initialDays"]
+        _emit_progress("data_validation", 5)
         if len(klines) < min_data:
             return Verdict(
                 ok=True,
@@ -811,11 +857,24 @@ class BackTestAlgorithm(Algorithm):
                     "configUsed": self.cfg,
                     "reason": "數據不足",
                 },
-                warnings=[f"INSUFFICIENT_DATA: {len(klines)} < {min_data}"],
+                warnings=[
+                    {
+                        "level": "critical",
+                        "module_id": "M9",
+                        "code": "INSUFFICIENT_DATA",
+                        "message": f"klines {len(klines)} < {min_data} required",
+                        "debug": {
+                            "issue": f"M9 need ≥ {min_data} bars, got {len(klines)}",
+                            "impact": "Verdict 唔可信, 唔好落單",
+                            "fix": "Re-run / 加大 dataWindowDays / 聯絡 admin",
+                        },
+                    }
+                ],
             )
 
         # Step 1-4: Adaptive Window → Coarse Grid → Fine Tune
         # Step 5: Walk-Forward CV
+        _emit_progress("walk_forward_cv_starting", 10, {"num_folds": self.cfg["numFolds"]})
         walk_forward_result = run_walk_forward_cv({
             "klines": klines,
             "decisionFn": decision_fn,
@@ -823,6 +882,12 @@ class BackTestAlgorithm(Algorithm):
             "numFolds": self.cfg["numFolds"],
             "tuneRatio": self.cfg["tuneRatio"],
             "baseReplayConfig": {"stepDays": options.get("stepDays", 5)},
+            # 永久 rule P0-5: progress callback 注入 sub-step, 拎 fine-grained fold/candidate 進度
+            "progress_callback": progress_callback,
+        })
+        _emit_progress("walk_forward_cv_done", 90, {
+            "folds_count": len(walk_forward_result["folds"]),
+            "optimal_total_samples": walk_forward_result["overall"].get("totalValidateSamples", 0),
         })
 
         # 永久 rule: walk-forward CV 跑完之後, 自動 POST optimal + forward return 落 cache
@@ -878,6 +943,9 @@ class BackTestAlgorithm(Algorithm):
             "foldsCount": len(walk_forward_result["folds"]),
             "postErrors": post_errors,
             "m7Context": m7_summary,
+            # 永久 rule P0-5 (大少 2026-08-31): M9 verdict 必含 progress_log 落 meta
+            # 之前 M9 跑 30-60 秒冇 feedback, 而家 frontend render 揾 progress_log 顯示 timeline
+            "progress_log": progress_log,
         }
 
         # 凡人話: 0 validate samples 一定要 fire warning (大少 22:28 永久 rule)

@@ -3936,3 +3936,42 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 AS-04+ algorithm verdict shape 全部 import `backend.algorithms.contract.ModuleVerdict`, runner 統一 contract test
 - 之後 frontend testing page 拎 backend verdict 嗰陣, 永遠係 `verdict.warnings` (唔係 `_warnings`), 因為 contract.py 用 Pydantic-friendly naming
 - 之後 M1 v2.3.0+ 改 verdict shape 嗰陣, contract test 立刻 fail 提示邊個 field 缺 / 邊個 type 錯
+
+### 15.42 M9 Progress Feedback 永久 rule (大少 2026-08-31, Spec Sync #50 Batch 3a)
+
+### 大少 trigger
+8月31日架構評審 Batch 3a: P0-5 性能瓶頸硬傷 — M9 cold call 30-60 秒冇 progress feedback, 大少撳掣以為 hang 撳多次掣撞 double-call。
+
+### 凡人話解釋
+之前 M9 algorithm.run() 同步等 30-60 秒, frontend 完全冇 feedback, 大少撳掣以為 hang 撳多次掣, 撞 double-call（永久 rule §AS-03 chain v1.1 cache OK skip M9 嗰陣 2-4 秒搞掂, 但 cold cache 第一次一定要等）。
+
+而家永久 fix: M9 algorithm 內部 5 個 sub-step + walk-forward CV fold emit progress 落 verdict.meta.progress_log, 同步返 verdict 嗰陣 frontend 拎到 progress timeline。新加 `/api/algorithms/progress/{request_id}` endpoint, 之後 frontend sprint 改 caller 用 spawn pattern + polling 即時有 progress feedback。
+
+### 改動範圍 (3 改 file + 1 新 file + 1 改 test file)
+
+| File | 改動 |
+|------|------|
+| `backend/algorithms/back_test/algorithm.py` | M9 run() 入面加 `progress_log: List[Dict]` + `_emit_progress()` helper + 5 個 sub-step emit 進度 (data_validation 5% / walk_forward_cv_starting 10% / walk_forward_cv_fold 20-80% / walk_forward_cv_done 90%)。M9 verdict.meta 加 `progress_log` field |
+| `backend/services/algorithm_progress.py` (新 file) | In-memory `_PROGRESS_STORE` thread-safe dict + `_PROGRESS_LOCK` + `get_progress()` / `_set_progress()` / `make_progress_callback()` / `spawn_m9_with_progress()` (threading.Thread spawn) + TTL 1 小時 auto-cleanup |
+| `backend/api/algorithms.py` | 新增 `GET /api/algorithms/progress/{request_id}` 拎 progress dict + `GET /api/algorithms/progress` 拎全部 active request list (debug/monitoring) |
+| `backend/tests/test_back_test.py` | 修 `test_back_test_insufficient_data` warning 拎法 (string → `w.get("code") == "INSUFFICIENT_DATA"`, 對齊永久 rule §Module Warning v1.1.0) |
+
+### 永久 rule (M9 Progress Feedback)
+- ✅ M9 algorithm.run() 必須 emit progress 落 `options['progress_callback']` (有就用, 冇就 skip)
+- ✅ M9 verdict.meta 永遠包含 `progress_log: List[Dict]`, 每個 stage 一個 dict (stage / percent / timestamp / extra)
+- ✅ Stage label 統一: `data_validation` / `walk_forward_cv_starting` / `walk_forward_cv_folds_split` / `walk_forward_cv_fold` / `walk_forward_cv_done`
+- ✅ `run_walk_forward_cv` 入面 fold loop emit 進度 (20% / 40% / 60% / 80% by fold N/total)
+- ✅ 新加 endpoint `GET /api/algorithms/progress/{request_id}` 拎 in-memory progress dict
+- ✅ 新加 endpoint `GET /api/algorithms/progress` 拎全部 active request (debug/monitoring)
+- ✅ In-memory store TTL 1 小時, 過期自動清
+- ❌ Frontend ProgressBar polling 暫時未做 (留返 Batch 3b, 因為 frontend testing page 改要 bump cache bust + race condition 永久 rule)
+- ❌ algorithm_runner.py 暫時未加 use_progress param (留返 Batch 3b, 唔 break 現有 sync caller)
+
+### 對應 commit (Batch 3a)
+- `feat(architecture-review-batch-3a): P0-5 M9 progress feedback infrastructure (大少 8月31日 07:35「GO, Push 不用停」trigger 自主做 Batch 3) + Spec Sync #50`
+- Spec Sync: ARCHITECTURE.md §15.42 (本段) + HANDOVER.md §N (新永久 rule section)
+
+### 套用情境 (Batch 3b 之後 sprint)
+- 之後 frontend testing page 撳跑 M9 嗰陣, 改 caller pattern: POST 拎 `request_id` → polling `/api/algorithms/progress/{request_id}` → 收到 `status: completed` 拎 `verdict_dict` render
+- 之後 M1/M2/M3 等其他 algorithm 都跟呢個 pattern: emit progress callback (M1 < 1 秒唔需要, M9/M8 30-60 秒要)
+- 之後 AS-04+ algorithm 全部 import `make_progress_callback()` 統一 progress 機制

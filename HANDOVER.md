@@ -261,6 +261,20 @@ def _compute_fetch_max_count(period):
 - 詳見 ARCHITECTURE.md §15.41 (Spec Sync #49)
 - 大少 trigger: 8月31日架構評審 Batch 2, P0-3 模塊耦合硬傷 (caller inject pattern 冇 contract test, M1 verdict shape 改咗 silent fall back)
 
+### N. M9 Progress Feedback Infrastructure 永久 rule (8-31, 架構評審 Batch 3a)
+
+- M9 algorithm.run() 必須 emit progress 落 `options['progress_callback']` (有就用, 冇就 skip)
+- M9 verdict.meta 永遠包含 `progress_log: List[Dict]`, 每個 stage 一個 dict (stage / percent / timestamp)
+- Stage label 統一: `data_validation` / `walk_forward_cv_starting` / `walk_forward_cv_folds_split` / `walk_forward_cv_fold` / `walk_forward_cv_done`
+- `run_walk_forward_cv` fold loop emit 進度 (20% / 40% / 60% / 80% by fold N/total)
+- 新加 endpoint `GET /api/algorithms/progress/{request_id}` 拎 in-memory progress dict
+- 新加 endpoint `GET /api/algorithms/progress` 拎全部 active request (debug/monitoring)
+- `backend/services/algorithm_progress.py` 提供 `get_progress()` / `make_progress_callback()` / `spawn_m9_with_progress()` (threading.Thread spawn + TTL 1 小時)
+- In-memory store TTL 1 小時, 過期自動清
+- Frontend ProgressBar polling 留返 Batch 3b (testing page 改要 cache bust + race condition 永久 rule)
+- 詳見 ARCHITECTURE.md §15.42 (Spec Sync #50)
+- 大少 trigger: 8月31日架構評審 Batch 3a, P0-5 性能瓶頸硬傷 (M9 cold call 30-60 秒冇 progress feedback, 大少撳掣以為 hang 撳多次掣撞 double-call)
+
 ---
 
 ## 7. Critical Pitfalls (避開!)
