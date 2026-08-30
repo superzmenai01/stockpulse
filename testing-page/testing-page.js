@@ -292,6 +292,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 // 大少 2026-08-21 00:24 — ZigZag threshold lookback 參數 (手動可調): ALGO_CACHE_BUST = '4.29.0' (testing-page.js 加 LS_KEY_LOOKBACK + LOOKBACK_DEFAULT=20 + LOOKBACK_MIN=5 + LOOKBACK_MAX=100 + getLookback() + setLookback() localStorage helper, applyAutoThreshold 改用 getLookback() 動態取 (唔再 hardcode 20), 撳跑算法嗰陣 auto mode 計算 (L860-877) 改用 getLookback(), 初始化 UI (initThresholdModeUI) 加 lookbackEl value 同步, 加 lookback input 即時改 handler (debounce 200ms, 改完即時重算, manual mode 唔影響), 加「重置為 20」掣 handler; index.html 自動 mode 顯示區改: 加 lookback input (5-100, step 1) + 「重置為 20」掣, 跟 Spec Sync #31 config input onChange handler pattern 一致; 對應大少 trigger「再加一個可手動調整的參數: lookback, 也會有自動儲存功能」; 永久 rule: lookback 永遠跟 localStorage, 預設 20, 範圍 5-100, manual mode 唔影響, 改完即時重算 (auto mode 觸發 applyAutoThreshold); localStorage key `stockpulse.zigzag.lookback`)
 // 大少 2026-08-21 00:02 — ZigZag threshold 自動調整 (波動率自適應法): ALGO_CACHE_BUST = '4.28.0' (testing-page.js 加 autoThresholdVolatility(highs, lows, closes, lookback=20, multiplier=2.5) + extractHLC(klines) 純函數 + localStorage 存取 helper (LS_KEY_THRESHOLD_MODE + LS_KEY_MANUAL_THRESHOLD) + applyAutoThreshold(code, period) 計算 + 即時 update 紫色線 + 初始化 UI (initThresholdModeUI 新股票冇 record → 自動 mode 預設) + mode 切換 handler (切 auto 即時計算, 切 manual 用最近 auto 結果) + 重算掣 + 重置為自動掣 + manual slider 即時改 (跟 spec sync #31 pattern, debounce 200ms) + 撳「跑算法」嗰陣 auto mode 自動計算 threshold (L841 之前) + 全部 localStorage 自動保存; index.html #zigzag-controls 改: 加「自動/手動」radio + 自動 mode 顯示區 (計算結果 label + 重算掣) + 手動 mode 顯示區 (input + 重置掣) + 「? 倍數」popup 註解 (data-help 顯示倍數選擇表 2.0/2.5/3.0-4.0) + 隱藏 #zigzag-threshold (跟 spec sync #31 兼容); index.html head 加 .multiplier-tooltip inline style block; 對應大少 trigger (1) 新股票自動跑一次 (2) 新增按制手動跑 (3) 每次更新都自動保存; 永久 rule: 新股票冇 localStorage record → 自動 mode 預設, 倍數 2.5 hardcode, lookback 20 hardcode, 0.5%-20% clamp, localStorage key `stockpulse.zigzag.thresholdMode` + `stockpulse.zigzag.manualThreshold`)
 // 大少 2026-08-22 23:35 — Chart 上方加股票名稱 + 號碼: ALGO_CACHE_BUST = '4.37.0' (testing-page.js 加 updateStockNameDisplay(code) function 喺 runAlgorithm 之後 call, fetch backend /api/stocks/{code} 拎 stock name, 寫入 chart-header 嘅 #stock-name-display span, format: "{code} - {name}" + fallback 顯示 code only, 凡人話: 大少撳跑完 algorithm 視線一落到 chart 即刻見到呢隻股票係邊隻, 唔使對住 "HK.00823" 估, 對齊股票名 00823 領展 / 00700 騰訊 之類; index.html chart-header h2 加 <span id="stock-name-display"> + CSS .stock-name-display style (大少 font size 18px + 灰色 + margin-left 8px), 用 backend 既有 /api/stocks/{code} endpoint 唔需要新加; 永久 rule: testing page 顯示 stock name 永遠由 backend /api/stocks/{code} 拎, 唔好 frontend hardcode map, 配合 stock metadata refresher script 補返 hot list missing 嗰啲 stock; 對應 stocks table 補返: HK.00823 領展 + US.NXP 等 2 隻, 1 個 OpenD batch snapshot call, 唔浪費額度)
+// 大少 2026-08-31 07:56 GO — Sprint 4 Task 1+2: FutuOpenD banner + M9 progress log render: ALGO_CACHE_BUST = '4.50.0' (testing-page.js 加 futuHealthCache + pollFutuHealth() 5 秒 1 次 polling /api/algorithms/health/futu + updateFutuHealthBanner() 顯示頂部紅色 banner + disable「跑算法」掣 + 加 renderM9ProgressLog(verdict) 喺 M9 verdict 頂部 render 5 個 stage 嘅 progress bar timeline; runAlgorithm 開頭加最後 1 次 check futu health, 不 healthy 即刻 fail 避免 banner 與 click 之間 delay; index.html chart-section 加 <div id="futu-health-banner"> 喺 run-status 之前; ?v=2.3.110 → 2.3.111; 對應 backend Sprint 4 Task 3 background thread 30 秒 1 次自動 check)
 // 大少 2026-08-30 08:02 — 紫色 ZigZag value revert wick tip + 保留 business day object time field: ALGO_CACHE_BUST = '4.41.3'
 // adapter.mjs 紫色 ZigZag line setData 嗰陣:
 //  - value 改返用 algorithm 拎 wick tip (high/low) — 4.41.0 body middle fix 撤回, 4.15.0 永久 rule 恢復原狀
@@ -398,7 +399,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ Lightweight Charts v4.2.3 out-of-range marker 嗰個 silent render bug 治本 fix (bump v4.2.3 → v5.2.0, v5 重新 design, 唔會有呢個 bug)
 // 對齊 git reset: `git reset --hard 3a5c2fa4` (Option B,拎走 4.45.0 + 4.48.1 un-committed, keep 4.42.2 + 4.42.3 + 4.43.0)
 // 對應 commit (將會 commit): fix(testing-page): bump lightweight-charts v4.2.3 → v5.2.0 + 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API (大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B + 4.49.0 永久 rule)
-const ALGO_CACHE_BUST = '4.49.0';
+const ALGO_CACHE_BUST = '4.50.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -556,6 +557,85 @@ const resultPanel = document.getElementById('result-panel');
 const registryCount = document.getElementById('registry-count');
 
 registryCount.textContent = REGISTRY.length;
+
+// =============================================================================
+// 大少 2026-08-31 07:56 GO — Sprint 4 Task 2: FutuOpenD health polling + banner
+// =============================================================================
+// 永久 rule: testing page 入面 background polling 富途 OpenD health, 5 秒 1 次 (比 backend 30 秒 schedule 密少少)
+// 不 healthy 嗰陣顯示頂部紅色 banner + disable「跑算法」掣
+
+let futuHealthCache = { is_healthy: true, last_check_at: null, last_error: null, consecutive_failures: 0 };
+
+async function pollFutuHealth() {
+  try {
+    const resp = await fetch(`${BACKEND_URL}/api/algorithms/health/futu`);
+    if (!resp.ok) return;
+    futuHealthCache = await resp.json();
+    updateFutuHealthBanner();
+  } catch (e) {
+    console.warn('[testing-page] futu health polling 失敗:', e);
+  }
+}
+
+function updateFutuHealthBanner() {
+  const banner = document.getElementById('futu-health-banner');
+  if (!banner) return;
+  const runBtn = document.getElementById('btn-run-algorithm');
+  const chainBtn = document.getElementById('btn-run-chain');
+  if (futuHealthCache.is_healthy) {
+    banner.style.display = 'none';
+    if (runBtn) runBtn.disabled = false;
+    if (chainBtn) chainBtn.disabled = false;
+  } else {
+    banner.style.display = 'block';
+    const errMsg = futuHealthCache.last_error || 'unknown';
+    banner.innerHTML = `🚨 富途連線中斷 (連續 ${futuHealthCache.consecutive_failures || 0} 次失敗) · 唔好落單 · 撳跑 algorithm 掣已自動 disable · 重啟富途牛牛 / 檢查 port 11111 · ${errMsg}`;
+    if (runBtn) runBtn.disabled = true;
+    if (chainBtn) chainBtn.disabled = true;
+  }
+}
+
+// 永久 rule: testing page 加載即時 polling 一次 (避免 5 秒 delay), 之後 5 秒 1 次
+pollFutuHealth();
+setInterval(pollFutuHealth, 5000);
+
+// 大少 2026-08-31 07:56 GO — Sprint 4 Task 1: M9 progress log render
+// 永久 rule: M9 verdict 包含 verdict.meta.progress_log, testing page render 落 result panel 上面
+// (sync 跑完之後 render timeline, 唔做中途 polling 因為 caller pattern 改 risk 高)
+function renderM9ProgressLog(verdict) {
+  if (!verdict || !verdict.meta || !Array.isArray(verdict.meta.progress_log)) return '';
+  const log = verdict.meta.progress_log;
+  if (log.length === 0) return '';
+  const rows = log.map((entry) => {
+    const stage = entry.stage || '?';
+    const percent = entry.percent || 0;
+    const extra = Object.entries(entry)
+      .filter(([k]) => !['stage', 'percent', 'timestamp'].includes(k))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ');
+    const extraStr = extra ? ` <small style="color:#888;">(${extra})</small>` : '';
+    return `<tr>
+      <td style="padding:4px 8px;font-size:12px;">${stage}</td>
+      <td style="padding:4px 8px;font-size:12px;">
+        <div style="background:#e0e0e0;border-radius:3px;height:14px;width:100%;">
+          <div style="background:#4caf50;border-radius:3px;height:14px;width:${percent}%;"></div>
+        </div>
+      </td>
+      <td style="padding:4px 8px;font-size:12px;">${percent}%${extraStr}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="margin:8px 0;padding:10px;background:#f5f5f5;border-radius:6px;">
+    <h4 style="margin:0 0 6px 0;font-size:13px;">⏱️ M9 進度 (${log.length} 個 stage)</h4>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="background:#e8e8e8;">
+        <th style="padding:4px 8px;font-size:12px;text-align:left;">Stage</th>
+        <th style="padding:4px 8px;font-size:12px;text-align:left;">進度</th>
+        <th style="padding:4px 8px;font-size:12px;text-align:left;">%</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
 
 // ===== Init =====
 
@@ -1034,6 +1114,15 @@ async function runAlgorithm() {
     return;
   }
 
+  // 大少 2026-08-31 07:56 GO — Sprint 4 Task 2: 撳跑 algorithm 之前最後 1 次 check futu health
+  // (避免 5 秒 polling delay 撞 banner 之間, 即時 poll + check cache)
+  await pollFutuHealth();
+  if (!futuHealthCache.is_healthy) {
+    runStatus.innerHTML = '🚨 富途連線中斷, 撳跑 algorithm 掣已 disable · 重啟富途牛牛 / 檢查 port 11111';
+    updateFutuHealthBanner();
+    return;
+  }
+
   // 大少 11:49 揀 B 修 Bug 1: 永遠讀 DOM value 直接 sync, 避免 'input' event race condition
   // (之前 fill 觸發 'input' event 仲未 process 完, click button 已經 fire, currentOptions.code 仲係舊 value)
   // 大少 12:03 Bug 1 fix 位置錯誤修正: 將 fix 移去 return check 之前, 否則 race condition 真係發生時 fix 永遠到唔到
@@ -1186,9 +1275,19 @@ async function runAlgorithm() {
         // 簡單做法: prepend WarningBanner, WarningCard 由 adapter 自己 inject
         resultHTML = bannerHTML + resultHTML;
       }
+      // 大少 2026-08-31 07:56 GO — Sprint 4 Task 1: M9 verdict 顯示 progress log (timeline view)
+      // 永久 rule: M9 verdict 包含 verdict.meta.progress_log (5 個 stage), 撳跑完即時 render 揾跑咗咩
+      if (currentAdapter.id === 'AS-03-BT' && verdict.meta && Array.isArray(verdict.meta.progress_log)) {
+        resultHTML = renderM9ProgressLog(verdict) + resultHTML;
+      }
       resultPanel.innerHTML = resultHTML;
     } else {
-      resultPanel.innerHTML = `<pre>${JSON.stringify(verdict, null, 2)}</pre>`;
+      // 大少 2026-08-31 07:56 GO — Sprint 4 Task 1: M9 verdict 顯示 progress log (fallback case)
+      if (currentAdapter.id === 'AS-03-BT' && verdict.meta && Array.isArray(verdict.meta.progress_log)) {
+        resultPanel.innerHTML = renderM9ProgressLog(verdict) + `<pre>${JSON.stringify(verdict, null, 2)}</pre>`;
+      } else {
+        resultPanel.innerHTML = `<pre>${JSON.stringify(verdict, null, 2)}</pre>`;
+      }
     }
 
     // 3.5 大少 15:45: 跑完 algo 自動 start real-time price polling (5 秒 polling 最新股價 + 日期時間)

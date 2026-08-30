@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>股票演算法測試頁</title>
-  <link rel="stylesheet" href="testing-page.css?v=2.3.110">
+  <link rel="stylesheet" href="testing-page.css?v=2.3.111">
   <style>
     /* 大少 2026-08-22 23:35 trigger — chart 上方顯示股票名稱 + 號碼 */
     .stock-name-display {
@@ -90,6 +90,11 @@
           </div>
           <!-- 大少 2026-08-20 23:20 trigger — ZigZag 控制 + 順序號碼 + runStatus 搬到圖表上邊 (chart-section 入面, chart container 之前) -->
           <!-- 凡人話: 之前散喺 inputs section 跑算法掣下面, 大少要睇即時更新 message 同改 ZigZag 設定要離開 chart 向上望, 而家搬到 chart 上面, 視線一離開 chart 即刻見到 -->
+          <!-- 大少 2026-08-31 07:56 GO — Sprint 4 Task 2 — FutuOpenD health banner (頂部紅色警告橫條) -->
+          <!-- 凡人話: 富途 OpenD 死咗嗰陣即時顯示, 大少唔好再撳跑算法掣 (拎 stale K 線) -->
+          <div id="futu-health-banner" class="futu-health-banner" style="display:none;background:#d32f2f;color:#fff;padding:10px 16px;border-radius:6px;margin-bottom:8px;font-size:14px;font-weight:600;">
+            🚨 富途連線中斷 · 唔好落單 · 撳跑 algorithm 掣已自動 disable · 重啟富途牛牛 / 檢查 port 11111
+          </div>
           <div id="run-status" class="run-status" style="margin-bottom:8px;"></div>
           <!-- 大少 2026-08-19 trigger — ZigZag 控制 (啟用 + threshold) -->
           <!-- 大少 2026-08-21 00:02 trigger — 自動/手動 切換 + 自動計算 (波動率自適應法) -->
@@ -186,6 +191,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.110"></script>
+  <script type="module" src="testing-page.js?v=2.3.111"></script>
 </body>
 </html>
