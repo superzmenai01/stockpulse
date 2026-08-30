@@ -299,6 +299,20 @@ def _compute_fetch_max_count(period):
 - 詳見 ARCHITECTURE.md §15.44 (Spec Sync #52)
 - 大少 trigger: 8月31日架構評審 Batch 5, P1-9 (原本 P0-4 降級, 確認 AS-02 已經 asyncio.gather parallel, 真正硬傷係 LLM rate limit + timeout 冇 handling)
 
+### Q. Sprint 還原點永久 rule (8-31 07:52, 大項目之前必做)
+
+- 大項目 (refactor / spec rewrite / framework 升級 / 預期 risk > 2 小時 scope) 之前必做還原點 set
+- 還原點必含 4 個 component: annotated tag + backup branch + restore script + 永久 rule entry
+- Annotated tag 命名: `restore-before-<project-name>` (e.g. `restore-before-sprint-4-followup`)
+- Backup branch 命名: `backup-before-<project-name>` (e.g. `backup-before-sprint-4-followup`)
+- Restore script 必入 `~/stockpulse/scripts/restore_<project>.sh`, 兩次 confirm (`yes` + `RESET`) 防止意外
+- Tag + branch 必 push 去 origin
+- 對齊 permanent rule §15.39 「還原備份還原點」pattern + 大少 8月30日 22:51 嘅 `git reset --hard 3a5c2fa4` 經驗
+- 詳見 ARCHITECTURE.md §15.45 (Spec Sync #53)
+- 當前還原點: `restore-before-sprint-4-followup` (喺 `7e68053a`)
+- 還原 command: `bash ~/stockpulse/scripts/restore_sprint_4.sh`
+- 大少 trigger: 8月31日 07:52「你先備份, 設位一個還原點, 當然到意外或不想改時, 可以一鍵完全還到回到現在」
+
 ---
 
 ## 7. Critical Pitfalls (避開!)

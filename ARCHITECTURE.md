@@ -4050,3 +4050,45 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 AS-04+ 算法如果有 LLM call, 全部跟呢個 pattern: 4 次 retry + 30s timeout + `LLM_RATE_LIMIT` warning code
 - 之後 M-AS02 LLM call 撞 rate limit, frontend 顯示 🟡 warning banner, 大少知 verdict 唔可信
 - 之後 MiniMax / Kimi / Gemini rate limit 政策改, 只改 `as02_analyzer.py` retry logic, 唔影響其他 module
+
+### 15.45 Sprint 還原點永久 rule (大少 2026-08-31 07:52, Spec Sync #53)
+
+### 大少 trigger
+8月31日 07:52「你先備份, 設位一個還原點, 當然到意外或不想改時, 可以一鍵完全還到回到現在」— 大項目 (Sprint 4 follow-up frontend 改) 之前必做還原點, 避免 race condition / 永久 rule 違反 / 改到一半發現唔啱。
+
+### 凡人話解釋
+之前大少 8月30日 22:51 已經做過類似 pattern (備份 commit `3a5c2fa4` 拎走 4.45.0 + un-committed 4.46.0-4.48.1), 跟 permanent rule §15.39 「還原備份還原點」。今次 Sprint 4 follow-up 風險高 (testing page 改要 cache bust + race condition 永久 rule), 大少 trigger 設新還原點對齊 pattern。
+
+### 還原點 4 個 component
+
+| Component | 內容 | 用途 |
+|-----------|------|------|
+| **Annotated tag** | `restore-before-sprint-4-followup` (喺 `7e68053a`) | 永久 marker, 唔會被 future commit 改變 |
+| **Backup branch** | `backup-before-sprint-4-followup` (喺 `7e68053a`) | 大少可以 `git checkout` 入去睇, 永久 branch 唔會被刪 |
+| **Restore script** | `~/stockpulse/scripts/restore_sprint_4.sh` (chmod +x) | 一鍵還原: 兩次 confirm 撳 `yes` + `RESET` 即 `git reset --hard $RESTORE_TAG` |
+| **永久 rule** | ARCHITECTURE §15.45 + HANDOVER §Q | 之後大項目之前必做還原點 set (annotated tag + branch + script) |
+
+### 還原點 當前狀態 (7e68053a)
+- 架構評審 5 個 batch 全部完成 + push (a38f6d3c / 512a2138 / f8a8b6ea / 5e5b3c66 / 7e68053a)
+- 267/268 pytest pass
+- 17 個 warning codes 統一 (6 critical / 8 warning / 3 info)
+- ARCHITECTURE §15.40-§15.44 + HANDOVER §L-§P 永久 rule 全部加咗
+
+### 永久 rule (Sprint 還原點)
+- ✅ 大項目 (refactor / spec rewrite / framework 升級 / 預期 risk > 2 小時 scope) 之前必做還原點
+- ✅ 還原點必含 4 個 component: annotated tag + backup branch + restore script + 永久 rule entry
+- ✅ Annotated tag 命名: `restore-before-<project-name>` (e.g. `restore-before-sprint-4-followup`)
+- ✅ Backup branch 命名: `backup-before-<project-name>` (e.g. `backup-before-sprint-4-followup`)
+- ✅ Restore script 必入 `~/stockpulse/scripts/restore_<project>.sh`, 兩次 confirm (`yes` + `RESET`) 防止意外
+- ✅ Restore script `git reset --hard` 會 destroy main 上未來 commit, 永久 rule acknowledge 呢個 trade-off
+- ✅ Tag + branch 必 push 去 origin (大少可以拎 `git fetch origin <tag>`)
+- ✅ 對齊 permanent rule §15.39 「還原備份還原點」pattern + 大少 8月30日 22:51 嘅 `git reset --hard 3a5c2fa4` 經驗
+
+### 對應 commit
+- `chore(backup): Sprint 4 還原點 (tag + branch + script) (大少 8月31日 07:52「你先備份, 設位一個還原點」trigger)`
+- Spec Sync: ARCHITECTURE.md §15.45 (本段) + HANDOVER.md §Q (新永久 rule section)
+
+### 套用情境
+- 之後 Sprint 4 follow-up 開始之前, 已經 set 咗還原點, 大少可以放心 trigger 我做
+- 之後 Sprint 5 / 6 / 7 大項目之前, 必做同樣還原點 set
+- 之後 AS-04+ 開發 / framework 升級 / 跨 file refactor 之前, 必做同樣還原點 set
