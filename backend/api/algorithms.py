@@ -33,17 +33,44 @@ async def run_algo(
     data_window_days: int = Query(1260, description="拎幾多日 K 線 (默認 1260 = 5 年)"),
     threshold: Optional[float] = Query(
         None,
-        description="ZigZag 過濾 noise 門檻 (%), 唔 specify 用 algorithm 默認 (5%)"
+        description="ZigZag legacy threshold (向後兼容 ChartContainer.tsx), 唔 specify 用 algorithm 默認 (5%)"
+    ),
+    # 大少 2026-08-30 22:04 — 4.43.0 新加 4 個 ZigZag params (對齊 testing page LS 拎法, frontend 拎 LS value 傳 backend)
+    threshold_mode: str = Query(
+        "auto",
+        description="auto | manual (對齊 testing page LS_KEY_THRESHOLD_MODE)"
+    ),
+    manual_threshold: Optional[float] = Query(
+        None,
+        description="1-20, only used if threshold_mode=manual (對齊 testing page LS_KEY_MANUAL_THRESHOLD)"
+    ),
+    lookback: int = Query(
+        20,
+        description="5-100, only used if threshold_mode=auto (對齊 testing page LS_KEY_LOOKBACK)"
+    ),
+    multiplier: float = Query(
+        2.5,
+        description="1-5, only used if threshold_mode=auto (永久 2.5)"
     ),
 ):
-    """凡人話: 跑 algorithm
+    """凡人話: 跑 algorithm (4.43.0 加 4 個 ZigZag 新 params + validation)
 
     Query params:
     - algo: 揀邊個 algorithm (e.g. "zigzag", 之後 M1/M2 落 framework 自動 available)
     - symbol: 股票代號 (e.g. "HK.00700")
     - period: K 線週期
     - data_window_days: 拎幾多日 K 線 (默認 1260 = 5 年, 大少 2026-08-14 23:15 永久 rule)
-    - threshold: 個別 algorithm 嘅自訂參數 (e.g. ZigZag 嘅 5% 門檻)
+    - threshold: 個別 algorithm 嘅自訂參數 (向後兼容 ChartContainer.tsx, 冇 specify 用 algorithm 默認 5%)
+    - threshold_mode: 'auto' | 'manual' (對齊 testing page 拎法)
+    - manual_threshold: 1-20, only used if threshold_mode=manual
+    - lookback: 5-100, only used if threshold_mode=auto
+    - multiplier: 1-5, only used if threshold_mode=auto (永久 2.5)
+
+    4 個新 params validation (大少 4.43.0 safety improvement #1):
+    - threshold_mode: 必須 'auto' 或 'manual', 否則 fallback 'auto'
+    - lookback: clamp 5-100
+    - multiplier: clamp 1.0-5.0
+    - manual_threshold: 必須 1-20, 否則 fallback None (即係用 auto)
 
     Returns:
         統一 response shape (跟 run_algorithm 返 shape 一樣):
@@ -60,10 +87,27 @@ async def run_algo(
             "error": str | None,
         }
     """
-    # Algorithm 自訂 options (跟 algorithm 入面 options 結構)
-    options: dict = {}
-    if threshold is not None:
-        options["threshold"] = threshold
+    # 大少 2026-08-30 22:04 — 4.43.0 safety improvement #1: backend validation
+    # 凡人話: 4 個新 params 防止 frontend pass 錯 value trigger silent bug
+    if threshold_mode not in ("auto", "manual"):
+        threshold_mode = "auto"
+    lookback = max(5, min(100, lookback))
+    multiplier = max(1.0, min(5.0, multiplier))
+    if manual_threshold is not None and not (1 <= manual_threshold <= 20):
+        manual_threshold = None
+
+    # 凡人話: 4 個新 options 永遠 pass 畀 algorithm (auto/manual fallback 喺 algorithm 入面)
+    options: dict = {
+        "threshold_mode": threshold_mode,
+        "manual_threshold": manual_threshold,
+        "lookback": lookback,
+        "multiplier": multiplier,
+    }
+    # 兼容: manual mode 用 manual_threshold, 否則 fallback legacy threshold (ChartContainer.tsx 用緊)
+    if manual_threshold is not None and threshold_mode == "manual":
+        options["threshold"] = float(manual_threshold)
+    elif threshold is not None:
+        options["threshold"] = float(threshold)
 
     try:
         result = run_algorithm(

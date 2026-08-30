@@ -5101,6 +5101,52 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             chartRefs.maV2LineSeries.zigzag = null;
           }
 
+          // ============ 大少 2026-08-30 17:50 trigger — 橙色 #FF9800 細小旗仔 marker (決定嗰日) ============
+          // 凡人話: 紫色 P 點 plot 喺 peak/trough 嗰日, 橙色旗仔 plot 喺「決定嗰日」
+          //   (即股價反方向到達 threshold 嗰支 K 線), 等大少知道「上一支 ZigZag 喺邊一日決定形成」
+          // 跟 ZigZag 啟用 toggle 同步 (已經喺 if (zigzagEnabled) 入面, 唔加新 toggle)
+          // 第一個 point 冇 decisionDate (永遠從第一支 K 線開始, 冇「決定」概念)
+          // 最後 ongoing point 都冇 decisionDate (仲未確認轉勢)
+          // 對齊 4.40.0 永久 rule: 拎 setData 之前 dedupe by time 避免 silent reject
+          const _flagMarkerPoints = [];
+          for (const _p of (verdict.meta.zigzagPoints || [])) {
+            if (!_p.decisionDate) continue;  // 拎走第一個 point 同最後 ongoing point
+            const _dKey = String(_p.decisionDate).slice(0, 10);
+            const _dParts = _dKey.split('-').map(Number);
+            if (!_dParts[0] || !_dParts[1] || !_dParts[2]) continue;
+            // Y position 用 decisionValue (決定嗰日 K 線 close), 唔好直接用 p.value (peak/trough 嗰支 high/low)
+            _flagMarkerPoints.push({
+              time: { year: _dParts[0], month: _dParts[1], day: _dParts[2] },
+              value: Number.isFinite(_p.decisionValue) ? _p.decisionValue : _p.value,
+            });
+          }
+          // 拎 setData 之前 dedupe by time (對齊 4.40.0 永久 rule, 拎走 silent reject)
+          const _seenFlagTimes = new Set();
+          const _dedupedFlagPoints = [];
+          for (const _fp of _flagMarkerPoints) {
+            const _tKey = `${_fp.time.year}-${_fp.time.month}-${_fp.time.day}`;
+            if (!_seenFlagTimes.has(_tKey)) {
+              _seenFlagTimes.add(_tKey);
+              _dedupedFlagPoints.push(_fp);
+            }
+          }
+          // 大少 trigger: 細小旗仔 plot 喺決定嗰日 K 線 close 上面 8px, 橙色 #FF9800 (Material Orange 500)
+          // 用 Lightweight Charts v4.2.3 setMarkers API shape 'flag' 對齊 setMarkers
+          // 跟 sequence marker 一齊 merge 落 candleSeries (因為 setMarkers 係 per series, 唔可以分開 set)
+          // 暫時 state 喺 chartRefs.zigzagDecisionFlagMarkers, 跟住 sequence marker set 嗰陣 merge
+          // 凡人話: 旗仔 marker 永遠 render (跟 zigzagEnabled), sequence marker 嘅 set/skip 都要 merge 旗仔
+          chartRefs.zigzagDecisionFlagMarkers = {
+            markers: _dedupedFlagPoints.map(_fp => ({
+              time: _fp.time,
+              position: 'aboveBar',  // 旗仔喺決定嗰日 K 線上面
+              color: '#FF9800',      // Material Orange 500
+              shape: 'flag',         // 細小旗仔 (Lightweight Charts v4.2.3 setMarkers 支援 shape)
+              text: '',              // 唔顯示號碼, 純視覺 marker
+              size: 1,               // 預設大小 (細小)
+            })),
+          };
+          console.log('[M1 v2.0] ✅ 橙色 #FF9800 旗仔 marker state set:', chartRefs.zigzagDecisionFlagMarkers.markers.length, '個 (大少 2026-08-30 17:50 旗仔 marker, sequence set/skip 都會 merge)');
+
           // ============ 大少 2026-08-19 09:40 trigger — 深綠色 close extension 線 (連去今日收市) ============
           // 凡人話: 紫色 ZigZag 拎到嘅係「確認咗嘅轉向點」, 但 K 線仲有最新嘅 close 仲未確認到下一個 peak/trough
           //   大少想紫色線最後接多一段深綠色線, 由最後 ZigZag point 連去今日 close, 即時見到趨勢延續
@@ -5202,14 +5248,36 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               const visibleMarkers = allMarkers.slice(0, zigzagSequenceMaxCount);
 
               // 用 v4 native setMarkers() (永久 rule: testing page 行 v4.2.3, 唔好假設 v5 plugin API)
-              chartRefs.candleSeries.setMarkers(visibleMarkers);
+              // 大少 2026-08-30 17:50 — merge 橙色旗仔 marker 一齊 set (因為 setMarkers 係 per series, 唔可以分開 set)
+              const _flagMarkersForMerge = chartRefs.zigzagDecisionFlagMarkers?.markers || [];
+              chartRefs.candleSeries.setMarkers([..._flagMarkersForMerge, ...visibleMarkers]);
               // 拎出 handle 畀 toggle handler 用 (統一 set 一個 truthy value 表示「已 set」, 因為 setMarkers 冇 return handle)
-              chartRefs.zigzagSequenceMarkers = { markers: visibleMarkers, setMarkers: (m) => chartRefs.candleSeries.setMarkers(m) };
-              console.log('[M1 v2.0] ✅ ZigZag sequence markers set:', visibleMarkers.length, '個 (max:', zigzagSequenceMaxCount, ', 紫色:', purpleMarkers.length, '+ 深綠色:', greenMarkers.length, ')');
+              chartRefs.zigzagSequenceMarkers = {
+                markers: visibleMarkers,
+                setMarkers: (m) => {
+                  if (!chartRefs.candleSeries || typeof chartRefs.candleSeries.setMarkers !== 'function') return;
+                  const _fm = chartRefs.zigzagDecisionFlagMarkers?.markers || [];
+                  chartRefs.candleSeries.setMarkers([..._fm, ...(m || [])]);
+                },
+              };
+              console.log('[M1 v2.0] ✅ ZigZag sequence markers set:', visibleMarkers.length, '個 (max:', zigzagSequenceMaxCount, ', 紫色:', purpleMarkers.length, '+ 深綠色:', greenMarkers.length, ', 橙色旗仔:', _flagMarkersForMerge.length, ')');
             } catch (e) {
               console.error('[M1 v2.0] ❌ ZigZag sequence markers 失敗:', e);
             }
           } else {
+            // 大少 2026-08-30 17:50 — sequence marker skip 嗰陣, 都要 set 旗仔 marker 落 candleSeries
+            // 因為旗仔 marker 永遠 render (跟 zigzagEnabled), 唔可以因為 sequence skip 就唔 render
+            if (chartRefs.candleSeries && typeof chartRefs.candleSeries.setMarkers === 'function') {
+              try {
+                const _flagOnlyMarkers = chartRefs.zigzagDecisionFlagMarkers?.markers || [];
+                if (_flagOnlyMarkers.length > 0) {
+                  chartRefs.candleSeries.setMarkers(_flagOnlyMarkers);
+                  console.log('[M1 v2.0] ✅ 橙色 #FF9800 旗仔 marker set (sequence skip, only flag):', _flagOnlyMarkers.length, '個');
+                }
+              } catch (e) {
+                console.error('[M1 v2.0] ❌ 橙色旗仔 marker (sequence skip) 失敗:', e);
+              }
+            }
             console.log('[M1 v2.0] ℹ️ ZigZag sequence markers skip: showZigzagSequence =', showZigzagSequence, ', candleSeries.setMarkers =', typeof (chartRefs.candleSeries?.setMarkers));
           }
         } else {

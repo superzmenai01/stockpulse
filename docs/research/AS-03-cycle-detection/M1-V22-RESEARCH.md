@@ -538,3 +538,164 @@ Post-update 會喺「大 intraday range 嗰日」拎到假信號: e.g. 2026-01-1
 ### 對應 commit
 
 - 即將 push (跟 Spec Sync #20+1 同步 push)
+
+---
+
+## 🆕 大少 2026-08-30 17:50 Trigger — ZigZag 決定點 橙色旗仔 marker (大少 approved plan)
+
+### 大少 trigger (2026-08-30 17:35)
+
+> 「現在 Zigzag 當股價反方向到達指定的 % 時就會完成上一支的 Zigzag，我想在當到達那個 % 的位置上在圖表上加上一個符號，等我知道是在那裡決定形成這個 Zigzag 的，明白我意思嗎？」
+
+### 凡人話解釋
+
+而家紫色 ZigZag 線 plot 喺 **peak/trough 嗰支 K 線** (即「確認咗嘅轉向點」), 但「上一支 ZigZag 喺邊一日決定形成」冇記號 — 即係股價反方向走到指定 % 嗰一日。
+
+大少想喺 **「決定嗰一日」** (跌穿/升穿 threshold 嗰支 K 線) 加個視覺符號, 等佢即時分到:
+
+```
+K 線 A (peak, e.g. 100元)        K 線 B (跌穿 5% 到 94元, 確認轉勢)
+      ╱╲                                ⚐
+     ╱  ╲                          ↑ 橙色旗仔
+────●────╲──────────────────────────●─── K 線 B
+     ╲                               ↑
+   紫色 P 點                       決定嗰日
+   plot 喺 A                       plot 喺 B
+```
+
+### Design Decision (大少 2026-08-30 17:35 confirm)
+
+- ✅ **形狀**: 細小旗仔 (Flag) — Lightweight Charts v4.2.3 / v5 setMarkers 支援
+- ✅ **顏色**: 橙色 `#FF9800` (Material Orange 500) — 對比紫色 ZigZag 線 (`#9C27B0`) 鮮明
+- ✅ **位置**: `aboveBar` — 旗仔喺決定嗰日 K 線 close 上面 8px
+- ✅ **文字**: 空白 (純視覺 marker, 唔顯示號碼)
+- ✅ **大小**: 預設 1 (細小)
+- ✅ **顯示模式**: 跟 ZigZag 啟用 toggle 同步 (唔加新 toggle)
+- ✅ **Sequence 互動**: 跟紫色 sequence marker merge 落 candleSeries (因為 setMarkers 係 per series, 唔可以分開 set)
+
+### 改動範圍 (5 個 file)
+
+| # | File | 改動 |
+|---|------|------|
+| 1 | `testing-page/testing-page.js` | `calculateZigZagFrontend` 每個 push point 加 3 個新 field (decisionDate / decisionValue / decisionType) |
+| 2 | `algorithms/AS-03-cycle-detection/adapter.mjs` | `renderMAAlignmentV2ChartOverlay` 新加 flag marker (setMarkers API, 跟 sequence marker merge) |
+| 3 | `backend/algorithms/zigzag/algorithm.py` | 1-to-1 port frontend algorithm + 內部加 3 個 decision field (跟大少 23:30 trigger「除消所有對zigzag 相關的限制」) |
+| 4 | `web/src/components/chart/ChartContainer.tsx` | `fetchBackendZigZag` return shape 加 decisionTime/decisionValue + `createSeriesMarkers` 旗仔 marker |
+| 5 | `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` | 同 ChartContainer 對齊 |
+
+### Algorithm 改動 (3 個新 field, 跟 plan)
+
+每個 trigger 形成嘅 ZigZag point 加 3 個新 field (第一個 point 同最後 ongoing point 唔加):
+
+```javascript
+// Frontend (testing-page.js calculateZigZagFrontend):
+result.push({
+  date: _zigzagNormalizeDate(klines[lastSwingIdx]),  // peak/trough 嗰日 (紫色 P 點 plot 位置)
+  value: lastSwingHigh,                              // 或 lastSwingLow
+  type: 'high',                                      // 或 'low'
+  // 大少 2026-08-30 17:50 新加 3 個 field ↓
+  decisionDate: _zigzagNormalizeDate(klines[i]),     // 跌穿/升穿嗰日 (橙色旗仔 plot 位置)
+  decisionValue: klines[i].close,                    // 嗰支 K 線 close (Y position)
+  decisionType: 'confirmation',                      // 固定 'confirmation', 預留將來 sub-type
+});
+
+// Backend (backend/algorithms/zigzag/algorithm.py calculate_zigzag):
+result.append({
+    "date": _zigzag_normalize_date(klines[last_swing_idx]),
+    "value": last_swing_high,  # 或 last_swing_low
+    "type": 'high',  # 或 'low'
+    "index": last_swing_idx,
+    "decisionDate": _zigzag_normalize_date(klines[i]),  # 跌穿/升穿嗰日
+    "decisionValue": klines[i]['close'],                # 嗰支 K 線 close
+    "decisionType": 'confirmation',
+})
+```
+
+### Render 改動 (3 個 layer, 對齊 plan)
+
+#### Layer 1 - Testing page (`adapter.mjs`)
+
+```javascript
+// 旗仔 marker 永遠 render (跟 zigzagEnabled toggle, 唔跟 showZigzagSequence)
+const _flagMarkerPoints = [];
+for (const _p of (verdict.meta.zigzagPoints || [])) {
+  if (!_p.decisionDate) continue;  // 拎走第一個 point + 最後 ongoing point
+  // ... 拎 time + value ...
+  _flagMarkerPoints.push({ time: {year, month, day}, value: p.decisionValue });
+}
+
+// Set state 喺 chartRefs.zigzagDecisionFlagMarkers
+chartRefs.zigzagDecisionFlagMarkers = {
+  markers: _flagMarkerPoints.map(_fp => ({
+    time: _fp.time,
+    position: 'aboveBar',
+    color: '#FF9800',
+    shape: 'flag',
+    text: '',
+    size: 1,
+  })),
+};
+
+// Sequence marker set 嗰陣 merge 旗仔 marker
+chartRefs.candleSeries.setMarkers([..._flagMarkersForMerge, ...visibleMarkers]);
+
+// Sequence marker skip 嗰陣都 set 旗仔 marker
+if (_flagOnlyMarkers.length > 0) {
+  chartRefs.candleSeries.setMarkers(_flagOnlyMarkers);
+}
+```
+
+#### Layer 2 - Production ChartContainer / ElliottWaveTestPage
+
+```typescript
+// fetchBackendZigZag return shape 加 decisionTime/decisionValue
+return verdict.points.map((p) => ({
+  time: parseTime(p.date, period),
+  value: p.value,
+  decisionTime: p.decisionDate ? parseTime(p.decisionDate, period) : undefined,
+  decisionValue: p.decisionValue,
+}));
+
+// createSeriesMarkers 旗仔 marker
+const flagMarkers = zigzagData
+  .filter((p) => p.decisionTime != null && Number.isFinite(p.decisionValue))
+  .map((p) => ({
+    time: p.decisionTime,
+    position: 'aboveBar' as const,
+    color: '#FF9800',
+    shape: 'flag' as const,
+    text: '',
+  }));
+zigzagFlagMarkersRef.current = createSeriesMarkers(zigzagSeries, flagMarkers);
+```
+
+### Smoke Test 結果 (凡人話 verify)
+
+跑 backend algorithm 用 mock K 線, 拎 3 個 test case 確認旗仔位置 100% 對齊:
+
+| Test | 場景 | Point 拎出 | 旗仔位置 | 對齊 |
+|------|------|------------|---------|------|
+| 1 | 太古 00019 7/30 peak 100 → 8/6 trough 92.45 (-7.55%) | 3 個 points | 旗仔 plot 喺 2026-08-03 (跌穿 5% 嗰日) | ✅ 對齊 (跟 4.15.0 fix 拎 high/low 拎到 8/6 trough) |
+| 2 | 簡單升 trend + 跌穿 trigger | 3 個 points | 旗仔 plot 喺 2026-01-16 (跌穿 5% 嗰日) | ✅ 對齊 |
+| 3 | 多個 trigger (升→跌→升→跌) | 4 個 points | 2 個旗仔 (第 1 + 最後 ongoing 冇) | ✅ 對齊 (跟 plan) |
+
+凡人話總結: 旗仔位置 = 跌穿/升穿嗰支 K 線 (即「決定嗰日」), 第一個 point 同最後 ongoing point 冇旗仔 (跟 plan)。
+
+### 永久 rule (大少 2026-08-30 17:50 新加)
+
+- ✅ **ZigZag 決定點 永久用橙色 #FF9800 細小旗仔 marker**, plot 喺決定嗰日 (即股價反方向到達 threshold 嗰支 K 線)
+- ✅ **跟 ZigZag 啟用 toggle 同步 on/off** (`zigzagEnabled` toggle), 唔加新獨立 toggle
+- ✅ **每個 ZigZag point 對應 1 個旗仔** (decisionDate 有值嗰陣), 第一個 point 冇旗仔 (永遠從第一支 K 線開始, 冇「決定」概念)
+- ✅ **最後 ongoing point 都冇旗仔** (仲未確認轉勢, 等下一支 K 線先 trigger)
+- ✅ **改 `calculateZigZagFrontend` / `backend/algorithms/zigzag/algorithm.py` 嗰陣, 必同步加 3 個 field** (`decisionDate` / `decisionValue` / `decisionType`), frontend + backend 鏡像
+- ✅ **改 `adapter.mjs` 嗰陣, 必同步 bump 2 個地方 cache bust** (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X, 跟 2026-08-09 13:10 永久 rule)
+- ✅ **setMarkers 跟 sequence marker merge 落 candleSeries** (因為 Lightweight Charts setMarkers 係 per series, 唔可以分開 set), sequence marker skip 嗰陣都要 set 旗仔 marker
+- ✅ **旗仔 marker 拎 setData 之前必 dedupe by time** (對齊 4.40.0 永久 rule, 拎走 silent reject 破壞 chart state)
+- ✅ **旗仔 marker time field 用 business day object** `{year, month, day}` (對齊 4.41.2 永久 rule, 避免 type 衝突 silent reject)
+
+### 凡人話: 大少睇到橙色旗仔, 即知「上一支 ZigZag 喺呢一日決定形成」
+
+### 對應 commit
+
+- 即將 push (跟 Spec Sync 旗仔 marker commit 同步)
+

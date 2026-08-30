@@ -280,15 +280,16 @@ function calculateBOLL(klines: KLine[], period: number, stdDev: number): { upper
  * - threshold: 過濾 noise 門檻 (%)
  * - signal: AbortController 嘅 signal (用嚟 cancel stale fetch)
  *
- * Returns: Array<{time, value}> — lightweight-charts 食嘅 shape
- *  (從 backend verdict.points [{date, value, type, index}] 轉成 [{time, value}])
+ * Returns: Array<{time, value, decisionTime?, decisionValue?}> — lightweight-charts 食嘅 shape
+ *  (從 backend verdict.points [{date, value, type, index, decisionDate?, decisionValue?}] 轉成 [{time, value, decisionTime, decisionValue}])
+ *  大少 2026-08-30 17:50 新加: decisionTime / decisionValue 2 個新 field 畀 chart 上面嘅橙色旗仔 marker (plot 喺「決定嗰日」)
  */
 async function fetchBackendZigZag(
   symbol: string,
   period: string,
   threshold: number,
   signal: AbortSignal
-): Promise<Array<{ time: Time; value: number }>> {
+): Promise<Array<{ time: Time; value: number; decisionTime?: Time; decisionValue?: number }>> {
   const url = `/api/algorithms/run?algo=zigzag&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&threshold=${threshold}`;
   const resp = await fetch(url, { signal });
   if (!resp.ok) {
@@ -298,9 +299,12 @@ async function fetchBackendZigZag(
   if (!verdict.ok || !Array.isArray(verdict.points)) {
     throw new Error(`Backend ZigZag verdict fail: ${verdict.error || 'unknown'}`);
   }
-  return verdict.points.map((p: { date: string; value: number; type: string; index: number }) => ({
+  return verdict.points.map((p: { date: string; value: number; type: string; index: number; decisionDate?: string; decisionValue?: number }) => ({
     time: parseTime(p.date, period),
     value: p.value,
+    // 大少 2026-08-30 17:50 新加 — 旗仔 marker 用, plot 喺「決定嗰日」K 線
+    decisionTime: p.decisionDate ? parseTime(p.decisionDate, period) : undefined,
+    decisionValue: p.decisionValue,
   }));
 }
 
@@ -421,6 +425,9 @@ export default function ChartContainer({
   const lineSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const bollSeriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({})
   const zigzagSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  // 大少 2026-08-30 17:50 — 橙色 #FF9800 細小旗仔 marker handle (決定嗰日)
+  // 拎 createSeriesMarkers 拎出嚟嘅 plugin handle, 等下次 setData 之前 setMarkers([]) clear 返
+  const zigzagFlagMarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null)
   const ewSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const ewLabelsRef = useRef<ISeriesApi<'Line'> | null>(null)
   const ewMarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null)
@@ -799,6 +806,11 @@ export default function ChartContainer({
       try { chart.removeSeries(zigzagSeriesRef.current) } catch {}
       zigzagSeriesRef.current = null
     }
+    // 大少 2026-08-30 17:50 — 移除舊的旗仔 marker (如果存在)
+    if (zigzagFlagMarkersRef.current) {
+      try { zigzagFlagMarkersRef.current.setMarkers([]) } catch {}
+      zigzagFlagMarkersRef.current = null
+    }
 
     if (!enabled) return
 
@@ -820,6 +832,28 @@ export default function ChartContainer({
           return
         }
         zigzagSeriesRef.current = zigzagSeries
+
+        // 大少 2026-08-30 17:50 — 橙色 #FF9800 細小旗仔 marker (決定嗰日)
+        // 凡人話: 紫色 P 點 plot 喺 peak/trough 嗰日, 橙色旗仔 plot 喺「決定嗰日」
+        // 跟 ZigZag 啟用 toggle 同步 (已經喺 if (enabled) 入面)
+        // 第一個 point 同最後 ongoing point 冇 decisionTime/decisionValue, 自動 filter 走
+        // 用 lightweight-charts v5 createSeriesMarkers plugin API
+        const flagMarkers = zigzagData
+          .filter((p): p is { time: Time; value: number; decisionTime: Time; decisionValue: number } =>
+            p.decisionTime != null && Number.isFinite(p.decisionValue))
+          .map((p) => ({
+            time: p.decisionTime,
+            position: 'aboveBar' as const,  // 旗仔喺決定嗰日 K 線上面
+            color: '#FF9800',              // Material Orange 500
+            shape: 'flag' as const,         // 細小旗仔 (lightweight-charts v5 setMarkers 支援 shape)
+            text: '',                      // 唔顯示號碼, 純視覺 marker
+          }))
+        if (flagMarkers.length > 0) {
+          zigzagFlagMarkersRef.current = createSeriesMarkers(zigzagSeries, flagMarkers)
+          console.log('[ZigZag] ✅ 橙色 #FF9800 旗仔 marker set:', flagMarkers.length, '個 (大少 2026-08-30 17:50 旗仔 marker)')
+        } else {
+          console.log('[ZigZag] ℹ️ 沒有任何 decisionTime/decisionValue point, 旗仔 marker skip')
+        }
       } catch (e) {
         if (!controller.signal.aborted) {
           console.warn('[ZigZag] backend fetch 失敗, 唔 render:', e)

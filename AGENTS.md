@@ -490,23 +490,81 @@ def _compute_fetch_max_count(period):
 - ✅ 之後加新 algorithm / 改 algorithm 嘅 calculation, 一律 backend side, frontend 唔郁
 - ✅ 對應 trigger: tmp_research_v23_subscenarios.py v3 mock + 自己重計 sub-scenario → false positive; v4 / v5 改用 backend algorithm + verdict meta 拎結果 → 100% 一致 production
 
-### M1 純 MA Alignment + 之字 Frontend Inject 永久 rule (大少 2026-08-30 01:04, C 方案 phase 2)
+### ZigZag 全部 backend 計 永久 rule (大少 2026-08-30 22:04, 4.43.0)
 
-**凡人話解釋**: 之後 M1 algorithm 純 MA alignment, 之字 points 由 testing page frontend 自己 inject 落 `verdict.meta.zigzagPoints` (`applyFrontendZigZagOverlay` line 1424 已經做緊), 唔再靠 backend `_inject_zigzag_for_ma_alignment` 自動 inject。 之字全部 frontend 計 (testing page `calculateZigZagFrontend` + adapter.mjs `renderMAAlignmentV2ChartOverlay`)。
+**凡人話解釋**: 拎走 testing page frontend 5 個 ZigZag 計算 function, 改 fetch backend `/api/algorithms/run?algo=zigzag` 拎 verdict, 對齊 production frontend (ChartContainer.tsx + ElliottWaveTestPage.tsx) 已經用緊嘅 pattern。Frontend 只負責**畫圖** (拎 backend 傳上嚟嘅 points, 連成線 + plot marker)。Backend 已經喺 4.42.2 改動 1-to-1 port frontend 算法 (`backend/algorithms/zigzag/algorithm.py` 24KB, 已 register 落 framework), 4.43.0 擴 API + frontend 拎走 5 個 function 統一 flow。
 
-**大少 trigger 01:04**: 之後 M1 algorithm 拎走 backend ZigZag 依賴, 之字全部 frontend 計, Spec Sync #46 永久 rule 改。
+**大少 trigger 22:04**: 「我想要做到的是, 所有Zigzag的東西全部都要在後台做晒先, 先計出Auto threshold得出每一個zigzag點也包括最後鮮綠線的那兩點, 然後把這些點傳到前台, 前台主要是畫圖, 把這樣點連在一起變成線」+「如有有利改動的話可以不用理那些永久Rule, 我要最有效最安全的做法」
+
+**拎走嘅舊永久 rule (8月30日 01:04)**: 「M1 純 MA Alignment + 之字 Frontend Inject」— frontend 自己 inject 之字 point, backend 唔做。改為 backend 全做, frontend 拎 fetch verdict。
+
+**永久 rule (4.43.0 新加)**:
+- ✅ Testing page frontend 拎走 5 個 function: `calculateZigZagFrontend` + `autoThresholdVolatility` + `extractHLC` + `_buildExtensionLineFrontend` + `applyFrontendZigZagOverlay` + 1 個 dead helper `_zigzagNormalizeDate` (淨減 179 行)
+- ✅ 改 fetch backend `/api/algorithms/run?algo=zigzag`, 加 4 個新 query params (threshold_mode / manual_threshold / lookback / multiplier) + 4 個 validation rules (4.43.0 safety improvement #1: 防止 frontend pass 錯 value trigger silent bug)
+- ✅ backend `ZigZagAlgorithm.run` 重用 `run_zigzag` helper (4.43.0 safety improvement #3: 1 個 function 1 個 source of truth, 避免重複 logic)
+- ✅ backend Verdict meta 8 個 field 對齊 testing page 拎法 (klines_count / threshold / threshold_mode / lookback / multiplier / extension_line / zigzag_points_count / decision_flag_count)
+- ✅ frontend 拎 verdict inject 落 `lastVerdict.meta` 8 個 field, caller 同步 call `currentAdapter.renderChartOverlay` 拎 verdict render
+- ✅ AbortController 處理 race condition (4.43.0 safety improvement #2: slider 即時 re-render 撳緊 debounce 200ms 之間 user 再撳會 cancel stale fetch)
+- ✅ 對齊 4.42.3 永久 rule: verdict meta inject 永遠唔需要 lastChartRefs (純 JS 嘢, 拎走 global guard)
+- ✅ 對齊 production frontend ChartContainer.tsx + ElliottWaveTestPage.tsx 已經用緊嘅 pattern
+- ✅ Cache bust sync: ALGO_CACHE_BUST 4.42.3 → 4.43.0 + index.html `?v=2.3.107` → `2.3.108` 同步 bump (永久 rule cache bust self-check)
+
+**3 個 commit 順序**:
+1. 4.42.2 (大少 8月30日 17:50 + 22:44 改動): backend ZigZag algorithm 1-to-1 port frontend + production frontend fetch backend
+2. 4.42.3 (大少 8月30日 21:14 改動): verdict.meta.zigzagPoints undefined fix
+3. 4.43.0 (今次 plan, 大少 8月30日 22:04 trigger): testing page frontend 拎走 ZigZag 算法 + backend 加 4 個新 params + Spec Sync #47 永久 rule update
+
+**凡人話解釋 (commit 3)**:
+- 大少 trigger: 「所有Zigzag的東西全部都要在後台做晒先」+「最有效最安全」
+- 拎走 testing page frontend 5 個 ZigZag 計算 function (179 行), 改 fetch backend
+- backend 加 4 個新 query params + validation, 防止 frontend pass 錯 value
+- frontend 加 2 個新 function (fetchBackendZigZag + fetchAndInjectBackendZigZag), 對齊 ChartContainer.tsx pattern
+- AbortController 處理 slider race condition
+- 永久 rule update: 拎走 2 條 + 加 1 條 (ZigZag 全部 backend 計)
+
+對應 Spec Sync #47 entry (永久 rule update 拎走 2 條 + 加 1 條)
+對應 doc: ARCHITECTURE.md §3.6 + §3.7 (ZigZag data flow)
+
+### ZigZag 決定點 橙色旗仔 marker 永久 rule (大少 2026-08-30 17:50)
+
+**凡人話解釋**: 紫色 ZigZag 線 plot 喺 **peak/trough 嗰支 K 線** (即「確認咗嘅轉向點」), 但「上一支 ZigZag 喺邊一日決定形成」冇記號 — 即係股價反方向走到指定 % 嗰一日。大少想喺「決定嗰一日」加個視覺符號, 等佢即時知道「上一支 ZigZag 喺邊一日決定形成」。
+
+**凡人話 render 效果**:
+```
+K 線 A (peak, e.g. 100元)        K 線 B (跌穿 5% 到 94元, 確認轉勢)
+      ╱╲                                ⚐
+     ╱  ╲                          ↑ 橙色旗仔
+────●────╲──────────────────────────●─── K 線 B
+     ╲                               ↑
+   紫色 P 點                       決定嗰日
+   plot 喺 A                       plot 喺 B
+```
 
 **永久 rule**:
-- ✅ 之後 M1 algorithm 純 MA alignment, 拎走之字 trigger sub-scenario (Spec Sync #46 改)
-- ✅ Testing page `applyFrontendZigZagOverlay` 自己 inject 落 `lastVerdict.meta.zigzagPoints = frontendPoints` (line 1424)
-- ✅ ZigZag-testing page frontend `zigzag-testing.js` 拎 backend `/api/zigzag-testing/run` endpoint 拎 verdict, 1-to-1 port frontend 算法 (`backend/algorithms/zigzag_testing/algorithm.py`)
-- ✅ 之後新加 algorithm / chart overlay 全部用 frontend inject, 唔好再依賴 backend inject
-- ✅ 之後 frontend 唔需要靠 backend 拎之字
-- ✅ 拎走清單 (commit `d3331a0d`): `backend/algorithms/zigzag/` (3 file) + `tests/test_zigzag.py` + `algorithm_runner.py` `_inject_zigzag_for_ma_alignment` (含 2 個 call site) + M1 algorithm ZigZag 5 個 field + 對應 test
-- ✅ 之後 M1 純 MA alignment 仍然 work, 8 個 M1 test 仍然 pass (拎走 ZigZag 唔影響)
+- ✅ **ZigZag 決定點 永久用橙色 #FF9800 細小旗仔 marker**, plot 喺決定嗰日 (即股價反方向到達 threshold 嗰支 K 線)
+- ✅ **形狀**: 細小旗仔 (Flag) — Lightweight Charts v4.2.3 / v5 setMarkers 支援 `shape: 'flag'`
+- ✅ **顏色**: 橙色 #FF9800 (Material Orange 500) — 對比紫色 ZigZag 線 (#9C27B0) 鮮明
+- ✅ **位置**: `aboveBar` — 旗仔喺決定嗰日 K 線 close 上面 8px
+- ✅ **文字**: 空白 (純視覺 marker, 唔顯示號碼)
+- ✅ **大小**: 預設 1 (細小)
+- ✅ **跟 ZigZag 啟用 toggle 同步 on/off** (`zigzagEnabled` / `indicatorConfig.ZigZag.enabled`), 唔加新獨立 toggle
+- ✅ **每個 ZigZag point 對應 1 個旗仔** (`decisionDate` 有值嗰陣), 第一個 point 冇旗仔 (永遠從第一支 K 線開始, 冇「決定」概念)
+- ✅ **最後 ongoing point 都冇旗仔** (仲未確認轉勢, 等下一支 K 線先 trigger)
+- ✅ **改 `calculateZigZagFrontend` / `backend/algorithms/zigzag/algorithm.py` 嗰陣, 必同步加 3 個 field** (`decisionDate` / `decisionValue` / `decisionType`), frontend + backend 鏡像
+- ✅ **改 `adapter.mjs` 嗰陣, 必同步 bump 2 個地方 cache bust** (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X, 跟 2026-08-09 13:10 永久 rule)
+- ✅ **setMarkers 跟 sequence marker merge 落 candleSeries** (因為 Lightweight Charts setMarkers 係 per series, 唔可以分開 set), sequence marker skip 嗰陣都要 set 旗仔 marker
+- ✅ **旗仔 marker 拎 setData 之前必 dedupe by time** (對齊 4.40.0 永久 rule, 拎走 silent reject 破壞 chart state)
+- ✅ **旗仔 marker time field 用 business day object** `{year, month, day}` (對齊 4.41.2 永久 rule, 避免 type 衝突 silent reject)
+- ✅ **Production frontend** (`ChartContainer.tsx` + `ElliottWaveTestPage.tsx`) `fetchBackendZigZag` return shape 加 `decisionTime` / `decisionValue`, 用 `createSeriesMarkers` 旗仔 marker 對齊 testing page `setMarkers` 行為
 
-對應 commit: `d3331a0d` (refactor C 方案 phase 2)
-對應 doc: ARCHITECTURE.md §3.7
+**對應 file**:
+- `testing-page/testing-page.js` `calculateZigZagFrontend` (4 個 push point 加 3 個 decision field)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (新加 flag marker render, 跟 sequence marker merge)
+- `backend/algorithms/zigzag/algorithm.py` `calculate_zigzag` (1-to-1 port frontend algorithm, 內部加 3 個 decision field)
+- `web/src/components/chart/ChartContainer.tsx` `fetchBackendZigZag` + ZigZag useEffect (return shape 加 decision field + createSeriesMarkers 旗仔 marker)
+- `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` (對齊 ChartContainer)
+
+對應 doc: M1-V22-RESEARCH.md 「🆕 大少 2026-08-30 17:50 Trigger — ZigZag 決定點 橙色旗仔 marker」section
 
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 
