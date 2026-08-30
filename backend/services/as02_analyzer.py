@@ -190,12 +190,101 @@ async def call_llm_analysis(provider, stock_code: str, name: str, financials: di
     ]
 
     try:
-        # Sync call in thread (avoid blocking async loop)
-        result = await asyncio.to_thread(
-            provider.chat_json,
-            messages,
-            temperature=0.3,
-        )
+        # 永久 rule (大少 2026-08-31 P1-9): LLM call 加 rate limit + timeout + exponential backoff retry
+        # 之前撞 MiniMax/Kimi/Gemini rate limit 嗰陣, line 208 logger.error 然後 fallback 50 分, verdict 永遠平庸
+        # 而家 rate limit detect + 4 次 retry + timeout handling, 大少睇到 LLM_RATE_LIMIT warning
+        from backend.services.warning_collector import make_warning
+
+        llm_warnings: list = []
+        result = None
+        max_retries = 4
+        timeout_seconds = 30.0  # 30 秒 default
+
+        for retry_attempt in range(max_retries):
+            try:
+                # 永久 rule P1-9: 用 asyncio.wait_for 加 timeout (避免 LLM hang 永久 block)
+                async def _llm_call_with_timeout():
+                    return await asyncio.wait_for(
+                        asyncio.to_thread(
+                            provider.chat_json,
+                            messages,
+                            temperature=0.3,
+                        ),
+                        timeout=timeout_seconds,
+                    )
+                result = await _llm_call_with_timeout()
+
+                # 永久 rule P1-9: rate limit detection (MiniMax/Kimi/Gemini 返 429 或 rate_limit 字眼)
+                if isinstance(result, dict) and (
+                    result.get("error") in ("rate_limit_exceeded", "429")
+                    or "rate limit" in str(result.get("error", "")).lower()
+                ):
+                    if retry_attempt < max_retries - 1:
+                        wait_time = 1.0 * (2 ** retry_attempt)  # 1s, 2s, 4s exponential backoff
+                        llm_warnings.append(make_warning(
+                            level="warning",
+                            module_id="M-AS02",
+                            code="LLM_RATE_LIMIT",
+                            message=f"LLM rate limit 撞 (attempt {retry_attempt+1}/{max_retries})",
+                            issue=f"Provider 返 rate_limit, sleep {wait_time}s + retry",
+                            impact="AS-02 verdict 暫時 fallback 50 分, retry 拎真實分",
+                            fix="等 1-2 分鐘 Re-run / 切其他 LLM provider",
+                        ).to_dict())
+                        await asyncio.sleep(wait_time)
+                        continue
+                    # 最後一次 retry 失敗, emit warning 落 final return
+                    llm_warnings.append(make_warning(
+                        level="warning",
+                        module_id="M-AS02",
+                        code="LLM_RATE_LIMIT",
+                        message=f"LLM rate limit 撞 (final attempt, 全部 retry 失敗)",
+                        issue="Provider 返 rate_limit, 4 次 retry 都失敗",
+                        impact="AS-02 verdict fallback 50 分, 唔可信",
+                        fix="等幾分鐘 Re-run / 切其他 LLM provider",
+                    ).to_dict())
+                break
+            except asyncio.TimeoutError:
+                if retry_attempt < max_retries - 1:
+                    wait_time = 1.0 * (2 ** retry_attempt)
+                    logger.warning(f"[AS-02] {stock_code} LLM timeout (attempt {retry_attempt+1}/{max_retries}), retry")
+                    await asyncio.sleep(wait_time)
+                    continue
+                logger.error(f"[AS-02] {stock_code} LLM timeout (final attempt, 全部 retry 失敗)")
+                llm_warnings.append(make_warning(
+                    level="warning",
+                    module_id="M-AS02",
+                    code="LLM_RATE_LIMIT",
+                    message=f"LLM timeout > {timeout_seconds}s (final attempt, 全部 retry 失敗)",
+                    issue=f"LLM hang 過 {timeout_seconds}s 4 次, 仍 fail",
+                    impact="AS-02 verdict fallback 50 分, 唔可信",
+                    fix="網絡慢 / 切其他 LLM provider / Re-run",
+                ).to_dict())
+                result = None
+                break
+            except Exception as e:
+                err_str = str(e).lower()
+                if "rate limit" in err_str or "429" in err_str or "exceed" in err_str:
+                    if retry_attempt < max_retries - 1:
+                        wait_time = 1.0 * (2 ** retry_attempt)
+                        logger.warning(f"[AS-02] {stock_code} LLM rate limit exception (attempt {retry_attempt+1}), sleep {wait_time}s + retry")
+                        await asyncio.sleep(wait_time)
+                        continue
+                logger.error(f"[AS-02] {stock_code} LLM call exception: {type(e).__name__}: {e}")
+                result = None
+                break
+
+        if result is None:
+            # Final fallback (rate limit / timeout 都 fail)
+            return {
+                "business_score": 50,
+                "management_score": 50,
+                "industry_score": 50,
+                "risk_score": 50,
+                "reasons": ["LLM call failed: rate limit / timeout (永久 rule P1-9 retry 4 次都失敗)"],
+                "summary": "LLM 分析失敗，用 rule-based fallback",
+                "_warnings": llm_warnings,
+            }
+
         # Validate result
         if not isinstance(result, dict):
             raise ValueError(f"LLM result not dict: {result}")
@@ -203,6 +292,8 @@ async def call_llm_analysis(provider, stock_code: str, name: str, financials: di
         for key in ("business_score", "management_score", "industry_score", "risk_score", "reasons", "summary"):
             if key not in result:
                 result[key] = 50 if key.endswith("_score") else ([] if key == "reasons" else "No summary")
+        if llm_warnings:
+            result["_warnings"] = llm_warnings
         return result
     except Exception as e:
         logger.error(f"LLM call failed for {stock_code}: {e}")

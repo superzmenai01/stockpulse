@@ -4015,3 +4015,38 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 frontend testing page 撳跑任何 algorithm 之前, polling `/api/algorithms/health/futu`, 不 healthy 嗰陣 disable「跑算法」掣 + 顯示 🔧 系統警告 banner
 - 之後 KlineCache 加 background thread 30 秒 1 次 call `futu_health_check()` 自動 update health state
 - 之後 AS-04+ algorithm 全部跟 `algorithm_runner.run_algorithm()` 開頭 check pattern
+
+### 15.44 AS-02 LLM Rate Limit + Timeout 永久 rule (大少 2026-08-31, Spec Sync #52 Batch 5)
+
+### 大少 trigger
+8月31日架構評審: P0-4 性能瓶頸原估算 (AS-02 LLM call 串行 100 隻 × 5 秒 = 500 秒) 確認係錯 (已經 asyncio.gather parallel), 真正 P1 硬傷係 LLM rate limit + timeout 冇 handling, 撞 rate limit 嗰陣 verdict 永遠 50 分 fallback, 大少唔知。
+
+### 凡人話解釋
+之前 `as02_analyzer.call_llm_analysis()` 撞 MiniMax / Kimi / Gemini rate limit 嗰陣, 1 行 `logger.error` 然後 fallback 50 分, 100 隻 stock 全部 verdict 永遠平庸, 大少以為「公司平庸」但其實係 LLM rate limit 撞。
+
+而家永久 fix: 加 4 次 exponential backoff retry (1s, 2s, 4s, 8s) + 30 秒 timeout + rate limit detection (429 status code), retry 全部失敗嗰陣 emit `LLM_RATE_LIMIT` warning (level=warning) 落 verdict, frontend warning banner 顯示。
+
+### 改動範圍 (2 改 file + 1 改 test file)
+
+| File | 改動 |
+|------|------|
+| `backend/services/as02_analyzer.py` | `call_llm_analysis()` 加 4 次 exponential backoff retry + 30 秒 `asyncio.wait_for` timeout + rate limit detection (429 + "rate limit" string) + 最終 fallback 帶 `_warnings` field (永久 rule §Module Warning v1.1.0) |
+| `backend/services/warning_collector.py` | WARNING_CODES 加 `LLM_RATE_LIMIT` (level=warning), 16 → 17 個 codes |
+| `backend/tests/test_warning_system.py` | 修 `test_warning_codes_all_have_level` count: 16 → 17, warning 7 → 8 |
+
+### 永久 rule (AS-02 LLM Rate Limit + Timeout)
+- ✅ AS-02 LLM call 永遠用 `asyncio.wait_for(asyncio.to_thread(...), timeout=30s)` 加 timeout
+- ✅ 撞 rate limit (429 / "rate limit" string / "exceed" string) 永遠 exponential backoff retry: 1s → 2s → 4s → 8s (4 次)
+- ✅ 全部 retry 失敗嗰陣 emit `LLM_RATE_LIMIT` warning (level=warning) 落 verdict `_warnings` field
+- ✅ Final fallback 永遠帶 `_warnings` field (永久 rule §Module Warning v1.1.0)
+- ✅ 17 個 warning codes 統一: 6 critical / 8 warning / 3 info
+- ✅ Retry 期間用 `asyncio.sleep()` non-blocking, 唔 block event loop
+
+### 對應 commit (Batch 5)
+- `feat(architecture-review-batch-5): P1-9 AS-02 LLM rate limit + timeout handling + LLM_RATE_LIMIT warning code (大少 8月31日 07:35「GO, Push 不用停」trigger 自主做 Batch 5) + Spec Sync #52`
+- Spec Sync: ARCHITECTURE.md §15.44 (本段) + HANDOVER.md §P (新永久 rule section)
+
+### 套用情境
+- 之後 AS-04+ 算法如果有 LLM call, 全部跟呢個 pattern: 4 次 retry + 30s timeout + `LLM_RATE_LIMIT` warning code
+- 之後 M-AS02 LLM call 撞 rate limit, frontend 顯示 🟡 warning banner, 大少知 verdict 唔可信
+- 之後 MiniMax / Kimi / Gemini rate limit 政策改, 只改 `as02_analyzer.py` retry logic, 唔影響其他 module

@@ -288,6 +288,17 @@ def _compute_fetch_max_count(period):
 - 詳見 ARCHITECTURE.md §15.43 (Spec Sync #51)
 - 大少 trigger: 8月31日架構評審 Batch 4, P0-6 可用性隱患硬傷 (FutuOpenD 單點失敗, 全部 algorithm silent use stale K 線, 落錯單風險)
 
+### P. AS-02 LLM Rate Limit + Timeout 永久 rule (8-31, 架構評審 Batch 5)
+
+- AS-02 LLM call 永遠用 `asyncio.wait_for(asyncio.to_thread(...), timeout=30s)` 加 timeout
+- 撞 rate limit (429 / "rate limit" string / "exceed" string) 永遠 exponential backoff retry: 1s → 2s → 4s → 8s (4 次)
+- 全部 retry 失敗嗰陣 emit `LLM_RATE_LIMIT` warning (level=warning) 落 verdict `_warnings` field
+- Final fallback 永遠帶 `_warnings` field (永久 rule §Module Warning v1.1.0)
+- 17 個 warning codes 統一: 6 critical / 8 warning / 3 info
+- Retry 期間用 `asyncio.sleep()` non-blocking, 唔 block event loop
+- 詳見 ARCHITECTURE.md §15.44 (Spec Sync #52)
+- 大少 trigger: 8月31日架構評審 Batch 5, P1-9 (原本 P0-4 降級, 確認 AS-02 已經 asyncio.gather parallel, 真正硬傷係 LLM rate limit + timeout 冇 handling)
+
 ---
 
 ## 7. Critical Pitfalls (避開!)

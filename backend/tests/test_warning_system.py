@@ -47,14 +47,14 @@ from backend.services.warning_collector import (
 
 def test_warning_codes_all_have_level():
     """所有 15 個 warning codes 都要有對應 level (3 層級分佈)"""
-    assert len(WARNING_CODES) == 16, f"expected 16 codes, got {len(WARNING_CODES)}"
+    assert len(WARNING_CODES) == 17, f"expected 17 codes, got {len(WARNING_CODES)}"
     
     critical = [c for c, l in WARNING_CODES.items() if l == 'critical']
     warning = [c for c, l in WARNING_CODES.items() if l == 'warning']
     info = [c for c, l in WARNING_CODES.items() if l == 'info']
     
     assert len(critical) == 6, f"expected 6 critical, got {len(critical)}"
-    assert len(warning) == 7, f"expected 7 warning, got {len(warning)}"
+    assert len(warning) == 8, f"expected 8 warning, got {len(warning)}"
     assert len(info) == 3, f"expected 3 info, got {len(info)}"
 
 

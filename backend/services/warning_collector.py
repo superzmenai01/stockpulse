@@ -75,6 +75,7 @@ WARNING_CODES = {
     'CONFLICT_STATE': 'warning',
     'POST_FAILED': 'warning',
     'FALLBACK_USED': 'warning',
+    'LLM_RATE_LIMIT': 'warning',
     # 🔵 Info (3)
     'CACHE_EXPIRING': 'info',
     'CONFIG_DEFAULTS': 'info',
