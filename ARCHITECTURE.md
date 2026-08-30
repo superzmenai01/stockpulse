@@ -4092,3 +4092,37 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 Sprint 4 follow-up 開始之前, 已經 set 咗還原點, 大少可以放心 trigger 我做
 - 之後 Sprint 5 / 6 / 7 大項目之前, 必做同樣還原點 set
 - 之後 AS-04+ 開發 / framework 升級 / 跨 file refactor 之前, 必做同樣還原點 set
+
+### 15.46 Sprint 4 Task 3 — KlineCache 30 秒自動 Health Check (大少 2026-08-31 07:56「GO」trigger, Spec Sync #54)
+
+### 大少 trigger
+8月31日 07:56「你可以 Go 了」— Sprint 4 follow-up 開始 (還原點 `restore-before-sprint-4-followup` 已經 set 喺 `7e68053a`)。
+
+### 凡人話解釋
+Task 3 純後台: KlineCache `__init__` 開 background thread 30 秒 1 次 ping 富途 OpenD, 拎 status 落 memory, frontend polling `/api/algorithms/health/futu` 即時拎到。
+
+之前 OpenD 死咗要等大少撳跑 algorithm 先發現, 30 秒 delay; 而家自動 check, 30 秒內 backend 知。
+
+### 改動範圍 (1 改 file)
+- `backend/services/kline_cache.py`:
+  - `__init__` 加 `self._start_health_check_thread()` call
+  - 新加 `_start_health_check_thread(interval_seconds=30)` method (threading.Thread daemon=True, nest_asyncio 永久 rule §Spec Sync #40)
+  - 新加 `_run_health_check_sync(ctx)` sync wrapper (asyncio.run 包住 async `futu_health_check`)
+  - Background loop: 5 秒 delay (避免 KlineCache init 嗰陣撞 futu_conn import) → while True: health check + 30 秒 sleep
+
+### 永久 rule
+- ✅ KlineCache `__init__` 必開 background thread 30 秒 1 次 health check
+- ✅ thread daemon=True, 主 process 死嗰陣一齊死
+- ✅ 拎 ctx 失敗嗰陣 log warning + continue, 唔 crash thread
+- ✅ 用 nest_asyncio + asyncio.run (永久 rule §Spec Sync #40)
+- ✅ Frontend polling `/api/algorithms/health/futu` 即時拎到 30 秒前嘅 health state
+- ✅ 之後改 KlineCache 嗰陣, 必保留 background thread (唔好拎走 _start_health_check_thread call)
+
+### 對應 commit
+- `feat(sprint-4-task-3): KlineCache 30 秒 background thread 自動 health check (大少 8月31日 07:56「你可以 Go 了」trigger 自主做 Sprint 4 follow-up) + Spec Sync #54`
+- Spec Sync: ARCHITECTURE.md §15.46 (本段) + HANDOVER.md §R (新永久 rule section)
+
+### Verify
+- pytest 267/268 pass (1 個 pre-existing asyncio fail 唔關事)
+- KlineCache instance 開咗 thread 自動 check, `get_futu_health()` 拎 in-memory state 即時更新
+- Thread name: `kline-cache-health-check`

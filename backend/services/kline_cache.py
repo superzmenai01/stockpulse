@@ -58,6 +58,10 @@ class KlineCache:
             "last_error": None,
             "consecutive_failures": 0,
         }
+        # 永久 rule §Q Sprint 4 follow-up Task 3 (大少 2026-08-31 07:56「GO」trigger):
+        # 30 秒 1 次 background thread 自動 ping OpenD, 拎 status 落 memory
+        # frontend polling /api/algorithms/health/futu 即時拎到
+        self._start_health_check_thread()
 
     def _init_schema(self):
         """大少 #7987: CREATE TABLE IF NOT EXISTS — kline_cache + idx."""
@@ -384,6 +388,69 @@ class KlineCache:
         """凡人話: 拎 in-memory futu health state (frontend polling 用)"""
         with self._futu_health_lock:
             return dict(self._futu_health)
+
+    # ============================================================
+    # Background health check thread (大少 2026-08-31 Sprint 4 follow-up Task 3)
+    # ============================================================
+
+    def _start_health_check_thread(self, interval_seconds: int = 30) -> None:
+        """凡人話: background thread 30 秒 1 次 ping OpenD, 拎 status 落 memory
+
+        永久 rule §Q Sprint 4 follow-up Task 3:
+        - KlineCache __init__ 開 background thread
+        - thread daemon=True, 主 process 死嗰陣一齊死
+        - 30 秒 sleep + 跑 futu_health_check
+        - 拎 ctx failure 嗰陣 continue, 唔 crash thread
+        - 永久 rule §Spec Sync #40 server 內部用 nest_asyncio (sync 包 async)
+
+        Frontend polling /api/algorithms/health/futu 即時拎到 30 秒前嘅 health state
+        """
+        import threading
+        import time as _time
+        import logging
+
+        def _loop():
+            # 永久 rule: 第一次 check delay 5 秒, 避免 KlineCache init 嗰陣撞 futu_conn import
+            _time.sleep(5)
+            while True:
+                try:
+                    from backend.futu_conn import get_quote_ctx
+                    ctx = get_quote_ctx()
+                    self._run_health_check_sync(ctx)
+                except Exception as e:
+                    logging.getLogger(__name__).warning(
+                        f"[KlineCache] health check thread error: {type(e).__name__}: {e}"
+                    )
+                _time.sleep(interval_seconds)
+
+        thread = threading.Thread(target=_loop, daemon=True, name="kline-cache-health-check")
+        thread.start()
+        import logging
+        logging.getLogger(__name__).info(
+            f"[KlineCache] health check thread 啟動 (interval={interval_seconds}s)"
+        )
+
+    def _run_health_check_sync(self, ctx) -> bool:
+        """凡人話: sync wrapper 包住 async futu_health_check, background thread 用
+
+        永久 rule §Spec Sync #40 (大少 2026-08-23 13:19): server 內部用真 async I/O
+        - 用 nest_asyncio.apply() patch asyncio, 令 asyncio.run() 喺 running event loop 入面 work
+        - 唔可以用 urllib self-call (撞牆 deadlock, 5 workers + 細股 OpenD fetch > 3 分鐘)
+        """
+        try:
+            import asyncio
+            import nest_asyncio
+            nest_asyncio.apply()
+
+            async def _wrapper():
+                return await self.futu_health_check(ctx)
+            return asyncio.run(_wrapper())
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[KlineCache] _run_health_check_sync 失敗: {type(e).__name__}: {e}"
+            )
+            return False
 
     @staticmethod
     def _compute_fetch_max_count(period: str) -> int:

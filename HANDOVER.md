@@ -313,6 +313,17 @@ def _compute_fetch_max_count(period):
 - 還原 command: `bash ~/stockpulse/scripts/restore_sprint_4.sh`
 - 大少 trigger: 8月31日 07:52「你先備份, 設位一個還原點, 當然到意外或不想改時, 可以一鍵完全還到回到現在」
 
+### R. KlineCache 30 秒自動 Health Check 永久 rule (8-31 07:56, Sprint 4 Task 3)
+
+- KlineCache `__init__` 必開 background thread 30 秒 1 次 health check
+- thread daemon=True, 主 process 死嗰陣一齊死
+- 拎 ctx 失敗嗰陣 log warning + continue, 唔 crash thread
+- 用 nest_asyncio + asyncio.run (永久 rule §Spec Sync #40)
+- Frontend polling `/api/algorithms/health/futu` 即時拎到 30 秒前嘅 health state
+- 之後改 KlineCache 嗰陣, 必保留 background thread (唔好拎走 _start_health_check_thread call)
+- 詳見 ARCHITECTURE.md §15.46 (Spec Sync #54)
+- 大少 trigger: 8月31日 07:56「你可以 Go 了」Sprint 4 follow-up Task 3
+
 ---
 
 ## 7. Critical Pitfalls (避開!)
