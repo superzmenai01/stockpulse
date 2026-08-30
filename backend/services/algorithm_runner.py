@@ -114,22 +114,6 @@ def run_algorithm(
             cache_result = None
             max_retries = 3
 
-            async def _fetch_with_throttle_retry():
-                """凡人話: 拎 K 線 + 撞 OpenD 限頻自動 sleep + retry (最多 3 次)"""
-                nonlocal cache_result
-                for retry_attempt in range(max_retries):
-                    cache_result = await cache.get_or_fetch(
-                        symbol, ctx, ktype, period=period,
-                        start=start_date, end=end_date, max_count=fetch_max
-                    )
-                    if cache_result and cache_result.get("klines"):
-                        return  # success
-                    # empty result, 可能係 NoDataAvailable, 唔 retry
-                    if cache_result is not None:
-                        return
-                    # None result 視為 error, retry (但係 cache.get_or_fetch 唔 return None)
-                    return
-
             async def _fetch_with_retry_loop():
                 """凡人話: 拎 K 線 + retry on ExceedReqLimit (timeout 60s)"""
                 nonlocal cache_result
@@ -255,10 +239,15 @@ def run_algorithm(
                         # 用 field name `module_specific` 對齊 frontend decisionEngineToStandardVerdict interface
                         # 對應 spec: MODULE-07-SYNTHESIZER.md v2.1.0 Level 4 cross-module alignment enrich
                         "module_specific": upstream_meta,
+                        # 永久 rule (大少 2026-08-31): propagate upstream warnings 落 module_verdict
+                        # 之前 silent drop (M7 verdict 唔可信大少唔知), 而家 propagate 畀 Synthesizer aggregate
+                        # 對齊永久 rule §Module Warning v1.1.0: 統一用 ModuleWarning object
+                        "_warnings": list(upstream_verdict.warnings or []),
                     })
                     logger.info(
                         f"[Algorithm] M7 inject {module_id}: state={state} conf={confidence} "
-                        f"rules={len(module_verdicts[-1]['rules_fired'])}"
+                        f"rules={len(module_verdicts[-1]['rules_fired'])} "
+                        f"warnings={len(module_verdicts[-1]['_warnings'])}"
                     )
             except Exception as e:
                 # 永久 rule: dependency inject 失敗 fallback caller 拎 (唔 crash synth, synth verdict 少 1 個 module)

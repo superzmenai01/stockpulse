@@ -34,6 +34,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from ..base import Algorithm, Verdict
 from ..registry import register
 from .config import DEFAULT_SYNTHESIZER_CONFIG
+from backend.services.warning_collector import WarningCollector, make_warning
 
 
 # ============================================================
@@ -303,6 +304,43 @@ def _compute_kelly(verdicts: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ============================================================
+# Step 6: Aggregate upstream warnings (永久 rule v1.1.0 propagation)
+# 永久 rule §Module Warning v1.1.0: M1-M6 → M7 → M8 → M9 propagation chain
+# 之前 algorithm_runner.py M7 inject 嗰段漏咗 _warnings field, M1-M6 嘅 13 個 warning
+# code (THRESHOLD_BREACH / NAN_RESULT / MODULE_PARTIAL 等) 永久 silent drop
+# Fix (大少 2026-08-31): runner 已經加 _warnings field, 呢度統一 aggregate
+# ============================================================
+
+def _aggregate_warnings(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """凡人話: 拎 6 個 module verdict 嘅 _warnings 統一 dedupe + sort 落 M7 verdict.warnings
+
+    永久 rule v1.1.0:
+    - Dedupe by (level + module_id + code)
+    - 排序: Critical (0) → Warning (1) → Info (2), 然後 by module_id
+    - 統一用 ModuleWarning object (禁止 string array)
+    """
+    collector = WarningCollector()
+    for v in verdicts:
+        # 永久 rule: 拎每個 module verdict 嘅 _warnings (algorithm_runner.py 嗰處 inject)
+        for w in v.get("_warnings", []) or []:
+            collector.push_dict(w)
+
+    # Module partial: 6 個 module 唔齊
+    if len(verdicts) < 6:
+        collector.push(make_warning(
+            level="warning",
+            module_id="M7",
+            code="MODULE_PARTIAL",
+            message=f"得 {len(verdicts)}/6 個 module verdict",
+            issue=f"runner 拎唔到 {6 - len(verdicts)} 個 module verdict, synth verdict 會少訊息",
+            impact="Verdict 唔可信, 唔好落單",
+            fix="Re-run / 檢查 algorithm_runner log 揾邊個 module 拎失敗",
+        ))
+
+    return collector.to_list()
+
+
+# ============================================================
 # Main algorithm (跟 synthesizer.ts Synthesizer 1:1 port)
 # ============================================================
 
@@ -360,7 +398,19 @@ class SynthesizerAlgorithm(Algorithm):
                     "kelly_position": 0.25,
                     "module_verdicts": [],
                 },
-                warnings=["INSUFFICIENT_DATA: 0 module verdicts"],
+                # 永久 rule §Module Warning v1.1.0: 統一用 ModuleWarning object (禁止 string array)
+                # 永久 rule §Verdict type hint: warnings 必須係 List[Dict[str, Any]], 用 .to_dict() 序列化
+                warnings=[
+                    make_warning(
+                        level="critical",
+                        module_id="M7",
+                        code="INSUFFICIENT_DATA",
+                        message="0 module verdicts",
+                        issue="runner 拎唔到任何 M1-M6 verdict",
+                        impact="Verdict 唔可信, 唔好落單",
+                        fix="睇 algorithm_runner log 揾上游 module 拎失敗原因, Re-run",
+                    ).to_dict()
+                ],
             )
 
         # Step 1: SSI
@@ -460,7 +510,10 @@ class SynthesizerAlgorithm(Algorithm):
             "dataDays": len(verdicts),
         }
 
-        return Verdict(ok=True, points=[], meta=meta, warnings=[])
+        # Step 6: Aggregate upstream warnings (永久 rule v1.1.0 propagation chain)
+        aggregated_warnings = _aggregate_warnings(verdicts)
+
+        return Verdict(ok=True, points=[], meta=meta, warnings=aggregated_warnings)
 
 
 # Register

@@ -238,6 +238,18 @@ def _compute_fetch_max_count(period):
 - 之前 8-7 至 8-20 漏 sync 13 日, 大少 8-20 trigger 補返, 之後每次 commit 必須 sync
 - Spec drift detected → 任何一方 outbound flag 畀大少
 
+### L. Module Warning Propagation Chain 永久 rule (8-31, 架構評審 Batch 1)
+
+- `algorithm_runner.py` M7 inject 嗰段永遠要加 `_warnings` field (拎 `list(upstream_verdict.warnings or [])`), 唔可以 silent drop
+- `Synthesizer` algorithm.py 永遠用 `_aggregate_warnings(verdicts)` 統一 aggregate M1-M6 warnings, 唔可以直接 emit 個別 warning
+- `WarningCollector` dedupe by (level + module_id + code), 排序 Critical → Warning → Info, 然後 by module_id
+- < 6 個 module verdict 嗰陣 emit `MODULE_PARTIAL` warning (level=warning)
+- Empty input 嗰陣 emit `INSUFFICIENT_DATA` warning (level=critical)
+- `Verdict.warnings` 永遠用 `make_warning(...).to_dict()` 序列化 (Verdict type hint `List[Dict[str, Any]]`)
+- 之後 M8 / M9 / AS-04+ 全部跟呢個 pattern: 拎 upstream verdict.warnings, 用 `_aggregate_warnings()` helper
+- 詳見 ARCHITECTURE.md §15.40 (Spec Sync #48)
+- 大少 trigger: 8月31日架構評審 Batch 1, P0-1 模塊耦合硬傷 (`decisionEngineToStandardVerdict` 唔 propagate warnings 永久 rule 已 acknowledge 但未實作, 落錯單風險)
+
 ---
 
 ## 7. Critical Pitfalls (避開!)

@@ -345,13 +345,19 @@ async def analyze_one_stock(stock_code: str, provider) -> dict:
     risk_score = llm_result.get("risk_score", 50)
 
     # ===== Step 5: Weighted Scoring =====
-    total = (
-        financial_score * 0.30 +
-        business_score * 0.20 +
-        management_score * 0.15 +
-        industry_score * 0.15 +
-        valuation_score * 0.10 +
-        risk_score * 0.10
+    # 永久 rule (大少 2026-08-31): 統一取 DIMENSION_WEIGHTS dict 計 total
+    # 改之前 6 個 weight hardcoded 2 個地方 (decimal 0.30 + int 30), 改 weight 容易 drift
+    # 改之後: build_as02_reason_html display 同 calc 永遠對齊 (改 dict 自動反映)
+    total = sum(
+        score * DIMENSION_WEIGHTS.get(key, 0) / 100
+        for key, score in (
+            ("financial", financial_score),
+            ("business", business_score),
+            ("management", management_score),
+            ("industry", industry_score),
+            ("valuation", valuation_score),
+            ("risk", risk_score),
+        )
     )
 
     classification = "qualified" if total >= 60 else "disqualified"

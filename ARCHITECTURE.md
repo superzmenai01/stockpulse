@@ -3861,3 +3861,41 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 4.42.2 + 4.42.3 + 4.43.0 (備份 commit 3a5c2fa4 入面備份) + 4.41.1 / 4.41.2 / 4.41.3 + 之前所有 commit 保留
 - 當前 commit (將會 commit): `fix(testing-page): bump lightweight-charts v4.2.3 → v5.2.0 + 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API (大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B + 02:03「做B」+ 02:17「实施此计划」)`
 - Spec Sync: ARCHITECTURE.md §15.39 (本段)
+
+### 15.40 Module Warning Propagation Chain 永久 rule (大少 2026-08-31, Spec Sync #48 Batch 1)
+
+### 大少 trigger
+8月31日架構評審 Batch 1: P0-1 模塊耦合硬傷 — `decisionEngineToStandardVerdict` 唔 propagate warnings 永久 rule 已 acknowledge 但未實作, 落錯單風險。
+
+### 凡人話解釋
+之前 M1-M6 (ma_alignment / hl_structure / trendline / indicators / volume_price / volatility) verdict 嘅 `_warnings` 永久 silent drop 落 M7 Synthesizer chain, 大少睇唔到 M1 嘅 THRESHOLD_BREACH / M5 嘅 OUTLIER_VALUE 等 13 個 warning code, 以為 verdict 準但其實唔可信, 直接落錯單風險。
+
+而家永久 fix: M1-M6 verdict.warnings 統一 propagate 落 M7 verdict.warnings, frontend WarningBanner 自動 render, 大少即時見到 verdict 唔可信嘅原因。
+
+### 改動範圍 (3 改 file + 1 改 test file)
+
+| File | 改動 |
+|------|------|
+| `backend/services/algorithm_runner.py` | M7 inject 嗰段加 `_warnings` field 落每個 module_verdict dict (line ~242) |
+| `backend/algorithms/synthesizer/algorithm.py` | 加 `_aggregate_warnings(verdicts)` helper + 改 Step 0 empty input warning 變 ModuleWarning object (line ~413) + 改 main run() verdict emit 用 aggregated (line ~518) |
+| `backend/services/as02_analyzer.py` | BONUS-2: 統一用 `DIMENSION_WEIGHTS` dict 計 total (line ~349), 拎走 hardcoded decimal weight (drift 風險 fix) |
+| `backend/services/algorithm_runner.py` | BONUS-1: 拎走 `_fetch_with_throttle_retry` dead code (line ~117, 14 行) |
+| `backend/tests/test_synthesizer.py` | 加 4 個新 test: `test_synthesizer_propagate_upstream_warnings` / `test_synthesizer_dedupe_warnings_by_level_module_code` / `test_synthesizer_sort_warnings_critical_first` / `test_synthesizer_module_partial_warning` |
+
+### 永久 rule (Module Warning Propagation Chain)
+- ✅ `algorithm_runner.py` M7 inject 嗰段永遠要加 `_warnings` field (拎 `list(upstream_verdict.warnings or [])`)
+- ✅ Synthesizer algorithm.py 永遠用 `_aggregate_warnings(verdicts)` 統一 aggregate, 唔可以直接 emit 個別 warning
+- ✅ WarningCollector dedupe by (level + module_id + code) — 永久 rule §Module Warning v1.1.0
+- ✅ 排序: Critical (0) → Warning (1) → Info (2), 然後 by module_id
+- ✅ < 6 個 module verdict 嗰陣 emit MODULE_PARTIAL warning (level=warning)
+- ✅ Empty input 嗰陣 emit INSUFFICIENT_DATA warning (level=critical)
+- ✅ Verdict.warnings 永遠用 `make_warning(...).to_dict()` 序列化, 唔可以直接塞 ModuleWarning object (違反 Verdict type hint `List[Dict[str, Any]]`)
+
+### 對應 commit (Batch 1)
+- `fix(architecture-review-batch-1): P0-1 M7 拎 M1-M6 _warnings propagate + Synthesizer aggregate + BONUS-1 拎走 dead code + BONUS-2 統一 weight dict (大少 8月31日 06:50 trigger「Go」自主 deep dive + 07:26「Go」自主做 fix)`
+- Spec Sync: ARCHITECTURE.md §15.40 (本段) + HANDOVER.md §L (新增永久 rule section)
+
+### 套用情境
+- 之後 M8 Decision Engine 都用同一個 pattern: 拎 M7 verdict.warnings propagate 落 M8 verdict.warnings (M7 → M8 chain)
+- 之後 M9 Back Test 都用同一個 pattern: 拎 M7/M8 verdict.warnings propagate 落 M9 verdict.warnings (M7 → M8 → M9 chain)
+- 之後新加 algorithm (AS-04+) 全部跟呢個 pattern: 拎 upstream verdict.warnings, 用 `_aggregate_warnings()` helper

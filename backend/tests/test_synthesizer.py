@@ -190,7 +190,8 @@ def test_synthesizer_empty_input():
     assert verdict.meta["state"] == "SIDEWAYS"
     assert verdict.meta["grade"] == "F"
     assert verdict.meta["ssi_score"] == 0
-    assert any("INSUFFICIENT_DATA" in w for w in verdict.warnings)
+    # 永久 rule §Module Warning v1.1.0: warnings 係 List[Dict[str, Any]], 用 w["code"] 拎
+    assert any(w["code"] == "INSUFFICIENT_DATA" for w in verdict.warnings)
 
 
 def test_synthesizer_verdict_shape():
@@ -239,3 +240,115 @@ def test_synthesizer_grade_scale():
         assert 30 <= score < 40
     else:  # F
         assert score < 30
+
+
+# 永久 rule (大少 2026-08-31): P0-1 warning propagation chain test
+# 之前 M1-M6 verdict 嘅 _warnings 永久 silent drop, 大少睇唔到 warning, 落錯單風險
+# Fix: algorithm_runner.py M7 inject 嗰段加 _warnings field, Synthesizer 統一 aggregate
+# 對齊永久 rule §Module Warning v1.1.0: 統一用 ModuleWarning object dict
+
+def test_synthesizer_propagate_upstream_warnings():
+    """M1-M6 verdict 帶 _warnings 嗰陣, M7 verdict 必須 propagate (永久 rule v1.1.0)"""
+    from backend.services.warning_collector import make_warning
+
+    verdicts = _make_verdicts(["UP"] * 6)
+    # M1 ma-alignment 帶 1 個 THRESHOLD_BREACH warning
+    verdicts[0]["_warnings"] = [
+        make_warning(
+            level="warning",
+            module_id="M1",
+            code="THRESHOLD_BREACH",
+            message="M1 short MA < long MA 5 日, threshold breached",
+            issue="MA5/MA60 crossover but 5 日內跌穿 1%, 信心扣 5%",
+            impact="M7 verdict 唔可信, 唔好落單",
+            fix="Re-run / 檢查 M1 config / 聯絡 admin",
+        ).to_dict()
+    ]
+    # M5 volume 帶 1 個 OUTLIER_VALUE warning
+    verdicts[4]["_warnings"] = [
+        make_warning(
+            level="warning",
+            module_id="M5",
+            code="OUTLIER_VALUE",
+            message="M5 volume 異常 (5x avg)",
+            issue="volume 5 倍 avg, 可能 split/dividend",
+            impact="M5 verdict 唔可信, M7 SSI 拉低 5%",
+            fix="Skip 當日 / 用 adj close 重算",
+        ).to_dict()
+    ]
+
+    algo = get_algorithm("synthesizer")
+    verdict = algo.run([], {"symbol": "TEST", "period": "1d", "moduleVerdicts": verdicts})
+
+    assert verdict.ok
+    # 永久 rule: M7 verdict.warnings 必須有 M1 + M5 嘅 warning
+    codes = [w["code"] for w in verdict.warnings]
+    assert "THRESHOLD_BREACH" in codes, f"M1 THRESHOLD_BREACH 唔見咗, M7 silent drop: {verdict.warnings}"
+    assert "OUTLIER_VALUE" in codes, f"M5 OUTLIER_VALUE 唔見咗, M7 silent drop: {verdict.warnings}"
+
+
+def test_synthesizer_dedupe_warnings_by_level_module_code():
+    """永久 rule §Module Warning v1.1.0: dedupe by (level + module_id + code)"""
+    from backend.services.warning_collector import make_warning
+
+    verdicts = _make_verdicts(["UP"] * 6)
+    # M1 帶 3 個完全相同 THRESHOLD_BREACH (dedupe 之後應該只剩 1 個)
+    same_warning = make_warning(
+        level="warning",
+        module_id="M1",
+        code="THRESHOLD_BREACH",
+        message="M1 threshold breach",
+        issue="test issue",
+        impact="M7 verdict 唔可信",
+        fix="Re-run",
+    ).to_dict()
+    verdicts[0]["_warnings"] = [same_warning, same_warning, same_warning]  # 3 個 duplicates
+
+    algo = get_algorithm("synthesizer")
+    verdict = algo.run([], {"symbol": "TEST", "period": "1d", "moduleVerdicts": verdicts})
+
+    assert verdict.ok
+    # Dedupe: 應該只剩 1 個 THRESHOLD_BREACH warning (唔係 3 個)
+    th_breach_count = sum(1 for w in verdict.warnings if w["code"] == "THRESHOLD_BREACH")
+    assert th_breach_count == 1, f"dedupe fail: {th_breach_count} 個 THRESHOLD_BREACH (應該 1 個)"
+
+
+def test_synthesizer_sort_warnings_critical_first():
+    """永久 rule §Module Warning v1.1.0: 排序 Critical (0) → Warning (1) → Info (2)"""
+    from backend.services.warning_collector import make_warning
+
+    verdicts = _make_verdicts(["UP"] * 6)
+    # M1 帶 info, M2 帶 critical, M3 帶 warning
+    verdicts[0]["_warnings"] = [
+        make_warning(level="info", module_id="M1", code="DATA_AGE", message="info", issue="", impact="", fix="").to_dict()
+    ]
+    verdicts[1]["_warnings"] = [
+        make_warning(level="critical", module_id="M2", code="INSUFFICIENT_DATA", message="critical", issue="", impact="", fix="").to_dict()
+    ]
+    verdicts[2]["_warnings"] = [
+        make_warning(level="warning", module_id="M3", code="OUTLIER_VALUE", message="warning", issue="", impact="", fix="").to_dict()
+    ]
+
+    algo = get_algorithm("synthesizer")
+    verdict = algo.run([], {"symbol": "TEST", "period": "1d", "moduleVerdicts": verdicts})
+
+    assert verdict.ok
+    # 排序: 第一個應該係 critical
+    assert verdict.warnings[0]["level"] == "critical", f"第一個應該係 critical, 而家係 {verdict.warnings[0]['level']}"
+    # 排序: 第二個應該係 warning
+    assert verdict.warnings[1]["level"] == "warning"
+    # 排序: 第三個應該係 info
+    assert verdict.warnings[2]["level"] == "info"
+
+
+def test_synthesizer_module_partial_warning():
+    """永久 rule: < 6 個 module verdict 嗰陣 emit MODULE_PARTIAL warning"""
+    # 6 個 module 變 5 個 (跌咗 1 個)
+    verdicts = _make_verdicts(["UP"] * 5)
+
+    algo = get_algorithm("synthesizer")
+    verdict = algo.run([], {"symbol": "TEST", "period": "1d", "moduleVerdicts": verdicts})
+
+    assert verdict.ok
+    codes = [w["code"] for w in verdict.warnings]
+    assert "MODULE_PARTIAL" in codes, f"5 個 module 應該 trigger MODULE_PARTIAL, 而家 warnings: {verdict.warnings}"
