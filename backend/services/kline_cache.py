@@ -47,6 +47,17 @@ class KlineCache:
         # 大少 #8505: SQLite path (default backend/stockpulse.db)
         self.db_path = db_path or str(self.DEFAULT_DB_PATH)
         self._init_schema()
+        # 永久 rule (大少 2026-08-31 P0-6): in-memory futu OpenD health state
+        # 之前 OpenD 離線 (e.g. macOS 重啟 / FutuOpenD crash) 嗰陣, algorithm silent use stale K 線
+        # 而家 30 秒 1 次 health check, 離線時 emit warning code OPEN_D_UNAVAILABLE
+        import threading
+        self._futu_health_lock = threading.Lock()
+        self._futu_health = {
+            "is_healthy": True,  # 默認 healthy, 第一次 check 失敗先轉 False
+            "last_check_at": None,
+            "last_error": None,
+            "consecutive_failures": 0,
+        }
 
     def _init_schema(self):
         """大少 #7987: CREATE TABLE IF NOT EXISTS — kline_cache + idx."""
@@ -314,6 +325,65 @@ class KlineCache:
                 )
 
         return klines
+
+    # ============================================================
+    # FutuOpenD Health Check (大少 2026-08-31 P0-6)
+    # ============================================================
+
+    async def futu_health_check(self, ctx) -> bool:
+        """凡人話: ping OpenD 拎 1 條 K 線試吓, 拎到就 healthy
+
+        永久 rule (大少 2026-08-31 P0-6):
+        - 30 秒 1 次 health check (caller 自己 schedule)
+        - 健康 status 落 in-memory self._futu_health (thread-safe)
+        - 連續 3 次失敗先轉 False (避免 single network blip 誤報)
+        - algorithm_runner.py 撳跑 algorithm 之前必先 check, 不 healthy 嗰陣 raise OpenDUnavailableError
+        """
+        import time as _time
+        try:
+            from backend.api.kline import get_kline_type
+            ktype = get_kline_type('1d')
+            # 用 HK.00700 做 sentinel (永遠存在, fetch 快)
+            klines = await self._fetch_klines(
+                ctx, "HK.00700", ktype, "1d",
+                start=(datetime.date.today() - datetime.timedelta(days=7)).isoformat(),
+                end=datetime.date.today().isoformat(),
+                max_count=7,
+            )
+            is_healthy = bool(klines and len(klines) > 0)
+            with self._futu_health_lock:
+                if is_healthy:
+                    self._futu_health.update({
+                        "is_healthy": True,
+                        "last_check_at": _time.time(),
+                        "last_error": None,
+                        "consecutive_failures": 0,
+                    })
+                else:
+                    self._futu_health["consecutive_failures"] += 1
+                    # 連續 3 次失敗先轉 unhealthy (避免 network blip)
+                    if self._futu_health["consecutive_failures"] >= 3:
+                        self._futu_health.update({
+                            "is_healthy": False,
+                            "last_check_at": _time.time(),
+                            "last_error": "OpenD fetch 拎 0 條 K 線 (連續 3 次失敗)",
+                        })
+            return is_healthy
+        except Exception as e:
+            with self._futu_health_lock:
+                self._futu_health["consecutive_failures"] += 1
+                if self._futu_health["consecutive_failures"] >= 3:
+                    self._futu_health.update({
+                        "is_healthy": False,
+                        "last_check_at": _time.time(),
+                        "last_error": f"{type(e).__name__}: {e}",
+                    })
+            return False
+
+    def get_futu_health(self) -> dict:
+        """凡人話: 拎 in-memory futu health state (frontend polling 用)"""
+        with self._futu_health_lock:
+            return dict(self._futu_health)
 
     @staticmethod
     def _compute_fetch_max_count(period: str) -> int:

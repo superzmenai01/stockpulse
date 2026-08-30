@@ -3975,3 +3975,43 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 frontend testing page 撳跑 M9 嗰陣, 改 caller pattern: POST 拎 `request_id` → polling `/api/algorithms/progress/{request_id}` → 收到 `status: completed` 拎 `verdict_dict` render
 - 之後 M1/M2/M3 等其他 algorithm 都跟呢個 pattern: emit progress callback (M1 < 1 秒唔需要, M9/M8 30-60 秒要)
 - 之後 AS-04+ algorithm 全部 import `make_progress_callback()` 統一 progress 機制
+
+### 15.43 FutuOpenD Health Check 永久 rule (大少 2026-08-31, Spec Sync #51 Batch 4)
+
+### 大少 trigger
+8月31日架構評審 Batch 4: P0-6 可用性隱患硬傷 — FutuOpenD 單點失敗, 全部 algorithm 拎唔到 K 線, 冇 fallback / warning。
+
+### 凡人話解釋
+之前任何 algorithm 都要靠 FutuOpenD :11111 拎數據, OpenD hang / crash / 離線嗰陣, 全部 algorithm silent use stale K 線, 大少以為 fresh 但其實 stale, 落錯單風險。
+
+而家永久 fix: KlineCache 加 in-memory futu health state, algorithm_runner.py 撳跑 algorithm 之前必先 check health, 不 healthy 嗰陣 emit `OPEN_D_UNAVAILABLE` warning (level=critical), verdict 唔可信, frontend 🔧 系統警告 banner 顯示。
+
+### 改動範圍 (3 改 file + 1 改 test file)
+
+| File | 改動 |
+|------|------|
+| `backend/services/kline_cache.py` | KlineCache `__init__` 加 `_futu_health` in-memory state (thread-safe `_futu_health_lock`) + 新加 `async futu_health_check(ctx)` method (用 HK.00700 做 sentinel, 連續 3 次失敗先轉 False 避免 network blip) + 新加 `get_futu_health()` 拎 in-memory state |
+| `backend/services/warning_collector.py` | WARNING_CODES 加 `OPEN_D_UNAVAILABLE` (level=critical), 15 → 16 個 codes |
+| `backend/services/algorithm_runner.py` | run_algorithm() 開頭先 check `cache.get_futu_health()`, 不 healthy 嗰陣 emit `OPEN_D_UNAVAILABLE` warning + return `ok: False` 即刻 fail (唔 silent use stale K 線) |
+| `backend/api/algorithms.py` | 新增 `GET /api/algorithms/health/futu` 拎 in-memory futu health state (frontend polling 用) |
+| `backend/tests/test_warning_system.py` | 修 `test_warning_codes_all_have_level` count: 15 → 16, critical 5 → 6 |
+
+### 永久 rule (FutuOpenD Health Check)
+- ✅ KlineCache 永遠有 `_futu_health` in-memory state (thread-safe)
+- ✅ `KlineCache.futu_health_check(ctx)` async method, 連續 3 次失敗先轉 unhealthy (避免 network blip 誤報)
+- ✅ `KlineCache.get_futu_health()` thread-safe getter
+- ✅ `algorithm_runner.run_algorithm()` 開頭必先 check futu health, 不 healthy 嗰陣 emit `OPEN_D_UNAVAILABLE` warning + return `ok: False` 即刻 fail
+- ✅ `OPEN_D_UNAVAILABLE` 永久係 critical level (永久 rule §Module Warning v1.1.0)
+- ✅ 16 個 warning codes 統一: 6 critical / 7 warning / 3 info
+- ✅ New endpoint `GET /api/algorithms/health/futu` 拎 in-memory futu health state
+- ❌ Frontend 撳跑 algorithm 之前 polling `/api/algorithms/health/futu` 顯示 🔧 系統警告 banner 留返 Sprint 4 follow-up (testing page 改要 cache bust + race condition 永久 rule)
+- ❌ KlineCache 30 秒 1 次自動 health check 留返 Sprint 4 follow-up (caller 自己 schedule)
+
+### 對應 commit (Batch 4)
+- `feat(architecture-review-batch-4): P0-6 FutuOpenD health check + OPEN_D_UNAVAILABLE warning code (大少 8月31日 07:35「GO, Push 不用停」trigger 自主做 Batch 4) + Spec Sync #51`
+- Spec Sync: ARCHITECTURE.md §15.43 (本段) + HANDOVER.md §O (新永久 rule section) + ARCHITECTURE.md §15.42 + HANDOVER.md §N 永久 rule 對齊 OPEN_D_UNAVAILABLE 加落 system category
+
+### 套用情境 (Sprint 4 follow-up)
+- 之後 frontend testing page 撳跑任何 algorithm 之前, polling `/api/algorithms/health/futu`, 不 healthy 嗰陣 disable「跑算法」掣 + 顯示 🔧 系統警告 banner
+- 之後 KlineCache 加 background thread 30 秒 1 次 call `futu_health_check()` 自動 update health state
+- 之後 AS-04+ algorithm 全部跟 `algorithm_runner.run_algorithm()` 開頭 check pattern

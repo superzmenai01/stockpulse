@@ -58,14 +58,15 @@ logger = logging.getLogger(__name__)
 
 WarningLevel = Literal['critical', 'warning', 'info']
 
-# 15 個 warning codes (跟 frontend TS WarningCode mirror)
+# 16 個 warning codes (跟 frontend TS WarningCode mirror, 大少 2026-08-31 P0-6 加 OPEN_D_UNAVAILABLE)
 WARNING_CODES = {
-    # 🔴 Critical (5)
+    # 🔴 Critical (6, 大少 P0-6 加 OPEN_D_UNAVAILABLE)
     'INSUFFICIENT_DATA': 'critical',
     'VERDICT_MISSING': 'critical',
     'NAN_RESULT': 'critical',
     'CACHE_INVALID': 'critical',
     'KLINE_MISSING': 'critical',
+    'OPEN_D_UNAVAILABLE': 'critical',
     # 🟡 Warning (7)
     'MODULE_PARTIAL': 'warning',
     'OUTLIER_VALUE': 'warning',

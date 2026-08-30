@@ -60,6 +60,37 @@ def run_algorithm(
     from backend.services.kline_cache import KlineCache
     cache = KlineCache()
 
+    # 永久 rule (大少 2026-08-31 P0-6): 撳跑 algorithm 之前先 check futu OpenD health
+    # 之前 OpenD 離線 (macOS 重啟 / FutuOpenD crash) 嗰陣 silent use stale K 線
+    # 而家 emit OPEN_D_UNAVAILABLE warning, frontend 🔧 系統警告 banner 顯示
+    futu_health = cache.get_futu_health()
+    if not futu_health["is_healthy"]:
+        from backend.services.warning_collector import make_warning
+        opend_warning = make_warning(
+            level="critical",
+            module_id="SYSTEM",
+            code="OPEN_D_UNAVAILABLE",
+            message="FutuOpenD 離線, 拎唔到 fresh K 線",
+            issue=f"OpenD 連續 {futu_health.get('consecutive_failures', 0)} 次失敗: {futu_health.get('last_error', 'unknown')}",
+            impact="Verdict 唔可信 (用 stale K 線), 唔好落單",
+            fix="重啟 FutuOpenD / 檢查 port 11111 / Re-run",
+        ).to_dict()
+        logger.error(
+            f"[Algorithm] {algo_name} OpenD unavailable: {futu_health.get('last_error')}"
+        )
+        return {
+            "ok": False,
+            "algorithm": algo_name,
+            "version": algo.version,
+            "symbol": symbol,
+            "period": period,
+            "klines_count": 0,
+            "points": [],
+            "meta": {},
+            "warnings": [opend_warning],
+            "error": f"FutuOpenD 離線: {futu_health.get('last_error', 'unknown')}",
+        }
+
     # 大少 #11070 永久 rule: 1d 默認 start = 1.5x calendar days back
     end_date = datetime.date.today().isoformat()
     if period == "1d":

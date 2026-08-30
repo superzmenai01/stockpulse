@@ -275,6 +275,19 @@ def _compute_fetch_max_count(period):
 - 詳見 ARCHITECTURE.md §15.42 (Spec Sync #50)
 - 大少 trigger: 8月31日架構評審 Batch 3a, P0-5 性能瓶頸硬傷 (M9 cold call 30-60 秒冇 progress feedback, 大少撳掣以為 hang 撳多次掣撞 double-call)
 
+### O. FutuOpenD Health Check 永久 rule (8-31, 架構評審 Batch 4)
+
+- KlineCache 永遠有 `_futu_health` in-memory state (thread-safe `_futu_health_lock`)
+- `KlineCache.futu_health_check(ctx)` async method, 連續 3 次失敗先轉 unhealthy (避免 network blip 誤報)
+- `KlineCache.get_futu_health()` thread-safe getter, frontend polling 用
+- `algorithm_runner.run_algorithm()` 開頭必先 check futu health, 不 healthy 嗰陣 emit `OPEN_D_UNAVAILABLE` warning (level=critical) + return `ok: False` 即刻 fail
+- `OPEN_D_UNAVAILABLE` 永久係 critical level, 16 個 warning codes 統一: 6 critical / 7 warning / 3 info
+- New endpoint `GET /api/algorithms/health/futu` 拎 in-memory futu health state
+- Frontend polling `/api/algorithms/health/futu` 顯示 🔧 系統警告 banner 留返 Sprint 4 follow-up (testing page 改要 cache bust + race condition 永久 rule)
+- KlineCache 30 秒 1 次自動 health check 留返 Sprint 4 follow-up (caller 自己 schedule)
+- 詳見 ARCHITECTURE.md §15.43 (Spec Sync #51)
+- 大少 trigger: 8月31日架構評審 Batch 4, P0-6 可用性隱患硬傷 (FutuOpenD 單點失敗, 全部 algorithm silent use stale K 線, 落錯單風險)
+
 ---
 
 ## 7. Critical Pitfalls (避開!)

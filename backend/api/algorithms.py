@@ -155,6 +155,21 @@ async def health():
     }
 
 
+@router.get("/health/futu")
+async def health_futu():
+    """凡人話: 拎 FutuOpenD health status (frontend polling 顯示 🔧 系統警告)
+
+    永久 rule (大少 2026-08-31 P0-6):
+    - 拎 KlineCache in-memory futu health state
+    - 唔做 ping (algorithm_runner.py 跑 algorithm 嗰陣先 ping)
+    - frontend 撳跑任何 algorithm 之前 polling 拎 health
+    - 不 healthy 嗰陣 frontend 顯示 🔧 系統警告 banner
+    """
+    from backend.services.kline_cache import KlineCache
+    cache = KlineCache()
+    return cache.get_futu_health()
+
+
 @router.get("/progress/{request_id}")
 async def get_algorithm_progress(request_id: str):
     """凡人話: 拎 algorithm progress (M9 跑 30-60 秒嗰陣 frontend polling 拎 progress)
