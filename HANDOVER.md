@@ -240,7 +240,7 @@ def _compute_fetch_max_count(period):
 
 ### L. Module Warning Propagation Chain 永久 rule (8-31, 架構評審 Batch 1)
 
-- `algorithm_runner.py` M7 inject 嗰段永遠要加 `_warnings` field (拎 `list(upstream_verdict.warnings or [])`), 唔可以 silent drop
+- `algorithm_runner.py` M7 inject 嗰段永遠要加 `warnings` field (拎 `list(upstream_verdict.warnings or [])`), 唔可以 silent drop
 - `Synthesizer` algorithm.py 永遠用 `_aggregate_warnings(verdicts)` 統一 aggregate M1-M6 warnings, 唔可以直接 emit 個別 warning
 - `WarningCollector` dedupe by (level + module_id + code), 排序 Critical → Warning → Info, 然後 by module_id
 - < 6 個 module verdict 嗰陣 emit `MODULE_PARTIAL` warning (level=warning)
@@ -249,6 +249,17 @@ def _compute_fetch_max_count(period):
 - 之後 M8 / M9 / AS-04+ 全部跟呢個 pattern: 拎 upstream verdict.warnings, 用 `_aggregate_warnings()` helper
 - 詳見 ARCHITECTURE.md §15.40 (Spec Sync #48)
 - 大少 trigger: 8月31日架構評審 Batch 1, P0-1 模塊耦合硬傷 (`decisionEngineToStandardVerdict` 唔 propagate warnings 永久 rule 已 acknowledge 但未實作, 落錯單風險)
+
+### M. Caller Inject Contract 永久 rule (8-31, 架構評審 Batch 2)
+
+- `backend/algorithms/contract.py` pydantic BaseModel 強制 M1-M6 module verdict shape
+- `algorithm_runner.py` M7 inject 嗰段永遠 call `validate_module_verdict()` 拎 conform contract, 缺 required field 即刻 raise ValueError (唔可以 silent fall back)
+- Required field: `module_id` (6 個 standard ID 之一) / `state` / `confidence` (0-1) / `base_weight` (0-1)
+- Optional field 永久 pass-through: `max_drawdown_estimate` / `rules_fired` / `module_specific` / `warnings`
+- 3 個 matchedRules alias 全部 work: `matchedRules` / `matched_rules` / `rules_fired`
+- 之後新加 algorithm 全部 import contract.py 嘅 schema, 唔好自己 re-define verdict shape
+- 詳見 ARCHITECTURE.md §15.41 (Spec Sync #49)
+- 大少 trigger: 8月31日架構評審 Batch 2, P0-3 模塊耦合硬傷 (caller inject pattern 冇 contract test, M1 verdict shape 改咗 silent fall back)
 
 ---
 

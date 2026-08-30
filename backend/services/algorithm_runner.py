@@ -218,22 +218,23 @@ def run_algorithm(
                 if upstream_verdict.ok:
                     # Extract standard verdict fields from upstream verdict meta
                     upstream_meta = upstream_verdict.meta
-                    state = upstream_meta.get("state", "SIDEWAYS")
-                    confidence = upstream_meta.get("confidence", 0)
-                    # rules_fired 對齊 frontend 結構: matchedRules (M1-M6 都用 matchedRules)
-                    rules_fired = (
+                    # 永久 rule P0-3 (大少 2026-08-31): 用 validate_module_verdict 強制 contract
+                    # 之前 silent fall back (state=SIDEWAYS / confidence=0) 永久 hide M1 verdict shape 改咗
+                    # 而家 raise ValueError 即刻 fail, 大少可以揾到 source
+                    # 對齊永久 rule §Algorithm Backend-only + 模組化
+                    rules_fired_raw = (
                         upstream_meta.get("matchedRules")
                         or upstream_meta.get("matched_rules")
                         or upstream_meta.get("rules_fired", [])
                     )
-                    module_verdicts.append({
+                    module_verdict_raw = {
                         "module_id": module_id,
-                        "state": state,
-                        "confidence": confidence,
+                        "state": upstream_meta.get("state"),
+                        "confidence": upstream_meta.get("confidence"),
                         "base_weight": base_weight,
                         # M7 v1.0.0 拎 static max_drawdown_estimate, M8 Sprint 2 將 adaptive auto-calibrate
                         "max_drawdown_estimate": 0.05,
-                        "rules_fired": rules_fired if isinstance(rules_fired, list) else [],
+                        "rules_fired": rules_fired_raw if isinstance(rules_fired_raw, list) else [],
                         # 大少 2026-08-21 12:04 — Stage 2 第一步: 拎 full meta 畀 M7 做 cross-module alignment
                         # 例: M1 meta.zigzagSlope (2026-08-21 11:26 加返), M1 volumeSignal, M5 volRatio 等
                         # 用 field name `module_specific` 對齊 frontend decisionEngineToStandardVerdict interface
@@ -242,12 +243,17 @@ def run_algorithm(
                         # 永久 rule (大少 2026-08-31): propagate upstream warnings 落 module_verdict
                         # 之前 silent drop (M7 verdict 唔可信大少唔知), 而家 propagate 畀 Synthesizer aggregate
                         # 對齊永久 rule §Module Warning v1.1.0: 統一用 ModuleWarning object
-                        "_warnings": list(upstream_verdict.warnings or []),
-                    })
+                        # 對齊 frontend verdict.warnings 永久 naming (Batch 2 修正 _warnings → warnings)
+                        "warnings": list(upstream_verdict.warnings or []),
+                    }
+                    # 永久 rule P0-3: validate shape 拎 conform contract, 缺 field 即刻 raise ValueError
+                    from backend.algorithms.contract import validate_module_verdict
+                    validated = validate_module_verdict(module_verdict_raw)
+                    module_verdicts.append(validated.model_dump())
                     logger.info(
-                        f"[Algorithm] M7 inject {module_id}: state={state} conf={confidence} "
-                        f"rules={len(module_verdicts[-1]['rules_fired'])} "
-                        f"warnings={len(module_verdicts[-1]['_warnings'])}"
+                        f"[Algorithm] M7 inject {module_id}: state={validated.state} conf={validated.confidence} "
+                        f"rules={len(validated.rules_fired)} "
+                        f"warnings={len(validated.warnings)}"
                     )
             except Exception as e:
                 # 永久 rule: dependency inject 失敗 fallback caller 拎 (唔 crash synth, synth verdict 少 1 個 module)

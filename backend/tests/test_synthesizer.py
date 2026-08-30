@@ -253,7 +253,7 @@ def test_synthesizer_propagate_upstream_warnings():
 
     verdicts = _make_verdicts(["UP"] * 6)
     # M1 ma-alignment 帶 1 個 THRESHOLD_BREACH warning
-    verdicts[0]["_warnings"] = [
+    verdicts[0]["warnings"] = [
         make_warning(
             level="warning",
             module_id="M1",
@@ -265,7 +265,7 @@ def test_synthesizer_propagate_upstream_warnings():
         ).to_dict()
     ]
     # M5 volume 帶 1 個 OUTLIER_VALUE warning
-    verdicts[4]["_warnings"] = [
+    verdicts[4]["warnings"] = [
         make_warning(
             level="warning",
             module_id="M5",
@@ -302,7 +302,7 @@ def test_synthesizer_dedupe_warnings_by_level_module_code():
         impact="M7 verdict 唔可信",
         fix="Re-run",
     ).to_dict()
-    verdicts[0]["_warnings"] = [same_warning, same_warning, same_warning]  # 3 個 duplicates
+    verdicts[0]["warnings"] = [same_warning, same_warning, same_warning]  # 3 個 duplicates
 
     algo = get_algorithm("synthesizer")
     verdict = algo.run([], {"symbol": "TEST", "period": "1d", "moduleVerdicts": verdicts})
@@ -319,13 +319,13 @@ def test_synthesizer_sort_warnings_critical_first():
 
     verdicts = _make_verdicts(["UP"] * 6)
     # M1 帶 info, M2 帶 critical, M3 帶 warning
-    verdicts[0]["_warnings"] = [
+    verdicts[0]["warnings"] = [
         make_warning(level="info", module_id="M1", code="DATA_AGE", message="info", issue="", impact="", fix="").to_dict()
     ]
-    verdicts[1]["_warnings"] = [
+    verdicts[1]["warnings"] = [
         make_warning(level="critical", module_id="M2", code="INSUFFICIENT_DATA", message="critical", issue="", impact="", fix="").to_dict()
     ]
-    verdicts[2]["_warnings"] = [
+    verdicts[2]["warnings"] = [
         make_warning(level="warning", module_id="M3", code="OUTLIER_VALUE", message="warning", issue="", impact="", fix="").to_dict()
     ]
 

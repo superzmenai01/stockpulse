@@ -3883,13 +3883,14 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 | `backend/tests/test_synthesizer.py` | 加 4 個新 test: `test_synthesizer_propagate_upstream_warnings` / `test_synthesizer_dedupe_warnings_by_level_module_code` / `test_synthesizer_sort_warnings_critical_first` / `test_synthesizer_module_partial_warning` |
 
 ### 永久 rule (Module Warning Propagation Chain)
-- ✅ `algorithm_runner.py` M7 inject 嗰段永遠要加 `_warnings` field (拎 `list(upstream_verdict.warnings or [])`)
+- ✅ `algorithm_runner.py` M7 inject 嗰段永遠要加 `warnings` field (拎 `list(upstream_verdict.warnings or [])`)
 - ✅ Synthesizer algorithm.py 永遠用 `_aggregate_warnings(verdicts)` 統一 aggregate, 唔可以直接 emit 個別 warning
 - ✅ WarningCollector dedupe by (level + module_id + code) — 永久 rule §Module Warning v1.1.0
 - ✅ 排序: Critical (0) → Warning (1) → Info (2), 然後 by module_id
 - ✅ < 6 個 module verdict 嗰陣 emit MODULE_PARTIAL warning (level=warning)
 - ✅ Empty input 嗰陣 emit INSUFFICIENT_DATA warning (level=critical)
 - ✅ Verdict.warnings 永遠用 `make_warning(...).to_dict()` 序列化, 唔可以直接塞 ModuleWarning object (違反 Verdict type hint `List[Dict[str, Any]]`)
+- ✅ **Batch 2 修正**: `warnings` 對齊 frontend `verdict.warnings` 永久 naming, 唔用 `_warnings` (Pydantic BaseModel 唔接受 leading underscore + frontend 一致性)
 
 ### 對應 commit (Batch 1)
 - `fix(architecture-review-batch-1): P0-1 M7 拎 M1-M6 _warnings propagate + Synthesizer aggregate + BONUS-1 拎走 dead code + BONUS-2 統一 weight dict (大少 8月31日 06:50 trigger「Go」自主 deep dive + 07:26「Go」自主做 fix)`
@@ -3899,3 +3900,39 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 M8 Decision Engine 都用同一個 pattern: 拎 M7 verdict.warnings propagate 落 M8 verdict.warnings (M7 → M8 chain)
 - 之後 M9 Back Test 都用同一個 pattern: 拎 M7/M8 verdict.warnings propagate 落 M9 verdict.warnings (M7 → M8 → M9 chain)
 - 之後新加 algorithm (AS-04+) 全部跟呢個 pattern: 拎 upstream verdict.warnings, 用 `_aggregate_warnings()` helper
+
+### 15.41 Caller Inject Contract 永久 rule (大少 2026-08-31, Spec Sync #49 Batch 2)
+
+### 大少 trigger
+8月31日架構評審 Batch 2: P0-3 模塊耦合硬傷 — caller inject pattern 冇 contract test, M1-M6 verdict shape 改咗 silent fall back, 落錯單風險。
+
+### 凡人話解釋
+之前 `algorithm_runner.py` M7 inject 嗰段 (line 237-244) 用 `upstream_meta.get("state", "SIDEWAYS")` 同 `upstream_meta.get("confidence", 0)` silent fall back。M1 verdict shape 改咗, M7 silent fall back 落 SIDEWAYS, 大少以為衡行但其實係 trend, 直接落錯單風險。
+
+而家永久 fix: 用 pydantic BaseModel 強制 contract, 缺 required field 即刻 raise ValueError, 大少睇到明確 error message 知道邊個 module 邊個 field 缺。
+
+### 改動範圍 (3 改 file + 1 新 file + 1 新 test file)
+
+| File | 改動 |
+|------|------|
+| `backend/algorithms/contract.py` (新 file) | 定義 `ModuleVerdictMeta` / `ModuleVerdict` pydantic BaseModel + `validate_module_verdict()` helper |
+| `backend/services/algorithm_runner.py` | M7 inject 嗰段 (line 237-261) call `validate_module_verdict()` 拎 conform contract, 缺 field 即刻 raise ValueError |
+| `backend/tests/test_algorithm_runner_contract.py` (新 file) | 25 個新 test: 6 個 ModuleVerdictMeta field validator + 11 個 ModuleVerdict shape test + 6 個 6 個 upstream algo parametrized + 2 個 edge case |
+
+### 永久 rule (Caller Inject Contract)
+- ✅ `algorithm_runner.py` M7 inject 嗰段永遠 call `validate_module_verdict()` 拎 conform contract
+- ✅ 缺 required field 即刻 raise ValueError, 唔可以 silent fall back
+- ✅ Required field 永久: `module_id` (6 個 standard ID 之一) / `state` (UP/DOWN/SIDEWAYS/TRANSITION/A-H/S) / `confidence` (0-1) / `base_weight` (0-1)
+- ✅ Optional field 永久 pass-through: `max_drawdown_estimate` / `rules_fired` / `module_specific` / `warnings`
+- ✅ 3 個 matchedRules alias 全部 work: `matchedRules` / `matched_rules` / `rules_fired`
+- ✅ 之後新加 algorithm (AS-04+) 全部 import `backend.algorithms.contract` 嘅 schema, 唔好自己 re-define verdict shape
+- ✅ 之後新加 module_id 必須加落 `ModuleVerdict._validate_module_id()` 嘅 valid_ids set (e.g. AS-04 嘅新 module_id)
+
+### 對應 commit (Batch 2)
+- `fix(architecture-review-batch-2): P0-3 caller inject contract test (大少 8月31日 07:35「GO, Push 不用停」trigger 自主做 Batch 2) + 修正 Batch 1 `_warnings` → `warnings` 對齊 frontend verdict.warnings naming + Spec Sync #49`
+- Spec Sync: ARCHITECTURE.md §15.41 (本段) + HANDOVER.md §M (新永久 rule section) + ARCHITECTURE.md §15.40 + HANDOVER.md §L Batch 1 永久 rule 同步修正 `_warnings` → `warnings`
+
+### 套用情境
+- 之後 AS-04+ algorithm verdict shape 全部 import `backend.algorithms.contract.ModuleVerdict`, runner 統一 contract test
+- 之後 frontend testing page 拎 backend verdict 嗰陣, 永遠係 `verdict.warnings` (唔係 `_warnings`), 因為 contract.py 用 Pydantic-friendly naming
+- 之後 M1 v2.3.0+ 改 verdict shape 嗰陣, contract test 立刻 fail 提示邊個 field 缺 / 邊個 type 錯

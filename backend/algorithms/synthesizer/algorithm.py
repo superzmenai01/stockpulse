@@ -312,17 +312,19 @@ def _compute_kelly(verdicts: List[Dict[str, Any]]) -> Dict[str, Any]:
 # ============================================================
 
 def _aggregate_warnings(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """凡人話: 拎 6 個 module verdict 嘅 _warnings 統一 dedupe + sort 落 M7 verdict.warnings
+    """凡人話: 拎 6 個 module verdict 嘅 warnings 統一 dedupe + sort 落 M7 verdict.warnings
 
     永久 rule v1.1.0:
     - Dedupe by (level + module_id + code)
     - 排序: Critical (0) → Warning (1) → Info (2), 然後 by module_id
     - 統一用 ModuleWarning object (禁止 string array)
+
+    Batch 2 (大少 2026-08-31): 改 `_warnings` → `warnings` 對齊 frontend verdict.warnings naming
     """
     collector = WarningCollector()
     for v in verdicts:
-        # 永久 rule: 拎每個 module verdict 嘅 _warnings (algorithm_runner.py 嗰處 inject)
-        for w in v.get("_warnings", []) or []:
+        # 永久 rule: 拎每個 module verdict 嘅 warnings (algorithm_runner.py 嗰處 inject, 對齊 frontend)
+        for w in v.get("warnings", []) or []:
             collector.push_dict(w)
 
     # Module partial: 6 個 module 唔齊
