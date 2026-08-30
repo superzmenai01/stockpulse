@@ -4987,19 +4987,21 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           if (typeof d === 'string') return Math.floor(new Date(d).getTime() / 1000);
           return null;
         };
-        // 大少 2026-08-30 07:48 補丁 — 紫色 ZigZag line setData time field 改用 business day object
-        // 凡人話原因: 大少 reload 撳跑 HK.00981 嗰陣, 4.41.0 body middle fix work (value 由 65.55 改 67.30, 高咗 1.75),
-        //  但 x 軸位置仲喺 8月25日 K 線同 8月26日 K 線中間, 大少 trigger「P2 仲喺兩支竹中間, 比原來高咗, 做好咗要自動檢動」
-        // Root cause: Lightweight Charts 4.2.3 對 line series 嘅 1d timestamp 對齊 reference point 同 candlestick series
-        //  唔一致 (line series 對齊 end-of-day, candlestick 對齊 start-of-day), 即係 timestamp 1787587200 (8月25日 00:00:00 UTC)
-        //  對 line series 對齊 8月25日 K 線右邊 (接近 8月26日 K 線左邊), 對 candlestick 對齊 8月25日 K 線左邊
-        // Fix: P 點 time field 改用 business day object { year, month, day }, Lightweight Charts 直接 business day 對齊
-        //  (同 candlestick 對 1d 嘅 business day 對齊邏輯一致), 確保 P 點 x 軸 plot 喺 K 線左邊同 K 線對齊
-        // 對齊永久 rule: 紫色 ZigZag line setData time field 用 business day object, 唔好用 timestamp (number)
-        //  K 線 missing 嗰陣 fallback 落 dateToTime 拎 timestamp (避免 null)
-        // 對應 4.41.0 body middle fix: 保留 (value 改用 K 線 body middle, time 改用 business day object, 兩者一齊 fix)
-        // 對應 Spec Sync: ARCHITECTURE.md §15.38 (補丁, 4.41.0 嘅 body middle fix 加 business day object time fix)
-        // 對應 commit: 紫色 ZigZag line setData time field business day object fix (1 個 commit)
+        // 大少 2026-08-30 08:02 補丁 v2 — 紫色 ZigZag line setData value revert 返 wick tip (high/low)
+        // 凡人話原因: 大少 reload 撳跑 HK.00981 嗰陣, 4.41.2 business day object time fix work, P 點 x 軸對齊 8月25日 K 線 ✅
+        //  但 4.41.0 body middle value fix 錯, P 點 plot 喺 K 線 body middle 67.30, 大少 trigger「price 錯咗, 應該對上 Through 或 Peak」
+        //  即係 P 點應該 plot 喺 K 線 low (Through) 65.55 或 high (Peak) 68.2 對應位置, 唔係 body middle
+        // Fix: P 點 value revert 返用 algorithm 拎 wick tip (high/low), 唔再用 body middle
+        //  配合 4.41.2 business day object time field fix, P 點 plot 喺 K 線 high / low wick tip 對應位置
+        //  對齊 4.15.0 永久 rule: 之字拎 point 同 trigger 都用 high/low (wick extreme)
+        //  對齊 4.12.0 永久 rule: 紫色 sequence marker label position (high→aboveBar, low→belowBar)
+        // 對應 Spec Sync: ARCHITECTURE.md §15.38 補丁 v2 (4.41.0 body middle value fix 撤回, 4.15.0 rule 恢復原狀)
+        // 對應 commit: 紫色 ZigZag value revert wick tip + business day object time field fix
+        // 對應 commit history:
+        //  - 29f7faac 4.41.0 body middle value fix (撤回)
+        //  - eb6a6163 4.41.1 debug log (temporary)
+        //  - 6627f99b 4.41.2 business day object time field fix (保留)
+        //  - 當前 commit 4.41.3 value revert wick tip + 保留 business day object time field fix
         const _zigzagKlineByDate = new Map();
         for (const _zk of (klines || [])) {
           const _zdateStr = _zk.time || _zk.date || _zk.timestamp;
@@ -5015,13 +5017,9 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             const _month = _dateParts[1];
             const _day = _dateParts[2];
             if (!_year || !_month || !_day) return null;
-            // Render 用 K 線 body middle (4.41.0 保留), fallback 落 algorithm 拎嘅 wick tip (K 線 missing 嗰陣)
-            const _kl = _zigzagKlineByDate.get(_dateKey);
-            let _renderValue = p.value;
-            if (_kl && Number.isFinite(_kl.open) && Number.isFinite(_kl.close)) {
-              _renderValue = (_kl.open + _kl.close) / 2;
-            }
-            return { time: { year: _year, month: _month, day: _day }, value: _renderValue };
+            // Render value 用 algorithm 拎 wick tip (high/low), 4.15.0 永久 rule 恢復原狀
+            //  對應 K 線 Through (low) 65.55 或 Peak (high) 68.2 wick tip 位置
+            return { time: { year: _year, month: _month, day: _day }, value: p.value };
           })
           .filter(p => p != null && Number.isFinite(p.value))
           .sort((a, b) => {

@@ -3704,51 +3704,59 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 research script / testing script 拎 K 線 + ZigZag, 一律 backend endpoint (跟 2026-08-22 23:20 「K-line + Algorithm Backend-only」永久 rule 一致)
 - 之後凡人話解釋 stock 點解中 trigger, 用 backend response 嘅真實 P1/P2/P3/P4 數值對齊凡人話描述
 
-### 15.38 紫色 ZigZag render 改用 K 線 body middle 永久 rule (大少 2026-08-30 07:20, Spec Sync #47)
+### 15.38 紫色 ZigZag render 永久 rule (大少 2026-08-30 07:20 + 08:02, Spec Sync #47 v2)
 
-### 大少 trigger
-大少撳跑 HK.00981 嗰陣, 見到 P 點 sequence marker 嘅 2 號 (即係紫色最後 1 個 P 點, 8月25日 low 65.55) plot 喺 8月25日 K 線同 8月26日 K 線中間嘅空白位置, 大少 trigger「發現了問題, 在紅圈是P2, 它在兩支竹的中間, 請修正」。
+### 大少 trigger history
+- **07:20 trigger**「發現了問題, 在紅圈是P2, 它在兩支竹的中間, 請修正」: P 點 (2 號 = 紫色最後 1 個 = 8月25日 low 65.55) plot 喺 8月25日 K 線同 8月26日 K 線中間嘅空白位置
+- **07:48 trigger**「P2 仲喺兩支竹中間, 比原來高咗, 做好咗要自動檢動」: 4.41.0 body middle fix 解決咗 y 軸 (value 由 65.55 改 67.30) 但 x 軸仲喺兩支竹中間
+- **08:02 trigger**「price 錯咗, 應該對上 Through 或 Peak」: 4.41.2 解決咗 x 軸 (time field business day object 對齊 K 線), 但 4.41.0 嘅 body middle value 唔對, 應該用 wick tip (high/low) 對應 K 線 Through (low) 或 Peak (high)
 
-### 凡人話解釋
-- Algorithm 拎 P 點 value 用 K 線 wick tip (high/low) — 4.15.0 永久 rule, 因為 trigger 邏輯需要拎 wick extreme 先可以拎到 trough/peak (例如太古 case 7/30 high 100 → 8/6 low 92.45 = -7.55%, 但 close 96.65 只跌 -3.35% 唔過 threshold, 拎唔到 trough)
-- 但 render 紫色 ZigZag line 用 wick tip value 嗰陣, 紫色點 plot 喺 wick tip 突出 K 線外面 (例如 8月25日 K 線 wick tip 65.55 同 body 66.75 差 1.2, 紫色 P 點 plot 喺 65.55, label 突出 K 線外面)
-- 視覺上似「喺 8月25日同 8月26日 K 線中間」嘅空白位置, 即係大少所見嘅「喺兩支竹中間」
+### Final Fix 方案 (4.41.3 v2)
+**Render value 用 wick tip (high/low), render time 用 business day object `{year, month, day}`**:
+- Value: revert 返用 `verdict.meta.zigzagPoints[].value` (algorithm 拎 wick tip high/low), 對應 K 線 Through (low) 或 Peak (high) wick tip 位置
+- Time: 用 business day object `{year, month, day}`, Lightweight Charts 直接 business day 對齊 (同 candlestick 對 1d 嘅對齊邏輯一致), 確保 P 點 x 軸 plot 喺 K 線左邊同 K 線對齊
+- 兩個一齊 fix, P 點 plot 喺 K 線 high / low wick tip 對應位置, 對齊 K 線 x 軸, 唔再 plot 喺兩支竹中間
 
-### Fix 方案 (大少 07:22 揀方案 B)
-Render layer (紫色 line setData 嗰段) 改用 K 線 body middle `((open + close) / 2)`, 算法 trigger 邏輯同 `verdict.meta.zigzagPoints` 都唔改 (繼續拎 wick tip), 紫色 sequence marker label position 都唔改 (4.12.0 永久 rule 保留), 跟紫色 line 嘅 value plot 即係 plot 喺 K 線 body middle 附近, 唔突出 K 線外面。
+### 永久 rule (紫色 ZigZag render — wick tip + business day object)
 
-### 永久 rule (紫色 ZigZag render body middle)
-
-- ✅ **紫色 ZigZag line render value 永遠用 K 線 body middle `((open + close) / 2)`**
-  - 唔好直接用 `verdict.meta.zigzagPoints` 拎 wick tip (high/low) value render (會 plot 喺 wick tip 突出 K 線外面)
-  - 凡人話: 算法揾 wick extreme 拎 trough/peak 仍然要拎 high/low (trigger 邏輯需要), 但 render 紫色線 plot 喺 K 線 body middle 視覺上唔突出
+- ✅ **紫色 ZigZag line setData time field 永遠用 business day object `{year, month, day}`**
+  - 唔好用 timestamp (number) — Lightweight Charts 對 line series 嘅 1d timestamp 對齊 reference point 同 candlestick 唔一致 (line 對齊 end-of-day, candlestick 對齊 start-of-day)
+  - 用 business day object 對齊 candlestick 對 1d 嘅 business day 對齊邏輯, 確保 P 點 x 軸 plot 喺 K 線左邊同 K 線對齊
   - 改動位置: `backend/algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` 入面 `zigzagSeries` map 嗰段
-  - 改動方式: 加 K 線 date → kline index map (O(N) build, O(1) lookup), 每個 P 點 render 拎 `(kl.open + kl.close) / 2`
-  - K 線 missing 嗰陣 fallback 落 algorithm 拎 wick tip value (唔好 crash, 唔好 plot null)
+  - K 線 missing 嗰陣 fallback 落 `dateToTime` 拎 timestamp (避免 null, 因為 business day object parse fail)
+
+- ✅ **紫色 ZigZag line setData value 用 `verdict.meta.zigzagPoints[].value` (algorithm 拎 wick tip high/low)**
+  - 對應 K 線 Through (low) 65.55 或 Peak (high) 68.2 wick tip 位置
+  - 唔好用 body middle `((open + close) / 2)` 或 close — 違反 4.15.0 永久 rule, 而且對應唔到 Through / Peak
+  - 4.41.0 body middle fix 撤回, 4.15.0 永久 rule 恢復原狀
 
 - ✅ **算法 trigger 邏輯唔改 (4.15.0 永久 rule 保留)**
   - 算法內部拎 P 點 value 仍然用 high/low (e.g. `klines[i].high` / `klines[i].low`)
   - 因為 trigger 條件要拎 wick extreme 拎 trough/peak
-  - 凡人話: 算法用 wick tip 拎 trough/peak, render 用 body middle 避突出, 兩個唔衝突
+  - 凡人話: 算法用 wick tip 拎 trough/peak, render 用 wick tip 對應 K 線 high / low, 兩個一致
 
 - ✅ **`verdict.meta.zigzagPoints` 唔改 (繼續拎 wick tip)**
   - 畀 debug panel 同 algorithm 內部用
   - 之後任何 trigger / slope / 計算用呢個 field 都拎 wick tip, 對齊算法拎出嚟
-  - render layer 改 value 唔影響呢個 field
+  - render layer 直接用 `p.value`, 唔改 value
 
 - ✅ **紫色 sequence marker label position 唔改 (4.12.0 永久 rule 保留)**
   - 仍然 high → `aboveBar` (Peak 號碼喺上面), low → `belowBar` (Trough 號碼喺下面)
-  - 因為紫色 line 改 value 用 body middle, marker 跟 line 嘅 value plot 即係 plot 喺 K 線 body middle 附近
-  - 雖然 position 仍然 belowBar (Trough 號碼喺下面), 但因為 value 喺 K 線 body middle, 下面空間細, label 唔會突出 K 線外面
+  - 因為紫色 line 改用 business day object time field, marker 跟 line 嘅 time field plot 對齊 K 線
 
-- ✅ **鮮綠色 extension line 唔改**
-  - 已經用 `lastClose` (今日 close), 唔影響
-  - Extension line 嘅 start point (P 點 value) 雖然由 wick tip 變 body middle, 但 end point (lastClose) 唔變, line 仍然連通
+- ✅ **鮮綠色 extension line time field 統一用 business day object**
+  - 已經用 `lastClose` (今日 close), value 唔影響
+  - Time field 改用 business day object 對齊 P 點 setData, 避免 setData type 衝突 silent reject
+  - Extension line 嘅 start point (P 點) 同 end point (lastClose) 兩者 time field 統一, plot 連通
 
 ### 套用情境
-- 之後改 adapter.mjs 嘅 `renderMAAlignmentV2ChartOverlay` 紫色 line setData 嗰段, 一定要用 K 線 body middle, 唔好用 `p.value` 直接
+- 之後改 adapter.mjs 嘅 `renderMAAlignmentV2ChartOverlay` 紫色 line setData 嗰段, time field 一定要用 business day object, 唔好用 timestamp
 - 之後新加紫色 line series (e.g. 鮮紅色 second zigzag, multi-timeframe 等), 全部跟呢個 pattern
-- 之後改紫色 sequence marker position (e.g. 改用 `inBar`), 唔好直接改 position, 先確認 value 已經用 body middle
+- 之後改紫色 sequence marker position (e.g. 改用 `inBar`), 唔好直接改 position, 先確認 value 同 time field 對齊
 
-### 對應 commit
-即將 push (Spec Sync #47, 1 個 commit 包晒: adapter.mjs + ALGO_CACHE_BUST 4.40.0 → 4.41.0 + ?v=2.3.99 → 2.3.100 + Spec Sync doc)
+### 對應 commit history
+- `29f7faac` 4.41.0 body middle value fix (撤回, body middle 唔對應 K 線 high / low, 4.15.0 恢復原狀)
+- `eb6a6163` 4.41.1 debug log (temporary, 將來拎走)
+- `6627f99b` 4.41.2 business day object time field fix (保留, 對齊 candlestick 1d 對齊邏輯)
+- 當前 commit 4.41.3 value revert wick tip + 保留 business day object time field fix (final fix)
+- Spec Sync: ARCHITECTURE.md §15.38 v2 (本段)
