@@ -2065,7 +2065,7 @@ export function renderChartOverlay(verdict, klines, chartRefs) {
   });
 
   const chart = chartRefs.chart;
-  if (typeof chart.addLineSeries !== 'function') {
+  if (typeof chart.addSeries !== 'function') {
     console.error('[renderChartOverlay] chart 冇 addLineSeries method, lightweight-charts version 可能太舊');
     return;
   }
@@ -2091,7 +2091,7 @@ export function renderChartOverlay(verdict, klines, chartRefs) {
 
   // MA5 (紅) — 短期趨勢
   try {
-    const s = chart.addLineSeries({
+    const s = chart.addSeries(LightweightCharts.LineSeries, {
       color: '#FF6B6B',
       lineWidth: 2,
       title: 'MA5',
@@ -2106,7 +2106,7 @@ export function renderChartOverlay(verdict, klines, chartRefs) {
 
   // MA10 (青) — 中短期趨勢
   try {
-    const s = chart.addLineSeries({
+    const s = chart.addSeries(LightweightCharts.LineSeries, {
       color: '#4ECDC4',
       lineWidth: 2,
       title: 'MA10',
@@ -2121,7 +2121,7 @@ export function renderChartOverlay(verdict, klines, chartRefs) {
 
   // MA60 (藍) — 中長期趨勢
   try {
-    const s = chart.addLineSeries({
+    const s = chart.addSeries(LightweightCharts.LineSeries, {
       color: '#45B7D1',
       lineWidth: 2,
       title: 'MA60',
@@ -3825,7 +3825,7 @@ function renderTrendlineChartOverlay(verdict, klines, chartRefs) {
   }
 
   const chart = chartRefs.chart;
-  if (typeof chart.addLineSeries !== 'function') {
+  if (typeof chart.addSeries !== 'function') {
     console.error('[renderTrendlineChartOverlay] chart 冇 addLineSeries method');
     return;
   }
@@ -3842,7 +3842,7 @@ function renderTrendlineChartOverlay(verdict, klines, chartRefs) {
   try {
     const supportSeries = _computeTrendlineSeries(klines, support);
     if (supportSeries.length > 0) {
-      const s = chart.addLineSeries({
+      const s = chart.addSeries(LightweightCharts.LineSeries, {
         color: '#2ecc71',
         lineWidth: 2,
         title: '支撐線',
@@ -3860,7 +3860,7 @@ function renderTrendlineChartOverlay(verdict, klines, chartRefs) {
   try {
     const resistanceSeries = _computeTrendlineSeries(klines, resistance);
     if (resistanceSeries.length > 0) {
-      const s = chart.addLineSeries({
+      const s = chart.addSeries(LightweightCharts.LineSeries, {
         color: '#e74c3c',
         lineWidth: 2,
         title: '壓力線',
@@ -4226,7 +4226,7 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
   }
 
   const chart = chartRefs.chart;
-  if (typeof chart.addLineSeries !== 'function') {
+  if (typeof chart.addSeries !== 'function') {
     console.error('[renderIndicatorsChartOverlay] chart 冇 addLineSeries method');
     return;
   }
@@ -4250,7 +4250,7 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
       rsiData.push({ time: t, value: rsiSeries[i] });
     }
     if (rsiData.length > 0) {
-      const s = chart.addLineSeries({
+      const s = chart.addSeries(LightweightCharts.LineSeries, {
         color: '#9b59b6',
         lineWidth: 2,
         title: 'RSI(14)',
@@ -4278,7 +4278,7 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
       macdData.push({ time: t, value: macdSeries[i] });
     }
     if (macdData.length > 0) {
-      const s = chart.addLineSeries({
+      const s = chart.addSeries(LightweightCharts.LineSeries, {
         color: '#e67e22',
         lineWidth: 2,
         title: 'MACD',
@@ -4934,7 +4934,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
   }
 
   const chart = chartRefs.chart;
-  if (typeof chart.addLineSeries !== 'function') {
+  if (typeof chart.addSeries !== 'function') {
     console.error('[renderMAAlignmentV2ChartOverlay] chart 冇 addLineSeries method');
     return;
   }
@@ -4959,7 +4959,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
   for (const period of periods) {
     const series = _computeMASeriesV2(klines, period);
     try {
-      const s = chart.addLineSeries({
+      const s = chart.addSeries(LightweightCharts.LineSeries, {
         color: maColors[period],
         lineWidth: 2,
         title: `MA${period}`,
@@ -5052,7 +5052,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // ============ 大少 2026-08-19 09:40 trigger — 紫色 ZigZag 折線 (原本 peak/trough) ============
           // 凡人話: 用 ZigZag algorithm 拎出嚟嘅 peaks/troughs, 紫色線 (#9C27B0) 代表「確認咗嘅轉向點」
           // 跟 StockPulse ChartContainer 一樣, 唔加 peak/trough 箭嘴 marker
-          const s = chart.addLineSeries({
+          const s = chart.addSeries(LightweightCharts.LineSeries, {
             color: '#9C27B0',  // 紫色
             lineWidth: 2,
             title: `ZigZag (${verdict.meta.zigzagThreshold || 5}%)`,
@@ -5161,6 +5161,11 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // 大少 2026-08-30 07:48 補丁 — extension line time field 統一用 business day object,
           //   對齊 P 點 setData 嘅 time field 格式, 避免 type 衝突 silent reject
           //   之前用 timestamp (number), 同 P 點 setData 用 business day object 唔同, 會 silent reject
+          //
+          // 大少 8月31日 01:59 trigger — 拎返 4.10.0 setMarkers 嗰個 spirit + 改用 v5 createSeriesMarkers plugin API (4.49.0 永久 rule)
+          //   對齊 production frontend `web/src/components/chart/ChartContainer.tsx` line 852 嗰個做法
+          //   v5 native marker 唔會有 v4.2.3 嗰個 out-of-range marker silent render bug
+          //   拎返 4.10.0 嗰個 `let greenMarkerTime = null` (鮮綠色 1 號 marker 嗰個 close extension time)
           let greenMarkerTime = null;  // 大少 2026-08-19 11:15 — sequence 號碼 1 用
           if (klines && klines.length > 0) {
             const lastKline = klines[klines.length - 1];
@@ -5184,7 +5189,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             if (lastDateObj != null && Number.isFinite(lastClose) && lastZigzagPoint && lastZigzagPoint.time &&
                 (lastZigzagPoint.time.year !== lastDateObj.year || lastZigzagPoint.time.month !== lastDateObj.month || lastZigzagPoint.time.day !== lastDateObj.day)) {
               const extSeries = [lastZigzagPoint, { time: lastDateObj, value: lastClose }];
-              const sExt = chart.addLineSeries({
+              const sExt = chart.addSeries(LightweightCharts.LineSeries, {
                 color: '#00C853',  // 鮮綠色 (大少 2026-08-21 11:20 trigger 由 #2E7D32 改)
                 lineWidth: 1.5,
                 title: '收市延伸 (Close Ext.)',
@@ -5194,26 +5199,38 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               });
               sExt.setData(extSeries);
               chartRefs.maV2LineSeries.zigzagExtension = sExt;
-              greenMarkerTime = lastDateObj;  // 記低 嚟做 sequence 號碼 1 (business day object)
+              greenMarkerTime = lastDateObj;  // 大少 8月31日 01:59 trigger — 拎返 `greenMarkerTime = lastDateObj` 嗰行 (setMarkers 拎返,綠色 1 號 marker 用)
               console.log('[M1 v2.0] ✅ 深綠色 close extension series added: 連去', lastClose, '@', lastDateObj.year + '-' + lastDateObj.month + '-' + lastDateObj.day);
             } else {
               console.log('[M1 v2.0] ℹ️ close extension skip: lastDate 或 lastClose 無效, 或已同 ZigZag 最後 point 重疊');
             }
           }
 
-          // ============ 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 (1, 2, 3, ...) ============
-          // 凡人話: 喺紫色 ZigZag 每個 point + 深綠色 close point 加順序號碼 label
-          //   號碼由新到舊: 1=今日 close (深綠色) → 2=紫色最後 1 個 → 3=紫色倒數第 2 個 → ... → N+1=紫色最舊
-          //   大少可以 option toggle 顯示/隱藏, 同時設定「只顯示最近 N 個」(預設 30, 因為 161 個 marker 會太擠)
-          // 凡人話警告: 純 visual label, 唔影響 algorithm 邏輯, 大少教學 / annotation 嗰陣方便對應「轉勢 5 號位」
+          // ============ 大少 8月31日 01:59 trigger — 拎返 ZigZag 點順序號碼 setMarkers 改用 v5 createSeriesMarkers plugin API (4.49.0 永久 rule) ============
+          //   大少 8月31日 01:02 trigger「問題很大,還是修不好」之後, 4.48.2 永久 rule 拎走 setMarkers 拎走咗
+          //   4.48.2 commit (大少 8月31日 01:02 trigger) 拎走 setMarkers 整段, toggle disable, 4.42.2 橙色旗仔 marker 都拎走
+          //   大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B: bump testing page v4.2.3 → v5.2.0 + 改用 v5 createSeriesMarkers plugin API
+          //   v5 native marker 唔會有 v4.2.3 嗰個 out-of-range marker silent render bug (v5 重新 design), 藍框 bug 唔會返嚟
+          //   對齊 production frontend `web/src/components/chart/ChartContainer.tsx` line 852 嗰個做法
           //
-          // 大少 2026-08-19 11:45 — 改用 lightweight-charts v4.2.3 native setMarkers() API (testing page CDN version)
-          // 原本用 LightweightCharts.createSeriesMarkers (v5 plugin API), 但 testing page 行緊 v4.2.3 唔 support, 永遠 skip
-          // setMarkers() v4 同 v5 都有, 永久用呢個, 向後兼容
+          // 4.49.0 永久 rule (新加, 拎返 4.10.0 嗰個 spirit + 改用 v5 plugin API):
+          //   ✅ 紫色 ZigZag sequence marker 拎返 (4.10.0 永久 rule 拎返), 改用 v5 createSeriesMarkers plugin API
+          //   ✅ 4.42.2 橙色旗仔 marker 拎返 (4.42.2 永久 rule 改寫: v5 plugin API 拎 set 唔到嘅 bug 解咗)
+          //   ✅ testing page 同 production frontend 對齊 v5 plugin API pattern (ChartContainer.tsx line 852 嗰個 reference)
+          //   ✅ 4.48.2 永久 rule 拎走 setMarkers 改寫為 4.49.0 永久 rule拎返 setMarkers (v5 plugin API)
+          //   對齊 4.41.3 永久 rule: 紫色 ZigZag 拎 algorithm 拎 wick tip (high/low) 永久 rule 保留
+          //   對齊 4.41.2 永久 rule: 紫色 ZigZag setData time field 統一用 business day object 永久 rule 保留
+          //   對齊 4.40.0 永久 rule: 之字 points dedupe by time 永久 rule 保留
+          //   對齊 4.15.0 永久 rule: 之字拎 point 同 trigger 都用 high/low (wick extreme) 永久 rule 保留
+          //   對齊 4.42.2 永久 rule (改寫): backend ZigZag algorithm 1-to-1 port frontend + 橙色旗仔 marker (v5 plugin API)
+          //   對齊 4.42.3 永久 rule: verdict.meta.zigzagPoints undefined fix
+          //   對齊 4.43.0 永久 rule: ZigZag 全部 backend 計 + 4 個 query params (threshold_mode / manual_threshold / lookback / multiplier)
+          //   對齊 4.45.0 永久 rule (Option B 拎走咗): 4.9.0 永久 rule 拎返嚟 (1 號 = 鮮綠線終點 = out-of-range today close)
           const showZigzagSequence = chartRefs.showZigzagSequence === true;  // 預設 false (toggle off)
           const zigzagSequenceMaxCount = Number.isFinite(chartRefs.zigzagSequenceMaxCount) ? chartRefs.zigzagSequenceMaxCount : 30;
-          if (showZigzagSequence && typeof LightweightCharts !== 'undefined' && chartRefs.candleSeries && typeof chartRefs.candleSeries.setMarkers === 'function') {
+          if (showZigzagSequence && typeof LightweightCharts !== 'undefined' && chartRefs.candleSeries && typeof LightweightCharts.createSeriesMarkers === 'function') {
             try {
+              // 拎返 4.10.0 嗰個 setMarkers 整個 block 嗰個 spirit, 改用 v5 createSeriesMarkers plugin API
               // 紫色 ZigZag 161 個 points 倒序排, 號碼 2-162
               // verdict.meta.zigzagPoints 已經係 chronological (舊→新), 倒返轉就係「新→舊」
               // 大少 2026-08-19 16:43 fix — Peak 號碼擺 aboveBar, Trough 號碼擺 belowBar (原本全部 inBar 錯)
@@ -5222,63 +5239,67 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               const reversedZigzagPoints = [...verdict.meta.zigzagPoints].reverse();  // 對齊 type
               const purpleMarkers = reversedZigzag.map((p, idx) => ({
                 time: p.time,
-                // high → aboveBar (Peak 號碼喺上面), low → belowBar (Trough 號碼喺下面)
                 position: reversedZigzagPoints[idx].type === 'high' ? 'aboveBar' : 'belowBar',
                 color: '#9C27B0',   // 紫色字
                 shape: 'circle',
-                text: String(idx + 2),  // 1=close, 2=紫色最後 1 個, 3=倒數第 2 個, ...
+                text: String(idx + 2),  // 4.9.0 永久 rule 拎返嚟 (Option B 拎走 4.45.0,1 號 = 鮮綠線終點, 2 號 = 紫色最後 1 個)
                 size: 1,
               }));
 
-              // 深綠色 close extension point 號碼 1
-              // 大少 2026-08-19 16:43 fix — 1 號 (今日 close) 擺 aboveBar, 跟 Peak 一樣
+              // 鮮綠色 close extension point 號碼 1 (拎返 4.10.0 嗰個, 4.9.0 永久 rule 拎返嚟)
               const greenMarkers = greenMarkerTime != null ? [{
                 time: greenMarkerTime,
-                position: 'aboveBar',  // close 通常接近 high, 擺上面清楚啲
-                color: '#00C853',  // 鮮綠色字 (大少 2026-08-21 11:20 trigger 由 #2E7D32 改)
+                position: 'aboveBar',
+                color: '#00C853',  // 鮮綠色字
                 shape: 'circle',
                 text: '1',
                 size: 1,
               }] : [];
 
-              // 合併: 1 號 (close, 深綠) 排最前, 之後紫色倒序 2-N+1
+              // 合併: 1 號 (close, 鮮綠) 排最前, 之後紫色倒序 2-N+1
               const allMarkers = [...greenMarkers, ...purpleMarkers];
 
               // 只顯示最近 N 個 (預設 30), 因為 161 個 marker 會太擠
               const visibleMarkers = allMarkers.slice(0, zigzagSequenceMaxCount);
 
-              // 用 v4 native setMarkers() (永久 rule: testing page 行 v4.2.3, 唔好假設 v5 plugin API)
               // 大少 2026-08-30 17:50 — merge 橙色旗仔 marker 一齊 set (因為 setMarkers 係 per series, 唔可以分開 set)
+              // 大少 8月31日 01:59 — 改用 v5 createSeriesMarkers plugin API (對齊 ChartContainer.tsx line 852)
               const _flagMarkersForMerge = chartRefs.zigzagDecisionFlagMarkers?.markers || [];
-              chartRefs.candleSeries.setMarkers([..._flagMarkersForMerge, ...visibleMarkers]);
-              // 拎出 handle 畀 toggle handler 用 (統一 set 一個 truthy value 表示「已 set」, 因為 setMarkers 冇 return handle)
+              // 對齊 4.42.2 永久 rule (改寫): 橙色旗仔 marker 拎返 (v5 plugin API 拎 set 唔到嘅 bug 解咗)
+              // 對齊 4.10.0 永久 rule: setMarkers API 保留 (v5 plugin API 對應)
+              // 大少 8月31日 01:59 trigger — 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API
+              // v5 native marker 唔會有 v4.2.3 嗰個 out-of-range marker silent render bug (v5 重新 design)
+              const markersPlugin = LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, [..._flagMarkersForMerge, ...visibleMarkers]);
+
+              // 拎出 handle 畀 toggle handler 用 (對齊 4.10.0 + 4.42.2 永久 rule)
               chartRefs.zigzagSequenceMarkers = {
                 markers: visibleMarkers,
                 setMarkers: (m) => {
-                  if (!chartRefs.candleSeries || typeof chartRefs.candleSeries.setMarkers !== 'function') return;
+                  if (!markersPlugin || typeof markersPlugin.setMarkers !== 'function') return;
                   const _fm = chartRefs.zigzagDecisionFlagMarkers?.markers || [];
-                  chartRefs.candleSeries.setMarkers([..._fm, ...(m || [])]);
+                  markersPlugin.setMarkers([..._fm, ...(m || [])]);
                 },
               };
-              console.log('[M1 v2.0] ✅ ZigZag sequence markers set:', visibleMarkers.length, '個 (max:', zigzagSequenceMaxCount, ', 紫色:', purpleMarkers.length, '+ 深綠色:', greenMarkers.length, ', 橙色旗仔:', _flagMarkersForMerge.length, ')');
+              console.log('[M1 v2.0] ✅ ZigZag sequence markers set (4.49.0 永久 rule v5 createSeriesMarkers plugin API):', visibleMarkers.length, '個 (max:', zigzagSequenceMaxCount, ', 紫色:', purpleMarkers.length, '+ 鮮綠色:', greenMarkers.length, ', 橙色旗仔:', _flagMarkersForMerge.length, ')');
             } catch (e) {
               console.error('[M1 v2.0] ❌ ZigZag sequence markers 失敗:', e);
             }
           } else {
             // 大少 2026-08-30 17:50 — sequence marker skip 嗰陣, 都要 set 旗仔 marker 落 candleSeries
             // 因為旗仔 marker 永遠 render (跟 zigzagEnabled), 唔可以因為 sequence skip 就唔 render
-            if (chartRefs.candleSeries && typeof chartRefs.candleSeries.setMarkers === 'function') {
+            // 大少 8月31日 01:59 — 改用 v5 createSeriesMarkers plugin API (對齊 ChartContainer.tsx line 852 嗰個 4.42.2 永久 rule)
+            if (chartRefs.candleSeries && typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
               try {
                 const _flagOnlyMarkers = chartRefs.zigzagDecisionFlagMarkers?.markers || [];
                 if (_flagOnlyMarkers.length > 0) {
-                  chartRefs.candleSeries.setMarkers(_flagOnlyMarkers);
-                  console.log('[M1 v2.0] ✅ 橙色 #FF9800 旗仔 marker set (sequence skip, only flag):', _flagOnlyMarkers.length, '個');
+                  LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, _flagOnlyMarkers);
+                  console.log('[M1 v2.0] ✅ 橙色 #FF9800 旗仔 marker set (4.42.2 永久 rule v5 plugin API, sequence skip, only flag):', _flagOnlyMarkers.length, '個');
                 }
               } catch (e) {
                 console.error('[M1 v2.0] ❌ 橙色旗仔 marker (sequence skip) 失敗:', e);
               }
             }
-            console.log('[M1 v2.0] ℹ️ ZigZag sequence markers skip: showZigzagSequence =', showZigzagSequence, ', candleSeries.setMarkers =', typeof (chartRefs.candleSeries?.setMarkers));
+            console.log('[M1 v2.0] ℹ️ ZigZag sequence markers skip: showZigzagSequence =', showZigzagSequence, ', createSeriesMarkers =', typeof (LightweightCharts?.createSeriesMarkers));
           }
         } else {
           console.warn('[M1 v2.0] ⚠️ ZigZag series.length < 2, 唔 render');

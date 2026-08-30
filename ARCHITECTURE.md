@@ -3760,3 +3760,104 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - `6627f99b` 4.41.2 business day object time field fix (保留, 對齊 candlestick 1d 對齊邏輯)
 - 當前 commit 4.41.3 value revert wick tip + 保留 business day object time field fix (final fix)
 - Spec Sync: ARCHITECTURE.md §15.38 v2 (本段)
+
+### 15.39 還原備份還原點 (4.42.2 + 4.42.3 + 4.43.0 之後, 4.45.0 之前) + 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API (4.49.0 永久 rule 改寫, 大少 2026-08-31 01:02 trigger「問題很大,還是修不好,還記得之前設了一個還原點嗎?」+ 01:48「能完全回到那個還原點嗎?」+ 01:59「找回 vs 重新做」+ 02:03「做B」揀 Approach B bump v4.2.3 → v5.2.0 + v5 plugin API 治本 fix Lightweight Charts v4.2.3 setMarkers 嗰個 silent render bug)
+
+### 大少 trigger history
+- **8月31日 01:02 trigger**「問題很大,還是修不好,還記得之前設了一個還原點嗎?」: 4.48.1 嗰個 fix 仍然有 edge case 撞 silent render 嗰個 bug,大少 trigger 還原到 22:51 設定嘅備份還原點
+- **8月31日 01:06 trigger**「我忘了是那個, 當時我是叫你做備份再加個還原點的。你幫我查一下是那個」: 大少 want 確認備份還原點係邊個 commit
+- **8月31日 01:09 trigger**「你再查一下那個還原點是在做"橙色旗仔"之前的, 是那一個?」: 大少確認「橙色旗仔之前」即係 4.42.2 之前,即係 commit `48fcff92` (4.41.3) 之前 = `git reset --hard 3a5c2fa4^`
+- **8月31日 01:48 trigger**「這是還原點嗎?zigzag都沒有了,用也用不了,怎麼辦?能完全回到那個還原點嗎?」: 大少 trigger 拎返 ZigZag 返嚟,從 Option A (reset 3a5c2fa4^) 改為 Option B (reset 3a5c2fa4,keep 4.42.2 + 4.42.3 + 4.43.0 永久 rule,拎走 4.45.0 + 4.48.1 un-committed,4.41.x 系列保留,backend ZigZag 拎返返嚟)
+- **8月31日 01:59 trigger**「那個zigzag點的功能怎辦好?你研究一下是找回還是重新做那個好?」: 大少 trigger 研究 3 個 Approach 拎返 ZigZag 點順序號碼 render 功能
+  - Approach A: 拎返 4.48.2 之前 v4.2.3 setMarkers 嗰段 code (治唔到 silent render bug, 返迴圈)
+  - Approach B (揀呢個): bump Lightweight Charts v4.2.3 → v5.2.0 + 改用 v5 `createSeriesMarkers` plugin API 治本 fix silent render bug
+  - Approach C: 自己 div overlay render sequence 號碼 (complexity 高, 唔揀)
+- **8月31日 02:03 trigger**「做B」: 大少 approve Approach B
+- **8月31日 02:17 trigger**「实施此计划」: 大少 trigger 實施 Approach B plan (Step 1-9)
+
+### Final Fix 方案 (4.49.0 - Approach B bump v4.2.3 → v5.2.0 + 拎返 setMarkers 改用 v5 plugin API)
+
+**Restore commit `3a5c2fa4` (備份 4.42.2 + 4.42.3 + 4.43.0 嗰個備份 commit) + Approach B bump Lightweight Charts v4.2.3 → v5.2.0 + 拎返 setMarkers 改用 v5 `createSeriesMarkers` plugin API**:
+
+- **Step 1: Bump CDN `lightweight-charts@4.2.3` → `lightweight-charts@5.2.0`**
+  - `testing-page/index.html` line 189: 拎返 `<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>` 改為 `<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>`
+  - v5 standalone build 仍然 expose `window.LightweightCharts` global,但 `addLineSeries` / `addCandlestickSeries` / `addHistogramSeries` 拎走,改為 `chart.addSeries(SeriesClass, options)`
+  - `LightweightCharts.LineSeries` / `LightweightCharts.CandlestickSeries` / `LightweightCharts.HistogramSeries` 係 v5 named export classes
+- **Step 2: `adapter.mjs` 拎返 setMarkers 整個 block 改用 v5 plugin API**
+  - `renderMAAlignmentV2ChartOverlay` line 5204-5282 嗰段拎返 (4.48.2 拎走)
+  - 改用 v5 `LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, [..._flagMarkersForMerge, ...visibleMarkers])` 拎返 plugin handle
+  - 改 markers 用 `markersPlugin.setMarkers(newMarkers)` (透過 plugin handle)
+  - `_flagMarkersForMerge` 拎返 (4.42.2 永久 rule 拎返拎返)
+- **Step 3: `adapter.mjs` 拎返橙色 #FF9800 旗仔 marker (4.42.2 永久 rule 改寫拎返)**
+  - 之前 4.48.2 setMarkers 拎走之後, 旗仔 marker 拎 set 唔到 (4.48.2 永久 rule 改寫: 4.42.2 旗仔 marker 拎走)
+  - 而家 setMarkers 拎返用 v5 plugin API, 旗仔 marker 拎返 render
+  - line 5110-5148 嗰段拎返 (4.48.2 拎走嘅 4.42.2 嗰段拎返拎返)
+- **Step 4: `testing-page.js` 拎返 2 個 setMarkers call site 改用 v5 plugin handle 嗰個 setMarker check**
+  - Line 1371-1376: re-set markers after setVisibleLogicalRange 嗰個 setTimeout 50ms 拎返
+  - Line 1723-1725: 清返之前嘅 sequence marker plugin 嗰個 if block 拎返
+  - 2 個 call site 改用 `typeof lastChartRefs.zigzagSequenceMarkers?.setMarkers === 'function'` 嗰個 v5 plugin handle check
+  - `renderDebugPanel` 拎返「ZigZag sequence markers plugin (4.48.2 永久 rule): ❌ 拎走」嗰行,改為「ZigZag sequence markers plugin (4.49.0 永久 rule): ✅ 拎返 (v5 createSeriesMarkers plugin API, ...)」
+  - 加「4.42.2 橙色旗仔 marker (4.49.0 永久 rule 改寫拎返): ✅ 拎返 (setMarkers 拎返用 v5 plugin API)」
+- **Step 5: `index.html` 拎返 toggle enable**
+  - `#zigzag-sequence-enabled` checkbox 拎返 `disabled` attribute 拎走
+  - `#zigzag-sequence-max-count` spinbutton 拎返 `disabled` attribute 拎走
+  - 整個 `#zigzag-sequence-controls` div 拎返 `opacity 0.6` + `cursor not-allowed` + inline tooltip「⚠️ P 點順序號碼 render 中, 暫時拎走 fix 緊 (4.48.2 永久 rule)」拎走
+  - 拎返 opacity 1.0 + cursor default
+- **Step 6: v4 API → v5 API 改動**
+  - `adapter.mjs` 9 個 `chart.addLineSeries({...})` 改為 `chart.addSeries(LightweightCharts.LineSeries, {...})` (line 2094, 2109, 2124 MA5/10/60, line 3845, 3863 trendline, line 4253, 4281 indicators, line 4962 M1 v2 MA, line 5055 紫色 ZigZag, line 5189 鮮綠色 close extension)
+  - `adapter.mjs` 4 個 `if (typeof chart.addLineSeries !== 'function')` 改為 `if (typeof chart.addSeries !== 'function')` (line 2068, 3828, 4229, 4937)
+  - `testing-page.js` 2 個 v4 API 拎返 (line 1333 `chart.addCandlestickSeries(...)` → `chart.addSeries(LightweightCharts.CandlestickSeries, ...)`, line 1351 `chart.addHistogramSeries(...)` → `chart.addSeries(LightweightCharts.HistogramSeries, ...)`)
+  - 對齊 production frontend `web/src/components/chart/ChartContainer.tsx` line 852 嗰個 v5 pattern
+  - 對齊 production frontend `web/package.json` line 19: `lightweight-charts: ^5.2.0`
+- **Step 7: Bump cache bust**
+  - `testing-page.js` line 426: `const ALGO_CACHE_BUST = '4.49.0'` (4.48.2 → 4.49.0)
+  - `testing-page/index.html` line 10 + 189: `?v=2.3.110` (2.3.109 → 2.3.110)
+
+### 永久 rule (4.49.0 — v5 createSeriesMarkers plugin API 拎返 setMarkers 治本 fix silent render bug)
+
+- ✅ **testing page 拎返 render 紫色 ZigZag sequence marker 號碼 (用 v5 plugin API)**
+  - 之前 4.48.2 永久 rule: setMarkers 拎走 (因為 v4.2.3 silent render bug 治唔到)
+  - 而家 4.49.0 永久 rule: bump Lightweight Charts v4.2.3 → v5.2.0,改用 v5 `LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, [..._flagMarkersForMerge, ...visibleMarkers])` plugin API 治本 fix silent render bug
+  - v5 plugin API 拎返 plugin handle (`markersPlugin`), 改 markers 用 `markersPlugin.setMarkers(newMarkers)`
+  - v5 重新 design, 對 out-of-range marker 唔會 silent render (治本 fix, 唔再返迴圈)
+  - 改動位置: `backend/algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` 嗰個 `if (zigzagSeries.length >= 2)` 區塊之內,setMarkers 整段拎返 (line 5204-5282 嗰段),改用 v5 plugin API
+
+- ✅ **4.42.2 永久 rule 改寫拎返: 橙色 #FF9800 旗仔 marker 拎返 render (v5 plugin API 拎 set 到)**
+  - 之前 4.48.2 永久 rule 改寫: 4.42.2 旗仔 marker 拎走 (因為 v4.2.3 setMarkers 拎走)
+  - 而家 4.49.0 永久 rule 改寫拎返: v5 plugin API 拎返 set 返, 旗仔 marker 拎返 render (line 5110-5148 嗰段拎返)
+  - 4.42.2 永久 rule 對齊 v5 plugin API: 橙色旗仔 marker 永遠 render 跟 zigzagEnabled
+
+- ✅ **紫色 ZigZag line + 鮮綠色 close extension 仍然 render (v4.2.3 拎走改 v5 API)**
+  - 紫色 ZigZag line setData 保留 (4.41.2 + 4.41.3 永久 rule保留)
+  - 鮮綠色 #00C853 close extension line setData 保留 (大少 8月21日 11:20 永久 rule 保留)
+  - 鮮綠色 1 號 marker (`greenMarkerTime = lastDateObj`) 拎返 render (4.9.0 永久 rule拎返, v5 plugin API set 返)
+  - `chart.addLineSeries` 改為 `chart.addSeries(LightweightCharts.LineSeries, ...)` (v4 → v5)
+
+- ✅ **toggle 掣拎返 enable**
+  - `index.html` `#zigzag-sequence-enabled` checkbox + `#zigzag-sequence-max-count` spinbutton 拎返 `disabled` attribute 拎走
+  - 整個 `#zigzag-sequence-controls` div 拎返 `opacity 1.0` + `cursor default`
+  - 拎返 inline tooltip 拎走 (因為 4.48.2 拎走嘅原因治咗)
+  - 撳 checkbox / spinbutton 即時 re-render markers (v5 plugin API 支援)
+
+- ✅ **renderDebugPanel 拎返標記 4.49.0 永久 rule**
+  - 「ZigZag sequence markers plugin (4.48.2 永久 rule): ❌ 拎走」嗰行拎返,改為「ZigZag sequence markers plugin (4.49.0 永久 rule): ✅ 拎返 (v5 createSeriesMarkers plugin API, ...)`
+  - 加「4.42.2 橙色旗仔 marker (4.49.0 永久 rule 改寫拎返): ✅ 拎返 (setMarkers 拎返用 v5 plugin API)」
+
+- ✅ **testing-page.js 拎返 2 個 setMarkers call site 改用 v5 plugin handle 嗰個 setMarker check**
+  - Line 1371-1376: re-set markers after setVisibleLogicalRange 嗰個 setTimeout 50ms 拎返,改用 `typeof lastChartRefs.zigzagSequenceMarkers?.setMarkers === 'function'`
+  - Line 1723-1725: 清返之前嘅 sequence marker plugin 嗰個 if block 拎返 (因為 v5 plugin handle 有 `setMarkers()`)
+
+### 套用情境
+- 之後改 setMarkers 嗰段, 確認用 v5 `LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, [...markers])` plugin API (唔好用 v4 `chart.candleSeries.setMarkers([...markers])` instance method)
+- 之後改 setMarkers 改 markers, 用 v5 plugin handle `markersPlugin.setMarkers(newMarkers)`, 唔好用 v4 instance method
+- 之後加新 LineSeries / CandlestickSeries / HistogramSeries, 用 v5 `chart.addSeries(LightweightCharts.LineSeries, options)` 嗰個 v5 pattern (唔好用 v4 `chart.addLineSeries(options)` instance method)
+- 之後加新 series 入 adapter.mjs, 4 個 `if (typeof chart.addSeries !== 'function')` guard 保留 (line 2068, 3828, 4229, 4937), 拎走 v4 guard `if (typeof chart.addLineSeries !== 'function')`
+- 之後改 4.42.2 永久 rule (e.g. 拎返 setMarkers 拎返 旗仔 marker), 確認 4.49.0 永久 rule entry 已 commit, v5 plugin API 用緊
+- 之後改 `verdict.meta.zigzagPoints` 嗰個 field, 大少可以透過 DevTools console 拎到 raw data (1-520 號倒序排)
+- 之後改 testing page toggle UI, 確認 toggle enable (拎返 disabled attribute) + 拎返 inline tooltip 拎走
+
+### 對應 commit history
+- 之前 4.45.0 (1 個 commit) + un-committed 4.46.0 / 4.47.0 / 4.48.0 / 4.48.1 (4 個 un-committed) 拎走, `git reset --hard 3a5c2fa4`
+- 4.42.2 + 4.42.3 + 4.43.0 (備份 commit 3a5c2fa4 入面備份) + 4.41.1 / 4.41.2 / 4.41.3 + 之前所有 commit 保留
+- 當前 commit (將會 commit): `fix(testing-page): bump lightweight-charts v4.2.3 → v5.2.0 + 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API (大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B + 02:03「做B」+ 02:17「实施此计划」)`
+- Spec Sync: ARCHITECTURE.md §15.39 (本段)

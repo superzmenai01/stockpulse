@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>股票演算法測試頁</title>
-  <link rel="stylesheet" href="testing-page.css?v=2.3.98">
+  <link rel="stylesheet" href="testing-page.css?v=2.3.110">
   <style>
     /* 大少 2026-08-22 23:35 trigger — chart 上方顯示股票名稱 + 號碼 */
     .stock-name-display {
@@ -133,6 +133,7 @@
             <span style="color:#999;font-size:12px;display:block;margin-top:4px;">(改完即時更新紫色線, 唔使撳跑算法)</span>
           </div>
           <!-- 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 (1=最新, 2=紫色最後 1 個, ...) -->
+          <!-- 大少 8月31日 01:59 trigger — 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API (4.49.0 永久 rule), toggle 拎返 enable 拎走 disabled + inline tooltip -->
           <div id="zigzag-sequence-controls" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
             <label style="margin-right:8px;cursor:pointer;">
               <input type="checkbox" id="zigzag-sequence-enabled" style="vertical-align:middle;">
@@ -141,7 +142,7 @@
             <label style="margin-right:8px;">
               顯示最近 <input type="number" id="zigzag-sequence-max-count" value="30" min="5" max="162" step="1" style="width:50px;"> 個
             </label>
-            <span style="color:#999;font-size:12px;">(1 號=今日 close, 2 號=紫色最後 1 個, 倒序排)</span>
+            <span style="color:#999;font-size:12px;">(1 號=今日 close, 2 號=紫色最後 1 個, 倒序排 — v5 plugin API 拎返, 大少 8月31日 01:59 trigger 揀 Approach B 拎返)</span>
           </div>
           <!-- 大少 2026-08-19 17:05 trigger — MA 線獨立 toggle 放喺圖表上邊 (即時生效) -->
           <div id="ma-toggle-bar" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
@@ -184,7 +185,7 @@
     </footer>
   </div>
 
-  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.108"></script>
+  <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script type="module" src="testing-page.js?v=2.3.110"></script>
 </body>
 </html>

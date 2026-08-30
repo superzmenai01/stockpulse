@@ -360,6 +360,16 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 // + production frontend (ChartContainer.tsx + ElliottWaveTestPage.tsx) fetchBackendZigZag return shape 加 decisionTime/decisionValue + createSeriesMarkers 旗仔 marker
 // 對齊永久 rule: testing-page.js + adapter.mjs 之後必同步 bump 2 個地方 cache bust (ALGO_CACHE_BUST + index.html ?v=2.3.X)
 // 大少 2026-08-30 22:04 — Testing page ZigZag 全部 backend 計 (拎走 frontend 算法): ALGO_CACHE_BUST = '4.43.0'
+//
+// 大少 8月31日 01:02 trigger — 還原備份還原點 (commit 3a5c2fa4) + 拎走 setMarkers 整個 block: ALGO_CACHE_BUST = '4.48.2'
+// 4.48.2 永久 rule (新加): testing page 唔 render 紫色 ZigZag sequence marker 號碼 (setMarkers 整個 block 拎走),
+//   Lightweight Charts v4.2.3 out-of-range marker 嗰個 silent render bug (4.49.0 + 4.50.0 + 4.50.1 + 4.48.1 fix 全部治唔到) 治唔到,
+//   紫色 ZigZag line + 鮮綠色 close extension 仍然 render, P 點 sequence 號碼大少可以透過 DevTools console 跑
+//   `window.currentVerdict.meta.zigzagPoints` 拎到 raw data (1-520 號倒序排, 4.45.0 永久 rule 拎走所以 1 號 = 紫線最後 1 個, Option B keep 4.42.2 永久 rule)。
+// 4.42.2 永久 rule 改寫: 橙色旗仔 marker 拎走 (setMarkers 拎 set 唔到),保留 4.42.2 嘅 backend port 同 verdict fix
+// 4.45.0 永久 rule 拎走: P1 唔見 fix + 拎走 4.9.0 永久 rule 拎返嚟 (1 號 = 鮮綠線終點 = out-of-range today close, Option B)
+// 對應 git reset: `git reset --hard 3a5c2fa4` (拎走 4.45.0 + 4.48.1 un-committed, keep 4.42.2 + 4.42.3 + 4.43.0)
+// 對應 commit (將會 commit): fix(testing-page): 還原備份還原點 (3a5c2fa4) + 拎走 setMarkers (大少 8月31日 01:02 trigger「問題很大,還是修不好,還記得之前設了一個還原點嗎?」+ 8月31日 01:48「能完全回到那個還原點嗎?」trigger 拎返 ZigZag 返嚟)
 // testing-page.js 拎走 5 個 frontend ZigZag function (calculateZigZagFrontend + _buildExtensionLineFrontend
 //   + autoThresholdVolatility + extractHLC + applyFrontendZigZagOverlay 4.42.3 fix 嘅 98 行 + 1 個
 //   dead helper _zigzagNormalizeDate) — 改 fetch backend `/api/algorithms/run?algo=zigzag`
@@ -378,7 +388,17 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 // 對應 Spec Sync #47 entry (永久 rule update 拎走 2 條 + 加 1 條)
 // 對齊永久 rule: testing-page.js + adapter.mjs 之後必同步 bump 2 個地方 cache bust
 //   (ALGO_CACHE_BUST + index.html ?v=2.3.X, 永久 rule cache bust self-check)
-const ALGO_CACHE_BUST = '4.43.0';
+//
+// 大少 8月31日 01:59 trigger — bump testing page CDN lightweight-charts v4.2.3 → v5.2.0 + 改用 v5 createSeriesMarkers plugin API 拎返 setMarkers: ALGO_CACHE_BUST = '4.49.0'
+// 4.49.0 永久 rule (新加, 拎返 4.10.0 嗰個 spirit + 改用 v5 plugin API):
+//   ✅ 紫色 ZigZag sequence marker 拎返 (4.10.0 永久 rule 拎返, 改用 v5 createSeriesMarkers plugin API)
+//   ✅ 4.42.2 橙色旗仔 marker 拎返 (4.42.2 永久 rule 改寫: v5 plugin API 拎 set 唔到嘅 bug 解咗)
+//   ✅ 4.48.2 永久 rule 拎走 setMarkers 改寫為 4.49.0 永久 rule拎返 setMarkers (v5 plugin API)
+//   ✅ testing page 同 production frontend (ChartContainer.tsx) 對齊 v5 plugin API pattern
+//   ✅ Lightweight Charts v4.2.3 out-of-range marker 嗰個 silent render bug 治本 fix (bump v4.2.3 → v5.2.0, v5 重新 design, 唔會有呢個 bug)
+// 對齊 git reset: `git reset --hard 3a5c2fa4` (Option B,拎走 4.45.0 + 4.48.1 un-committed, keep 4.42.2 + 4.42.3 + 4.43.0)
+// 對應 commit (將會 commit): fix(testing-page): bump lightweight-charts v4.2.3 → v5.2.0 + 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API (大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B + 4.49.0 永久 rule)
+const ALGO_CACHE_BUST = '4.49.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1320,7 +1340,8 @@ function renderChart(klines, code, period) {
   });
 
   // Candlestick series
-  const candleSeries = chart.addCandlestickSeries({
+  // 大少 8月31日 01:59 trigger — bump lightweight-charts v4.2.3 → v5.2.0, addCandlestickSeries 改為 addSeries(CandlestickSeries, ...) (v5 API 改咗)
+  const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
     upColor: '#26a69a',
     downColor: '#ef5350',
     borderVisible: false,
@@ -1338,7 +1359,8 @@ function renderChart(klines, code, period) {
       color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)',
     };
   });
-  const volumeSeries = chart.addHistogramSeries({
+  // 大少 8月31日 01:59 trigger — bump v4 → v5, addHistogramSeries 改為 addSeries(HistogramSeries, ...)
+  const volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
     priceFormat: { type: 'volume' },
     priceScaleId: 'volume',
   });
@@ -1367,11 +1389,18 @@ function renderChart(klines, code, period) {
     // 大少 2026-08-30 19:57 fix — ReferenceError chartRefs is not defined (line 1441) bug fix
     // 之前用 chartRefs (line 1256 runAlgorithm 嘅 local const), renderChart 內部 access 唔到
     // Fix: 改用 lastChartRefs (global, line 591-592 定義, line 1263 assign 過, 跟 chartRefs 同 shape)
+    // 大少 8月31日 01:59 trigger — 拎返 re-set markers after setVisibleLogicalRange 嗰個 if block (4.49.0 永久 rule, v5 plugin API 拎返 setMarkers)
+    //   4.48.2 拎走嘅 setMarkers 拎返, 但 v5 改用 plugin handle 嗰個 setMarkers (v5 改咗 design, setMarkers 喺 plugin handle 入面, 唔喺 candleSeries)
+    //   對齊 4.10.0 + 4.49.0 永久 rule
+    //   50ms 後再 set 返一次, 確保 persist
+    // 大少 2026-08-30 19:57 fix — ReferenceError chartRefs is not defined (line 1441) bug fix
+    // 之前用 chartRefs (line 1256 runAlgorithm 嘅 local const), renderChart 內部 access 唔到
+    // Fix: 改用 lastChartRefs (global, line 591-592 定義, line 1263 assign 過, 跟 chartRefs 同 shape)
     setTimeout(() => {
-      if (lastChartRefs && lastChartRefs.zigzagSequenceMarkers && lastChartRefs.candleSeries && typeof lastChartRefs.candleSeries.setMarkers === 'function') {
+      if (lastChartRefs && lastChartRefs.zigzagSequenceMarkers && typeof lastChartRefs.zigzagSequenceMarkers.setMarkers === 'function') {
         try {
-          lastChartRefs.candleSeries.setMarkers(lastChartRefs.zigzagSequenceMarkers.markers);
-          console.log('[Chart] 🛠️ re-set markers after setVisibleLogicalRange (確保 persist)');
+          lastChartRefs.zigzagSequenceMarkers.setMarkers(lastChartRefs.zigzagSequenceMarkers.markers);
+          console.log('[Chart] 🛠️ re-set markers after setVisibleLogicalRange (v5 plugin API, 確保 persist)');
         } catch (e) { /* ignore */ }
       }
     }, 50);
@@ -1719,7 +1748,8 @@ function reRenderZigZagSequence() {
         }
       }
     });
-    // 清返之前嘅 sequence marker plugin
+    // 大少 8月31日 01:59 trigger — 拎返「清返之前嘅 sequence marker plugin」嗰個 if block (4.49.0 永久 rule, v5 plugin API 拎返 setMarkers)
+    //   4.48.2 拎走嘅 setMarkers 拎返, 改用 v5 plugin handle 嗰個 setMarkers (唔再用 candleSeries.setMarkers)
     if (lastChartRefs.zigzagSequenceMarkers) {
       try { lastChartRefs.zigzagSequenceMarkers.setMarkers([]); } catch (e) { /* ignore */ }
       lastChartRefs.zigzagSequenceMarkers = null;
@@ -1795,9 +1825,11 @@ function renderDebugPanel(chartRefs, verdict, klines) {
 
 <strong style="color:#dcdcaa;">ZigZag sequence 號碼 toggle:</strong> ${chartRefs.showZigzagSequence === true ? `✅ 開 (顯示最近 ${chartRefs.zigzagSequenceMaxCount || 30} 個)` : '❌ 關 (預設)'}
 
-<strong style="color:#dcdcaa;">ZigZag sequence markers plugin:</strong> ${chartRefs.zigzagSequenceMarkers ? '✅ 已 create (拎出畀 toggle handler 用)' : '❌ 冇 create (toggle off)'}
+<strong style="color:#dcdcaa;">ZigZag sequence markers plugin (4.49.0 永久 rule v5 plugin API):</strong> ${chartRefs.zigzagSequenceMarkers ? '✅ 已 create (v5 LightweightCharts.createSeriesMarkers 拎返, 大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B)' : '❌ 冇 create (toggle off)'}
 
-<strong style="color:#dcdcaa;">verdict.meta.zigzagPoints length:</strong> ${verdict.meta?.zigzagPoints?.length || 0} 個
+<strong style="color:#dcdcaa;">4.42.2 橙色旗仔 marker (4.49.0 永久 rule 拎返):</strong> ${chartRefs.zigzagDecisionFlagMarkers ? '✅ 已 create (v5 plugin API 拎返 setMarkers 拎 set 唔到嘅 bug 解咗)' : '❌ 冇 create (toggle off)'}
+
+<strong style="color:#dcdcaa;">verdict.meta.zigzagPoints length:</strong> ${verdict.meta?.zigzagPoints?.length || 0} 個 (大少可以透過 DevTools console 拎到 raw data)
 
 <strong style="color:#dcdcaa;">verdict.meta.zigzagThreshold:</strong> ${verdict.meta?.zigzagThreshold || '(missing)'}%
 
