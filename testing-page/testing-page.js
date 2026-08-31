@@ -173,6 +173,9 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
     lastVerdict.meta.lastSwingHigh = lastHigh ? { date: lastHigh.date, value: lastHigh.value } : null;
     lastVerdict.meta.lastSwingLow = lastLow ? { date: lastLow.date, value: lastLow.value } : null;
     lastVerdict.meta.zigzagThreshold = verdict.meta.threshold;
+    // 大少 8月31日 17:42 trigger (修改版 20:51) 4.57.0 — 多 inject thresholdMode 畀 debug panel 顯示
+    // 對齊 4.57.0 永久 rule: 「🔧 Threshold: X.XX% (mode: auto|manual)」要用呢個 field
+    lastVerdict.meta.zigzagThresholdMode = thresholdMode;
     lastVerdict.meta.extensionLine = verdict.meta.extension_line;
     lastVerdict.meta.zigzagExtensionLine = verdict.meta.extension_line;  // 向後兼容
     lastVerdict.meta.zigzagSource = 'backend (4.43.0 1-to-1 port frontend)';
@@ -477,7 +480,25 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //     ✅ 對齊 §15.51 永久 rule (改 algorithm.py 必 restart backend + curl verify)
 //   對應 Sscript 還原點: restore-before-zigzag-4.56.0 (commit 1fca411b)
 //   對應 commit: fix(zigzag): P1 拎 K 線最後 close (backend algorithm 加 'today' point, 4.56.0)
-const ALGO_CACHE_BUST = '4.56.0';
+//
+// 大少 8月31日 17:42 trigger (修改版 20:51 + 20:57) — M1 console log 加 Threshold % + 獨發點 (Trigger 確認點): ALGO_CACHE_BUST = '4.57.0'
+//   4.57.0 永久 rule (新加, 大少 trigger 1+2):
+//     ✅ testing-page.js renderDebugPanel 加 _formatZigZagLatestPointsForDebug helper 改 signature 加 threshold + thresholdMode 2 個參數
+//     ✅ Mini-table 由 4 欄變 6 欄: 序號 (P1-P10) / 日子 (YYYY-MM-DD) / 點數 (2 位小數) / 類型 (📈 Peak / 📉 Trough) / 獨發點日期 / 獨發點股價
+//     ✅ 標題上邊加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
+//     ✅ 獨發點: 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, Trough trigger 拎嗰日 K 線 high, Peak trigger 拎嗰日 K 線 low
+//     ✅ 對齊 4.56.0 精神: 最後 ongoing point 拎 K 線最後 close 做 trigger 價
+//     ✅ Source 拎 lastVerdict.meta.zigzagPoints (已經由 backend inject, backend 算法 4.57.0 同步加 3 個 field: triggerIndex / triggerDate / triggerPrice)
+//     ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 data, 唔重計)
+//     ✅ fetchAndInjectBackendZigZag 多 inject lastVerdict.meta.zigzagThresholdMode = thresholdMode
+//     ✅ Frontend fallback (4.18.0 拎走): 唔適用, backend 拎唔到 verdict.meta.zigzagPoints 永遠 undefined, table 顯示「冇 points」
+//     ✅ Edge case: zigzagPoints empty / undefined → 顯示「(冇 points, 可能未跑算法 / threshold 太高)」
+//     ✅ Edge case: zigzagPoints.length < 10 → table 顯示實際有嘅數量 (1-9 行)
+//     ✅ Edge case: triggerIndex / triggerDate / triggerPrice 拎唔到 → 顯示「(?)」, 唔 crash
+//     ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
+//     ✅ 凡人話: 大少撳跑 M1 即刻喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價
+//   對應 commit: feat(testing-page): M1 console log 加 Threshold % + 獨發點 (4.57.0)
+const ALGO_CACHE_BUST = '4.57.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1914,9 +1935,20 @@ if (zigzagThresholdEl) {
 // 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing (P1 = zzp[-1] 最新, P2 = zzp[-2], ...)
 // 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (zigzagPoints 由 backend inject 落 verdict.meta, frontend 唔重計)
 // 對齊 4.15.0 永久 rule「之字拎 point 用 high/low」 (type 'high' = peak, type 'low' = trough)
-function _formatZigZagLatestPointsForDebug(zigzagPoints) {
+//
+// 大少 8月31日 17:42 trigger (修改版 20:51 + 20:57) 4.57.0 — 改 signature 加 threshold + thresholdMode 2 個參數
+//   ✅ Mini-table 由 4 欄變 6 欄: 加「獨發點日期」+ 「獨發點股價」2 個 column
+//   ✅ 標題上邊加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
+//   ✅ 獨發點: 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, Trough trigger 拎嗰日 K 線 high, Peak trigger 拎嗰日 K 線 low
+//   ✅ 對齊 4.56.0 精神: 最後 ongoing point 拎 K 線最後 close 做 trigger 價
+//   ✅ 凡人話: 大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價
+function _formatZigZagLatestPointsForDebug(zigzagPoints, threshold, thresholdMode) {
+  // 大少 4.57.0 trigger 1 — 標題上邊加 1 行顯示 Threshold % + mode (大少要睇清楚用咗咩 % 數值計 ZigZag)
+  const thresholdLine = (threshold !== undefined && threshold !== null)
+    ? `<strong style="color:#dcdcaa;">🔧 Threshold: ${Number(threshold).toFixed(2)}% (mode: ${thresholdMode || '?'})</strong>\n`
+    : `<em style="color:#888;">// Threshold 拎唔到</em>\n`;
   if (!Array.isArray(zigzagPoints) || zigzagPoints.length === 0) {
-    return '<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong> <em style="color:#888;">(冇 points, 可能未跑算法 / threshold 太高)</em>';
+    return `${thresholdLine}<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong> <em style="color:#888;">(冇 points, 可能未跑算法 / threshold 太高)</em>`;
   }
   // 大少 8月31日 13:14 trigger (4.55.0 fix) — fix 之前 4.54.0 寫錯 verdict.points 排法
   // 拎最前 10 個 (verdict.points 已經係 (新 → 舊) 排, points[0] = 最新 K線最近嗰個交易日嘅紫色 ZigZag 點)
@@ -1936,15 +1968,34 @@ function _formatZigZagLatestPointsForDebug(zigzagPoints) {
   const confirmedPoints = zigzagPoints.filter(p => p.type !== 'today');
   // P1 = 'today' point, P2-P10 = confirmed points 嘅頭 9 個 (新 → 舊 排)
   const last10 = todayPoint ? [todayPoint, ...confirmedPoints.slice(0, 9)] : confirmedPoints.slice(0, 10);
-  const headerRow = '<tr style="color:#9cdcfe;text-align:left;"><th style="padding-right:12px;">序號</th><th style="padding-right:12px;">日子</th><th style="padding-right:12px;">點數</th><th>類型</th></tr>';
+  // 大少 4.57.0 trigger 2 — Mini-table header 加 2 個 column: 獨發點日期 + 獨發點股價
+  const headerRow = '<tr style="color:#9cdcfe;text-align:left;">' +
+    '<th style="padding-right:12px;">序號</th>' +
+    '<th style="padding-right:12px;">日子</th>' +
+    '<th style="padding-right:12px;">點數</th>' +
+    '<th style="padding-right:12px;">類型</th>' +
+    '<th style="padding-right:12px;">獨發點<br>日期<br><em style="color:#888;font-size:10px;">(trigger 到)</em></th>' +
+    '<th style="padding-right:12px;">獨發點<br>股價<br><em style="color:#888;font-size:10px;">(確認價)</em></th>' +
+    '</tr>';
   const bodyRows = last10.map((p, idx) => {
     const seq = idx + 1;  // P1 = 最新
     const typeLabel = p.type === 'high' ? '📈 Peak' : p.type === 'low' ? '📉 Trough' : (p.type || '?');
     const date = p.date || p.decisionDate || '(?)';
     const value = Number.isFinite(p.value) ? p.value.toFixed(2) : (Number.isFinite(p.decisionValue) ? p.decisionValue.toFixed(2) : '(?)');
-    return `<tr><td style="padding-right:12px;"><strong style="color:#dcdcaa;">P${seq}</strong></td><td style="padding-right:12px;">${date}</td><td style="padding-right:12px;">${value}</td><td>${typeLabel}</td></tr>`;
+    // 大少 4.57.0 trigger 2 — 拎 backend inject 嘅 triggerDate / triggerPrice (對齊 4.15.0 + 4.56.0 精神)
+    const triggerDate = p.triggerDate || p.trigger_date || '(?)';
+    const triggerPrice = Number.isFinite(p.triggerPrice) ? p.triggerPrice.toFixed(2) :
+      (Number.isFinite(p.trigger_price) ? p.trigger_price.toFixed(2) : '(?)');
+    return `<tr>` +
+      `<td style="padding-right:12px;"><strong style="color:#dcdcaa;">P${seq}</strong></td>` +
+      `<td style="padding-right:12px;">${date}</td>` +
+      `<td style="padding-right:12px;">${value}</td>` +
+      `<td style="padding-right:12px;">${typeLabel}</td>` +
+      `<td style="padding-right:12px;">${triggerDate}</td>` +
+      `<td style="padding-right:12px;">${triggerPrice}</td>` +
+      `</tr>`;
   }).join('');
-  return `<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong>
+  return `${thresholdLine}<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong>
 <table style="margin-top:4px;color:#d4d4d4;font-family:monospace;font-size:12px;border-collapse:collapse;">${headerRow}${bodyRows}</table>
 <em style="color:#608b4e;">// P1 = K線最近嗰個交易日嘅紫色 ZigZag 點 (因為 backend verdict.points 排法係 (新 → 舊), points[0] = 最新)
 // 上升判斷: P1>P3 + P2>P4 / 下跌判斷: P1<P3 + P2<P4 (對齊 8月29日 14:32 永久 rule)</em>`;
@@ -2020,7 +2071,7 @@ function renderDebugPanel(chartRefs, verdict, klines) {
 
 <strong style="color:#dcdcaa;">K線最後 close:</strong> ${lastCloseDebug || '(missing)'} @ ${lastDateDebug}
 
-${_formatZigZagLatestPointsForDebug(verdict.meta?.zigzagPoints)}
+${_formatZigZagLatestPointsForDebug(verdict.meta?.zigzagPoints, verdict.meta?.zigzagThreshold, verdict.meta?.zigzagThresholdMode || '?')}
 
 <em style="color:#608b4e;">// 想拎 raw data 可以喺 DevTools console 跑: window.currentChartRefs / window.currentVerdict</em>`;
   const chartContainer = document.getElementById('chart-container');

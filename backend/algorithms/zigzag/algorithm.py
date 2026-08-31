@@ -141,7 +141,11 @@ def calculate_zigzag(
     拎 point value 用 high / low 對齊 K 線真實 high / low (跟 testing page 4.15.0 永久 rule)
 
     Returns:
-        list of {date, value, type: 'high' | 'low', index}
+        list of {date, value, type: 'high' | 'low', index, triggerIndex, triggerDate, triggerPrice}
+        - value: point 嘅價 (高點拎 high, 低點拎 low)
+        - triggerIndex: 獨發點 K 線 index (對齊 4.15.0 規則, 「之後反方向走勢去到 threshold % 確認前一個 point 嗰個 K 線」)
+        - triggerDate: 獨發點 K 線日期
+        - triggerPrice: 對齊 4.15.0 規則拎嗰個 K 線 high (trough) / low (peak), 對齊 4.56.0 精神最後 ongoing point 拎 close
     """
     if not klines or len(klines) < 2:
         return []
@@ -151,11 +155,16 @@ def calculate_zigzag(
 
     # 拎第一個 point: 永遠用 klines[0].low (frontend 算法 1-to-1)
     # 凡人話: 第一個 point 永遠從第一支 K 線開始, 拎佢嘅 low 做為起點
+    # 大少 8月31日 17:42 trigger (4.56.0) — 第一個 point 係起點, 冇「前一個 point 等 trigger」
+    # 凡人話: trigger 設返自己 (i=0, date=klines[0].date, price=klines[0].low)
     result.append({
         "date": _zigzag_normalize_date(klines[0]),
         "value": klines[0]['low'],
         "type": 'low',
         "index": 0,
+        "triggerIndex": 0,
+        "triggerDate": _zigzag_normalize_date(klines[0]),
+        "triggerPrice": klines[0]['low'],
     })
 
     last_swing_high = klines[0]['high']
@@ -176,11 +185,16 @@ def calculate_zigzag(
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_high <= -threshold:
+                # 大少 8月31日 17:42 trigger (4.56.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
+                # 對齊 4.15.0 永久 rule: Peak trigger 拎嗰日 K 線 low (跌到 low 先 confirm)
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_high,
                     "type": 'high',
                     "index": last_swing_idx,
+                    "triggerIndex": i,
+                    "triggerDate": _zigzag_normalize_date(klines[i]),
+                    "triggerPrice": klines[i]['low'],
                 })
                 in_uptrend = False
                 last_swing_low = klines[i]['low']
@@ -193,11 +207,16 @@ def calculate_zigzag(
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_low >= threshold:
+                # 大少 8月31日 17:42 trigger (4.56.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
+                # 對齊 4.15.0 永久 rule: Trough trigger 拎嗰日 K 線 high (升到 high 先 confirm)
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_low,
                     "type": 'low',
                     "index": last_swing_idx,
+                    "triggerIndex": i,
+                    "triggerDate": _zigzag_normalize_date(klines[i]),
+                    "triggerPrice": klines[i]['high'],
                 })
                 in_uptrend = True
                 last_swing_low = klines[i]['low']
@@ -218,11 +237,16 @@ def calculate_zigzag(
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_high <= -threshold:
+                # 大少 8月31日 17:42 trigger (4.56.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
+                # 對齊 4.15.0 永久 rule: Peak trigger 拎嗰日 K 線 low (跌到 low 先 confirm)
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_high,
                     "type": 'high',
                     "index": last_swing_idx,
+                    "triggerIndex": i,
+                    "triggerDate": _zigzag_normalize_date(klines[i]),
+                    "triggerPrice": klines[i]['low'],
                 })
                 in_uptrend = False
                 last_swing_low = klines[i]['low']
@@ -232,11 +256,16 @@ def calculate_zigzag(
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_low >= threshold:
+                # 大少 8月31日 17:42 trigger (4.56.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
+                # 對齊 4.15.0 永久 rule: Trough trigger 拎嗰日 K 線 high (升到 high 先 confirm)
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_low,
                     "type": 'low',
                     "index": last_swing_idx,
+                    "triggerIndex": i,
+                    "triggerDate": _zigzag_normalize_date(klines[i]),
+                    "triggerPrice": klines[i]['high'],
                 })
                 in_uptrend = True
                 last_swing_high = klines[i]['high']
@@ -246,13 +275,26 @@ def calculate_zigzag(
     last_date = _zigzag_normalize_date(klines[last_swing_idx])
     if result[-1]['date'] != last_date:
         # 凡人話: 最後一個 point 係「ongoing」, 仲未確認轉勢 (K 線行緊)
+        # 大少 4.56.0 永久 rule 精神: 最後 ongoing point 仲未 trigger 5%, 對齊「加今日 close 做 P1」精神
+        # 凡人話: 拎 K 線最後 close 做 trigger 價 (K 線行緊, 仲未 trigger 5% 變動)
+        last_kline_idx = len(klines) - 1
+        last_kline = klines[last_kline_idx]
         result.append({
             "date": last_date,
             "value": last_swing_high if in_uptrend else last_swing_low,
             "type": 'high' if in_uptrend else 'low',
             "index": last_swing_idx,
+            "triggerIndex": last_kline_idx,
+            "triggerDate": _zigzag_normalize_date(last_kline),
+            "triggerPrice": float(last_kline.get('close', 0)),
         })
 
+    # 大少 8月31日 17:42 trigger (4.56.0) — 加獨發點 3 個 field (triggerIndex / triggerDate / triggerPrice)
+    #   凡人話: 大少想知每個 ZigZag point 係「邊一日 trigger 到 threshold % 先 confirm 嘅」(獨發點)
+    #   對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, trigger 拎嗰個 K 線 high (trough) / low (peak)
+    #   對齊 4.56.0 精神「加今日 close 做 P1」, 最後 ongoing point 拎 K 線最後 close 做 trigger 價
+    #   永久 rule: 之後 ZigZag 拎新 point / 改 algorithm 嗰陣必加呢 3 個 field
+    #
     # 大少 8月31日 15:19 trigger (4.56.0) — 加今日 close 做 P1
     # 凡人話: 對齊 K 線最後 close (即使未 trigger 5% threshold), 大少想 P1 拎「最新」嘅 K 線 close
     # 因為 ZigZag 拎 confirmed point 之後, K 線可能仲有新 data 未 trigger 5% 變動, P1 拎最後 confirmed point
