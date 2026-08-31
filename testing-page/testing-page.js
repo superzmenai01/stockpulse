@@ -432,7 +432,19 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 大少明確 trigger「拎走不要」先做
 //   對齊 8月31日 11:01 永久 rule「Backend hot-reload」: 改 algorithm.py 之後必 restart backend
 //   對應 commit: chore: 拎走 ZigZag 橙旗 (4.53.0 永久 rule)
-const ALGO_CACHE_BUST = '4.53.0';
+//
+// 大少 8月31日 12:50 trigger — M1 console log 加 ZigZag 最新 10 點 (日子 + 點數): ALGO_CACHE_BUST = '4.54.0'
+//   4.54.0 永久 rule (新加, 改 renderDebugPanel):
+//     ✅ testing-page.js renderDebugPanel 加 _formatZigZagLatestPointsForDebug helper (喺「K線最後 close」行之下)
+//     ✅ Mini-table 4 欄 layout: 序號 (P1-P10) / 日子 (YYYY-MM-DD) / 點數 (2 位小數) / 類型 (📈 Peak / 📉 Trough)
+//     ✅ 倒序排 (P1 = 最新, zzp[-1]) 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing
+//     ✅ Source 拎 lastVerdict.meta.zigzagPoints (已經由 backend inject, 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」)
+//     ✅ Edge case: zigzagPoints empty / undefined → 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+//     ✅ Edge case: zigzagPoints.length < 10 → table 顯示實際有嘅數量 (1-9 行)
+//     ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
+//     ✅ 凡人話: 大少撳跑 M1 即刻喺黑色 console log 底部見到 P1-P10 日子 + 點數, 唔使再 scroll 開 DevTools console 拎 raw data
+//   對應 commit: feat(testing-page): M1 console log 加 ZigZag 最新 10 點
+const ALGO_CACHE_BUST = '4.54.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1864,10 +1876,37 @@ if (zigzagThresholdEl) {
 // 拎走 P 點 sequence marker toggle 之後, 唔再需要即時 re-render chart overlay
 // 撳 checkbox 撳 spinbutton 嗰兩個 listener 一齊拎走 (line 1979-1995)
 
+// 大少 8月31日 12:50 trigger (4.54.0) — renderDebugPanel 加 _formatZigZagLatestPointsForDebug helper
+// 凡人話: 拎 zigzagPoints array, 倒序 take last 10, format 做 mini-table HTML (P1 為最新)
+// 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing (P1 = zzp[-1] 最新, P2 = zzp[-2], ...)
+// 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (zigzagPoints 由 backend inject 落 verdict.meta, frontend 唔重計)
+// 對齊 4.15.0 永久 rule「之字拎 point 用 high/low」 (type 'high' = peak, type 'low' = trough)
+function _formatZigZagLatestPointsForDebug(zigzagPoints) {
+  if (!Array.isArray(zigzagPoints) || zigzagPoints.length === 0) {
+    return '<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong> <em style="color:#888;">(冇 points, 可能未跑算法 / threshold 太高)</em>';
+  }
+  // 倒序排 (P1=最新, P2=第二新, ...)
+  // zigzagPoints 已經時序排 (舊 → 新), 所以 P1 = arr[arr.length-1]
+  const last10 = zigzagPoints.slice(-10).reverse();
+  const headerRow = '<tr style="color:#9cdcfe;text-align:left;"><th style="padding-right:12px;">序號</th><th style="padding-right:12px;">日子</th><th style="padding-right:12px;">點數</th><th>類型</th></tr>';
+  const bodyRows = last10.map((p, idx) => {
+    const seq = idx + 1;  // P1 = 最新
+    const typeLabel = p.type === 'high' ? '📈 Peak' : p.type === 'low' ? '📉 Trough' : (p.type || '?');
+    const date = p.date || p.decisionDate || '(?)';
+    const value = Number.isFinite(p.value) ? p.value.toFixed(2) : (Number.isFinite(p.decisionValue) ? p.decisionValue.toFixed(2) : '(?)');
+    return `<tr><td style="padding-right:12px;"><strong style="color:#dcdcaa;">P${seq}</strong></td><td style="padding-right:12px;">${date}</td><td style="padding-right:12px;">${value}</td><td>${typeLabel}</td></tr>`;
+  }).join('');
+  return `<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong>
+<table style="margin-top:4px;color:#d4d4d4;font-family:monospace;font-size:12px;border-collapse:collapse;">${headerRow}${bodyRows}</table>
+<em style="color:#608b4e;">// P1 = 最新紫色 ZigZag 點 (8月29日 14:32 永久 rule), 上升判斷: P1>P3 + P2>P4 / 下跌判斷: P1<P3 + P2<P4</em>`;
+}
+
 // ===== renderDebugPanel — 抽出去畀 runAlgorithm 都用 (大少 2026-08-19 11:35) =====
 // 凡人話: 拎 chart overlay 最新 state (紫色 ZigZag) 顯示喺黑色 debug 區域
 // 之前 inline 喺 runAlgorithm 入面, 但 reRenderZigZagSequence 跑完之後 panel 永遠唔更新
 // 大少 4.53.0 拎走 reRenderZigZagSequence, 但 renderDebugPanel 仍然畀 runAlgorithm 用
+// 大少 4.54.0 (8月31日 12:50 trigger) 加 _formatZigZagLatestPointsForDebug helper, 喺「K線最後 close」行之下
+// inject 1 個 ZigZag P1-P10 mini-table (P1 為最新, 倒序排), 凡人話: 大少撳跑 M1 之後即時喺 panel 底部見到日子 + 點數
 function renderDebugPanel(chartRefs, verdict, klines) {
   const debugPanel = document.createElement('pre');
   debugPanel.id = 'chart-debug-panel';
@@ -1931,6 +1970,8 @@ function renderDebugPanel(chartRefs, verdict, klines) {
 <strong style="color:#dcdcaa;">verdict.meta.lastSwingLow:</strong> ${verdict.meta?.lastSwingLow ? JSON.stringify(verdict.meta.lastSwingLow) : '(null)'}
 
 <strong style="color:#dcdcaa;">K線最後 close:</strong> ${lastCloseDebug || '(missing)'} @ ${lastDateDebug}
+
+${_formatZigZagLatestPointsForDebug(verdict.meta?.zigzagPoints)}
 
 <em style="color:#608b4e;">// 想拎 raw data 可以喺 DevTools console 跑: window.currentChartRefs / window.currentVerdict</em>`;
   const chartContainer = document.getElementById('chart-container');
