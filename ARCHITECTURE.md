@@ -4530,3 +4530,66 @@ curl -s "http://localhost:18792/api/backup-points/list"
 - 對齊 §15.45 pattern 之後, Backup Admin Page 拎 metadata 自動對應 commit hash dedup, 拎到就顯示, 拎唔到就 warn
 - 之後大項目改動, 必先 set Sscript 還原點, 然後改 code, 然後 update Backup Admin Page (auto, 因為 backend 動態 scan git)
 
+
+### 15.55 M1 Console Log 加 ZigZag 最新 10 點 永久 rule (大少 2026-08-31 12:50 trigger, 4.54.0)
+
+### 大少 trigger
+8月31日 12:50「在 Testing Page M1 下邊有個你做的 Console Log, 我想把 zigzag 最新的十個點 (時間上最新的) 的日子和點數例出來 Console Log 內我可以方便看到」
+
+### 凡人話解釋
+大少撳跑 M1 之後, 想喺現有黑色「🔧 Chart Debug」console log (testing page 圖表下面) 自動列出 ZigZag 最新 10 個點嘅日子同點數 (P1 為最新, 倒序排 P1 → P10), 方便對齊睇 chart 上面嘅紫色 ZigZag 線, 唔使再 scroll 開 DevTools console 拎 `window.currentVerdict.meta.zigzagPoints` raw data。
+
+### 改動範圍 (2 個 file)
+
+| # | File | 改動 |
+|---|------|------|
+| 1 | `testing-page/testing-page.js` | `renderDebugPanel()` 加 `_formatZigZagLatestPointsForDebug()` helper, 喺「K線最後 close」行之下 inject 1 個 mini-table (4 欄: 序號 / 日子 / 點數 / 類型) + bump `ALGO_CACHE_BUST` 4.53.0 → 4.54.0 |
+| 2 | `testing-page/index.html` | bump `?v=2.3.114` → `2.3.115` (2 個地方: CSS line 10 + JS line 184) |
+
+### Mini-table format
+```
+📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):
+┌──────┬────────────┬────────┬──────────┐
+│ 序號 │   日子     │  點數  │  類型    │
+├──────┼────────────┼────────┼──────────┤
+│ P1   │ 2026-08-15 │ 80.50  │ 📈 Peak  │
+│ P2   │ 2026-08-10 │ 78.30  │ 📉 Trough│
+│ P3   │ 2026-08-05 │ 82.10  │ 📈 Peak  │
+│ ...  │    ...     │  ...   │   ...    │
+│ P10  │ 2026-06-20 │ 75.40  │ 📈 Peak  │
+└──────┴────────────┴────────┴──────────┘
+// P1 = 最新紫色 ZigZag 點 (8月29日 14:32 永久 rule), 上升判斷: P1>P3 + P2>P4 / 下跌判斷: P1<P3 + P2<P4
+```
+
+### 永久 rule
+- ✅ Testing page M1 跑完之後, 喺黑色 🔧 Chart Debug panel 底部永遠 auto-render 1 段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排)」
+- ✅ 永遠拎 `lastVerdict.meta.zigzagPoints` (renderDebugPanel 已經收 verdict 做 parameter), 唔好用 `window.currentVerdict`
+- ✅ 倒序排 (P1 = 最新, zzp[-1]), 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing
+- ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
+- ✅ 凡人話: 大少撳跑 M1 → 即時喺 console log 底部見到 P1-P10 日子 + 點數 → 唔使再 scroll 開 DevTools console
+- ✅ 對齊 2026-08-09 13:10 永久 rule「改 .js 之後必同步 bump ALGO_CACHE_BUST + ?v=2.3.X」 (雖然今次冇改 .mjs, 但 .js 改動都跟同一個 pattern)
+- ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 verdict.meta.zigzagPoints, 唔重計)
+- ✅ 對齊 4.15.0 永久 rule「之字拎 point 用 high/low」 (type 'high' = peak, type 'low' = trough)
+- ✅ Edge case: empty / undefined → 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+- ✅ Edge case: zigzagPoints.length < 10 → table 顯示實際有嘅 (1-9 行)
+
+### Acceptance tests
+1. 撳跑 M1 (AS-03-MA) 任何股票 e.g. HK.00700 → 撳跑完之後, scroll 落 chart 下面, 見到黑色 🔧 Chart Debug panel
+2. Panel 底部 (K線最後 close 行之下) 見到新段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):」
+3. Mini-table 顯示最多 10 行 (如果 zigzagPoints.length >= 10), 每行有 4 欄
+4. P1 = chart 上面紫色 ZigZag 線嘅最後 1 個點 (跟 8月29日 14:32 永久 rule)
+5. 撳跑 zmen / M9 等其他 module → 因為 `verdict.meta.zigzagPoints` undefined, mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+
+### 對應 file
+- `testing-page/testing-page.js` (改 1 個 function renderDebugPanel, 加 1 個 helper _formatZigZagLatestPointsForDebug, bump ALGO_CACHE_BUST)
+- `testing-page/index.html` (改 2 個 ?v= cache bust)
+
+### 對應 commit
+- `feat(testing-page): M1 console log 加 ZigZag 最新 10 點 (日子 + 點數)` (`3f8ec81b`)
+- Spec Sync: ARCHITECTURE.md §15.55 (本段) + AGENTS.md 「M1 console log 加 ZigZag 最新 10 點 永久 rule」section + M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 12:50」section
+
+### 教訓
+- 大少 trigger「Console Log 內我可以方便看到」即係凡人話視覺易讀, 唔係要佢自己去 DevTools console 拎 raw data
+- 之後 testing page 任何 verdict meta dump display 永遠 inline 喺 debug panel, 唔好新加獨立 section (會 split 大少視線)
+- 揀 mini-table 而唔係 plain text 列表, 因為 4 欄 layout 對齊視覺易讀 (序號 / 日子 / 點數 / 類型)
+- 大少 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing 已經定義咗順序 (P1 最新, zzp[-1]), 之後任何 ZigZag point display 跟呢個 indexing

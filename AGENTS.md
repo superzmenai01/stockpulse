@@ -756,6 +756,45 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 對應 Sscript 永久 rule: §15.45 + §15.53
 
 
+### M1 console log 加 ZigZag 最新 10 點 永久 rule (大少 2026-08-31 12:50 trigger, 4.54.0)
+
+**凡人話解釋**: 大少撳跑 M1 之後, 想喺現有黑色「🔧 Chart Debug」console log (testing page 圖表下面) 自動列出 ZigZag 最新 10 個點嘅日子同點數 (P1 為最新, 倒序排 P1 → P10), 方便對齊睇 chart 上面嘅紫色 ZigZag 線, 唔使再 scroll 開 DevTools console 拎 `window.currentVerdict.meta.zigzagPoints` raw data。
+
+**改動**:
+- `testing-page/testing-page.js` `renderDebugPanel()` 加 `_formatZigZagLatestPointsForDebug()` helper
+  - 喺現有「K線最後 close」行之下 insert 1 個 mini-table HTML
+  - 4 欄 layout: 序號 (P1-P10) / 日子 (YYYY-MM-DD) / 點數 (2 位小數) / 類型 (📈 Peak / 📉 Trough)
+  - 倒序排對齊 8月29日 14:32 永久 rule (P1 = zzp[-1] 最新)
+  - Source 拎 `lastVerdict.meta.zigzagPoints` (已經由 backend inject 落去, 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」)
+  - Edge case: empty / undefined → 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+  - Edge case: zigzagPoints.length < 10 → table 顯示實際有嘅 (1-9 行)
+- `testing-page/testing-page.js` bump `ALGO_CACHE_BUST` 4.53.0 → 4.54.0
+- `testing-page/index.html` bump `?v=2.3.114` → `2.3.115` (2 個地方: CSS line 10 + JS line 184)
+
+**永久 rule**:
+- ✅ Testing page M1 跑完之後, 喺黑色 🔧 Chart Debug panel 底部永遠 auto-render 1 段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排)」
+- ✅ 永遠拎 `lastVerdict.meta.zigzagPoints` 而唔係 `window.currentVerdict.meta.zigzagPoints` (因為 renderDebugPanel 已經收 verdict 做 parameter)
+- ✅ 倒序排 (P1 = 最新, zzp[-1]), 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing
+- ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
+- ✅ 凡人話: 大少撳跑 M1 → 即時喺 console log 底部見到 P1-P10 日子 + 點數 → 唔使再 scroll 開 DevTools console
+- ✅ 對齊 2026-08-09 13:10 永久 rule「改 .mjs 之後必同步 bump ALGO_CACHE_BUST + ?v=2.3.X」 (雖然今次冇改 .mjs, 但 .js 改動都跟同一個 pattern)
+- ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 verdict.meta.zigzagPoints, 唔重計)
+- ✅ 對齊 4.15.0 永久 rule「之字拎 point 用 high/low」 (type 'high' = peak, type 'low' = trough)
+
+**Acceptance tests**:
+- 撳跑 M1 (AS-03-MA) 任何股票 e.g. HK.00700 → 撳跑完之後, scroll 落 chart 下面, 見到黑色 🔧 Chart Debug panel
+- Panel 底部 (K線最後 close 行之下) 見到新段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):」
+- Mini-table 顯示最多 10 行 (如果 zigzagPoints.length >= 10), 每行有 4 欄
+- P1 = chart 上面紫色 ZigZag 線嘅最後 1 個點 (跟 8月29日 14:32 永久 rule)
+- 撳跑 zmen / M9 等其他 module → 因為 `verdict.meta.zigzagPoints` undefined, mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+
+對應 doc: ARCHITECTURE.md §15.55, M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 12:50」section
+
+對應 commit: `3f8ec81b` (feat commit) + 即將 push (Spec Sync §15.55 流程)
+
+對應永久 rule: 8月29日 14:32 P1/P2/P3/P4 indexing + 4.43.0 ZigZag 全部 backend 計 + 4.15.0 之字用 high/low + 2026-08-09 13:10 cache bust sync
+
+
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 
 **凡人話解釋**: 之前 backend KlineCache response 有 2 種 time format 混雜 (date-only `"2026-08-26"` vs datetime `"2026-08-26 00:00:00"`), 同一日 2 個 entry time field 唔同, 之字 points 撞 time 嗰陣 Lightweight Charts 4.2.3 silent reject 破壞 chart state, 紫線飛上去。
