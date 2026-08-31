@@ -1030,9 +1030,49 @@ curl -s "http://localhost:18792/api/backup-points/list"
 - 之後新增備份 script, 必 set 對應 annotated tag (`restore-xxx`) + backup branch (`backup-xxx`), 跟 Sscript pattern
 
 
-## 🟢 大少 trigger #N+5 — M1 Console Log 加 ZigZag 最新 10 點 (大少 2026-08-31 12:50 trigger, 4.54.0)
+## 🟢 大少 trigger #N+5 — M1 Console Log 加 ZigZag 最新 10 點 (大少 2026-08-31 12:50 trigger, 4.54.0 + 4.55.0 fix)
 
 > **大少 trigger (8月31日 12:50)**: 「在 Testing Page M1 下邊有個你做的 Console Log, 我想把 zigzag 最新的十個點 (時間上最新的) 的日子和點數例出來 Console Log 內我可以方便看到」
+>
+> **大少 trigger (8月31日 13:14 fix)**: 「還是錯的」+ 「你只要把最後的十個例出來,P1就是最後一個 P2就是最後第二個...」
+
+### 4.55.0 Fix (8月31日 13:14) — fix P1-P10 排法 (verdict.points 排法搞錯)
+
+**凡人話解釋**: 4.54.0 commit 寫錯 backend verdict.points 排法, 當 (舊 → 新) 處理, 但實際 backend 拎出嚟係 **(新 → 舊)** (points[0] = 最新, points[-1] = 最舊)。所以之前 4.54.0 console log 嘅 P1 拎到最舊嗰個 point (e.g. 2021-07-14), P10 拎到較新嗰個 (e.g. 2022-06-10), 完全反咗。
+
+**Curl evidence (8月31日 13:14, 確認 verdict.points 排法)**:
+```bash
+curl -s "http://localhost:18792/api/algorithms/run?algo=zigzag&symbol=HK.00019&threshold_mode=auto&data_window_days=1260" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+points = d.get('points', [])
+print(f'points count: {len(points)}')
+print(f'points[0] (最新): {points[0].get("date")} value={points[0].get("value")} type={points[0].get("type")}')
+print(f'points[-1] (最舊): {points[-1].get("date")} value={points[-1].get("value")} type={points[-1].get("type")}')
+"
+```
+
+**Evidence output**:
+```
+points count: 10
+points[0] (最新): 2026-08-21 value=106.0 type=high
+points[-1] (最舊): 2025-08-04 value=66.3 type=low
+```
+
+**確認**: verdict.points 排法係 **(新 → 舊)**, points[0] = 最新 (K線最近嗰個交易日), points[-1] = 最舊。
+
+**Fix (1 行 surgical)**:
+```javascript
+// 改前 (4.54.0 錯):
+const last10 = zigzagPoints.slice(-10).reverse();  // 反咗, P1 拎到最舊
+
+// 改後 (4.55.0 對):
+const last10 = zigzagPoints.slice(0, 10);  // array 已經 (新 → 舊), 最前 10 個 = 最新嗰 10 個
+```
+
+**凡人話 message 改返**:
+- 改前: `// P1 = 最新紫色 ZigZag 點 (8月29日 14:32 永久 rule)...`
+- 改後: `// P1 = K線最近嗰個交易日嘅紫色 ZigZag 點 (因為 backend verdict.points 排法係 (新 → 舊), points[0] = 最新)`
 
 ### 凡人話解釋
 
@@ -1042,8 +1082,8 @@ curl -s "http://localhost:18792/api/backup-points/list"
 
 | # | File | 改動 |
 |---|------|------|
-| 1 | `testing-page/testing-page.js` | `renderDebugPanel()` 加 `_formatZigZagLatestPointsForDebug()` helper, 喺「K線最後 close」行之下 inject 1 個 mini-table (4 欄: 序號 / 日子 / 點數 / 類型) + bump `ALGO_CACHE_BUST` 4.53.0 → 4.54.0 + 加 changelog comment |
-| 2 | `testing-page/index.html` | bump `?v=2.3.114` → `2.3.115` (2 個地方: CSS line 10 + JS line 184) |
+| 1 | `testing-page/testing-page.js` | `renderDebugPanel()` 加 `_formatZigZagLatestPointsForDebug()` helper, 喺「K線最後 close」行之下 inject 1 個 mini-table (4 欄: 序號 / 日子 / 點數 / 類型) + bump `ALGO_CACHE_BUST` 4.53.0 → 4.54.0 (4.55.0 fix 改 4.54.0 → 4.55.0) + 加 changelog comment |
+| 2 | `testing-page/index.html` | bump `?v=2.3.114` → `2.3.115` (4.55.0 fix 改 2.3.116, 2 個地方: CSS line 10 + JS line 184) |
 
 ### Mini-table format
 ```
@@ -1051,11 +1091,11 @@ curl -s "http://localhost:18792/api/backup-points/list"
 ┌──────┬────────────┬────────┬──────────┐
 │ 序號 │   日子     │  點數  │  類型    │
 ├──────┼────────────┼────────┼──────────┤
-│ P1   │ 2026-08-15 │ 80.50  │ 📈 Peak  │
-│ P2   │ 2026-08-10 │ 78.30  │ 📉 Trough│
-│ P3   │ 2026-08-05 │ 82.10  │ 📈 Peak  │
+│ P1   │ 2026-08-21 │ 106.00 │ 📈 Peak  │  ← K線最近嗰個交易日 (backend verdict.points[0])
+│ P2   │ 2026-06-23 │ 79.65  │ 📉 Trough│
+│ P3   │ 2026-05-08 │ 91.55  │ 📈 Peak  │
 │ ...  │    ...     │  ...   │   ...    │
-│ P10  │ 2026-06-20 │ 75.40  │ 📈 Peak  │
+│ P10  │ 2025-08-04 │ 66.30  │ 📉 Trough│  ← 倒數第 10 新 (backend verdict.points[9])
 └──────┴────────────┴────────┴──────────┘
 // P1 = 最新紫色 ZigZag 點 (8月29日 14:32 永久 rule), 上升判斷: P1>P3 + P2>P4 / 下跌判斷: P1<P3 + P2<P4
 ```
@@ -1063,34 +1103,42 @@ curl -s "http://localhost:18792/api/backup-points/list"
 ### 永久 rule
 - ✅ Testing page M1 跑完之後, 喺黑色 🔧 Chart Debug panel 底部永遠 auto-render 1 段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排)」
 - ✅ 永遠拎 `lastVerdict.meta.zigzagPoints` (renderDebugPanel 已經收 verdict 做 parameter), 唔好用 `window.currentVerdict`
-- ✅ 倒序排 (P1 = 最新, zzp[-1]), 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing
+- ✅ **P1 = points[0] = K線最近嗰個交易日嘅紫色 ZigZag 點** (backend verdict.points 排法係 (新 → 舊))
+- ✅ **永遠用 `slice(0, 10)` 拎最前 10 個** (即係最新嗰 10 個, 因為 array 已經係 (新 → 舊)), 唔好用 `slice(-10).reverse()` (4.55.0 fix)
 - ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
 - ✅ 凡人話: 大少撳跑 M1 → 即時喺 console log 底部見到 P1-P10 日子 + 點數 → 唔使再 scroll 開 DevTools console
 - ✅ 對齊 2026-08-09 13:10 永久 rule「改 .js 之後必同步 bump ALGO_CACHE_BUST + ?v=2.3.X」 (雖然今次冇改 .mjs, 但 .js 改動都跟同一個 pattern)
 - ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 verdict.meta.zigzagPoints, 唔重計)
 - ✅ 對齊 4.15.0 永久 rule「之字拎 point 用 high/low」 (type 'high' = peak, type 'low' = trough)
+- ✅ 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing 精神 (P1 = 最新, 之後順序)
 - ✅ Edge case: empty / undefined → 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+- ✅ **4.55.0 lesson learned**: 改 array sort / iterate 邏輯之前, 必先用 curl / test script 拎 evidence 確認 array 排法, 唔可以靠注釋 / mental model 估
 - ✅ Edge case: zigzagPoints.length < 10 → table 顯示實際有嘅 (1-9 行)
 
 ### Acceptance tests
-1. 撳跑 M1 (AS-03-MA) 任何股票 e.g. HK.00700 → 撳跑完之後, scroll 落 chart 下面, 見到黑色 🔧 Chart Debug panel
+1. 撳跑 M1 (AS-03-MA) 任何股票 e.g. HK.00019 (太古) → 撳跑完之後, scroll 落 chart 下面, 見到黑色 🔧 Chart Debug panel
 2. Panel 底部 (K線最後 close 行之下) 見到新段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):」
 3. Mini-table 顯示最多 10 行 (如果 zigzagPoints.length >= 10), 每行有 4 欄
-4. P1 = chart 上面紫色 ZigZag 線嘅最後 1 個點 (跟 8月29日 14:32 永久 rule)
-5. 撳跑 zmen / M9 等其他 module → 因為 `verdict.meta.zigzagPoints` undefined, mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+4. **P1 = K線最近嗰個交易日嘅紫色 ZigZag 點** (對齊 chart 上面紫色 ZigZag 線最後嗰個 point, 對齊 K線最近)
+5. **P10 = 倒數第 10 新嗰個交易日** (e.g. HK.00019 = 2025-08-04)
+6. 撳跑 zmen / M9 等其他 module → 因為 `verdict.meta.zigzagPoints` undefined, mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
 
 ### 對應 file
-- `testing-page/testing-page.js` (改 1 個 function renderDebugPanel, 加 1 個 helper _formatZigZagLatestPointsForDebug, bump ALGO_CACHE_BUST 4.53.0 → 4.54.0)
-- `testing-page/index.html` (改 2 個 ?v= cache bust 2.3.114 → 2.3.115)
+- `testing-page/testing-page.js` (改 1 個 function renderDebugPanel, 加 1 個 helper _formatZigZagLatestPointsForDebug, bump ALGO_CACHE_BUST 4.54.0 → 4.55.0)
+- `testing-page/index.html` (改 2 個 ?v= cache bust 2.3.115 → 2.3.116)
 
 ### 對應 commit
-- `feat(testing-page): M1 console log 加 ZigZag 最新 10 點 (日子 + 點數)` (`3f8ec81b`)
+- `feat(testing-page): M1 console log 加 ZigZag 最新 10 點 (日子 + 點數)` (`3f8ec81b` 4.54.0)
+- `docs: Spec Sync #55 - M1 console log ZigZag 最新 10 點 永久 rule` (`d64ec77f` 4.54.0, 寫錯 verdict.points 排法 description, 4.55.0 fix commit 改返)
+- `fix(testing-page): M1 console log P1-P10 排法 (verdict.points 排法搞錯, 4.55.0)` (即將 push, 4.55.0 fix)
 - Spec Sync: ARCHITECTURE.md §15.55 (本段) + AGENTS.md 「M1 console log 加 ZigZag 最新 10 點 永久 rule」section + M1-V22-RESEARCH.md 「🟢 大少 trigger #N+5」section
 
 ### 教訓
 - 大少 trigger「Console Log 內我可以方便看到」即係凡人話視覺易讀, 唔係要佢自己去 DevTools console 拎 raw data
 - 之後 testing page 任何 verdict meta dump display 永遠 inline 喺 debug panel, 唔好新加獨立 section (會 split 大少視線)
 - 揀 mini-table 而唔係 plain text 列表, 因為 4 欄 layout 對齊視覺易讀 (序號 / 日子 / 點數 / 類型)
-- 大少 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing 已經定義咗順序 (P1 最新, zzp[-1]), 之後任何 ZigZag point display 跟呢個 indexing
+- **4.55.0 lesson learned (重要)**: 改 array sort / iterate 邏輯之前, 必先用 curl / test script 拎 evidence 確認 array 排法, 唔可以靠注釋 / mental model 估 (4.54.0 我估 verdict.points 係 (舊 → 新), 實際係 (新 → 舊), 結果 P1-P10 完全反咗)
+- 大少 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing 已經定義咗順序 (P1 最新, zzp[-1] 精神, 但此處 verdict.points[0] = 最新, 對齊 K線最近), 之後任何 ZigZag point display 跟呢個 indexing
+- **順便發現 backend bug** (唔喺今次 fix 範圍): `backend/algorithms/zigzag/algorithm.py` 嘅 `assign_sequence_numbers` 函數注釋寫 `1 = points[-1] (最後一個 = 最新)`, 但實際 points[-1] = 最舊。Production frontend 4.53.0 拎走 P 點 sequence marker, 暫時冇 visible impact, 之後 follow-up sprint 先處理
 
 

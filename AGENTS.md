@@ -764,33 +764,41 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 - `testing-page/testing-page.js` `renderDebugPanel()` 加 `_formatZigZagLatestPointsForDebug()` helper
   - 喺現有「K線最後 close」行之下 insert 1 個 mini-table HTML
   - 4 欄 layout: 序號 (P1-P10) / 日子 (YYYY-MM-DD) / 點數 (2 位小數) / 類型 (📈 Peak / 📉 Trough)
-  - 倒序排對齊 8月29日 14:32 永久 rule (P1 = zzp[-1] 最新)
+  - **P1 = points[0] = K線最近嗰個交易日嘅紫色 ZigZag 點** (因為 backend verdict.points 排法係 (新 → 舊), 唔係 (舊 → 新))
+  - **4.55.0 fix (大少 13:14 trigger)**: 由 `slice(-10).reverse()` 改做 `slice(0, 10)`, 因為 verdict.points[0] = 最新
   - Source 拎 `lastVerdict.meta.zigzagPoints` (已經由 backend inject 落去, 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」)
   - Edge case: empty / undefined → 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
   - Edge case: zigzagPoints.length < 10 → table 顯示實際有嘅 (1-9 行)
-- `testing-page/testing-page.js` bump `ALGO_CACHE_BUST` 4.53.0 → 4.54.0
-- `testing-page/index.html` bump `?v=2.3.114` → `2.3.115` (2 個地方: CSS line 10 + JS line 184)
+- `testing-page/testing-page.js` bump `ALGO_CACHE_BUST` 4.53.0 → 4.54.0 (4.55.0 fix 改 4.54.0 → 4.55.0)
+- `testing-page/index.html` bump `?v=2.3.114` → `2.3.115` (4.55.0 fix 改 2.3.116, 2 個地方: CSS line 10 + JS line 184)
 
 **永久 rule**:
 - ✅ Testing page M1 跑完之後, 喺黑色 🔧 Chart Debug panel 底部永遠 auto-render 1 段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排)」
 - ✅ 永遠拎 `lastVerdict.meta.zigzagPoints` 而唔係 `window.currentVerdict.meta.zigzagPoints` (因為 renderDebugPanel 已經收 verdict 做 parameter)
-- ✅ 倒序排 (P1 = 最新, zzp[-1]), 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing
+- ✅ **P1 = points[0] = K線最近嗰個交易日嘅紫色 ZigZag 點** (backend verdict.points 排法係 (新 → 舊), points[0] = 最新)
+- ✅ **永遠用 `slice(0, 10)` 拎最前 10 個** (即係最新嗰 10 個, 因為 array 已經係 (新 → 舊)), 唔好用 `slice(-10).reverse()` (4.55.0 fix)
 - ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
 - ✅ 凡人話: 大少撳跑 M1 → 即時喺 console log 底部見到 P1-P10 日子 + 點數 → 唔使再 scroll 開 DevTools console
 - ✅ 對齊 2026-08-09 13:10 永久 rule「改 .mjs 之後必同步 bump ALGO_CACHE_BUST + ?v=2.3.X」 (雖然今次冇改 .mjs, 但 .js 改動都跟同一個 pattern)
 - ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 verdict.meta.zigzagPoints, 唔重計)
 - ✅ 對齊 4.15.0 永久 rule「之字拎 point 用 high/low」 (type 'high' = peak, type 'low' = trough)
+- ✅ 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing 精神 (P1 = 最新, 之後順序)
+- ✅ **4.55.0 lesson learned**: 改 array sort / iterate 邏輯之前, 必先用 curl / test script 拎 evidence 確認 array 排法, 唔可以靠注釋 / mental model 估
 
 **Acceptance tests**:
-- 撳跑 M1 (AS-03-MA) 任何股票 e.g. HK.00700 → 撳跑完之後, scroll 落 chart 下面, 見到黑色 🔧 Chart Debug panel
+- 撳跑 M1 (AS-03-MA) 任何股票 e.g. HK.00019 (太古) → 撳跑完之後, scroll 落 chart 下面, 見到黑色 🔧 Chart Debug panel
 - Panel 底部 (K線最後 close 行之下) 見到新段「📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):」
 - Mini-table 顯示最多 10 行 (如果 zigzagPoints.length >= 10), 每行有 4 欄
-- P1 = chart 上面紫色 ZigZag 線嘅最後 1 個點 (跟 8月29日 14:32 永久 rule)
+- **P1 = K線最近嗰個交易日嘅紫色 ZigZag 點** (對齊 chart 上面紫色 ZigZag 線最後嗰個 point, 對齊 K線最近)
+- **P10 = 倒數第 10 新嗰個交易日** (e.g. HK.00019 = 2025-08-04)
 - 撳跑 zmen / M9 等其他 module → 因為 `verdict.meta.zigzagPoints` undefined, mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
 
 對應 doc: ARCHITECTURE.md §15.55, M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 12:50」section
 
-對應 commit: `3f8ec81b` (feat commit) + 即將 push (Spec Sync §15.55 流程)
+對應 commit:
+- `3f8ec81b` (feat commit 4.54.0)
+- `d64ec77f` (Spec Sync commit 4.54.0, 寫錯 verdict.points 排法 description, 之後 4.55.0 fix commit 改返)
+- **即將 push** (4.55.0 fix commit, 改 code 1 行 + 改 3 doc 對齊 evidence)
 
 對應永久 rule: 8月29日 14:32 P1/P2/P3/P4 indexing + 4.43.0 ZigZag 全部 backend 計 + 4.15.0 之字用 high/low + 2026-08-09 13:10 cache bust sync
 

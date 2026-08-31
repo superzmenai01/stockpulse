@@ -444,7 +444,18 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //     ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
 //     ✅ 凡人話: 大少撳跑 M1 即刻喺黑色 console log 底部見到 P1-P10 日子 + 點數, 唔使再 scroll 開 DevTools console 拎 raw data
 //   對應 commit: feat(testing-page): M1 console log 加 ZigZag 最新 10 點
-const ALGO_CACHE_BUST = '4.54.0';
+//
+// 大少 8月31日 13:14 trigger — fix P1-P10 排法 (verdict.points 排法 (舊 → 新) → (新 → 舊) 搞錯): ALGO_CACHE_BUST = '4.55.0'
+//   4.55.0 永久 rule (新加, fix 4.54.0 錯理解):
+//     ✅ _formatZigZagLatestPointsForDebug 改 1 行: `slice(-10).reverse()` → `slice(0, 10)`
+//     ✅ 原因: backend verdict.points 排法係 (新 → 舊), points[0] = 最新 (curl evidence HK.00019: points[0]=2026-08-21, points[-1]=2025-08-04)
+//     ✅ 凡人話: 大少撳跑 M1 即時見到 P1 = K線最近嗰個交易日 (唔再拎最舊嗰個, 之前 4.54.0 完全反咗)
+//     ✅ 凡人話 message 改: 「P1 = K線最近嗰個交易日嘅紫色 ZigZag 點 (因為 backend verdict.points 排法係 (新 → 舊))」
+//     ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 data, 唔重計)
+//     ⚠️ Backend `assign_sequence_numbers` 函數注釋錯 + logic 同 array 排法對唔上, 但 production 4.53.0 拎走 P 點 sequence marker, 暫時冇 visible impact
+//        → 唔喺今次 fix 範圍, 之後 follow-up sprint 先處理
+//   對應 commit: fix(testing-page): M1 console log P1-P10 排法 (verdict.points 排法搞錯, 4.55.0)
+const ALGO_CACHE_BUST = '4.55.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1885,9 +1896,13 @@ function _formatZigZagLatestPointsForDebug(zigzagPoints) {
   if (!Array.isArray(zigzagPoints) || zigzagPoints.length === 0) {
     return '<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong> <em style="color:#888;">(冇 points, 可能未跑算法 / threshold 太高)</em>';
   }
-  // 倒序排 (P1=最新, P2=第二新, ...)
-  // zigzagPoints 已經時序排 (舊 → 新), 所以 P1 = arr[arr.length-1]
-  const last10 = zigzagPoints.slice(-10).reverse();
+  // 大少 8月31日 13:14 trigger (4.55.0 fix) — fix 之前 4.54.0 寫錯 verdict.points 排法
+  // 拎最前 10 個 (verdict.points 已經係 (新 → 舊) 排, points[0] = 最新 K線最近嗰個交易日嘅紫色 ZigZag 點)
+  // 所以最前 10 個 = 最新嗰 10 個, P1 = points[0] = 最新, 唔需要 reverse
+  // curl evidence (8月31日 13:14): HK.00019 verdict.points[0]=2026-08-21 (最新) + points[-1]=2025-08-04 (最舊), 確認 (新 → 舊) 排法
+  // 對齊 8月29日 14:32 永久 rule「P1 = 最新」精神 (雖然此處 array 排法係 (新 → 舊), 意思係 points[0] = 最新, 對齊 K線最近)
+  // 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(frontend 拎 backend 注入嘅 verdict.meta.zigzagPoints, 唔重計)
+  const last10 = zigzagPoints.slice(0, 10);
   const headerRow = '<tr style="color:#9cdcfe;text-align:left;"><th style="padding-right:12px;">序號</th><th style="padding-right:12px;">日子</th><th style="padding-right:12px;">點數</th><th>類型</th></tr>';
   const bodyRows = last10.map((p, idx) => {
     const seq = idx + 1;  // P1 = 最新
@@ -1898,7 +1913,8 @@ function _formatZigZagLatestPointsForDebug(zigzagPoints) {
   }).join('');
   return `<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong>
 <table style="margin-top:4px;color:#d4d4d4;font-family:monospace;font-size:12px;border-collapse:collapse;">${headerRow}${bodyRows}</table>
-<em style="color:#608b4e;">// P1 = 最新紫色 ZigZag 點 (8月29日 14:32 永久 rule), 上升判斷: P1>P3 + P2>P4 / 下跌判斷: P1<P3 + P2<P4</em>`;
+<em style="color:#608b4e;">// P1 = K線最近嗰個交易日嘅紫色 ZigZag 點 (因為 backend verdict.points 排法係 (新 → 舊), points[0] = 最新)
+// 上升判斷: P1>P3 + P2>P4 / 下跌判斷: P1<P3 + P2<P4 (對齊 8月29日 14:32 永久 rule)</em>`;
 }
 
 // ===== renderDebugPanel — 抽出去畀 runAlgorithm 都用 (大少 2026-08-19 11:35) =====
