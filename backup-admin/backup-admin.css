@@ -181,6 +181,34 @@ header h1 {
   background: #ffebee;
   color: #c62828;
 }
+
+/* §15.55 A 方向: Warning banner (missing card) */
+.backup-card.incomplete {
+  border-color: #ee5151;
+  background: #fff1f0;
+}
+.backup-card.incomplete h3 {
+  color: #c62828;
+}
+.btn-restore[disabled] {
+  background: #ccc !important;
+  color: #888 !important;
+  cursor: not-allowed;
+  border-color: #ccc !important;
+}
+.btn-recover {
+  background: #2196F3;
+  color: white;
+  border: 1px solid #1976D2;
+  margin-left: 8px;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-recover:hover {
+  background: #1976D2;
+}
 .badge-reason {
   background: #fff3e0;
   color: #e65100;
@@ -380,4 +408,73 @@ footer code {
   padding: 1px 6px;
   border-radius: 3px;
   font-family: 'SF Mono', Monaco, monospace;
+}
+
+/* §15.55 B 方向: Sscript set modal + §15.55 C 方向: Audit section + §15.55 D 方向: Recover modal */
+.audit-section {
+  margin-top: 24px;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+.audit-section h2 {
+  margin-bottom: 8px;
+}
+.section-hint {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 12px;
+}
+.audit-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
+}
+.audit-entry:last-child {
+  border-bottom: none;
+}
+.audit-date {
+  color: #666;
+  min-width: 130px;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+.audit-commit {
+  color: #2196F3;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-weight: 500;
+}
+.audit-ref {
+  color: #888;
+  font-size: 12px;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+.audit-message {
+  color: #333;
+  flex: 1;
+}
+.audit-no-tag {
+  color: #999;
+  font-size: 12px;
+  font-style: italic;
+}
+
+#sscript-set-modal .modal-content,
+#recover-modal .modal-content {
+  max-width: 700px;
+}
+#recover-modal .modal-content {
+  border-top: 4px solid #2196F3;
+}
+.form-field {
+  margin-bottom: 12px;
+}
+.form-field label {
+  display: block;
+  margin-bottom: 4px;
+  color: #333;
+  font-size: 14px;
 }

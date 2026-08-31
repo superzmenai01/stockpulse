@@ -10,20 +10,25 @@ backend/api/backup_admin.py — 備份還原點管理 API endpoint (大少 2026-
 - 掃 scripts/restore_*.sh 拎 restore script (按 EXPECTED_HEAD 拎 commit hash 對應)
 - Dedup by commit hash, combine tag + branch + script 入同一個 backup point
 
-Endpoint:
-- GET /api/backup-points/list → 拎所有備份 list
+Endpoints (大少 8月31日 17:37 trigger 加 3 個新 endpoint):
+- GET /api/backup-points/list → 拎所有備份 list (加 can_restore field)
 - POST /api/backup-points/restore → 揀 tag 跑對應 restore script (double confirm 跟 Sscript pattern)
+- GET /api/backup-points/audit → 拎 git reflog 嘅 reset history (audit trail, 對齊 §15.55 永久 rule C 方向)
+- POST /api/backup-points/recover-script → 用 git show 拎返 reset 之前 commit 嘅 script (對齊大少 trigger「可能會再用」, §15.55 D 方向)
+- POST /api/backup-points/set → 自動 generate script + tag + branch + push (Sscript set helper, 對齊 §15.45 + §15.55 B 方向)
 
 對應 frontend: ~/stockpulse/backup-admin/ (跟 testing-page 風格, 大少 12:03 揀嘅 option)
 對應 Sscript pattern: scripts/restore_*.sh (大少 8月31日 07:52 + 11:59 trigger)
+對應 §15.55 永久 rule (大少 8月31日 17:37 trigger, 4 個優化方向 + 保留 tag)
 
-Spec Sync: §15.54 (待 push, 大少 confirm 後)
+Spec Sync: §15.54 + §15.55 (待 push, 大少 confirm 後)
 """
 
 import logging
 import os
 import re
 import subprocess
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -39,20 +44,72 @@ router = APIRouter(prefix="/api/backup-points", tags=["backup-admin"])
 
 
 def _run_git(args: List[str], cwd: Optional[str] = None) -> tuple[int, str, str]:
-    """凡人話: 跑 git command + 拎 (returncode, stdout, stderr)"""
+    """凡人話: 跑 git command + 拎 (returncode, stdout, stderr)
+
+    §15.55 D 方向 fix: uvicorn subprocess 拎唔到 dangling commit 嘅 stdout
+    workaround: 用 tempfile 拎 output (避免 pipe buffering issue)
+    """
+    import os as _os
+    import tempfile as _tempfile
     try:
-        result = subprocess.run(
-            ["git"] + args,
-            capture_output=True,
-            text=True,
-            cwd=cwd or PROJECT_ROOT,
-            timeout=10,
-        )
-        return result.returncode, result.stdout, result.stderr
+        # 顯式 set env 拎返 git commit (uvicorn subprocess 拎唔到 stdout 嘅 workaround)
+        env = _os.environ.copy()
+        env["GIT_DIR"] = _os.path.join(cwd or PROJECT_ROOT, ".git")
+        env["GIT_WORK_TREE"] = cwd or PROJECT_ROOT
+        env.pop("GIT_PAGER", None)
+        env.pop("GIT_OPTIONAL_LOCKS", None)
+
+        # §15.55 D 方向 fix: 用 tempfile 拎 output (uvicorn subprocess pipe buffering 拎空 stdout 嘅 workaround)
+        with _tempfile.NamedTemporaryFile(mode="w+", suffix=".txt", delete=False, dir="/tmp") as tmp_out:
+            tmp_out_path = tmp_out.name
+        with _tempfile.NamedTemporaryFile(mode="w+", suffix=".txt", delete=False, dir="/tmp") as tmp_err:
+            tmp_err_path = tmp_err.name
+
+        try:
+            with open(tmp_out_path, "w") as f_out, open(tmp_err_path, "w") as f_err:
+                result = subprocess.run(
+                    ["git"] + args,
+                    stdout=f_out, stderr=f_err, text=True,
+                    cwd=cwd or PROJECT_ROOT, env=env, timeout=10
+                )
+
+            with open(tmp_out_path, "r") as f:
+                stdout = f.read()
+            with open(tmp_err_path, "r") as f:
+                stderr = f.read()
+
+            # §15.55 D 方向 fix: uvicorn subprocess stdout 拎唔到 (空 string) 嘅 fallback
+            # 用 Popen + 顯式 communicate 拎 output
+            if result.returncode == 0 and not stdout:
+                import subprocess as _sp
+                proc = _sp.Popen(
+                    ["git"] + args,
+                    stdout=_sp.PIPE, stderr=_sp.PIPE, text=True,
+                    cwd=cwd or PROJECT_ROOT, env=env
+                )
+                stdout, stderr = proc.communicate(timeout=10)
+                logger.warning(f"[Backup Admin DEBUG] Popen fallback: returncode={proc.returncode}, stdout={stdout[:200]!r}, stderr={stderr[:200]!r}")
+                return proc.returncode, stdout, stderr
+
+            return result.returncode, stdout, stderr
+        finally:
+            # Clean up tempfiles
+            for tmp_path in [tmp_out_path, tmp_err_path]:
+                try:
+                    _os.unlink(tmp_path)
+                except Exception:
+                    pass
     except subprocess.TimeoutExpired:
         return -1, "", "git command timeout (10s)"
     except Exception as e:
         return -1, "", f"git command 失敗: {e}"
+
+
+def _run_git_debug(args: List[str], cwd: Optional[str] = None) -> tuple[int, str, str]:
+    """debug version: print + log git command 拎到咩 (for §15.55 D 方向 recover-script debug)"""
+    code, out, err = _run_git(args, cwd)
+    logger.warning(f"[Backup Admin DEBUG] git {' '.join(args)}: returncode={code}, stdout={out[:200]!r}, stderr={err[:200]!r}, cwd={cwd or PROJECT_ROOT}")
+    return code, out, err
 
 
 def _scan_restore_scripts() -> dict:
@@ -100,6 +157,7 @@ async def list_backup_points():
     """凡人話: 拎所有備份點 list (annotated tag + backup branch + restore script dedup by commit hash)
 
     大少 2026-08-31 12:00 trigger: 新建 backup-admin page, 管理所有一鍵還原嘅備份
+    大少 2026-08-31 17:37 trigger §15.55 A 方向: 加 can_restore field 對齊 missing warning UI
     對齊 §15.45 Sscript pattern (annotated tag + backup branch + restore script)
 
     Returns:
@@ -116,7 +174,8 @@ async def list_backup_points():
                 "reason_long": str (tag/branch body, 多行),
                 "script_path": str or None (e.g. "scripts/restore_after_zigzag_4.53.0.sh"),
                 "has_script": bool,
-                "missing": [str] (缺少嘅 component: "tag" / "branch" / "script")
+                "missing": [str] (缺少嘅 component: "tag" / "branch" / "script"),
+                "can_restore": bool (§15.55 A 方向: missing empty = true, otherwise false)
             }, ...],
             "script_count": int (scripts/restore_*.sh 總數),
             "error": str or None
@@ -124,7 +183,6 @@ async def list_backup_points():
     """
     try:
         # 1. 掃 restore-* annotated tags + backup-* branches
-        #    git for-each-ref 拎 refname + objectname + committerdate + subject + body
         code, out, err = _run_git([
             "for-each-ref",
             "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)|%(subject)|%(body)",
@@ -174,7 +232,7 @@ async def list_backup_points():
                         script_path = f"scripts/{filename}"
                         break
                 points_map[commit] = {
-                    "name": None,  # 後填 (優先 tag, 後備 branch)
+                    "name": None,
                     "tag": None,
                     "branch": None,
                     "commit": commit,
@@ -189,7 +247,6 @@ async def list_backup_points():
             point = points_map[commit]
             if is_tag:
                 point["tag"] = ref_name
-                # tag message 拎 short reason (annotated tag 嘅 message)
                 if subject and not point["tag"]:
                     point["reason_short"] = subject
                 if body.strip() and not point["reason_long"]:
@@ -197,7 +254,7 @@ async def list_backup_points():
             elif is_branch:
                 point["branch"] = ref_name
 
-        # 4. 填 name + missing
+        # 4. 填 name + missing + can_restore (§15.55 A 方向)
         points = []
         for commit, point in points_map.items():
             if point["tag"]:
@@ -215,6 +272,8 @@ async def list_backup_points():
             if not point["has_script"]:
                 missing.append("script")
             point["missing"] = missing
+            # §15.55 A 方向: can_restore = true if 冇 missing (即係 tag + branch + script 齊)
+            point["can_restore"] = len(missing) == 0
 
             points.append(point)
 
@@ -309,3 +368,422 @@ async def restore_backup_point(req: RestoreRequest):
     except Exception as e:
         logger.exception(f"[Backup Admin] restore 失敗: tag={req.tag}")
         raise HTTPException(status_code=500, detail=f"Restore 失敗: {e}")
+
+
+# ============================================================
+# §15.55 永久 rule (大少 2026-08-31 17:37 trigger) — 4 個新 endpoint
+# ============================================================
+
+@router.get("/audit")
+async def get_audit_trail():
+    """凡人話: 拎返 git reflog 嘅 reset history (audit trail, §15.55 C 方向)
+
+    大少 17:37 trigger「全部都做」+ C 方向: Audit trail
+    對齊 §15.45 永久 rule audit + 12:08 user memory 永久 rule
+
+    Algorithm:
+    1. 跑 `git reflog --pretty=format:%H|%gs|%gd` 拎 reset 記錄
+    2. 對每個 reset commit, 拎對應 annotated tag (如果有 restore-<name>)
+    3. 拎 commit date 用 `git show -s --format=%ci`
+    4. Return [{ commit, commit_short, date, message, ref, restore_tag }]
+
+    Returns:
+        {
+            "ok": bool,
+            "audit": [{
+                "commit": str (40 hex),
+                "commit_short": str (8 hex),
+                "date": str (ISO 8601),
+                "message": str (e.g. "reset: moving to 1fca411b"),
+                "ref": str (e.g. "HEAD@{5}"),
+                "restore_tag": str or None (對應 restore-<name> tag 如果有)
+            }, ...],
+            "count": int
+        }
+    """
+    try:
+        # 1. 跑 git reflog 拎 reset 記錄
+        code, out, err = _run_git([
+            "reflog",
+            "--pretty=format:%H|%gs|%gd",
+        ])
+        if code != 0:
+            logger.error(f"[Backup Admin] git reflog 失敗: {err}")
+            return {
+                "ok": False,
+                "audit": [],
+                "count": 0,
+                "error": f"git reflog 失敗: {err[:200]}",
+            }
+
+        audit_entries = []
+        for line in out.strip().split("\n"):
+            if not line.strip():
+                continue
+            if "reset:" not in line or "moving to" not in line:
+                continue
+            parts = line.split("|")
+            if len(parts) < 3:
+                continue
+            commit_hash = parts[0].strip()
+            message = parts[1].strip()
+            ref = parts[2].strip()
+
+            # 2. 拎 commit date
+            date_code, date_out, _ = _run_git(["show", "-s", "--format=%ci", commit_hash])
+            commit_date = date_out.strip() if date_code == 0 else None
+
+            # 3. 拎對應 annotated tag (如果 commit 對應 restore-<name> tag)
+            tag_code, tag_out, _ = _run_git(["tag", "--points-at", commit_hash])
+            tags = tag_out.strip().split("\n") if tag_code == 0 and tag_out.strip() else []
+            restore_tag = next((t for t in tags if t.startswith("restore-")), None)
+
+            audit_entries.append({
+                "commit": commit_hash,
+                "commit_short": commit_hash[:8],
+                "date": commit_date,
+                "message": message,
+                "ref": ref,
+                "restore_tag": restore_tag,
+            })
+
+        # Sort by date desc (最新先)
+        audit_entries.sort(key=lambda a: a.get("date") or "", reverse=True)
+
+        return {
+            "ok": True,
+            "audit": audit_entries,
+            "count": len(audit_entries),
+            "error": None,
+        }
+    except Exception as e:
+        logger.exception("[Backup Admin] audit 失敗")
+        return {
+            "ok": False,
+            "audit": [],
+            "count": 0,
+            "error": f"內部錯誤: {e}",
+        }
+
+
+class RecoverScriptRequest(BaseModel):
+    """凡人話: Recover script 請求, 對齊大少 17:37 trigger「保留 tag + 可能會再用」
+
+    - tag: 邊個 tag 嘅 script 拎拎返
+    """
+    tag: str
+
+
+@router.post("/recover-script")
+async def recover_script_endpoint(req: RecoverScriptRequest):
+    """凡人話: 用 `git show <tag-commit>:<script-path>` 拎返 reset 之前 commit 嘅 script
+
+    大少 17:37 trigger「還完了後我不想删走那個還完點,因為可能會再用」
+    對齊 §15.45 永久 rule Sscript pattern + 12:08 user memory 永久 rule (保留 tag)
+    對齊 §15.55 D 方向: Recover script (redefined cleanup)
+
+    Algorithm:
+    1. 拎 tag 對應 commit (`git rev-list -1 <tag>`)
+    2. 拎 script filename (tag name → restore_<name>.sh)
+    3. 拎 script content 用 `git show <commit>:<script-path>`
+    4. 寫返落 disk + chmod +x
+    5. Git add + commit + push (拎返入 git history)
+    6. Frontend reload /list, 見到 missing: [] 變返 can_restore = true
+
+    Returns:
+        {
+            "ok": bool,
+            "tag": str,
+            "commit": str,
+            "script_path": str,
+            "message": str
+        }
+    """
+    try:
+        # 1. 拎 tag 對應 commit
+        code, out, err = _run_git(["rev-list", "-1", req.tag])
+        if code != 0 or not out.strip():
+            return {
+                "ok": False,
+                "error": f"Tag {req.tag} 拎唔到 commit: {err[:200]}"
+            }
+        tag_commit = out.strip()
+
+        # 2. 拎 script filename (對齊 §15.45 永久 rule: tag name 對應 scripts/restore_<name>.sh)
+        # e.g. "restore-before-zigzag-4.56.0" → "scripts/restore_before_zigzag_4.56.0.sh"
+        script_name = req.tag.replace("restore-", "restore_") + ".sh"
+        script_path_rel = f"scripts/{script_name}"
+
+        # 3. §15.55 D 方向: 拎返 script 嘅 commit
+        # Step 3a: 試 tag commit (普通 case, e.g. tag + script 同一個 commit)
+        code, out, err = _run_git(["show", f"{tag_commit}:{script_path_rel}"])
+        script_content = None
+        commit = tag_commit
+
+        if code == 0 and out.strip():
+            script_content = out
+        else:
+            # Step 3b: tag commit 入面冇 script (reset 之後拎走 case, 對齊大少 trigger「可能會再用」)
+            # 用 `git log --all --reflog` 拎返最後 commit 拎返 script
+            # 因為 reset 拎返之前 commit, 之後 commit 拎返 Sscript 仲喺 reflog 但係 dangling
+            # 對齊 §15.45 永久 rule Sscript pattern + 12:08 user memory 永久 rule
+            # 注意: 唔用 --oneline (會撞 --pretty=format:%H format 衝突)
+            log_code, log_out, log_err = _run_git_debug([
+                "log", "--all", "--reflog", "--pretty=format:%H", "--", script_path_rel
+            ])
+            if log_code == 0 and log_out.strip():
+                # 拎最後 commit 拎返 script (most recent commit 個 commit 拎返)
+                dangling_commit = log_out.strip().split("\n")[0]
+                show_code, show_out, show_err = _run_git(["show", f"{dangling_commit}:{script_path_rel}"])
+                if show_code == 0 and show_out.strip():
+                    script_content = show_out
+                    commit = dangling_commit
+                else:
+                    return {
+                        "ok": False,
+                        "error": f"Tag {req.tag} 對應 commit {tag_commit[:8]} + dangling commit {dangling_commit[:8]} 都拎唔到 script {script_path_rel}: {show_err[:200]}"
+                    }
+            else:
+                return {
+                    "ok": False,
+                    "error": f"Tag {req.tag} 對應 commit {tag_commit[:8]} 拎唔到 script {script_path_rel}, git reflog 都拎唔到 dangling commit 拎返: {err[:200]}"
+                }
+
+        # 4. 寫返落 disk
+        script_path_abs = os.path.join(PROJECT_ROOT, script_path_rel)
+        os.makedirs(os.path.dirname(script_path_abs), exist_ok=True)
+        with open(script_path_abs, "w", encoding="utf-8") as f:
+            f.write(script_content)
+        os.chmod(script_path_abs, 0o755)
+
+        # 5. Git add + commit + push (拎返入 git history, 對齊 §15.45 + 12:08 user memory 永久 rule)
+        # 凡人話: 因為 commit <commit> 入面已經有呢個 script, 重新寫入但唔 push 會變 uncommitted
+        # 解決: write 落 disk + git add + git commit "chore: recover <script> from <tag>" + push
+        code, _, err = _run_git(["add", script_path_rel])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git add 失敗: {err[:200]}"
+            }
+        commit_msg = f"chore: recover {script_path_rel} from tag {req.tag} (commit {commit[:8]})\n\n對齊大少 8月31日 17:37 trigger 保留還原點 + recover script"
+        code, _, err = _run_git(["commit", "-m", commit_msg])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git commit 失敗: {err[:200]}"
+            }
+        code, _, err = _run_git(["push", "origin", "main"])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git push 失敗: {err[:200]}"
+            }
+
+        return {
+            "ok": True,
+            "tag": req.tag,
+            "commit": commit,
+            "script_path": script_path_rel,
+            "message": f"✅ 已 recover {script_path_rel} from {req.tag} (commit {commit[:8]})",
+        }
+    except Exception as e:
+        logger.exception(f"[Backup Admin] recover-script 失敗: tag={req.tag}")
+        return {
+            "ok": False,
+            "error": f"內部錯誤: {e}",
+        }
+
+
+class SetRestorePointRequest(BaseModel):
+    """凡人話: 設定新還原點請求, 對齊 §15.45 永久 rule Sscript pattern
+
+    - name: 還原點名稱 (e.g. "before-xxx-4.50.0", 會變 restore-before-xxx-4.50.0 tag)
+    - reason_short: 原因 (短, 拎做 tag message subject)
+    - reason_long: 原因 (長, 拎做 tag message body)
+    - description: 額外 description (optional, 拎做 script 內嘅 comment)
+    """
+    name: str
+    reason_short: str
+    reason_long: str
+    description: str = ""
+
+
+@router.post("/set")
+async def set_restore_point(req: SetRestorePointRequest):
+    """凡人話: 自動 generate script + tag + branch + push (對齊 §15.45 Sscript pattern)
+
+    大少 17:37 trigger「全部都做」+ B 方向: Sscript set helper
+    對齊 §15.45 永久 rule: tag + branch + script + double confirm
+    對齊 12:08 user memory 永久 rule: 每做新 Sscript 還原點都要 verify Backup Admin Page 拎到
+
+    Algorithm:
+    1. 拎當前 HEAD commit
+    2. Generate script file (scripts/restore_<name>.sh) 對齊 Sscript pattern
+    3. Git add + commit
+    4. Annotated tag (git tag -a restore-<name> -m ...)
+    5. Backup branch (git branch backup-<name> HEAD)
+    6. Push (git push origin main + tag + branch)
+
+    Returns:
+        {
+            "ok": bool,
+            "name": str,
+            "tag": str,
+            "branch": str,
+            "commit": str,
+            "script_path": str,
+            "message": str
+        }
+    """
+    try:
+        # 1. 拎當前 HEAD commit (將來 reset 拎返呢個 commit)
+        code, out, err = _run_git(["rev-parse", "HEAD"])
+        if code != 0 or not out.strip():
+            return {
+                "ok": False,
+                "error": f"Git HEAD 拎唔到: {err[:200]}"
+            }
+        commit = out.strip()
+
+        # 2. 檢查 name 已經存在 (避免覆蓋)
+        tag_name = f"restore-{req.name}"
+        branch_name = f"backup-{req.name}"
+        script_name = f"restore_{req.name.replace('-', '_')}.sh"
+        script_path_rel = f"scripts/{script_name}"
+
+        # 拎返 tag existence
+        code, _, _ = _run_git(["rev-parse", "--verify", tag_name])
+        if code == 0:
+            return {
+                "ok": False,
+                "error": f"Tag {tag_name} 已經存在, 唔可以覆蓋 (避免 reset 拎返衝突嘅 commit)"
+            }
+
+        # 拎返 script existence
+        script_path_abs = os.path.join(PROJECT_ROOT, script_path_rel)
+        if os.path.exists(script_path_abs):
+            return {
+                "ok": False,
+                "error": f"Script {script_path_rel} 已經存在, 唔可以覆蓋"
+            }
+
+        # 3. Generate script file (對齊 §15.45 永久 rule Sscript pattern)
+        now_iso = datetime.now().isoformat()
+        script_content = f"""#!/bin/bash
+# Auto-generated restore script for {tag_name}
+# 對齊 §15.45 永久 rule Sscript pattern (annotated tag + backup branch + restore script + double confirm)
+# Generated: {now_iso}
+# 大少 8月31日 17:37 trigger 自動 set helper (B 方向)
+
+set -e
+
+EXPECTED_HEAD="{commit}"
+
+echo "⚠️  WARNING: 拎走改動, 還原到 {req.name}"
+echo ""
+echo "Reason: {req.reason_short}"
+echo ""
+{('Description: ' + req.description + chr(10) + chr(10)) if req.description else ''}echo "呢個 script 會:"
+echo "  1. 拎走所有 uncommitted changes (git stash)"
+echo "  2. Reset HEAD 去 $EXPECTED_HEAD ({req.name})"
+echo "  3. 拎返 annotated tag + backup branch 嘅 evidence"
+echo ""
+echo "要繼續嗎? 輸入 'yes' 確認:"
+read -r confirm
+if [ "$confirm" != "yes" ]; then
+    echo "Cancelled."
+    exit 0
+fi
+
+echo ""
+echo "請輸入 'RESET' 確認拎走改動:"
+read -r reset_confirm
+if [ "$reset_confirm" != "RESET" ]; then
+    echo "Cancelled."
+    exit 0
+fi
+
+# 1. Stash uncommitted changes
+git stash push -m "auto-stash before restore-{req.name}"
+
+# 2. Reset HEAD
+git reset --hard $EXPECTED_HEAD
+
+# 3. Verify
+git log --oneline -3
+echo ""
+echo "✅ 已還原到 {req.name} ($EXPECTED_HEAD)"
+echo "記住: backend 要 restart 先 load 對應 code (§15.51 永久 rule)"
+"""
+        os.makedirs(os.path.dirname(script_path_abs), exist_ok=True)
+        with open(script_path_abs, "w", encoding="utf-8") as f:
+            f.write(script_content)
+        os.chmod(script_path_abs, 0o755)
+
+        # 4. Git add + commit
+        code, _, err = _run_git(["add", script_path_rel])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git add 失敗: {err[:200]}"
+            }
+        commit_msg = f"chore(scripts): 加 {req.name} 還原點 Sscript\n\n{req.reason_long}\n\n對齊 §15.45 Sscript pattern (大少 8月31日 17:37 trigger B 方向)"
+        code, _, err = _run_git(["commit", "-m", commit_msg])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git commit 失敗: {err[:200]}"
+            }
+
+        # 5. Annotated tag
+        tag_msg = f"{req.reason_short}\n\n{req.reason_long}"
+        code, _, err = _run_git(["tag", "-a", tag_name, "-m", tag_msg])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git tag 失敗: {err[:200]}"
+            }
+
+        # 6. Backup branch
+        code, _, err = _run_git(["branch", branch_name, "HEAD"])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git branch 失敗: {err[:200]}"
+            }
+
+        # 7. Push (main + tag + branch)
+        code, _, err = _run_git(["push", "origin", "main"])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git push main 失敗: {err[:200]}"
+            }
+        code, _, err = _run_git(["push", "origin", tag_name])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git push tag 失敗: {err[:200]}"
+            }
+        code, _, err = _run_git(["push", "origin", branch_name])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git push branch 失敗: {err[:200]}"
+            }
+
+        return {
+            "ok": True,
+            "name": req.name,
+            "tag": tag_name,
+            "branch": branch_name,
+            "commit": commit,
+            "script_path": script_path_rel,
+            "message": f"✅ 已設定 {req.name} 還原點 (tag + branch + script + push)",
+        }
+    except Exception as e:
+        logger.exception(f"[Backup Admin] set 失敗: name={req.name}")
+        return {
+            "ok": False,
+            "error": f"內部錯誤: {e}",
+        }

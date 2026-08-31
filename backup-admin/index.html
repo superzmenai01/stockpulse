@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>備份還原點管理 — StockPulse</title>
-  <link rel="stylesheet" href="backup-admin.css?v=1.0.0">
+  <link rel="stylesheet" href="backup-admin.css?v=1.1.0">
 </head>
 <body>
   <div class="container">
@@ -22,6 +22,7 @@
     <section class="actions">
       <button id="load-btn" class="primary-btn">🔄 載入備份 list</button>
       <button id="refresh-btn" class="secondary-btn">🔃 手動刷新</button>
+      <button id="sscript-set-btn" class="primary-btn">+ 設定新還原點 (Sscript pattern)</button>
       <span class="meta-info">
         <span id="last-load-time">未載入</span>
       </span>
@@ -30,6 +31,16 @@
     <!-- 備份 list container -->
     <section id="backup-list-container">
       <p class="empty-state">👆 撳「載入備份 list」拎所有備份還原點</p>
+    </section>
+
+    <!-- §15.55 C 方向: Audit trail (Restore History) -->
+    <section class="audit-section">
+      <h2>📊 Restore History (audit trail)</h2>
+      <p class="section-hint">對齊 §15.55 C 方向: Backend 用 <code>git reflog</code> 拎 reset history, 大少可以 track 返「之前 reset 過邊個還原點」。</p>
+      <button id="load-audit-btn" class="secondary-btn">🔄 載入 reset history</button>
+      <div id="audit-history-container">
+        <p class="empty-state">👆 撳「載入 reset history」拎返之前 reset 過嘅記錄</p>
+      </div>
     </section>
 
     <!-- Footer info -->
@@ -79,6 +90,60 @@
     </div>
   </div>
 
-  <script src="backup-admin.js?v=1.0.0"></script>
+  <!-- §15.55 B 方向: Sscript set modal (大少 8月31日 17:37 trigger 自動設定 helper) -->
+  <div id="sscript-set-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2>+ 設定新還原點 (Sscript pattern)</h2>
+      <div class="warning">
+        <p>對齊 §15.45 永久 rule Sscript pattern。Backend 會自動:</p>
+        <ol>
+          <li>拎當前 HEAD commit 拎返將來 reset 嘅 expected commit</li>
+          <li>Generate <code>scripts/restore_&lt;name&gt;.sh</code> 對齊 double confirm pattern</li>
+          <li>Git add + commit + push</li>
+          <li>Annotated tag <code>restore-&lt;name&gt;</code> + backup branch <code>backup-&lt;name&gt;</code> + push</li>
+        </ol>
+        <p>撳「✅ 設定」會自動做齊上述 4 步, 大少唔使記住 git command。</p>
+      </div>
+      <div class="form-field">
+        <label for="sscript-name"><strong>名稱 (e.g. "before-xxx-4.50.0"):</strong></label>
+        <input id="sscript-name" type="text" placeholder="before-xxx-4.50.0" style="width: 100%; padding: 8px; margin: 4px 0 12px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+      </div>
+      <div class="form-field">
+        <label for="sscript-reason-short"><strong>原因 (short, 拎做 tag subject):</strong></label>
+        <input id="sscript-reason-short" type="text" placeholder="chore: ... 永久 rule" style="width: 100%; padding: 8px; margin: 4px 0 12px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+      </div>
+      <div class="form-field">
+        <label for="sscript-reason-long"><strong>原因 (long, 拎做 tag body):</strong></label>
+        <textarea id="sscript-reason-long" placeholder="凡人話: ..." style="width: 100%; padding: 8px; margin: 4px 0 12px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-height: 80px;"></textarea>
+      </div>
+      <div class="form-field">
+        <label for="sscript-description"><strong>Description (optional, 拎做 script 內 comment):</strong></label>
+        <textarea id="sscript-description" placeholder="凡人話: ..." style="width: 100%; padding: 8px; margin: 4px 0 12px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-height: 40px;"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button id="sscript-set-cancel-btn" class="cancel-btn">取消</button>
+        <button id="sscript-set-confirm-btn" class="primary-btn">✅ 設定 (會自動 tag + branch + script + push)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- §15.55 D 方向: Recover modal (大少 trigger「保留 tag + 可能會再用」) -->
+  <div id="recover-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2>🔧 Recover script</h2>
+      <div class="warning">
+        <p>Tag: <code id="recover-tag-name"></code></p>
+        <p>Script path: <code id="recover-script-path"></code></p>
+        <p>Backend 會用 <code>git show &lt;tag-commit&gt;:&lt;script-path&gt;</code> 拎返 reset 之前 commit 嘅 script, 寫返落 disk + git commit + push。</p>
+        <p>對齊大少 8月31日 17:37 trigger「還完了後我不想删走那個還完點,因為可能會再用」+ 12:08 user memory 永久 rule。</p>
+      </div>
+      <div class="modal-actions">
+        <button id="recover-cancel-btn" class="cancel-btn">取消</button>
+        <button id="recover-confirm-btn" class="primary-btn">✅ Recover (會自動 git show + write + commit + push)</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="backup-admin.js?v=1.1.0"></script>
 </body>
 </html>
