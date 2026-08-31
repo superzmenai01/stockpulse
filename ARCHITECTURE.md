@@ -4904,3 +4904,53 @@ git push origin main
 - 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 凡人話理解 trigger 嘅定義, 必先 confirm 大少「trigger 喺 P point 之後」呢個 constraint
 - 大少 21:46 trigger「先做備份 + 一鍵復原後才開始」反映: 改 algorithm 之前必先做 Sscript 還原點, 之後 verify Backup Admin Page 拎到先做 code 改動 (對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule)
 
+### 15.59 ZigZag date format 統一永久 rule (大少 2026-08-31 22:03 trigger, 4.57.2)
+
+### 大少 trigger
+8月31日 22:03「在 Zigzag Point 我發現你找出來的時間不統一, 例子: 00981, 序號 | 日子 | 點數 | 類型 | 獨發點 日期 (trigger 到) | 獨發點 股價 (確認價), P1 2026-08-28 00:00:00 70.15 today (?) (?) P2 2026-08-25 00:00:00 65.55 Trough 2026-08-28 00:00:00 70.15 P3 2026-08-18 77.75 Peak 2026-08-24 00:00:00 66.30 P4 2026-08-0 361.30 Trough 2026-08-05 69.05 — 有些日期的格式是多了 00:00:00, 請先統一所有時間格式」
+
+### 凡人話解釋
+大少 22:03 撳跑拎到嘅 P 點 date 有時係 "2026-08-28 00:00:00" (datetime), 有時係 "2026-08-18" (date-only), 對齊 §3.6 + §3.7 永久 rule「Cross-module 統一 date parsing」frontend normalizeTime + adapter.mjs dateToTime 嘅 `t.split(' ')[0]` 統一 pattern, backend algorithm 都要做返。
+
+### Root cause
+對齊 backend `_zigzag_normalize_date` function (line 113-124), fallback chain 拎 `kline.get('time')` 第一個, 但 K 線 cache response 入面 K 線 dict 有 `time` field (e.g. "2026-08-28 00:00:00") 嘅時候, 拎出嚟就係 datetime, 唔係 date-only。frontend `testing-page.js` 嘅 `normalizeTime` 同 `adapter.mjs` 嘅 `_zigzagNormalizeDate` / `dateToTime` 都有做 `t.split(' ')[0]` 拎 date-only, 但 backend 冇做。
+
+### 改動範圍 (3 個 step, 1 個 file code)
+
+| # | Step | 改動 |
+|---|------|------|
+| 0 | Sscript 還原點 (BEFORE code 改動, 對齊大少 21:46 trigger) | Tag `restore-before-zigzag-4.57.2` + Branch `backup/zigzag-4.57.2` + Script `scripts/restore_before_zigzag_4.57.2.sh` + Verify Backup Admin Page |
+| 1 | Backend algorithm.py `_zigzag_normalize_date` (line 113-124) | Fallback chain 拎 raw 之後, 加 `str(raw).split(' ')[0]` 拎 date-only |
+| 2 | Doc AGENTS.md + ARCHITECTURE.md 加 4.57.2 永久 rule 段 | 對齊 §3.6 + §3.7 永久 rule + §15.45 流程 |
+
+### 永久 rule (對齊 §3.6 + §3.7 + §15.45 + §15.51 + §15.53 + §15.54 + 12:08 user memory)
+- ✅ 改動 0 流程: 改 algorithm 之前必先做 Sscript 還原點 (tag + branch + script), 之後 verify Backup Admin Page 拎到
+- ✅ Backend `_zigzag_normalize_date` 必加 `str(raw).split(' ')[0]` 拎 date-only (對齊 frontend normalizeTime + adapter.mjs dateToTime)
+- ✅ 永遠返 date-only "YYYY-MM-DD", 唔返 datetime "YYYY-MM-DD HH:MM:SS"
+- ✅ 對齊 §3.6 + §3.7 永久 rule「Cross-module 統一 date parsing」: 凡 frontend / backend / adapter.mjs 任何 date parsing 永遠做 `t.split(' ')[0]` 拎 date-only + 加 `'T00:00:00Z'` 強制 UTC midnight
+- ✅ Backend 改後必 restart backend (§15.51 hot-reload 永久 rule)
+- ✅ Frontend 唔需要改 (frontend 拎 backend 拎出嚟嘅 date / triggerDate 已經統一, 自動正確顯示)
+- ✅ Cache bust 唔需要 bump (frontend 唔改)
+- ✅ 永久 rule: 之後改 algorithm / 加新 algorithm / 拎 date 嗰陣必做 `t.split(' ')[0]` 拎 date-only
+
+### 凡人話
+對齊 §3.6 + §3.7 永久 rule「Cross-module 統一 date parsing」, backend 拎出嚟嘅 date 統一 YYYY-MM-DD 格式, 對齊 frontend + adapter.mjs 統一 pattern, 大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子全部統一 "YYYY-MM-DD" 格式 (冇 "00:00:00")。
+
+### 對齊永久 rule
+- §3.6 + §3.7 永久 rule「Cross-module 統一 date parsing」(8月22日 23:20 大少 trigger, frontend normalizeTime + adapter.mjs dateToTime 已有嘅 pattern, backend 補返)
+- §15.45 Sscript pattern (annotated tag + backup branch + restore script + double confirm)
+- §15.51 Backend hot-reload (改 algorithm.py 必 restart backend)
+- §15.53 Sscript 還原點永久 rule
+- §15.54 Backup Admin Page 永久 rule
+- 12:08 user memory 永久 rule「每做新 Sscript 還原點, 都要 verify Backup Admin Page 拎到」
+
+### 對應 commit
+- 即將 push (`fix(zigzag-bug): Date format 統一 — backend _zigzag_normalize_date 統一 YYYY-MM-DD (4.57.2)`)
+- Spec Sync: ARCHITECTURE.md §15.59 (本段) + AGENTS.md 「ZigZag date format 統一永久 rule」section
+
+### 教訓
+- 大少 22:03 trigger「時間格式不統一」反映: 凡人話「時間格式」意思係 date / triggerDate 拎出嚟嘅 string, 對齊 K 線時序, 永遠拎 date-only (YYYY-MM-DD), 唔拎 datetime (YYYY-MM-DD HH:MM:SS)
+- 永久 rule: 改 algorithm / 加 date parsing 嗰陣, 必先 read §3.6 + §3.7 永久 rule「Cross-module 統一 date parsing」, 對齊 frontend + adapter.mjs 統一 pattern `t.split(' ')[0]` 拎 date-only
+- 對齊 4.55.0 lesson learned: 改 algorithm 邏輯之前, 必先用 curl / test script 拎 evidence 確認 date 格式, 避免 frontend 拎出嚟 date 有 datetime component (frontend 之後 frontend display 都做 normalizeTime `t.split(' ')[0]`, 但 backend 拎出嚟先做返比較 clean)
+- 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 凡人話理解 trigger 嘅定義, 必先 confirm 大少「統一時間格式」呢個 constraint
+
