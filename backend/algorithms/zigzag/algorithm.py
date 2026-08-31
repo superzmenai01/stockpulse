@@ -185,44 +185,53 @@ def calculate_zigzag(
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_high <= -threshold:
-                # 大少 8月31日 17:42 trigger (4.56.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Peak trigger 拎嗰日 K 線 low (跌到 low 先 confirm)
-                result.append({
-                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
-                    "value": last_swing_high,
-                    "type": 'high',
-                    "index": last_swing_idx,
-                    "triggerIndex": i,
-                    "triggerDate": _zigzag_normalize_date(klines[i]),
-                    "triggerPrice": klines[i]['low'],
-                })
-                in_uptrend = False
-                last_swing_low = klines[i]['low']
-                last_swing_high = klines[i]['high']
-                last_swing_idx = i
-                break
+                # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX: 拎 P point K 線 candidate (last_swing_idx 喺跌 -threshold 嗰個 moment 嘅 snapshot)
+                # 對齊凡人話: trigger 一定要係 P point 之後嘅 K 線, intra-bar 同一個 K 線跌夠 -threshold 唔算 confirm P point
+                peak_idx_candidate = last_swing_idx  # ← snapshot P point K 線 (跌 -threshold 嗰個 moment)
+                if i > peak_idx_candidate:  # ← trigger K 線 > P point K 線 (即係 trigger 喺 P point 之後)
+                    result.append({
+                        "date": _zigzag_normalize_date(klines[peak_idx_candidate]),
+                        "value": last_swing_high,
+                        "type": 'high',
+                        "index": peak_idx_candidate,
+                        "triggerIndex": i,
+                        "triggerDate": _zigzag_normalize_date(klines[i]),
+                        "triggerPrice": klines[i]['low'],
+                    })
+                    in_uptrend = False
+                    last_swing_low = klines[i]['low']
+                    last_swing_high = klines[i]['high']
+                    last_swing_idx = i
+                    break
+                # else: P point K 線 = trigger K 線 (intra-bar volatility 邊界 case), 跳過, 等下一個 K 線跌夠 -threshold 先 confirm
         else:
             if klines[i]['low'] < last_swing_low:
                 last_swing_low = klines[i]['low']
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_low >= threshold:
-                # 大少 8月31日 17:42 trigger (4.56.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Trough trigger 拎嗰日 K 線 high (升到 high 先 confirm)
-                result.append({
-                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
-                    "value": last_swing_low,
-                    "type": 'low',
-                    "index": last_swing_idx,
-                    "triggerIndex": i,
-                    "triggerDate": _zigzag_normalize_date(klines[i]),
-                    "triggerPrice": klines[i]['high'],
-                })
-                in_uptrend = True
-                last_swing_low = klines[i]['low']
-                last_swing_high = klines[i]['high']
-                last_swing_idx = i
-                break
+                # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX
+                trough_idx_candidate = last_swing_idx  # ← snapshot P point K 線 (升 +threshold 嗰個 moment)
+                if i > trough_idx_candidate:  # ← trigger K 線 > P point K 線 (即係 trigger 喺 P point 之後)
+                    result.append({
+                        "date": _zigzag_normalize_date(klines[trough_idx_candidate]),
+                        "value": last_swing_low,
+                        "type": 'low',
+                        "index": trough_idx_candidate,
+                        "triggerIndex": i,
+                        "triggerDate": _zigzag_normalize_date(klines[i]),
+                        "triggerPrice": klines[i]['high'],
+                    })
+                    in_uptrend = True
+                    last_swing_low = klines[i]['low']
+                    last_swing_high = klines[i]['high']
+                    last_swing_idx = i
+                    break
+                # else: P point K 線 = trigger K 線 (intra-bar volatility 邊界 case), 跳過, 等下一個 K 線升夠 +threshold 先 confirm
 
     if len(result) <= 1:
         return result
@@ -237,39 +246,48 @@ def calculate_zigzag(
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_high <= -threshold:
-                # 大少 8月31日 17:42 trigger (4.56.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Peak trigger 拎嗰日 K 線 low (跌到 low 先 confirm)
-                result.append({
-                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
-                    "value": last_swing_high,
-                    "type": 'high',
-                    "index": last_swing_idx,
-                    "triggerIndex": i,
-                    "triggerDate": _zigzag_normalize_date(klines[i]),
-                    "triggerPrice": klines[i]['low'],
-                })
-                in_uptrend = False
-                last_swing_low = klines[i]['low']
-                last_swing_idx = i
+                # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX: 拎 P point K 線 candidate (last_swing_idx 喺跌 -threshold 嗰個 moment 嘅 snapshot)
+                # 對齊凡人話: trigger 一定要係 P point 之後嘅 K 線, intra-bar 同一個 K 線跌夠 -threshold 唔算 confirm P point
+                peak_idx_candidate = last_swing_idx  # ← snapshot P point K 線 (跌 -threshold 嗰個 moment)
+                if i > peak_idx_candidate:  # ← trigger K 線 > P point K 線 (即係 trigger 喺 P point 之後)
+                    result.append({
+                        "date": _zigzag_normalize_date(klines[peak_idx_candidate]),
+                        "value": last_swing_high,
+                        "type": 'high',
+                        "index": peak_idx_candidate,
+                        "triggerIndex": i,
+                        "triggerDate": _zigzag_normalize_date(klines[i]),
+                        "triggerPrice": klines[i]['low'],
+                    })
+                    in_uptrend = False
+                    last_swing_low = klines[i]['low']
+                    last_swing_idx = i
+                # else: P point K 線 = trigger K 線 (intra-bar volatility 邊界 case), 跳過, 等下一個 K 線跌夠 -threshold 先 confirm
         else:
             if klines[i]['low'] < last_swing_low:
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_low >= threshold:
-                # 大少 8月31日 17:42 trigger (4.56.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Trough trigger 拎嗰日 K 線 high (升到 high 先 confirm)
-                result.append({
-                    "date": _zigzag_normalize_date(klines[last_swing_idx]),
-                    "value": last_swing_low,
-                    "type": 'low',
-                    "index": last_swing_idx,
-                    "triggerIndex": i,
-                    "triggerDate": _zigzag_normalize_date(klines[i]),
-                    "triggerPrice": klines[i]['high'],
-                })
-                in_uptrend = True
-                last_swing_high = klines[i]['high']
-                last_swing_idx = i
+                # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX
+                trough_idx_candidate = last_swing_idx  # ← snapshot P point K 線 (升 +threshold 嗰個 moment)
+                if i > trough_idx_candidate:  # ← trigger K 線 > P point K 線 (即係 trigger 喺 P point 之後)
+                    result.append({
+                        "date": _zigzag_normalize_date(klines[trough_idx_candidate]),
+                        "value": last_swing_low,
+                        "type": 'low',
+                        "index": trough_idx_candidate,
+                        "triggerIndex": i,
+                        "triggerDate": _zigzag_normalize_date(klines[i]),
+                        "triggerPrice": klines[i]['high'],
+                    })
+                    in_uptrend = True
+                    last_swing_high = klines[i]['high']
+                    last_swing_idx = i
+                # else: P point K 線 = trigger K 線 (intra-bar volatility 邊界 case), 跳過, 等下一個 K 線升夠 +threshold 先 confirm
 
     # 添加最後一個有效轉向點 (frontend algorithm.mjs:1611-1622)
     last_date = _zigzag_normalize_date(klines[last_swing_idx])
