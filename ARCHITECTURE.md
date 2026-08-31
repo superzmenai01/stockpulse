@@ -4307,3 +4307,72 @@ Testing page 紫色 ZigZag 點 label 應該由右到左 P1, P2, P3, ... 全部�
 ### 教訓
 下次懷疑 fix 唔 work, 第一時間 curl backend 確認, 唔好淨係睇 frontend 嘅 cache bust。
 
+### 15.52 ZigZag 拎走橙旗 + 鮮綠線 + P 點 sequence marker 永久 rule (大少 2026-08-31 11:09 trigger, 4.53.0)
+
+### 大少 trigger (2026-08-31 11:09)
+「在圖表的Zigzag還是有些問題,你睇返記錄之前有叫你把最右迫的P2 改成P1 ,還有橙旗的zigzag決定點功能,這些我都想拿走不要,這些有可能影響了正常的Zigzag」
+
+### 凡人話解釋
+大少覺得 ZigZag 圖表太多花巧嘢(橙旗 + 鮮綠線 + P 點 sequence),想畫面乾淨啲,只留返基本嘅紫色 ZigZag 線同 K 線,等睇得清。拎走 3 個花巧 visual 嘢 + 拎走 setMarkers 整個 block,chart 完全乾淨(只有紫色 ZigZag 線 + K 線 + MA 線)。
+
+### 改寫 4 個永久 rule
+- 4.42.2 (8月30日 17:50) 拎走: 橙色 #FF9800 細小旗仔 marker
+- 4.8.3 (8月19日 09:40) 拎走: 鮮綠色 #00C853 close extension 線
+- 4.51.0 (8月31日 09:00) 拎走 toggle 保留 P1 規則: 紫色 P 點 sequence marker
+- 4.49.0 (8月31日 01:59) 拎走: setMarkers 整個 block (v5 plugin API)
+
+### 永久 rule
+- ✅ 拎走 ZigZag 橙旗決定點 marker (4.42.2 永久 rule 拎走)
+- ✅ 拎走鮮綠色 #00C853 close extension 線 (4.8.3 永久 rule 拎走)
+- ✅ 拎走紫色 P 點 sequence marker toggle (4.51.0 永久 rule 拎走 toggle)
+- ✅ 拎走 setMarkers 整個 block (4.49.0 永久 rule 拎走)
+- ✅ 拎走 backend `decisionDate` / `decisionValue` / `decisionType` 3 個 field (`backend/algorithms/zigzag/algorithm.py` 4 個 `result.append` 拎走 3 行 + `decision_flag_count` 拎走 + class version 0.1.0 → 0.2.0)
+- ✅ 拎走 production frontend `decisionTime` / `decisionValue` 2 個 field (跟 backend 對齊, 避免 type error)
+- ✅ 紫色 ZigZag 線只 render line, 冇 number marker, 冇 close extension 線, 冇旗仔 (chart 完全乾淨)
+- ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 大少明確 trigger「拎走不要」先做
+- ✅ 對齊 §15.51 永久 rule「Backend hot-reload」: 改 algorithm.py 之後必 restart backend + curl verify
+- ✅ 對齊 2026-08-09 13:10 永久 rule「testing-page .mjs cache bust」: ALGO_CACHE_BUST + ?v=2.3.X 2 個地方同步 bump
+- ✅ 對齊 8月31日 01:48 永久 rule「還原點」: 備份 commit hash `5c89c659eda481918101fe8060480ccfdbc1a67a` 一鍵還原
+
+### Workflow 流程 (3 個 step)
+1. **Step 0 備份** (大少 8月31日 11:17 + 11:23 trigger): `git commit --allow-empty -m "chore: ZigZag 還原點 before 拎走橙旗 (4.53.0 backup)"` 拎 commit hash 記低
+2. **大少揀 options** (8月31日 11:27): 大少明確揀預設方案(拎走晒,推薦)
+3. **Implementation + Spec Sync**: 改 6 個 file + restart backend + curl verify + commit + push
+
+### 凡人話 render 效果
+```
+改動前: 紫色 ZigZag + 橙旗 + 鮮綠線 + P 點號碼   (太多花巧, 干擾睇圖)
+改動後: 紫色 ZigZag + K 線 + MA 線                (完全乾淨, 容易睇)
+```
+
+### 對應 file
+- `backend/algorithms/zigzag/algorithm.py` 拎走 3 個 field + `decision_flag_count` + class version 0.1.0 → 0.2.0
+- `algorithms/AS-03-cycle-detection/adapter.mjs` 拎走 line 5104-5304 整段 (橙旗 build 45 行 + 鮮綠線 build 63 行 + P 點 setMarkers block 91 行, 共 199 行)
+- `web/src/components/chart/ChartContainer.tsx` 拎走 `fetchBackendZigZag` return shape 嘅 `decisionTime?` / `decisionValue?` + `zigzagFlagMarkersRef` handle + 旗仔 marker build
+- `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` 同 ChartContainer 對齊拎走
+- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.52.0' → '4.53.0' + 拎走 `showZigzagSequence` / `zigzagSequenceMaxCount` state + 拎走 `reRenderZigZagSequence` function + 拎走 2 個 toggle event listener + 拎走 debug panel 嘅 sequence + flag display (共減 49 行, 2892 → 2843)
+- `testing-page/index.html` 拎走 `#zigzag-sequence-controls` toggle + `?v=2.3.113` → `?v=2.3.114`
+
+### Curl verify (大少 8月31日 11:35, 對齊 §15.51 Backend hot-reload 永久 rule)
+```bash
+curl -s "http://localhost:18792/api/algorithms/run?algo=zigzag&symbol=HK.00700&period=1d&threshold=5"
+```
+✅ verdict ok, 189 個 points
+✅ 每個 point 嘅 keys = `['date', 'value', 'type', 'index', 'sequence']`, 冇 `decisionDate` / `decisionValue` / `decisionType`
+✅ meta 7 個 field, 冇 `decision_flag_count`
+
+### Rollback plan (8月31日 01:48 永久 rule)
+```bash
+cd /Users/zmenai/stockpulse
+git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
+cd /Users/zmenai/stockpulse && ./start.sh
+```
+
+### 對應 commit
+- `chore: 拎走 ZigZag 橙旗 (4.53.0 永久 rule) (大少 8月31日 11:09 + 11:27 trigger 揀預設方案) + Spec Sync`
+- Spec Sync: ARCHITECTURE.md §15.52 (本段)
+
+### 對應 doc
+- `AGENTS.md` 「ZigZag 拎走橙旗 + 鮮綠線 + P 點 sequence marker 永久 rule (大少 2026-08-31 11:09, 4.53.0)」section
+- `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` 「🔴 大少 trigger #N+2 — 拎走 ZigZag 橙旗決定點 + 鮮綠線 + P 點 sequence marker (2026-08-31 11:09, 4.53.0)」section
+

@@ -419,7 +419,20 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //     → 大少輸入 8% 切 manual 嗰陣紫色線用咗 recent auto 3% 錯 (大少 8月31日 09:24 bug report)
 //   對齊 Spec Sync #31 永久 rule: Config UX 模式「自動+手動+自動儲存更新圖表」
 //   對應 commit (將會 commit): fix(testing-page): 切 manual mode 用 localStorage 優先, 唔 overwrite 大少輸入 value (4.52.0 永久 rule)
-const ALGO_CACHE_BUST = '4.52.0';
+//
+// 大少 8月31日 11:09 trigger — 拎走橙旗決定點 + 鮮綠色 close extension 線 + P 點 sequence marker: ALGO_CACHE_BUST = '4.53.0'
+//   4.53.0 永久 rule (新加, 拎返 4.42.2 橙旗 + 4.8.3/4.51.0 鮮綠線 + 4.51.0 P 點 + 4.49.0 setMarkers):
+//     ✅ 拎走橙色 #FF9800 細小旗仔 marker (4.42.2 永久 rule 拎走) — 大少 trigger「拎走不要,可能影響正常 ZigZag」
+//     ✅ 拎走鮮綠色 #00C853 close extension 線 (4.8.3 + 4.51.0 永久 rule 拎走) — 大少 trigger「影響正常 Zigzag」
+//     ✅ 拎走紫色 P 點 sequence marker toggle (4.51.0 永久 rule 拎走) — chart 完全乾淨
+//     ✅ 紫色 ZigZag 線只 render line, 冇 number marker, 冇 close extension 線, 冇旗仔
+//     ✅ 拎走 testing page `#zigzag-sequence-controls` toggle + spinbutton (HTML)
+//     ✅ 拎走 backend `decisionDate` / `decisionValue` / `decisionType` 3 個 field (algorithm.py)
+//     ✅ 拎走 production frontend `decisionTime` / `decisionValue` 2 個 field (ChartContainer + ElliottWaveTestPage)
+//   對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 大少明確 trigger「拎走不要」先做
+//   對齊 8月31日 11:01 永久 rule「Backend hot-reload」: 改 algorithm.py 之後必 restart backend
+//   對應 commit: chore: 拎走 ZigZag 橙旗 (4.53.0 永久 rule)
+const ALGO_CACHE_BUST = '4.53.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -556,11 +569,8 @@ let currentAdapter = null;
 let currentOptions = {};
 // 大少 2026-08-19 trigger — ZigZag toggle state
 let zigzagEnabled = true;
-// 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 toggle state
-// showZigzagSequence: boolean, 大少可以 option toggle 顯示/隱藏 (預設 false 唔顯示, 避免畫面太擠)
-// zigzagSequenceMaxCount: number, 只顯示最近 N 個 marker (預設 30, 紫色 ZigZag 161 個 + 深綠色 close 1 個 = 162 個全部顯示會太擠)
-let showZigzagSequence = false;
-let zigzagSequenceMaxCount = 30;
+// 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 ZigZag 點順序號碼 toggle state
+// 拎走 showZigzagSequence + zigzagSequenceMaxCount (P 點 sequence marker 拎走後唔再需要)
 let lastVerdict = null;
 let lastKlines = null;
 let lastChartRefs = null;
@@ -1327,9 +1337,7 @@ async function runAlgorithm() {
     // 大少 2026-08-19 — save state 畀 ZigZag toggle 用
     // 大少 2026-08-30 20:57 fix — lastVerdict + lastKlines 已經喺 line 1204-1205 提早 set 咗 (為咗 applyFrontendZigZagOverlay 拎到), 呢度唔重複 set
     lastChartRefs = chartRefs;
-    // 大少 2026-08-19 11:15 — pass ZigZag sequence state 畀 renderChartOverlay
-    chartRefs.showZigzagSequence = showZigzagSequence;
-    chartRefs.zigzagSequenceMaxCount = zigzagSequenceMaxCount;
+    // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 ZigZag sequence state pass 畀 renderChartOverlay
     // 大少 2026-08-19 08:45 — 拎 verdict/chartRefs 放 window, 大少可以喺 console 拎
     window.currentVerdict = verdict;
     window.currentKlines = klines;
@@ -1515,14 +1523,7 @@ function renderChart(klines, code, period) {
     // 大少 2026-08-30 19:57 fix — ReferenceError chartRefs is not defined (line 1441) bug fix
     // 之前用 chartRefs (line 1256 runAlgorithm 嘅 local const), renderChart 內部 access 唔到
     // Fix: 改用 lastChartRefs (global, line 591-592 定義, line 1263 assign 過, 跟 chartRefs 同 shape)
-    setTimeout(() => {
-      if (lastChartRefs && lastChartRefs.zigzagSequenceMarkers && typeof lastChartRefs.zigzagSequenceMarkers.setMarkers === 'function') {
-        try {
-          lastChartRefs.zigzagSequenceMarkers.setMarkers(lastChartRefs.zigzagSequenceMarkers.markers);
-          console.log('[Chart] 🛠️ re-set markers after setVisibleLogicalRange (v5 plugin API, 確保 persist)');
-        } catch (e) { /* ignore */ }
-      }
-    }, 50);
+    // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 re-set markers after setVisibleLogicalRange 嗰個 if block (P 點 sequence marker 拎走後唔再需要)
   }, 50);
 
   chartInstance = chart;
@@ -1859,49 +1860,21 @@ if (zigzagThresholdEl) {
   zigzagThresholdEl.addEventListener('change', _onThresholdChange);
 }
 
-// 大少 2026-08-19 11:15 trigger — ZigZag 點順序號碼 toggle handler
-// 撳 checkbox 即時 re-render chart overlay, 改 max count 即時 update marker
-function reRenderZigZagSequence() {
-  if (lastVerdict && lastKlines && lastChartRefs && currentAdapter && currentAdapter.renderChartOverlay) {
-    // 清返 zigzag series + extension series (因為 sequence marker 跟佢哋一齊)
-    ['maV2LineSeries', 'maLineSeries'].forEach(key => {
-      if (lastChartRefs[key]) {
-        if (lastChartRefs[key].zigzag) {
-          try { lastChartRefs.chart.removeSeries(lastChartRefs[key].zigzag); } catch (e) { /* ignore */ }
-          lastChartRefs[key].zigzag = null;
-        }
-        if (lastChartRefs[key].zigzagExtension) {
-          try { lastChartRefs.chart.removeSeries(lastChartRefs[key].zigzagExtension); } catch (e) { /* ignore */ }
-          lastChartRefs[key].zigzagExtension = null;
-        }
-      }
-    });
-    // 大少 8月31日 01:59 trigger — 拎返「清返之前嘅 sequence marker plugin」嗰個 if block (4.49.0 永久 rule, v5 plugin API 拎返 setMarkers)
-    //   4.48.2 拎走嘅 setMarkers 拎返, 改用 v5 plugin handle 嗰個 setMarkers (唔再用 candleSeries.setMarkers)
-    if (lastChartRefs.zigzagSequenceMarkers) {
-      try { lastChartRefs.zigzagSequenceMarkers.setMarkers([]); } catch (e) { /* ignore */ }
-      lastChartRefs.zigzagSequenceMarkers = null;
-    }
-    // 通知 overlay 拎新嘅 sequence state
-    lastChartRefs.zigzagEnabled = zigzagEnabled;
-    lastChartRefs.showZigzagSequence = showZigzagSequence;
-    lastChartRefs.zigzagSequenceMaxCount = zigzagSequenceMaxCount;
-    currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
-    // 大少 2026-08-19 11:35 — re-render debug panel 拎新 state (e.g. ZigZag sequence toggle, zigzagSequenceMarkers handle)
-    renderDebugPanel(lastChartRefs, lastVerdict, lastKlines);
-  }
-}
+// 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 reRenderZigZagSequence function
+// 拎走 P 點 sequence marker toggle 之後, 唔再需要即時 re-render chart overlay
+// 撳 checkbox 撳 spinbutton 嗰兩個 listener 一齊拎走 (line 1979-1995)
 
-// ===== renderDebugPanel — 抽出去畀 runAlgorithm + reRenderZigZagSequence 都用 (大少 2026-08-19 11:35) =====
-// 凡人話: 拎 chart overlay 最新 state (紫色 ZigZag / 深綠色 extension / ZigZag sequence toggle) 顯示喺黑色 debug 區域
+// ===== renderDebugPanel — 抽出去畀 runAlgorithm 都用 (大少 2026-08-19 11:35) =====
+// 凡人話: 拎 chart overlay 最新 state (紫色 ZigZag) 顯示喺黑色 debug 區域
 // 之前 inline 喺 runAlgorithm 入面, 但 reRenderZigZagSequence 跑完之後 panel 永遠唔更新
+// 大少 4.53.0 拎走 reRenderZigZagSequence, 但 renderDebugPanel 仍然畀 runAlgorithm 用
 function renderDebugPanel(chartRefs, verdict, klines) {
   const debugPanel = document.createElement('pre');
   debugPanel.id = 'chart-debug-panel';
   debugPanel.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:14px;margin-top:14px;border-radius:6px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;';
   const maV2Keys = Object.keys(chartRefs.maV2LineSeries || {});
   const hasZigzag = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzag);
-  const hasZigzagExt = !!(chartRefs.maV2LineSeries && chartRefs.maV2LineSeries.zigzagExtension);
+  // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 hasZigzagExt (鮮綠色 close extension 線拎走後唔再需要)
   const metaKeys = verdict.meta ? Object.keys(verdict.meta) : [];
   const lastKlineDebug = klines && klines.length > 0 ? klines[klines.length - 1] : null;
   const lastCloseDebug = lastKlineDebug ? lastKlineDebug.close : null;
@@ -1949,14 +1922,6 @@ function renderDebugPanel(chartRefs, verdict, klines) {
 
 <strong style="color:#dcdcaa;">紫色 ZigZag series:</strong> ${hasZigzag ? '✅ 已 add 落 chart' : '❌ 冇 add 落 chart'}
 
-<strong style="color:#dcdcaa;">深綠色 close extension series:</strong> ${hasZigzagExt ? '✅ 已 add (連去收市價)' : '❌ 冇 add'}
-
-<strong style="color:#dcdcaa;">ZigZag sequence 號碼 toggle:</strong> ${chartRefs.showZigzagSequence === true ? `✅ 開 (顯示最近 ${chartRefs.zigzagSequenceMaxCount || 30} 個)` : '❌ 關 (預設)'}
-
-<strong style="color:#dcdcaa;">ZigZag sequence markers plugin (4.49.0 永久 rule v5 plugin API):</strong> ${chartRefs.zigzagSequenceMarkers ? '✅ 已 create (v5 LightweightCharts.createSeriesMarkers 拎返, 大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B)' : '❌ 冇 create (toggle off)'}
-
-<strong style="color:#dcdcaa;">4.42.2 橙色旗仔 marker (4.49.0 永久 rule 拎返):</strong> ${chartRefs.zigzagDecisionFlagMarkers ? '✅ 已 create (v5 plugin API 拎返 setMarkers 拎 set 唔到嘅 bug 解咗)' : '❌ 冇 create (toggle off)'}
-
 <strong style="color:#dcdcaa;">verdict.meta.zigzagPoints length:</strong> ${verdict.meta?.zigzagPoints?.length || 0} 個 (大少可以透過 DevTools console 拎到 raw data)
 
 <strong style="color:#dcdcaa;">verdict.meta.zigzagThreshold:</strong> ${verdict.meta?.zigzagThreshold || '(missing)'}%
@@ -1976,23 +1941,9 @@ function renderDebugPanel(chartRefs, verdict, klines) {
     chartContainer.parentElement.appendChild(debugPanel);
   }
 }
-const zigzagSequenceEnabledEl = document.getElementById('zigzag-sequence-enabled');
-if (zigzagSequenceEnabledEl) {
-  zigzagSequenceEnabledEl.addEventListener('change', (e) => {
-    showZigzagSequence = e.target.checked;
-    reRenderZigZagSequence();
-  });
-}
-const zigzagSequenceMaxCountEl = document.getElementById('zigzag-sequence-max-count');
-if (zigzagSequenceMaxCountEl) {
-  zigzagSequenceMaxCountEl.addEventListener('change', (e) => {
-    const v = parseInt(e.target.value, 10);
-    if (Number.isFinite(v) && v >= 5 && v <= 162) {
-      zigzagSequenceMaxCount = v;
-      reRenderZigZagSequence();
-    }
-  });
-}
+// 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 ZigZag 點順序號碼 toggle event listener
+// 拎走 #zigzag-sequence-enabled + #zigzag-sequence-max-count 2 個 element 嘅 change listener
+// 因為 P 點 sequence marker 拎走後, 撳 toggle 唔再有 effect, 拎走整段
 
 // 大少 2026-08-19 17:00 trigger — MA 線獨立 toggle 即時生效
 // 凡人話: 撳 MA5 checkbox → 紅色 MA5 線即時消失 / 出現, 唔需要撳「跑算法」

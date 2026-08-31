@@ -18,9 +18,8 @@ Algorithm flow (1-to-1 對齊 frontend):
 1. extractHLC 拎 high / low / close arrays (fallback chain: high/High/HIGH, low/Low/LOW, close/Close/CLOSE)
 2. autoThresholdVolatility 計自動 threshold (formula: avg((high-low)/close, lookback N) × 2.5, clamp 0.5%-20%)
 3. calculate_zigzag 拎 ZigZag points (peak/trough, 拎 value 用 high/low, trigger 都用 high/low)
-4. 每個 push point 加 decisionDate / decisionValue / decisionType (新加, 畀 旗仔 marker 用)
-5. 加鮮綠線 extension_line (從最後 ZigZag point → K 線最後 close, 顏色 #00C853)
-6. 加 P 點 sequence (1=最新, 倒序排, 用 testing page 4.9.0 marker 邏輯)
+4. 加鮮綠線 extension_line (從最後 ZigZag point → K 線最後 close, 顏色 #00C853)
+5. 加 P 點 sequence (1=最新, 倒序排, 用 testing page 4.9.0 marker 邏輯)
 """
 
 import datetime
@@ -127,10 +126,6 @@ def _zigzag_normalize_date(kline: Dict[str, Any]) -> str:
 
 # ============================================================
 # 凡人話: 對齊 testing-page.js:61-155 calculateZigZagFrontend (1-to-1 port)
-# 大少 2026-08-30 17:50 新加: 每個 trigger 形成嘅 point 加 3 個新 field
-#   - decisionDate: 跌穿/升穿嗰支 K 線日期 (即「決定上一支 ZigZag 形成嗰日」)
-#   - decisionValue: 嗰支 K 線 close (畀 chart 旗仔 marker Y position)
-#   - decisionType: 固定 'confirmation', 預留將來 sub-type (e.g. 'fake_breakout')
 # ============================================================
 def calculate_zigzag(
     klines: List[Dict[str, Any]],
@@ -142,13 +137,11 @@ def calculate_zigzag(
 
     大少 4.15.0 fix: 拎 point 用 high/low, trigger 都用 high/low (唔好用 close)
     大少 4.16.0 refactor: 1 個 direction flag + 1 個 ref value (原本 2 variable + 2 loop)
-    大少 2026-08-30 17:50 新加: 每個 trigger 形成嘅 point 加 3 個新 field
-      - decisionDate / decisionValue / decisionType
 
     拎 point value 用 high / low 對齊 K 線真實 high / low (跟 testing page 4.15.0 永久 rule)
 
     Returns:
-        list of {date, value, type: 'high' | 'low', index, decisionDate?, decisionValue?, decisionType?}
+        list of {date, value, type: 'high' | 'low', index}
     """
     if not klines or len(klines) < 2:
         return []
@@ -157,7 +150,7 @@ def calculate_zigzag(
     threshold = threshold_percent / 100.0
 
     # 拎第一個 point: 永遠用 klines[0].low (frontend 算法 1-to-1)
-    # 凡人話: 第一個 point 冇 decisionDate (永遠從第一支 K 線開始, 冇「決定」概念)
+    # 凡人話: 第一個 point 永遠從第一支 K 線開始, 拎佢嘅 low 做為起點
     result.append({
         "date": _zigzag_normalize_date(klines[0]),
         "value": klines[0]['low'],
@@ -183,15 +176,11 @@ def calculate_zigzag(
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_high <= -threshold:
-                # 大少 2026-08-30 17:50 新加 3 個 field: 決定嗰日 = 跌穿嗰支 K 線 (klines[i])
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_high,
                     "type": 'high',
                     "index": last_swing_idx,
-                    "decisionDate": _zigzag_normalize_date(klines[i]),
-                    "decisionValue": klines[i]['close'],
-                    "decisionType": 'confirmation',
                 })
                 in_uptrend = False
                 last_swing_low = klines[i]['low']
@@ -204,15 +193,11 @@ def calculate_zigzag(
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_low >= threshold:
-                # 大少 2026-08-30 17:50 新加 3 個 field: 決定嗰日 = 升穿嗰支 K 線 (klines[i])
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_low,
                     "type": 'low',
                     "index": last_swing_idx,
-                    "decisionDate": _zigzag_normalize_date(klines[i]),
-                    "decisionValue": klines[i]['close'],
-                    "decisionType": 'confirmation',
                 })
                 in_uptrend = True
                 last_swing_low = klines[i]['low']
@@ -233,15 +218,11 @@ def calculate_zigzag(
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_high <= -threshold:
-                # 大少 2026-08-30 17:50 新加 3 個 field: 決定嗰日 = 跌穿嗰支 K 線 (klines[i])
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_high,
                     "type": 'high',
                     "index": last_swing_idx,
-                    "decisionDate": _zigzag_normalize_date(klines[i]),
-                    "decisionValue": klines[i]['close'],
-                    "decisionType": 'confirmation',
                 })
                 in_uptrend = False
                 last_swing_low = klines[i]['low']
@@ -251,15 +232,11 @@ def calculate_zigzag(
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_low >= threshold:
-                # 大少 2026-08-30 17:50 新加 3 個 field: 決定嗰日 = 升穿嗰支 K 線 (klines[i])
                 result.append({
                     "date": _zigzag_normalize_date(klines[last_swing_idx]),
                     "value": last_swing_low,
                     "type": 'low',
                     "index": last_swing_idx,
-                    "decisionDate": _zigzag_normalize_date(klines[i]),
-                    "decisionValue": klines[i]['close'],
-                    "decisionType": 'confirmation',
                 })
                 in_uptrend = True
                 last_swing_high = klines[i]['high']
@@ -268,7 +245,7 @@ def calculate_zigzag(
     # 添加最後一個有效轉向點 (frontend algorithm.mjs:1611-1622)
     last_date = _zigzag_normalize_date(klines[last_swing_idx])
     if result[-1]['date'] != last_date:
-        # 凡人話: 最後一個 point 係「ongoing」, 仲未確認轉勢 (K 線行緊), 冇 decisionDate
+        # 凡人話: 最後一個 point 係「ongoing」, 仲未確認轉勢 (K 線行緊)
         result.append({
             "date": last_date,
             "value": last_swing_high if in_uptrend else last_swing_low,
@@ -396,8 +373,6 @@ def run_zigzag(
     """凡人話: 跑 ZigZag 算法 (1-to-1 對齊 frontend calculateZigZagFrontend)
 
     對應 frontend: testing-page.js 撳跑 algorithm 嗰陣嘅 ZigZag flow
-    大少 2026-08-30 17:50 新加: 對齊 frontend algorithm, 每個 point 加 3 個 field
-      (decisionDate / decisionValue / decisionType) 畀 chart 旗仔 marker
 
     Args:
         klines: K 線 data (從 KlineCache full flow 拎, T-1 normalized)
@@ -409,7 +384,7 @@ def run_zigzag(
     Returns:
         {
             "ok": bool,
-            "points": [{date, value, type, index, sequence, decisionDate?, decisionValue?, decisionType?}],
+            "points": [{date, value, type, index, sequence}],
             "threshold": float (實際用嘅 threshold, %),
             "threshold_mode": str,
             "klines_count": int,
@@ -468,7 +443,7 @@ def run_zigzag(
         threshold_percent = auto_t * 100  # 轉做 %
         logger.info(f"[ZigZag] auto mode: threshold = {threshold_percent:.2f}% ({lookback} 日 × {multiplier})")
 
-    # 3. calculate_zigzag (大少 2026-08-30 17:50 內部加咗 3 個 decision field)
+    # 3. calculate_zigzag
     points = calculate_zigzag(klines, threshold_percent)
 
     # 4. 加 sequence 號碼 (testing-page.js 4.9.0/4.10.0)
@@ -495,22 +470,19 @@ def run_zigzag(
 # 跟 ma_alignment/algorithm.py pattern (function helpers + class + register)
 # ============================================================
 class ZigZagAlgorithm(Algorithm):
-    """ZigZag Algorithm v0.1.0 (大少 2026-08-30 17:50)
+    """ZigZag Algorithm v0.2.0 (大少 8月31日 11:09 trigger 拎走橙旗決定點)
 
     凡人話: 1-to-1 port testing-page.js calculateZigZagFrontend 算法
     跟 Algorithm ABC 設計, 畀 `/api/algorithms/run?algo=zigzag` endpoint 拎
     對應 source: testing-page.js:61-155 calculateZigZagFrontend
 
-    3 個新 field (大少 2026-08-30 17:50):
-    - decisionDate: 跌穿/升穿嗰支 K 線日期 (即「決定上一支 ZigZag 形成嗰日」)
-    - decisionValue: 嗰支 K 線 close
-    - decisionType: 固定 'confirmation'
+    大少 4.53.0 拎走: decisionDate / decisionValue / decisionType 3 個 field (橙旗決定點拎走後唔再用)
 
     Options shape (跟 framework 標準):
     - threshold: float (ZigZag 過濾 noise 門檻 %, 默認 5)
 
     Returns Verdict (跟 framework 標準):
-    - points: [{date, value, type, index, sequence, decisionDate?, decisionValue?, decisionType?}]
+    - points: [{date, value, type, index, sequence}]
     - meta: {klines_count, threshold, extension_line, zigzag_points_count}
     """
     name = "zigzag"
@@ -528,9 +500,10 @@ class ZigZagAlgorithm(Algorithm):
         拎所有嘢, 避免 2 個 function 重複維護
 
         大少 4.43.0 Verdict shape 改:
-        - 原本 meta 5 個 field → 8 個 field 對齊 testing page 拎法
+        - 原本 meta 5 個 field → 7 個 field 對齊 testing page 拎法
           (klines_count / threshold / threshold_mode / lookback / multiplier
-           / extension_line / zigzag_points_count / decision_flag_count)
+           / extension_line / zigzag_points_count)
+        - 大少 4.53.0 拎走 decision_flag_count (橙旗決定點拎走後唔再用)
         - points 拎返 verdict.points (跟 ChartContainer.tsx 拎法對齊)
         """
         # 1. 拎 4 個新 options (testing page LS value 經由 endpoint 傳入, validation 已喺 endpoint 做咗)
@@ -557,12 +530,12 @@ class ZigZagAlgorithm(Algorithm):
                 error=result.get("error", "ZigZag algorithm 跑失敗"),
             )
 
-        # 3. return Verdict (8 個 meta field 對齊 testing page 拎法)
+        # 3. return Verdict (7 個 meta field 對齊 testing page 拎法)
         return Verdict(
             ok=True,
             points=result["points"],
             meta={
-                # 對齊 testing page 拎法 (frontend inject 落 verdict.meta 8 個 field):
+                # 對齊 testing page 拎法 (frontend inject 落 verdict.meta 7 個 field):
                 # - lastVerdict.meta.zigzagPoints ← points
                 # - lastVerdict.meta.zigzagThreshold ← threshold
                 # - lastVerdict.meta.extensionLine ← extension_line
@@ -575,7 +548,6 @@ class ZigZagAlgorithm(Algorithm):
                 "multiplier": multiplier,
                 "extension_line": result["extension_line"],
                 "zigzag_points_count": result["sequence_count"],
-                "decision_flag_count": sum(1 for p in result["points"] if p.get("decisionDate")),
             },
             warnings=[],
         )

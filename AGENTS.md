@@ -625,6 +625,49 @@ K 線 A (peak, e.g. 100元)        K 線 B (跌穿 5% 到 94元, 確認轉勢)
 
 對應 commit: 即將 push (Spec Sync #48 流程)
 
+### ZigZag 拎走橙旗 + 鮮綠線 + P 點 sequence marker 永久 rule (大少 2026-08-31 11:09, 4.53.0)
+
+**凡人話解釋**: 大少 8月31日 11:09 trigger「在圖表的 Zigzag 還是有些問題,你睇返記錄之前有叫你把最右迫的 P2 改成 P1 ,還有橙旗的 zigzag 決定點功能,這些我都想拿走不要,這些有可能影響了正常的 Zigzag」— 拎走晒 3 個花巧 visual 嘢(橙旗決定點 + 鮮綠色 close extension 線 + 紫色 P 點 sequence marker),chart 完全乾淨,只有紫色 ZigZag 線 + K 線 + MA 線。
+
+**改寫 4 個永久 rule**:
+- 4.42.2 永久 rule (8月30日 17:50) 拎走: 橙色 #FF9800 細小旗仔 marker
+- 4.8.3 永久 rule (8月19日 09:40) 拎走: 鮮綠色 #00C853 close extension 線
+- 4.51.0 永久 rule (8月31日 09:00) 拎走 toggle 保留 P1 規則: 紫色 P 點 sequence marker
+- 4.49.0 永久 rule (8月31日 01:59) 拎走: setMarkers 整個 block (v5 plugin API)
+
+**永久 rule** (4.53.0 拎走, 大少 11:09 trigger + 11:27 揀預設方案):
+- ✅ 拎走 ZigZag 橙旗決定點 marker (4.42.2 永久 rule 拎走)
+- ✅ 拎走鮮綠色 #00C853 close extension 線 (4.8.3 永久 rule 拎走)
+- ✅ 拎走紫色 P 點 sequence marker toggle (4.51.0 永久 rule 拎走 toggle)
+- ✅ 拎走 setMarkers 整個 block (4.49.0 永久 rule 拎走)
+- ✅ 拎走 backend `decisionDate` / `decisionValue` / `decisionType` 3 個 field (`backend/algorithms/zigzag/algorithm.py` 4 個 `result.append` 拎走 3 行 + `decision_flag_count` 拎走)
+- ✅ 拎走 production frontend `decisionTime` / `decisionValue` 2 個 field (跟 backend 對齊, 避免 type error)
+- ✅ 紫色 ZigZag 線只 render line, 冇 number marker, 冇 close extension 線, 冇旗仔 (chart 完全乾淨)
+- ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 大少明確 trigger「拎走不要」先做
+- ✅ 對齊 8月31日 11:01 永久 rule「Backend hot-reload」: 改 algorithm.py 之後必 restart backend + curl verify
+- ✅ 對齊 2026-08-09 13:10 永久 rule「testing-page .mjs cache bust」: ALGO_CACHE_BUST + ?v=2.3.X 2 個地方同步 bump
+- ✅ 對齊 8月31日 01:48 永久 rule「還原點」: 備份 commit hash `5c89c659eda481918101fe8060480ccfdbc1a67a` 一鍵還原
+
+**凡人話**: 撳跑完 M1 算法, 圖表只剩紫色 ZigZag 線 + K 線 + MA 線, 大少睇得清, 唔會再有橙旗/鮮綠線/P 點號碼干擾
+
+**改動 file**:
+- `backend/algorithms/zigzag/algorithm.py` 拎走 3 個 field + `decision_flag_count` + class version 0.1.0 → 0.2.0
+- `algorithms/AS-03-cycle-detection/adapter.mjs` 拎走 line 5104-5304 整段 (橙旗 + 鮮綠線 + P 點 setMarkers)
+- `web/src/components/chart/ChartContainer.tsx` 拎走 `decisionTime?` / `decisionValue?` + `zigzagFlagMarkersRef` + 旗仔 marker build
+- `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` 同 ChartContainer 對齊拎走
+- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.52.0' → '4.53.0' + 拎走 `showZigzagSequence` / `zigzagSequenceMaxCount` state + 拎走 `reRenderZigZagSequence` function + 拎走 2 個 toggle event listener + 拎走 debug panel 嘅 sequence + flag display
+- `testing-page/index.html` 拎走 `#zigzag-sequence-controls` toggle + `?v=2.3.113` → `?v=2.3.114`
+
+**Curl verify** (8月31日 11:35, 189 個 points):
+```bash
+curl -s "http://localhost:18792/api/algorithms/run?algo=zigzag&symbol=HK.00700&period=1d&threshold=5"
+```
+✅ 每個 point 嘅 keys = `['date', 'value', 'type', 'index', 'sequence']`, 冇 `decisionDate` / `decisionValue` / `decisionType`
+✅ meta 7 個 field, 冇 `decision_flag_count`
+
+對應 doc: M1-V22-RESEARCH.md 「🔴 大少 trigger #N+2 — 拎走 ZigZag 橙旗決定點 + 鮮綠線 + P 點 sequence marker (2026-08-31 11:09, 4.53.0)」section
+
+對應 commit: `chore: 拎走 ZigZag 橙旗 (4.53.0 永久 rule)` (大少 8月31日 11:09 + 11:27 trigger 揀預設方案 + 11:23 備份 trigger)
 
 
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
