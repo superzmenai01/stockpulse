@@ -4126,3 +4126,38 @@ Task 3 純後台: KlineCache `__init__` 開 background thread 30 秒 1 次 ping 
 - pytest 267/268 pass (1 個 pre-existing asyncio fail 唔關事)
 - KlineCache instance 開咗 thread 自動 check, `get_futu_health()` 拎 in-memory state 即時更新
 - Thread name: `kline-cache-health-check`
+
+### 15.47 Sprint 4 Task 1+2 — Frontend FutuOpenD Banner + M9 Progress Log Render (大少 2026-08-31 07:56「GO」trigger, Spec Sync #55)
+
+### 大少 trigger
+8月31日 07:56「你可以 Go 了」— Sprint 4 follow-up 開始, frontend testing page 改動, 對齊 backend Task 3 infrastructure (KlineCache 30 秒自動 health check) + Batch 3a (M9 verdict.meta.progress_log)。
+
+### 凡人話解釋
+之前 frontend testing page 對富途 OpenD 死咗冇反應, 大少撳跑 algorithm 拎 stale K 線, 落錯單風險。撳跑 M9 嗰陣, 30-60 秒完全冇 feedback, 大少以為 hang 撳多次掣撞 double-call。
+
+而家永久 fix: testing page 加 5 秒 1 次 background polling `/api/algorithms/health/futu`, 不 healthy 即時顯示頂部紅色 banner + disable「跑算法」掣, 大少唔再撳拎 stale K 線。撳跑 M9 完即時 render 5 個 stage 嘅 progress bar timeline, 大少睇到跑到邊度 (data_validation 5% / walk_forward_cv_starting 10% / walk_forward_cv_folds_split 15% / walk_forward_cv_fold 20-80% / walk_forward_cv_done 90%)。
+
+### 改動範圍 (2 改 file)
+
+| File | 改動 |
+|------|------|
+| `testing-page/index.html` | chart-section 加 `<div id="futu-health-banner">` 喺 run-status 之前 (紅色 banner, display:none default) + `?v=2.3.110` → `2.3.111` (永久 rule 21:24 cache bust 同步) |
+| `testing-page/testing-page.js` | 加 `futuHealthCache` in-memory + `pollFutuHealth()` async 5 秒 1 次 polling + `updateFutuHealthBanner()` disable「跑算法」掣 + `renderM9ProgressLog(verdict)` 5 個 stage 嘅 progress bar table + `runAlgorithm()` 開頭 await pollFutuHealth() 最後 1 次 check + verdict render 嗰段 prepend M9 progress log + `ALGO_CACHE_BUST` `4.49.0` → `4.50.0` (永久 rule 21:24 同步) |
+
+### 永久 rule (Frontend FutuOpenD Banner + M9 Progress Log)
+- ✅ testing page 加載即時 `pollFutuHealth()` 一次 (避免 5 秒 delay), 之後 5 秒 1 次 polling
+- ✅ 撳跑任何 algorithm 之前必 `await pollFutuHealth()` 最後 1 次 check, 避免 5 秒 delay 撞 banner 期間
+- ✅ OpenD 不 healthy 嗰陣必顯示頂部紅色 banner + disable「跑算法」掣 (`btn-run-algorithm` + `btn-run-chain`)
+- ✅ M9 verdict 必 prepend `renderM9ProgressLog()`, 唔好 caller 自己 implement progress bar
+- ✅ 改 testing-page.js critical code 必同步 bump `ALGO_CACHE_BUST` + `?v=` 2 個地方 (永久 rule 21:24)
+- ✅ 永久 rule §21:24 cache bust self-check 仍然 work (4.49.0 → 4.50.0 + ?v=2.3.110 → 2.3.111)
+
+### 對應 commit
+- `feat(sprint-4-task-1+2): Frontend FutuOpenD banner + M9 progress log render (大少 8月31日 07:56「你可以 Go 了」trigger 自主做 Sprint 4 follow-up Task 1+2) + ALGO_CACHE_BUST 4.49.0 → 4.50.0` (`e0cb5aa3`)
+- Spec Sync: ARCHITECTURE.md §15.47 (本段) + HANDOVER.md §S (新永久 rule section)
+
+### Verify
+- pytest 267/268 pass (1 個 pre-existing asyncio fail 唔關事, frontend 改唔影響 backend)
+- 富途 OpenD 死咗: banner 顯示 + 撳跑掣 disable, runAlgorithm() 開頭 check 即刻 fail
+- 撳跑 M9 完: 頂部 5 個 stage 嘅 progress bar table (data_validation 5% / walk_forward_cv_starting 10% / walk_forward_cv_folds_split 15% / walk_forward_cv_fold 20-80% / walk_forward_cv_done 90%)
+- testing page 加載即時 `pollFutuHealth()` 一次 (避免 5 秒 delay)

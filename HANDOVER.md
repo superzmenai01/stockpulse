@@ -324,6 +324,17 @@ def _compute_fetch_max_count(period):
 - 詳見 ARCHITECTURE.md §15.46 (Spec Sync #54)
 - 大少 trigger: 8月31日 07:56「你可以 Go 了」Sprint 4 follow-up Task 3
 
+### S. Frontend FutuOpenD Banner + M9 Progress Log 永久 rule (8-31 07:56, Sprint 4 Task 1+2)
+
+- testing page 加載即時 `pollFutuHealth()` 一次 (避免 5 秒 delay), 之後 5 秒 1 次 polling
+- 撳跑任何 algorithm 之前必 `await pollFutuHealth()` 最後 1 次 check, 避免 5 秒 delay 撞 banner 期間
+- OpenD 不 healthy 嗰陣必顯示頂部紅色 banner + disable「跑算法」掣 (`btn-run-algorithm` + `btn-run-chain`)
+- M9 verdict 必 prepend `renderM9ProgressLog()`, 唔好 caller 自己 implement progress bar
+- 改 testing-page.js critical code 必同步 bump `ALGO_CACHE_BUST` + `?v=` 2 個地方 (永久 rule 21:24)
+- 永久 rule §21:24 cache bust self-check 仍然 work (4.49.0 → 4.50.0 + ?v=2.3.110 → 2.3.111)
+- 詳見 ARCHITECTURE.md §15.47 (Spec Sync #55)
+- 大少 trigger: 8月31日 07:56「你可以 Go 了」Sprint 4 follow-up Task 1+2
+
 ---
 
 ## 7. Critical Pitfalls (避開!)
