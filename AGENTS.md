@@ -907,6 +907,53 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.56.0 加今日 close 做 P1 + §15.51 Backend hot-reload + §15.46 testing-page cache bust sync
 
 
+### ZigZag Trigger 邊界 case BUG FIX 永久 rule (大少 2026-08-31 21:29 + 21:46, 4.57.1)
+
+**凡人話解釋**: 大少 21:29 trigger「發現問題: P2 2026-08-28 00:00:00 46.50 📈 Peak 2026-08-28 00:00:00 45.18 — 在同一日內自己到了同日的獨發點, 這完全不合理」— 對齊 P point 同 trigger 同一個 K 線嘅邊界 case (intra-bar volatility), 算法嗰度要 enforce trigger 一定要係 P point 之後嘅 K 線 (唔可以同 P point 同一個 K 線)。大少 21:46 trigger「你先做備份和一鍵復原後才開始, 記得要先檢查備份還原點管理有沒有更新到才算完成」— 對齊 §15.45 Sscript pattern, 先 set 還原點, 之後先做 BUG FIX 改動。
+
+**Root cause**: 對齊 algorithm 第二個 loop line 235-238 (in_uptrend), `if klines[i]['high'] > last_swing_high: last_swing_idx = i`, 之後跌 -threshold 條件 `if change_from_high <= -threshold`, 因為 `last_swing_idx = i`, change_from_high = (klines[i].low - klines[i].high) / klines[i].high (intra-bar 跌幅), 跌夠 -threshold 確認 P point, 嗰個 P point 嘅 index = last_swing_idx = i, trigger 嘅 triggerIndex = i, P point 同 trigger 同一個 K 線 (intra-bar volatility 邊界 case)。第一個 loop 嘅 2 處 trigger 條件 (line 187 in_uptrend, line 209 唔 in_uptrend) 同樣有呢個 edge case。
+
+**改動 (4.57.1)**:
+
+1. **改動 0 (BEFORE code 改動)**: Sscript 還原點 (對齊 §15.45 Sscript pattern)
+   - 攞當前 HEAD commit hash (4.57.0 完成 commit) 做 EXPECTED_HEAD
+   - Create branch `backup/zigzag-4.57.1` + push
+   - Create annotated tag `restore-before-zigzag-4.57.1` + push
+   - Create script `scripts/restore_before_zigzag_4.57.1.sh` (double confirm: yes + RESET)
+   - Commit + push script
+   - **Verify Backup Admin Page 拎到** (`/api/backup-points/list` 拎到 `restore-before-zigzag-4.57.1` 還原點) — 對齊 §15.54 + 12:08 user memory 永久 rule + 大少 15:28 trigger
+
+2. **Backend** (`backend/algorithms/zigzag/algorithm.py` `calculate_zigzag` 4 處 trigger 條件 line 187, 209, 239, 258):
+   - 拎 `peak_idx_candidate = last_swing_idx` (line 187, 239) / `trough_idx_candidate = last_swing_idx` (line 209, 258) snapshot P point K 線 (跌/升 -threshold 嗰個 moment 嘅 last_swing_idx)
+   - 跌/升 -threshold 條件加 `if i > peak/trough_idx_candidate` 條件
+   - 如果 `i == peak/trough_idx_candidate` (intra-bar), 跳過, 等下一個 K 線 (跌/升 -threshold 過 P point K 線) 先 confirm
+
+3. **Cache bust**: 唔需要 bump (frontend 唔改, 只係 backend algorithm 改)
+4. **Backend hot-reload**: 4.57.1 改 algorithm.py 之後必 restart backend (§15.51 hot-reload 永久 rule)
+
+**永久 rule**:
+- ✅ Backend `calculate_zigzag` 4 處 trigger 條件 (line 187, 209, 239, 258) 必加 `i > peak_idx_candidate / trough_idx_candidate` 條件
+- ✅ 拎 `peak_idx_candidate = last_swing_idx` (line 187, 239) / `trough_idx_candidate = last_swing_idx` (line 209, 258) snapshot P point K 線
+- ✅ 跌/升 -threshold 嗰個 K 線 `i` 一定要 > P point K 線 (即係 trigger 喺 P point 之後)
+- ✅ 如果 `i == peak/trough_idx_candidate` (intra-bar volatility 邊界 case), 跳過, 等下一個 K 線 (跌/升 -threshold 過 P point K 線) 先 confirm
+- ✅ 對齊凡人話「大少 trigger 不合理」: 對齊 K 線時序, trigger 一定要係 P point 之後嘅 K 線, intra-bar 同一個 K 線跌夠 -threshold 唔算 confirm P point
+- ✅ Backend 改後必 restart backend (§15.51 hot-reload 永久 rule)
+- ✅ Frontend 唔需要改 (frontend 拎 backend inject 嘅 trigger 3 個 field 自動正確顯示, 因為 backend fix 咗 intra-bar 邊界 case)
+- ✅ Cache bust 唔需要 bump (frontend 唔改)
+- ✅ 永久 rule: 之後改算法 / 加新 algorithm / 拎 trigger K 線嗰陣必 enforce `trigger_K 線 > P_point_K 線` 條件, 對齊凡人話 trigger 喺 P point 之後
+- ✅ 對齊大少 21:46 trigger 流程: 改 algorithm 之前必先做 Sscript 還原點 (對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule), 之後先做 code 改動
+
+**凡人話**: 大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價, 對齊 K 線時序, trigger 一定要係 P point 之後嘅 K 線, intra-bar 同一個 K 線跌夠 -threshold 唔算 confirm P point。
+
+對應 doc: ARCHITECTURE.md §15.58
+
+對應 commit: 即將 push (`fix(zigzag-bug): Trigger 邊界 case BUG FIX — P point 同 trigger 唔可以同一個 K 線 (4.57.1)`)
+
+對應 Sscript 還原點: `restore-before-zigzag-4.57.1` (EXPECTED_HEAD: 73c4039641543b4c39d017c1d5888412d30d755e, 4.57.0 完成 commit)
+
+對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.57.0 加獨發點 + §15.45 Sscript pattern + §15.51 Backend hot-reload + §15.53 Sscript 還原點 + §15.54 Backup Admin Page + 12:08 user memory 永久 rule
+
+
 ### Backup Admin Page 4 個優化永久 rule (大少 2026-08-31 17:37 trigger, §15.55)
 
 **凡人話解釋**: 大少 17:37 trigger「全部都做,但還完了後我不想删走那個還完點,因為可能會再用」— 對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule, 對 backup admin page 做 4 個優化 (missing warning UI + Sscript set helper + audit trail + recover script)。

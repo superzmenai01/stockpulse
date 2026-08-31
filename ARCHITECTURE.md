@@ -4845,3 +4845,62 @@ git push origin main
 - 大少 20:51 trigger「不是木山山心要 Trigger 上下限」反映: 凡人話解釋 AI 對 trigger 嘅理解可能同大少唔同, AI 應以 K 線時序 + algorithm 入面真正 trigger 嗰個 index (`i`) 為主, 唔好以為 trigger 即係 P point 嗰日 high / low
 - 永久 rule: 改 algorithm / UI display 之前, 必先 read algorithm 源碼拎 evidence 確認 trigger 邏輯, 對齊 4.55.0 lesson learned「改 array sort / iterate 邏輯之前, 必先用 curl / test script 拎 evidence」
 - 大少 20:57 確認「對齊 4.15.0 永久 rule 拎 1 個價」反映: 大少對 trigger 拎 1 個價 vs 2 個價有明確偏好, AI 唔好自己決定, 必先問大少 (對齊 8月29日 22:44 永久 rule「所有改動要 confirm」)
+
+### 15.58 ZigZag Trigger 邊界 case BUG FIX 永久 rule (大少 2026-08-31 21:29 + 21:46 trigger, 4.57.1)
+
+### 大少 trigger
+8月31日 21:29「發現問題: P2 2026-08-28 00:00:00 46.50 📈 Peak 2026-08-28 00:00:00 45.18 — 在同一日內自己到了同日的獨發點, 這完全不合理, 同時也沒有到達所需要的 Threshold 20%」+ 21:46「你先做備份和一鍵復原後才開始, 記得要先檢查備份還原點管理有沒有更新到才算完成」
+
+### 凡人話解釋
+大少 21:29 撳跑拎到 P2 = 2026-08-28, 對齊「同日 trigger」P2 = 2026-08-28 (即係 P point 同 trigger 同一個 K 線)。對齊凡人話, 應該 trigger 一定要係 P point 之後嘅 K 線跌夠 -threshold 先 confirm, 而唔係同一個 K 線 intra-bar 跌夠 -threshold。
+
+大少 21:46 trigger「先做備份 + 一鍵復原後才開始」反映: 改 algorithm 之前必先做 Sscript 還原點 (對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule), 之後先做 BUG FIX 改動。
+
+### Root cause
+對齊 algorithm 第二個 loop line 235-238 (in_uptrend), `if klines[i]['high'] > last_swing_high: last_swing_idx = i`, 之後跌 -threshold 條件 `if change_from_high <= -threshold`, 因為 `last_swing_idx = i`, change_from_high = (klines[i].low - klines[i].high) / klines[i].high (intra-bar 跌幅), 跌夠 -threshold 確認 P point, 嗰個 P point 嘅 index = last_swing_idx = i, trigger 嘅 triggerIndex = i, P point 同 trigger 同一個 K 線 (intra-bar volatility 邊界 case)。
+
+第一個 loop 嘅 2 處 trigger 條件 (line 187 in_uptrend, line 209 唔 in_uptrend) 同樣有呢個 edge case。
+
+### 改動範圍 (4 個 step, 1 個 file code)
+
+| # | Step | 改動 |
+|---|------|------|
+| 0 | Sscript 還原點 (BEFORE code 改動, 對齊大少 21:46 trigger) | Tag `restore-before-zigzag-4.57.1` + Branch `backup/zigzag-4.57.1` + Script `scripts/restore_before_zigzag_4.57.1.sh` + Verify Backup Admin Page |
+| 1 | Backend algorithm.py 4 處 trigger 條件 (line 187, 209, 239, 258) | 加 `peak_idx_candidate / trough_idx_candidate` snapshot + `if i > candidate` 條件 |
+| 2 | Doc AGENTS.md 加 4.57.1 永久 rule 段 | 對齊 4.57.1 BUG FIX 永久 rule |
+| 3 | Doc ARCHITECTURE.md 加 §15.58 | 本段 |
+
+### 永久 rule (對齊 4.15.0 + 4.43.0 + 4.57.0 + §15.45 + §15.51 + §15.53 + §15.54 + 12:08 user memory)
+- ✅ 改動 0 流程: 改 algorithm 之前必先做 Sscript 還原點 (tag + branch + script), 之後 verify Backup Admin Page 拎到
+- ✅ Backend `calculate_zigzag` 4 處 trigger 條件 (line 187, 209, 239, 258) 必加 `i > peak_idx_candidate / trough_idx_candidate` 條件
+- ✅ 拎 `peak_idx_candidate = last_swing_idx` (line 187, 239) / `trough_idx_candidate = last_swing_idx` (line 209, 258) snapshot P point K 線
+- ✅ 跌/升 -threshold 嗰個 K 線 `i` 一定要 > P point K 線 (即係 trigger 喺 P point 之後)
+- ✅ 如果 `i == peak/trough_idx_candidate` (intra-bar volatility 邊界 case), 跳過, 等下一個 K 線 (跌/升 -threshold 過 P point K 線) 先 confirm
+- ✅ Backend 改後必 restart backend (§15.51 hot-reload 永久 rule)
+- ✅ Frontend 唔需要改 (frontend 拎 backend inject 嘅 trigger 3 個 field 自動正確顯示)
+- ✅ Cache bust 唔需要 bump (frontend 唔改)
+- ✅ 永久 rule: 之後改算法 / 加新 algorithm / 拎 trigger K 線嗰陣必 enforce `trigger_K 線 > P_point_K 線` 條件
+
+### 凡人話
+對齊 K 線時序, trigger 一定要係 P point 之後嘅 K 線, intra-bar 同一個 K 線跌夠 -threshold 唔算 confirm P point。對齊大少 trigger「P point 同 trigger 唔可以同一個 K 線, 一定要 P point 之後」。
+
+### 對齊永久 rule
+- 4.15.0「之字拎 point 同 trigger 都用 high/low」(trigger 拎嗰個 K 線 high/low, 但 trigger 嗰個 K 線 一定要 > P point K 線)
+- 4.43.0「ZigZag 全部 backend 計」(trigger 條件由 backend enforce, frontend 拎用)
+- 4.57.0 加獨發點 (Trigger 確認點) (frontend 顯示 trigger 3 個 field, backend fix 邊界 case 之後 trigger 自動正確)
+- §15.45 Sscript pattern (annotated tag + backup branch + restore script + double confirm)
+- §15.51 Backend hot-reload (改 algorithm.py 必 restart backend)
+- §15.53 Sscript 還原點永久 rule
+- §15.54 Backup Admin Page 永久 rule
+- 12:08 user memory 永久 rule「每做新 Sscript 還原點, 都要 verify Backup Admin Page 拎到」
+
+### 對應 commit
+- 即將 push (`fix(zigzag-bug): Trigger 邊界 case BUG FIX — P point 同 trigger 唔可以同一個 K 線 (4.57.1)`)
+- Spec Sync: ARCHITECTURE.md §15.58 (本段) + AGENTS.md 「ZigZag Trigger 邊界 case BUG FIX 永久 rule」section
+
+### 教訓
+- 大少 21:29 trigger「在同一日內自己到了同日的獨發點, 這完全不合理」反映: 凡人話對 trigger 嘅理解係「P point 之後嘅 K 線跌/升 -threshold 先 confirm P point」, 而唔係「同一個 K 線 intra-bar 跌/升 -threshold 都算 confirm」
+- 永久 rule: 改 algorithm / 加 trigger 條件嗰陣, 必先 enumerate 邊界 case (intra-bar 同一個 K 線 high 同 low 跌夠 threshold 嘅 case), 凡人話解釋 trigger 一定要係 P point 之後嘅 K 線, 對齊 4.55.0 lesson learned「改 array / algorithm 邏輯之前, 必先用 curl / test script 拎 evidence 確認邊界 case」
+- 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 凡人話理解 trigger 嘅定義, 必先 confirm 大少「trigger 喺 P point 之後」呢個 constraint
+- 大少 21:46 trigger「先做備份 + 一鍵復原後才開始」反映: 改 algorithm 之前必先做 Sscript 還原點, 之後 verify Backup Admin Page 拎到先做 code 改動 (對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule)
+
