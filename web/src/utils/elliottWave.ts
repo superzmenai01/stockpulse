@@ -53,7 +53,13 @@ export function calculateElliottWave(
     minImpulseRatio?: number
   } = {}
 ): ElliottWaveResult {
-  if (zigzagPoints.length < 4) {
+  // 大少 8月31日 15:19 trigger (4.56.0) — filter 走 'today' point, 避免 EWave pattern index shift
+  // 4.56.0 backend 加 'today' point 入 verdict.points, 但 EWave pattern 對齊 confirmed ZigZag 點
+  // 'today' point 唔係 confirmed 轉向, 拎走避免 P1>P3 規則 index shift
+  // 對齊 4.53.0 永久 rule: chart + algorithm 唔 render 'today' point
+  const filteredPoints = zigzagPoints.filter(p => p.type !== 'today');
+
+  if (filteredPoints.length < 4) {
     return {
       waves: [],
       labels: [],
@@ -66,20 +72,20 @@ export function calculateElliottWave(
   // 步驟1：分析極值點類型
   const points: Array<{ time: Time; value: number; type: 'high' | 'low' }> = []
 
-  for (let i = 0; i < zigzagPoints.length; i++) {
+  for (let i = 0; i < filteredPoints.length; i++) {
     let type: 'high' | 'low'
 
     if (i === 0) {
       // 第一個點：根據第二個點判斷
-      type = zigzagPoints[i].value >= zigzagPoints[i + 1].value ? 'high' : 'low'
-    } else if (i === zigzagPoints.length - 1) {
+      type = filteredPoints[i].value >= filteredPoints[i + 1].value ? 'high' : 'low'
+    } else if (i === filteredPoints.length - 1) {
       // 最後一個點：根據倒數第二個判斷
-      type = zigzagPoints[i].value >= zigzagPoints[i - 1].value ? 'high' : 'low'
+      type = filteredPoints[i].value >= filteredPoints[i - 1].value ? 'high' : 'low'
     } else {
       // 中間點：根據前後判斷
-      const prev = zigzagPoints[i - 1].value
-      const curr = zigzagPoints[i].value
-      const next = zigzagPoints[i + 1].value
+      const prev = filteredPoints[i - 1].value
+      const curr = filteredPoints[i].value
+      const next = filteredPoints[i + 1].value
 
       if (curr > prev && curr > next) {
         type = 'high'
@@ -92,8 +98,8 @@ export function calculateElliottWave(
     }
 
     points.push({
-      time: zigzagPoints[i].time,
-      value: zigzagPoints[i].value,
+      time: filteredPoints[i].time,
+      value: filteredPoints[i].value,
       type
     })
   }

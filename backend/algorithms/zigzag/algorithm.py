@@ -253,6 +253,37 @@ def calculate_zigzag(
             "index": last_swing_idx,
         })
 
+    # 大少 8月31日 15:19 trigger (4.56.0) — 加今日 close 做 P1
+    # 凡人話: 對齊 K 線最後 close (即使未 trigger 5% threshold), 大少想 P1 拎「最新」嘅 K 線 close
+    # 因為 ZigZag 拎 confirmed point 之後, K 線可能仲有新 data 未 trigger 5% 變動, P1 拎最後 confirmed point
+    # 會落後過 K 線最後 close, 大少覺得「錯」想拎返 K 線最後 close 做 P1
+    # 對齊 §15.45 永久 rule: K 線 close 對齊 K 線最後一日
+    # filter 走 'today' point: testing page console log 拎 'today' 做 P1, chart + algorithm 唔 render
+    # 6 個 caller 自動 filter 走 (對齊 4.53.0 chart decision: 拎走橙旗 + 鮮綠線 + 1 號 marker):
+    # 1. algorithms/AS-03-cycle-detection/adapter.mjs (renderMAAlignmentV2ChartOverlay)
+    # 2. web/src/components/chart/ChartContainer.tsx (fetchBackendZigZag)
+    # 3. web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx (fetchBackendZigZag)
+    # 4. web/src/utils/elliottWave.ts (detectElliottWave EWave pattern 避免 index shift)
+    # 5. backend/algorithms/ma_alignment/algorithm.py (M1 v2.0 zigzagPoints 拎取)
+    # 6. backend/services/algorithm_runner.py (M7 Synthesizer zigzagPoints 拎取)
+    # 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(backend 加 'today' point, frontend 拎 'today' 做 P1)
+    last_kline = klines[-1]
+    last_kline_date = _zigzag_normalize_date(last_kline)
+    last_kline_close = last_kline.get('close')
+    if last_kline_close is not None:
+        try:
+            last_kline_close = float(last_kline_close)
+            # 4.56.0: 加 K 線最後 close 做 'today' point, 對齊 K 線最近嗰個交易日
+            result.append({
+                "date": last_kline_date,
+                "value": last_kline_close,
+                "type": 'today',  # marker for testing page console log P1, caller 自動 filter
+                "index": len(klines) - 1,
+            })
+        except (ValueError, TypeError):
+            # close 拎唔到 (e.g. K 線 data missing), skip 唔加 'today' point, 對齊 4.43.0 永久 rule
+            pass
+
     return result
 
 

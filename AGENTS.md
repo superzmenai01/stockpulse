@@ -795,6 +795,54 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 
 對應 doc: ARCHITECTURE.md §15.55, M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 12:50」section
 
+
+### M1 console log P1 拎 K 線最後 close 永久 rule (大少 2026-08-31 15:19 trigger, 4.56.0)
+
+**凡人話解釋**: 大少撳跑 M1 之後, 想 P1 對齊 K 線最後 close (今日 8月31日), 即使未 trigger 5% threshold 都要拎「最新」嘅 K 線 close, 唔好拎最後 confirmed ZigZag point (8月28日 peak 46.50) 落後過 K 線最後一日。
+
+**改動 (4.56.0)**:
+- `backend/algorithms/zigzag/algorithm.py` `calculate_zigzag` 函數喺 result 最後 add 多個 `type: 'today'` point, value = `klines[-1].close`
+- 6 個 caller filter 走 `type: 'today'` point 對齊 4.53.0 chart decision (拎走橙旗 + 鮮綠線 + 1 號 marker):
+  1. `algorithms/AS-03-cycle-detection/adapter.mjs` (renderMAAlignmentV2ChartOverlay)
+  2. `web/src/components/chart/ChartContainer.tsx` (fetchBackendZigZag)
+  3. `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` (fetchBackendZigZag)
+  4. `web/src/utils/elliottWave.ts` (detectElliottWave 避免 EWave pattern index shift)
+  5. M1 v2.0 (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要 filter
+  6. M7 Synthesizer (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要 filter
+- `testing-page/testing-page.js` `_formatZigZagLatestPointsForDebug` 拎 'today' point 做 P1 (display 改善)
+- Bump `ALGO_CACHE_BUST` 4.55.0 → 4.56.0
+- Bump `?v=2.3.116` → `2.3.117`
+
+**永久 rule**:
+- ✅ Backend algorithm 加 `type: 'today'` point 入 verdict.points, value = `klines[-1].close`
+- ✅ 凡人話: P1 對齊 K 線最後 close (今日 8月31日), 即使未 trigger 5% threshold
+- ✅ Chart 上面紫線最後 1 個 point 仍然係 8月28日 confirmed peak (對齊 4.53.0 拎走鮮綠線 decision)
+- ✅ Production frontend ChartContainer + ElliottWaveTestPage + adapter.mjs + elliottWave.ts 全部 filter 走 'today' point 對齊 4.53.0 chart decision
+- ✅ Testing page console log P1 拎 'today' point (display 改善, 對齊 K 線最後 close)
+- ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(backend 加 'today' point, frontend 拎 'today' 做 P1)
+- ✅ 對齊 4.53.0 永久 rule「拎走橙旗 + 鮮綠線 + 1 號 marker」(chart 唔 render 鮮綠線, 對齊大少 trigger 「影響正常 ZigZag」)
+- ✅ 對齊 §15.45 + §15.53 + §15.54 永久 rule (Sscript 還原點對齊, Backup Admin Page verify)
+- ✅ 對齊 §15.51 永久 rule (改 algorithm.py 必 restart backend + curl verify)
+- ✅ Edge case: K 線 close 拎唔到 (e.g. K 線 data missing) → backend 'today' point 唔 add (skip), 對齊 4.43.0 永久 rule
+
+**Acceptance tests**:
+- Restart backend (§15.51 永久 rule): `./start.sh`
+- Curl verify backend 加 'today' point: `curl /api/algorithms/run?algo=zigzag&symbol=HK.00019&threshold_mode=auto&data_window_days=1260` 拎到 points count: 11 (10 + 1 'today'), last point type='today'
+- 撳跑 M1 (AS-03-MA) HK.00019 → reload testing page → 落黑色 🔧 Chart Debug panel 底部
+- P1 = 2026-08-28 value=104.4 type='today' (今日 K 線最後 close, 對齊 K 線最近嗰個交易日)
+- P2 = 2026-08-21 value=106.0 type='high' (原本 P1, 對齊 4.55.0 array 排法)
+- P3-P10 = 8月28日之前 confirmed ZigZag points
+- Chart 上面紫線最後 1 個 point 仍然係 8月21日 high 106.0 (對齊 4.53.0 chart decision)
+- 撳跑 zmen / M9 → mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
+
+對應 doc: ARCHITECTURE.md §15.55, M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 15:19」section
+
+對應 commit: 即將 push (4.56.0 fix + Spec Sync 流程)
+
+對應 Sscript 還原點: `restore-before-zigzag-4.56.0` (commit 1fca411b, 對齊 §15.45 + §15.53 + §15.54 永久 rule)
+
+對應永久 rule: 4.43.0 ZigZag 全部 backend 計 + 4.53.0 拎走鮮綠線 + §15.45 Sscript pattern + §15.51 Backend hot-reload
+
 對應 commit:
 - `3f8ec81b` (feat commit 4.54.0)
 - `d64ec77f` (Spec Sync commit 4.54.0, 寫錯 verdict.points 排法 description, 之後 4.55.0 fix commit 改返)
