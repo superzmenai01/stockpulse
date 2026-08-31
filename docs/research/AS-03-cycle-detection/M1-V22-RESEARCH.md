@@ -887,4 +887,67 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 
 備份 commit hash `5c89c659eda481918101fe8060480ccfdbc1a67a` 喺 Step 0 記低, 出意外一鍵還原。
 
+---
+
+## 🟢 大少 trigger #N+3 — ZigZag 4.53.0 Sscript 還原點 (大少 2026-08-31 11:59)
+
+> **大少 trigger (8月31日 11:59)**: 「對齊 Sscript pattern (推薦)」 — 大少發現我啱啱用 empty commit 嘅備份 (5c89c659, 7a424c58) 同之前 8月31日 07:52 嘅 Sscript pattern 唔同, 要求對齊 3-component 還原點 pattern (annotated tag + backup branch + restore script)
+
+### 凡人話解釋
+
+之前 §15.45 (大少 8月31日 07:52 trigger) 嘅 Sscript pattern 已經 set 過 Sprint 4 follow-up 嘅還原點 (annotated tag `restore-before-sprint-4-followup` + branch `backup-before-sprint-4-followup` + script `scripts/restore_sprint_4.sh`)。但今次 4.53.0 拎走橙旗嘅備份, 我用咗 empty commit 嘅簡化方式, 大少話要對齊返 Sscript pattern。
+
+凡人話: 之後每個大項目改動前, 必先 set 一個 Sscript 還原點 (3 個 component 一齊), 唔好自己用簡化方式。
+
+### 還原點 4 個 component
+
+| Component | 內容 | 用途 |
+|-----------|------|------|
+| **Annotated tag** | `restore-after-zigzag-4.53.0` (喺 `7a424c58`) | 永久 marker, 唔會被 future commit 改變 |
+| **Backup branch** | `backup-after-zigzag-4.53.0` (喺 `7a424c58`) | 大少可以 `git checkout` 入去睇, 永久 branch 唔會被刪 |
+| **Restore script** | `~/stockpulse/scripts/restore_after_zigzag_4.53.0.sh` (chmod +x) | 一鍵還原: 兩次 confirm 撳 `yes` + `RESET` 即 `git reset --hard $RESTORE_TAG` |
+| **永久 rule** | ARCHITECTURE §15.53 + AGENTS.md | 之後大項目之前必做還原點 set (annotated tag + branch + script) |
+
+### 對應 commit
+
+- `7a424c58` (本還原點, 4.53.0 之後 empty commit, 大少 trigger「再做一次備份和還是點」)
+- `5c89c659` (舊還原點, 4.53.0 之前最後狀態, 拎返橙旗嗰個)
+- `23d0231a` (4.53.0 commit, 拎走橙旗嗰個)
+- `f4adfe05` (本 Sscript commit, 加 script + push tag + branch)
+
+### 還原命令 (一鍵還原)
+
+```bash
+# 還原返 4.53.0 拎走橙旗後狀態 (推薦)
+bash scripts/restore_after_zigzag_4.53.0.sh
+
+# 或者手動 (無 double confirm)
+git reset --hard 7a424c58c7180d9cc4617f1ec2f79484a4a9083d
+
+# 還原返 4.53.0 之前 (拎返橙旗 + 鮮綠線 + P 點 sequence)
+git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
+```
+
+### 永久 rule (對齊 §15.45 Sscript pattern)
+
+- ✅ 之後大項目 (refactor / spec rewrite / framework 升級 / 大少明確 trigger) 必做還原點 set
+- ✅ 還原點必用 Sscript pattern: annotated tag + backup branch + restore script
+- ✅ Restore script 必 double confirm (撳 `yes` + `RESET`) 避免意外
+- ✅ Restore script 必 verify HEAD 對應 tag 啱唔啱 + working tree clean
+- ✅ Restore script 必 `chmod +x` + push tag + branch 去 origin
+- ✅ 對齊 §15.39 「還原備份還原點」pattern
+
+### 教訓 (大少 trigger「現在你這個怎麼不一樣了」)
+
+- 大項目備份之前, 先睇返之前嘅 Sscript pattern, 唔好自己用簡化方式
+- 每次做備份先查 `ls scripts/restore_*.sh` 睇返之前 pattern
+- 對齊 §15.45 永久 rule pattern, 唔好 break pattern
+
+### 對應 commit
+
+- `f4adfe05 chore(scripts): 加 ZigZag 4.53.0 拎走橙旗後還原點 Sscript (大少 8月31日 11:59 trigger 對齊 Sscript pattern) + Spec Sync`
+- 改: `scripts/restore_after_zigzag_4.53.0.sh` (新加 Sscript) + `AGENTS.md` + `ARCHITECTURE.md` + `M1-V22-RESEARCH.md`
+
+對應 commit: 即將 push (Spec Sync §15.53 流程)
+
 

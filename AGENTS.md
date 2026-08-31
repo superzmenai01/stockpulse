@@ -669,6 +669,49 @@ curl -s "http://localhost:18792/api/algorithms/run?algo=zigzag&symbol=HK.00700&p
 
 對應 commit: `chore: 拎走 ZigZag 橙旗 (4.53.0 永久 rule)` (大少 8月31日 11:09 + 11:27 trigger 揀預設方案 + 11:23 備份 trigger)
 
+### ZigZag 4.53.0 Sscript 還原點永久 rule (大少 2026-08-31 11:59 trigger)
+
+**凡人話解釋**: 大少 8月31日 11:59 trigger「對齊 Sscript pattern (推薦)」— 大少發現我啱啱用 empty commit 嘅備份 (5c89c659, 7a424c58) 同之前 8月31日 07:52 嘅 Sscript pattern 唔同,要求對齊 3-component 還原點 pattern (annotated tag + backup branch + restore script)。
+
+**還原點 4 個 component** (對齊 §15.45 Sscript pattern):
+- ✅ **Annotated tag**: `restore-after-zigzag-4.53.0` (喺 `7a424c58`)
+- ✅ **Backup branch**: `backup-after-zigzag-4.53.0` (喺 `7a424c58`)
+- ✅ **Restore script**: `~/stockpulse/scripts/restore_after_zigzag_4.53.0.sh` (chmod +x, double confirm `yes` + `RESET`)
+- ✅ **永久 rule**: ARCHITECTURE §15.53 + AGENTS.md
+
+**永久 rule** (對齊 §15.45 Sscript pattern):
+- ✅ 之後大項目 (refactor / spec rewrite / framework 升級 / 大少明確 trigger) 必做還原點 set
+- ✅ 還原點必用 Sscript pattern: annotated tag + backup branch + restore script
+- ✅ Restore script 必 double confirm (撳 `yes` + `RESET`) 避免意外
+- ✅ Restore script 必 verify HEAD 對應 tag 啱唔啱 + working tree clean
+- ✅ Restore script 必 `chmod +x` + push tag + branch 去 origin
+- ✅ 對齊 §15.39 「還原備份還原點」pattern
+
+**還原命令** (一鍵還原, 對齊 8月31日 01:48 永久 rule):
+```bash
+# 還原返 4.53.0 拎走橙旗後狀態 (推薦)
+bash scripts/restore_after_zigzag_4.53.0.sh
+
+# 或者手動 (無 double confirm)
+git reset --hard 7a424c58c7180d9cc4617f1ec2f79484a4a9083d
+
+# 還原返 4.53.0 之前 (拎返橙旗 + 鮮綠線 + P 點 sequence)
+git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
+```
+
+**對應 commit**:
+- `f4adfe05 chore(scripts): 加 ZigZag 4.53.0 拎走橙旗後還原點 Sscript (大少 8月31日 11:59 trigger 對齊 Sscript pattern) + Spec Sync`
+- 對齊: `scripts/restore_sprint_4.sh` (大少 8月31日 07:52 第一個 Sscript)
+
+**教訓** (大少 trigger「現在你這個怎麼不一樣了」):
+- ✅ **大項目備份之前,先睇返之前嘅 Sscript pattern,唔好自己用簡化方式**
+- ✅ 每次做備份先查 `ls scripts/restore_*.sh` 睇返之前 pattern
+- ✅ 對齊 §15.45 永久 rule pattern,唔好 break pattern
+
+對應 doc: M1-V22-RESEARCH.md 「🔴 大少 trigger #N+3 — ZigZag 4.53.0 Sscript 還原點 (大少 2026-08-31 11:59)」section (即將加)
+
+對應 commit: 即將 push (Spec Sync §15.53 流程)
+
 
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 
