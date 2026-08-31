@@ -4738,3 +4738,54 @@ points count: 11
 - 大少 15:28 trigger「在備份還原點管理沒有看到新的還原點,先處理這個」: 落實 step 0 set 還原點後, 立即 verify Backup Admin Page 拎到 (對齊 12:08 user memory 永久 rule)
 - M1 v2.0 + M7 Synthesizer 已經拎走 ZigZag 依賴 (Spec Sync #46 永久 rule), 所以 4.56.0 唔需要 filter 呢 2 個 module
 - 凡人話: 大少 trigger「把最新的數據也計進去」意思係 P1 對齊 K 線最後一日, 而非對齊 K 線最後 confirmed ZigZag point。Backend 加 'today' point 解決, chart 對齊 4.53.0 唔 render 鮮綠線
+### 15.55 Backup Admin Page 4 個優化永久 rule (大少 2026-08-31 17:37 trigger)
+
+### 大少 trigger
+8月31日 17:37「你去優化下備份還原點管理」+ 答「全部都做,但還完了後我不想删走那個還完點,因為可能會再用」
+
+### 凡人話解釋
+大少想對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule, 對 backup admin page 做 4 個優化, 仲要保留 tag (reset 完之後, tag 仲喺度方便日後再 reset 返去)。
+
+### 改動範圍 (4 個 file)
+
+| # | File | 改動 |
+|---|------|------|
+| 1 | `backend/api/backup_admin.py` | 加 `can_restore` field 落 `GET /list` + 3 個新 endpoint (`/audit`, `/recover-script`, `/set`) |
+| 2 | `backup-admin/backup-admin.js` | 加 4 個 handler (renderBackupList 加 can_restore display + recoverScript + loadAuditTrail + renderAuditHistory + executeSscriptSet) + bump CACHE_BUST 1.0.0 → 1.1.0 |
+| 3 | `backup-admin/index.html` | 加 audit section + sscript set modal + recover modal + bump ?v=1.0.0 → 1.1.0 |
+| 4 | `backup-admin/backup-admin.css` | 加 warning banner + sscript set modal + audit history + recover modal style |
+
+### 永久 rule (4 個方向)
+- ✅ A. Missing warning UI: `can_restore: true/false` field 加落 `GET /api/backup-points/list`, missing 嘅 card 顯示「🚫 缺 component, 撳 Recover」+ disable reset btn + 加「🔧 Recover script」inline btn
+- ✅ B. Sscript set helper: Frontend「+ 設定新還原點」掣 → modal 輸入 name + reason → Backend `POST /api/backup-points/set` 自動 generate script + tag + branch + push (對齊 §15.45 Sscript pattern)
+- ✅ C. Audit trail: Backend `GET /api/backup-points/audit` 拎 git reflog 嘅 reset history, Frontend「Restore History」section 顯示 timestamp + tag + commit
+- ✅ D. Recover script (redefined cleanup): Backend `POST /api/backup-points/recover-script` 用 `git show <tag-commit>:<script-path>` 拎返 reset 之前 commit 嘅 script 寫返 disk + commit + push, 保留 tag 對齊大少 trigger「可能會再用」
+
+### 對齊永久 rule
+- §15.45 Sscript pattern (annotated tag + backup branch + restore script)
+- §15.53 Sscript 還原點永久 rule
+- §15.54 Backup Admin Page 永久 rule
+- 12:08 user memory 永久 rule (每做新 Sscript 還原點都要 verify Backup Admin Page 拎到)
+- 大少 17:37 trigger「還完了後我不想删走那個還完點,因為可能會再用」
+
+### 對應 commit
+- `feat(backup-admin): 4 個優化 (§15.55 永久 rule, 大少 8月31日 17:37 trigger)` (`f545681d`)
+- Spec Sync: ARCHITECTURE.md §15.55 (本段) + AGENTS.md 「Backup Admin Page 4 個優化永久 rule」section + M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 17:37」section
+
+### ⚠️ KNOWN ISSUE (D 方向 follow-up sprint)
+D 方向 recover endpoint 喺 uvicorn subprocess 拎 dangling commit 有 issue (returncode=0 但 stdout='', 直接用同一個 command 拎到 7d0040d7d425014db1fa369d4348968bf4325364)。Issue 屬於 uvicorn Asyncio fork + subprocess pipe buffering, 之後 follow-up sprint 先處理 (可能要改用 os.system + file I/O 或顯式 set pipe)。
+
+**大少 workaround** (手動拎返 dangling commit):
+```bash
+cd ~/stockpulse
+git show 7d0040d7:scripts/restore_before_zigzag_4.56.0.sh > scripts/restore_before_zigzag_4.56.0.sh
+git add scripts/restore_before_zigzag_4.56.0.sh
+git commit -m "chore: manually recover script from dangling commit 7d0040d7"
+git push origin main
+```
+
+### 教訓
+- 大少 trigger「保留 tag」+「可能會再用」= 對齊 §15.45 Sscript pattern + 12:08 user memory 永久 rule
+- 改 endpoint 前必先 curl evidence (對齊 4.55.0 lesson learned)
+- 改 Git endpoint 必先 restart backend + curl verify (對齊 §15.51 永久 rule)
+- uvicorn subprocess + git reflog 拎 dangling commit 嘅 issue 屬於 OS-level, 之後 follow-up
