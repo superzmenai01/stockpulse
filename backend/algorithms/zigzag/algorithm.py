@@ -115,13 +115,23 @@ def _zigzag_normalize_date(kline: Dict[str, Any]) -> str:
 
     對應 frontend: backups/zigzag-frontend-2026-08-20/adapter.mjs:843 _zigzagNormalizeDate
     永久 rule (大少 2026-08-19 10:15): 唔好直接拎 klines[].date, fallback chain
+    永久 rule (大少 2026-08-22 23:20): 對齊 §3.6 + §3.7 永久 rule「Cross-module 統一 date parsing」
+
+    大少 8月31日 22:03 trigger (4.57.2): backend 拎出嚟嘅 date 統一 YYYY-MM-DD, 唔可以有 datetime (e.g. "2026-08-28 00:00:00")
+    對齊 frontend normalizeTime + adapter.mjs dateToTime pattern: `t.split(' ')[0]` 拎 date-only
+    永久 rule: 之後改 algorithm / 拎 date 嗰陣必做 `t.split(' ')[0]` 拎 date-only
     """
-    return (
+    raw = (
         kline.get('time')
         or kline.get('date')
         or kline.get('timestamp')
         or ''
     )
+    if not raw:
+        return ''
+    # 對齊 frontend normalizeTime + adapter.mjs dateToTime: 拎 date-only (YYYY-MM-DD)
+    # frontend pattern: `t.split(' ')[0] + 'T00:00:00Z'`, backend 拎出嚟係 string, 我哋拎 date-only 部分
+    return str(raw).split(' ')[0]
 
 
 # ============================================================
