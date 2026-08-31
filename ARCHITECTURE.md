@@ -4188,3 +4188,122 @@ Sprint 4 改咗 3 個 critical system (KlineCache background thread / OPEN_D_UNA
 ### 對應 commit
 - `test(sprint-4): Sprint 4 Follow-up 完整 test 覆蓋 (18 個新 test) (大少 8月31日 08:12「你幫我做測試」trigger)`
 - Spec Sync: ARCHITECTURE.md §15.48 (本段)
+
+### 15.49 Testing Page ZigZag P 點 Indexing 統一 永久 rule (大少 2026-08-31 09:00 trigger, 4.51.0)
+
+### 大少 trigger
+8月31日 09:00「Zigzag的Point排序從右到左是從P1開始的，現在是從P 2開始，你去查明原因」
+
+### 凡人話解釋
+Testing page 紫色 ZigZag 點 label 應該由右到左 P1, P2, P3, ... 全部紫色 (P1 = 最新紫色 ZigZag 點), 但係 4.49.0 拎返 setMarkers 嗰陣盲目拎返 4.10.0 嗰個 spirit, 紫色 label 由 `idx + 2` 開始 (1 號俾咗鮮綠色 close extension 終點拎咗), 違反大少 8月29日 14:32 P1/P2/P3/P4 永久 rule。
+
+### Root cause
+- `algorithms/AS-03-cycle-detection/adapter.mjs:5245` 紫色 marker label 由 `idx + 2` 開始 (`text: String(idx + 2)`)
+- `algorithms/AS-03-cycle-detection/adapter.mjs:5250-5257` 鮮綠色 close extension 終點 label 係 "1" (4.9.0 規則)
+- 鮮綠色 1 號 marker 喺 `klines[klines.length-1]` (今日 K 線), 但 testing page 預設 visible range = 最近 126 個交易日 (半年, `testing-page.js:1481`), 今日 K 線有時 out-of-range, 鮮綠色字 #00C853 又淺, 大少睇唔到「1」號以為錯咗
+
+### 規則衝突
+- 4.9.0 永久 rule (2026-08-19 11:15)：「1 號 = 鮮綠色 close extension 終點」(4.10.0 spirit)
+- 大少 2026-08-29 14:32 永久 rule：「P1 = 最新紫色 ZigZag 點 (zzp[-1])」— 呢個 rule 改咗 4.9.0 嘅定義
+- 4.49.0 (8月31日 01:59) 拎返 setMarkers 嗰陣, 盲目拎返 4.10.0 嗰個 spirit, 冇 reconcile 兩個 rule 嘅衝突
+
+### 永久 rule (4.51.0 新加, 改寫 4.9.0)
+- ✅ 改寫 4.9.0 永久 rule: 刪除「1 號 = 鮮綠色 close extension 終點」描述
+- ✅ 統一跟大少 2026-08-29 14:32 永久 rule:
+  - **P1 = 最新紫色 ZigZag 點** (verdict.meta.zigzagPoints 倒序後第一個, zzp[-1])
+  - P2 = 第二新, P3 = 第三新, P4 = 第四新 (zzp[-2/-3/-4])
+  - 上升: P1>P3, P2>P4
+  - 下跌: P1<P3, P2<P4
+  - 到頂轉勢: P1>P3 + P2>P4 + ZZ_slope<-3%
+  - 到底轉勢: P1<P3 + P2>P4 + ZZ_slope>+3%
+- ✅ Testing page 紫色 marker label 由 `idx + 2` 改 `idx + 1` (P1, P2, P3, ... 順序)
+- ✅ 鮮綠色 close extension 終點 "1" 號 marker 拎走 (原 4.9.0 規則)
+- ✅ 鮮綠色 close extension 線本身保留 (對齊 4.8.3 永久 rule「趨勢延續」視覺化), 但冇 sequence label
+- ✅ 改 `adapter.mjs` 嗰陣, 必同步 bump 2 個地方 cache bust (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X, 跟 2026-08-09 13:10 永久 rule)
+
+### 凡人話
+撳 showZigzagSequence toggle, 由右到左 P1, P2, P3, ... 全部紫色 circle marker label, 對齊大少 8月29日 trigger。
+
+### 對應 file
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (line 5238-5260): 改 `idx + 2` → `idx + 1` + 拎走 `greenMarkers` block + `allMarkers = purpleMarkers`
+- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.50.0' → '4.51.0' + 4.51.0 永久 rule comment
+- `testing-page/index.html` ?v=2.3.111 → ?v=2.3.112
+- `AGENTS.md` 加新永久 rule section
+- `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` 加新章節
+- Memory (cross-session) Edit line 301 entry + 加 4.51.0 trigger context
+
+### 對應 commit
+- `aa528ff8 fix(testing-page): ZigZag P 點 indexing 統一 (P1 = 紫色 zzp[-1], 拎走鮮綠色 1 號 marker, 4.51.0 永久 rule) (大少 8月31日 09:00 trigger) + Spec Sync`
+- Spec Sync: ARCHITECTURE.md §15.49 (本段)
+
+### 15.50 Testing Page ZigZag 切 Manual Mode 用 localStorage 優先 永久 rule (大少 2026-08-31 09:24 trigger, 4.52.0)
+
+### 大少 trigger
+8月31日 09:24「在Zigzag Threshold 模式 轉手動時沒有跟據輸入而更新，請檢查」
+
+### 凡人話解釋
+大少輸入 manual threshold value (e.g. 8%) 之後切去 manual mode, 紫色線 update 用咗 recent auto 結果 (e.g. 3%) 而唔係佢輸入嘅 8%。呢個係 4.28.0 (2026-08-21 00:02) 切 manual mode handler 嘅邏輯錯誤: 用 recent auto 結果優先, overwrite manual input field。
+
+### Root cause
+- `testing-page/testing-page.js` 切 manual mode handler line 1651-1657 (4.28.0): 用 `displayVal.textContent` 拎 recent auto 結果優先, overwrite `manualInput.value`
+- 大少輸入 8% → `_onManualChange` 觸發 setLocalStorage(8) → 切 manual mode 嗰陣 recent auto = 3% → manual input value 俾 overwrite 變 3% → 紫色線 update 用 3% 錯
+- 大少期望: 切去 manual mode 嗰陣紫色線用佢輸入嘅 8% (因為佢已經明確輸入過)
+
+### 永久 rule (4.52.0 新加, 改寫 4.28.0)
+- ✅ 切 manual mode 嗰陣永遠用 localStorage manual value 優先 (大少手動輸入過嘅 value)
+- ✅ 如果 localStorage 仲係默認 5 (即係從未手動輸入過), fallback 落 recent auto 結果
+- ✅ 永遠唔 overwrite manual input field, 用大少真實手動輸入過嘅 value
+- ✅ 同步 manual input field value 對齊 v (currentOptions.zigzagThreshold)
+- ✅ 對齊 Spec Sync #31 永久 rule: Config UX 模式「自動+手動+自動儲存更新圖表」
+
+### 凡人話
+大少輸入 8% 之後切去 manual mode, 紫色線用 8% update, manual input field 顯示 8% (唔好俾 auto 結果 overwrite)。
+
+### 對應 file
+- `testing-page/testing-page.js` 切 manual mode handler (line 1647-1680): 改用 localStorage 優先, fallback 落 recent auto
+- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.51.0' → '4.52.0' + 4.52.0 永久 rule comment
+- `testing-page/index.html` ?v=2.3.112 → ?v=2.3.113
+- `AGENTS.md` 加新永久 rule section
+- `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` 加新章節
+- Memory (cross-session) Append 4.52.0 永久 rule entry
+
+### 對應 commit
+- `ce2f8cbb fix(testing-page): 切 manual mode 用 localStorage 優先, 唔 overwrite 大少輸入 value (4.52.0 永久 rule) (大少 8月31日 09:24 trigger) + Spec Sync`
+- Spec Sync: ARCHITECTURE.md §15.50 (本段)
+
+### 15.51 Backend Hot-Reload 永久 rule (大少 2026-08-31 11:01 trigger)
+
+### 大少 trigger
+8月31日 11:01「Go」restart backend 之後前端 `/api/algorithms/health/futu` 同 `manual_threshold` 兩個問題即刻解決
+
+### 凡人話解釋
+之前 frontend 4.51.0 / 4.52.0 永久 rule commit 完之後, 大少 reload testing page 撳跑 algorithm 仍然見到 stale 結果 (404 同 manual mode 唔 work), 以為 frontend 嘅 fix 唔 work, 其實 backend uvicorn 仲跑緊 8月30日 18:26 開機嗰陣嘅舊 code, 之後改咗 backend code (4.43.0 run_zigzag, P0-6 health/futu endpoint) 冇 hot-reload, uvicorn 仍然用緊舊 process。
+
+### Root cause
+- Backend uvicorn start command 冇 `--reload` flag (`uvicorn main:app --host 0.0.0.0 --port 18792`)
+- 改 backend code 之後需要 restart 先 work, 但改動同 restart 冇連住
+
+### 永久 rule
+- ✅ 改 backend 之後必 restart backend (`./start.sh`), 唔可以假設 hot-reload
+- ✅ Restart 之前同大少 confirm (8月29日 22:44 永久 rule「所有改動要 confirm」)
+- ✅ Restart 之後用 `curl /api/algorithms/health/futu` 同 `curl /api/algorithms/run?manual_threshold=8` 驗證 backend 真係 load 新 code
+- ✅ 之後 batch / hot-fix 改動時, plan 入面加「記得 restart backend」做 closing step
+- ✅ uvicorn 改用 `--reload` flag 都係一個選項 (但會增加 log noise + Python reload overhead, 一般 dev 環境先用)
+
+### 對應 file
+- start.sh 永久 fix v2 (2026-07-23 18:00): 殺晒 uvicorn + main.py processes + lsof fallback kill port 18792 + sleep 3 + restart
+- AGENTS.md 加新永久 rule section (即將加)
+
+### 對應 commit
+- Spec Sync: ARCHITECTURE.md §15.51 (本段)
+
+### Verify (大少 11:01 trigger 之後)
+| Endpoint | 重啟前 | 重啟後 |
+|----------|--------|--------|
+| `/api/algorithms/health/futu` | 404 | 200 `is_healthy: true` |
+| `/api/algorithms/run?manual_threshold=8` | `threshold: 5.0, mode: None` | `threshold: 8.0, mode: manual, points: 100` |
+| `/api/algorithms/run?manual_threshold=3` | `threshold: 5.0, mode: None` | `threshold: 3.0, mode: manual` (預期) |
+
+### 教訓
+下次懷疑 fix 唔 work, 第一時間 curl backend 確認, 唔好淨係睇 frontend 嘅 cache bust。
+
