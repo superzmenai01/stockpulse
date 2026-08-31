@@ -408,7 +408,18 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   凡人話: 撳 showZigzagSequence toggle, 由右到左 P1, P2, P3, ... 全部紫色 circle, 對齊大少 trigger
 //   大少 trigger 原因: 4.9.0 嗰個「1 號 = 鮮綠線終點」規則同大少 8月29日 P1=zzp[-1] 規則衝突, 紫色由 2 號開始錯
 //   對應 commit (將會 commit): fix(testing-page): ZigZag P 點 indexing 統一 (P1 = 紫色 zzp[-1], 拎走鮮綠色 1 號 marker, 4.51.0 永久 rule)
-const ALGO_CACHE_BUST = '4.51.0';
+//
+// 大少 8月31日 09:24 trigger — 切 manual mode 用 localStorage manual value 優先: ALGO_CACHE_BUST = '4.52.0'
+//   4.52.0 永久 rule (新加, 改寫 4.28.0 切 manual mode 嗰陣用 recent auto 結果嘅邏輯):
+//     ✅ 切 manual mode 嗰陣永遠用 localStorage manual value 優先 (大少手動輸入過嘅 value)
+//     ✅ 如果 localStorage 仲係默認 5 (即係從未手動輸入過), fallback 落 recent auto 結果
+//     ✅ 永遠唔 overwrite manual input field, 用大少真實手動輸入過嘅 value
+//     ✅ 同步 manual input field value 對齊 v (currentOptions.zigzagThreshold)
+//   之前邏輯 (4.28.0): recent auto 結果優先 + overwrite manual input field
+//     → 大少輸入 8% 切 manual 嗰陣紫色線用咗 recent auto 3% 錯 (大少 8月31日 09:24 bug report)
+//   對齊 Spec Sync #31 永久 rule: Config UX 模式「自動+手動+自動儲存更新圖表」
+//   對應 commit (將會 commit): fix(testing-page): 切 manual mode 用 localStorage 優先, 唔 overwrite 大少輸入 value (4.52.0 永久 rule)
+const ALGO_CACHE_BUST = '4.52.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1647,12 +1658,21 @@ document.querySelectorAll('input[name="zigzag-mode"]').forEach(r => {
     } else {
       if (autoDisplay) autoDisplay.style.display = 'none';
       if (manualDisplay) manualDisplay.style.display = '';
-      // manual mode 預設 value = 最近一次 auto 計算結果 (有) 或 localStorage manual value
-      const displayVal = document.getElementById('zigzag-auto-threshold-value');
-      const recentAuto = displayVal ? displayVal.textContent : '--';
-      const v = (recentAuto && recentAuto !== '--')
-        ? parseFloat(recentAuto)
-        : getManualThreshold();
+      // 大少 8月31日 09:24 trigger — 切 manual mode 用 localStorage manual value 優先 (大少手動輸入過嘅 value)
+      //   4.52.0 永久 rule: 永遠唔 overwrite 大少手動輸入嘅 value
+      //   之前邏輯 (4.28.0): 用 recent auto 結果優先, overwrite manual input field
+      //     → 大少輸入 8% 切 manual 嗰陣紫色線用咗 recent auto 3% 錯 (大少 8月31日 09:24 bug report)
+      //   修正: localStorage 默認 5 (跟 LS_KEY_MANUAL_THRESHOLD 默認值一致, 跟 getManualThreshold() return 5 if not set)
+      //     - 如果 localStorage 仲係 5 (即係從未手動輸入過), fallback 落 recent auto 結果
+      //     - 否則用 localStorage (大少手動輸入過嘅 value), 同步 manual input field
+      let v = getManualThreshold();  // localStorage 拎大少手動輸入過嘅 value
+      if (v === 5) {  // DEFAULT_MANUAL = 5 (從未手動輸入過)
+        const displayVal = document.getElementById('zigzag-auto-threshold-value');
+        const recentAuto = displayVal ? displayVal.textContent : null;
+        if (recentAuto && recentAuto !== '--' && !isNaN(parseFloat(recentAuto))) {
+          v = parseFloat(recentAuto);
+        }
+      }
       const manualInput = document.getElementById('zigzag-manual-threshold');
       if (manualInput) manualInput.value = String(v);
       currentOptions.zigzagThreshold = v;

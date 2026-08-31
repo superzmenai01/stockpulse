@@ -599,6 +599,33 @@ K 線 A (peak, e.g. 100元)        K 線 B (跌穿 5% 到 94元, 確認轉勢)
 
 對應 commit: 即將 push (Spec Sync #48 流程)
 
+### ZigZag Threshold 切 manual mode 永久 rule (大少 2026-08-31 09:24, 4.52.0)
+
+**凡人話解釋**: 大少 8月31日 09:24 trigger「Zigzag Threshold 模式 轉手動時沒有跟據輸入而更新，請檢查」— 統一切 manual mode 嗰陣用大少手動輸入過嘅 value 優先，唔好用 recent auto 結果 overwrite 佢輸入嘅 value。
+
+**Root cause** (4.28.0 邏輯衝突):
+- `testing-page/testing-page.js` 切 manual mode handler (line 1651-1657, 4.28.0) 用 recent auto 結果優先 (`displayVal.textContent`)，overwrite `manualInput.value`
+- 大少輸入 8% → `_onManualChange` setLocalStorage(8) → 切 manual mode 嗰陣 recent auto = 3% (auto 計算結果) → manual input value 俾 overwrite 變 3% → 紫色線 update 用 3% 錯
+- 大少期望: 切去 manual mode 嗰陣紫色線用佢輸入嘅 8% (因為佢已經明確輸入過)
+
+**永久 rule** (4.52.0 新加, 改寫 4.28.0 切 manual mode 邏輯):
+- ✅ 切 manual mode 嗰陣永遠用 localStorage manual value 優先 (大少手動輸入過嘅 value)
+- ✅ 如果 localStorage 仲係默認 5 (即係從未手動輸入過), fallback 落 recent auto 結果
+- ✅ 永遠唔 overwrite manual input field, 用大少真實手動輸入過嘅 value
+- ✅ 同步 manual input field value 對齊 v (currentOptions.zigzagThreshold)
+- ✅ 對齊 Spec Sync #31 永久 rule: Config UX 模式「自動+手動+自動儲存更新圖表」
+- ✅ 凡人話: 大少輸入 8% 之後切去 manual mode, 紫色線用 8% update, manual input field 顯示 8% (唔好俾 auto 結果 overwrite)
+
+**對應 file**:
+- `testing-page/testing-page.js` 切 manual mode handler (line 1647-1680): 改用 localStorage 優先, fallback 落 recent auto
+- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.51.0' → '4.52.0' + 4.52.0 永久 rule comment
+- `testing-page/index.html` ?v=2.3.112 → ?v=2.3.113
+
+對應 doc: M1-V22-RESEARCH.md (即將加返 entry)
+
+對應 commit: 即將 push (Spec Sync #48 流程)
+
+
 
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 

@@ -757,3 +757,45 @@ zigzagFlagMarkersRef.current = createSeriesMarkers(zigzagSeries, flagMarkers);
 - `fix(testing-page): ZigZag P 點 indexing 統一 (P1 = 紫色 zzp[-1], 拎走鮮綠色 1 號 marker, 4.51.0 永久 rule)`
 - 改: `adapter.mjs` + `testing-page/testing-page.js` + `testing-page/index.html` + `AGENTS.md` + `M1-V22-RESEARCH.md`
 
+---
+
+## 🟢 大少 trigger #N+1 — ZigZag Threshold 切 manual mode 用 localStorage 優先 (2026-08-31 09:24, 4.52.0)
+
+> **大少 trigger (8月31日 09:24)**: 「在Zigzag Threshold 模式 轉手動時沒有跟據輸入而更新，請檢查」
+
+### 凡人話解釋
+
+大少輸入 manual threshold value (e.g. 8%) 之後切去 manual mode, 紫色線 update 用咗 recent auto 結果 (e.g. 3%) 而唔係佢輸入嘅 8%。
+
+呢個係 4.28.0 (2026-08-21 00:02) 切 manual mode handler 嘅邏輯錯誤: 用 recent auto 結果優先, overwrite manual input field。
+
+### Root cause
+
+- `testing-page/testing-page.js` 切 manual mode handler line 1651-1657 (4.28.0): 用 `displayVal.textContent` 拎 recent auto 結果優先, overwrite `manualInput.value`
+- `_onManualChange` 觸發嗰陣 `setManualThreshold(v)` → localStorage = 8 (大少輸入嘅 value)
+- 切 manual mode 嗰陣 line 1657 overwrite manual input value 變 recent auto 結果 → 紫色線 update 用 recent auto 結果錯
+
+### 永久 rule (大少 8月31日 09:24 trigger — 4.52.0)
+
+- ✅ 切 manual mode 嗰陣永遠用 localStorage manual value 優先 (大少手動輸入過嘅 value)
+- ✅ 如果 localStorage 仲係默認 5 (即係從未手動輸入過), fallback 落 recent auto 結果
+- ✅ 永遠唔 overwrite manual input field, 用大少真實手動輸入過嘅 value
+- ✅ 同步 manual input field value 對齊 v (currentOptions.zigzagThreshold)
+- ✅ 對齊 Spec Sync #31 永久 rule: Config UX 模式「自動+手動+自動儲存更新圖表」
+
+### 改動 file
+
+| File | Line | 改動 |
+|------|------|------|
+| `testing-page/testing-page.js` | 1651-1675 | 切 manual mode handler: 用 localStorage 優先 (v = getManualThreshold()), 否則 fallback 落 recent auto |
+| `testing-page/testing-page.js` | 402 | ALGO_CACHE_BUST '4.51.0' → '4.52.0' + 4.52.0 永久 rule comment |
+| `testing-page/index.html` | 10, 194 | ?v=2.3.112 → ?v=2.3.113 |
+| `AGENTS.md` | (新加) | 加新永久 rule section |
+| `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` | (本文) | 加呢個章節 (4.52.0 永久 rule 同步) |
+
+### 對應 commit (即將 push)
+
+- `fix(testing-page): 切 manual mode 用 localStorage 優先, 唔 overwrite 大少輸入 value (4.52.0 永久 rule)`
+- 改: `testing-page/testing-page.js` + `testing-page/index.html` + `AGENTS.md` + `M1-V22-RESEARCH.md`
+
+
