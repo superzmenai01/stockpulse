@@ -4789,3 +4789,59 @@ git push origin main
 - 改 endpoint 前必先 curl evidence (對齊 4.55.0 lesson learned)
 - 改 Git endpoint 必先 restart backend + curl verify (對齊 §15.51 永久 rule)
 - uvicorn subprocess + git reflog 拎 dangling commit 嘅 issue 屬於 OS-level, 之後 follow-up
+
+### 15.57 M1 Console Log 加 Threshold % + 獨發點 (Trigger 確認點) 永久 rule (大少 2026-08-31 17:42 修改版 20:51 + 20:57 trigger, 4.57.0)
+
+### 大少 trigger
+8月31日 17:42「優化 zigzag. 在 console Log 的 zigzag 10 P 點的上邊加入 Threshold 的 %數值, 要顯示出是用了那個數值來計 zigzag. 2. 在那 P1 - P 10 加多兩個資訊, 是那日什麼價格 Trigger 到 ZigZag 的」+ 20:51「我不是要 Trigger 上下限, 我要的是, 例如在 P2 是 Trough 那是因為在之後是反方向走勢去到 Threshold % 就能肯定了 P2 是 Through, 這個我叫他做獨發點, 我就是想要這個獨發點的日期和股價」+ 20:57 確認「獨發點股價對齊 4.15.0 永久 rule 拎 1 個價 (trough 拎嗰日 high, peak 拎嗰日 low)」
+
+### 凡人話解釋
+大少 17:42 嘅 trigger 1 想要喺 P1-P10 標題上邊見到「用咗咩 % 數值計呢個 ZigZag」, 凡人話: 「個 ZigZag 線係基於咩 threshold 畫出嚟」。trigger 2 想要 P1-P10 每行加「嗰日咩價 trigger 到 ZigZag」, 但大少 20:51 修正方向: 唔係 P point 自己嗰日嘅 high / low (即係所謂「trigger 上下限」), 而係「之後反方向走勢去到 threshold % 確認前一個 point 嗰個 K 線」(大少叫「獨發點」) 嘅日期同股價。
+
+例如 P2 係 Trough, 之後升到 +threshold % 嗰一日就係 P2 嘅獨發點 (即係「嗰一日確認 P2 係 Trough」), 大少要呢個獨發點嘅日期同股價。
+
+### 改動範圍 (3 個 file)
+
+| # | File | 改動 |
+|---|------|------|
+| 1 | `backend/algorithms/zigzag/algorithm.py` | `calculate_zigzag` 6 個 `result.append({...})` 全部加 3 個 field (`triggerIndex` / `triggerDate` / `triggerPrice`) + 改 docstring `Returns` 段 |
+| 2 | `testing-page/testing-page.js` | `ALGO_CACHE_BUST` 4.56.0 → 4.57.0 + `_formatZigZagLatestPointsForDebug` 改 signature 加 threshold + thresholdMode + Mini-table 4 欄變 6 欄 + 標題上邊加 1 行 + `fetchAndInjectBackendZigZag` 多 inject `zigzagThresholdMode` + `renderDebugPanel` 傳 threshold + mode 落 helper |
+| 3 | `testing-page/index.html` | bump `?v=2.3.116` → `2.3.117` (2 個地方: CSS line 10 + JS line 184) |
+
+### 永久 rule (對齊 4.15.0 + 4.43.0 + 4.56.0 + §15.51 + §15.46)
+- ✅ Backend `calculate_zigzag` 每個 point dict 必加 3 個 field:
+  - `triggerIndex`: 獨發點 K 線 index (即係 algorithm 入面 `i`, 達到 threshold 嗰個 K 線)
+  - `triggerDate`: 獨發點 K 線日期 (`_zigzag_normalize_date(klines[triggerIndex])`)
+  - `triggerPrice`: 對齊 4.15.0 永久 rule, trough 拎嗰日 K 線 high (升到 high 先 confirm), peak 拎嗰日 K 線 low (跌到 low 先 confirm)
+- ✅ 第一個 point (起點, 冇 trigger): trigger 設返自己 (index=0, date=klines[0].date, price=klines[0].low)
+- ✅ 對齊 4.56.0 精神「加今日 close 做 P1」: 最後 ongoing point 拎 K 線最後 close 做 trigger 價 (K 線行緊, 仲未 trigger 5% 變動)
+- ✅ Frontend `_formatZigZagLatestPointsForDebug` 必加 2 個參數: `threshold` + `thresholdMode`
+- ✅ Mini-table header 必加 2 個 column: 「獨發點日期」+ 「獨發點股價」
+- ✅ Mini-table title 上邊必加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
+- ✅ `renderDebugPanel` call helper 嗰陣必傳 `verdict.meta?.zigzagThreshold` + `verdict.meta?.zigzagThresholdMode`
+- ✅ `fetchAndInjectBackendZigZag` 必 inject `lastVerdict.meta.zigzagThresholdMode = thresholdMode`
+- ✅ Frontend fallback (4.18.0 拎走): 唔適用, backend 拎唔到 verdict.meta.zigzagPoints 永遠 undefined, table 顯示「冇 points」
+- ✅ Backend 改後必 restart backend (§15.51 hot-reload 永久 rule)
+- ✅ Testing page 改後必同步 bump:
+  - testing-page.js 嘅 `ALGO_CACHE_BUST` (4.56.0 → 4.57.0)
+  - testing-page/index.html 嘅 `?v=2.3.116` → `2.3.117` (2 個地方)
+- ✅ Edge case: triggerIndex / triggerDate / triggerPrice 拎唔到 → 顯示「(?)」, 唔 crash
+
+### 凡人話
+大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價, 標題上邊見到「🔧 Threshold: X.XX% (mode: auto|manual)」, 唔使再 scroll 開 DevTools console 拎 raw data。
+
+### 對齊永久 rule
+- 4.15.0「之字拎 point 同 trigger 都用 high/low」(triggerPrice 拎 high/low 對應 rule)
+- 4.43.0「ZigZag 全部 backend 計」(trigger 3 個 field 由 backend inject, frontend 拎用)
+- 4.56.0「加今日 close 做 P1」(最後 ongoing point 拎 close)
+- §15.51 Backend hot-reload (改 algorithm.py 必 restart backend)
+- §15.46 testing-page cache bust sync (改 testing-page.js 必同步 bump ALGO_CACHE_BUST + ?v=)
+
+### 對應 commit
+- 即將 push (`feat(zigzag-console): 加 Threshold % + 獨發點 (Trigger 確認點) 顯示 (4.57.0)`)
+- Spec Sync: ARCHITECTURE.md §15.57 (本段) + AGENTS.md 「ZigZag 獨發點 (Trigger 確認點) + Threshold % 顯示 永久 rule」section + M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 17:42」section
+
+### 教訓
+- 大少 20:51 trigger「不是木山山心要 Trigger 上下限」反映: 凡人話解釋 AI 對 trigger 嘅理解可能同大少唔同, AI 應以 K 線時序 + algorithm 入面真正 trigger 嗰個 index (`i`) 為主, 唔好以為 trigger 即係 P point 嗰日 high / low
+- 永久 rule: 改 algorithm / UI display 之前, 必先 read algorithm 源碼拎 evidence 確認 trigger 邏輯, 對齊 4.55.0 lesson learned「改 array sort / iterate 邏輯之前, 必先用 curl / test script 拎 evidence」
+- 大少 20:57 確認「對齊 4.15.0 永久 rule 拎 1 個價」反映: 大少對 trigger 拎 1 個價 vs 2 個價有明確偏好, AI 唔好自己決定, 必先問大少 (對齊 8月29日 22:44 永久 rule「所有改動要 confirm」)

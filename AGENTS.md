@@ -844,6 +844,69 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 對應永久 rule: 4.43.0 ZigZag 全部 backend 計 + 4.53.0 拎走鮮綠線 + §15.45 Sscript pattern + §15.51 Backend hot-reload
 
 
+### ZigZag 獨發點 (Trigger 確認點) + Threshold % 顯示 永久 rule (大少 2026-08-31 17:42 修改版 20:51 + 20:57, 4.57.0)
+
+**凡人話解釋**: 大少 17:42 trigger「優化 zigzag. 在 console Log 的 zigzag 10 P 點的上邊加入 Threshold 的 %數值, 要顯示出是用了那個數值來計 zigzag. 2. 在那 P1 - P 10 加多兩個資訊, 是那日什麼價格 Trigger 到 ZigZag 的」+ 20:51 trigger 修正方向「我不是要 Trigger 上下限, 我要的是, 例如在 P2 是 Trough 那是因為在之後是反方向走勢去到 Threshold % 就能肯定了 P2 是 Through, 這個我叫他做獨發點, 我就是想要這個獨發點的日期和股價」+ 20:57 確認「獨發點股價對齊 4.15.0 永久 rule 拎 1 個價 (trough 拎嗰日 high, peak 拎嗰日 low)」。
+
+凡人話「大少所講『獨發點』定義」:
+- P2 係 Trough 嘅原因: 唔係因為 P2 嗰日嘅 low, 而係因為**之後**反方向走勢 (即係升) 去到 threshold %, 所以 P2 先至肯定係 Trough
+- 嗰個「之後升到 threshold % 確認 P2 嘅嗰一日 K 線」就係「獨發點」
+- 反過來: Peak 嘅獨發點 = 之後跌到 -threshold % 嗰一日 K 線
+
+**改動 (4.57.0)**:
+
+1. **Backend** (`backend/algorithms/zigzag/algorithm.py` `calculate_zigzag`):
+   - 6 個 `result.append({...})` 全部加 3 個 field (`triggerIndex` / `triggerDate` / `triggerPrice`)
+   - `triggerIndex`: 獨發點 K 線 index (即係 algorithm 入面 `i`, 達到 threshold 嗰個 K 線)
+   - `triggerDate`: 獨發點 K 線日期 (`_zigzag_normalize_date(klines[triggerIndex])`)
+   - `triggerPrice`: 對齊 4.15.0 規則拎嗰個 K 線 high (trough) / low (peak)
+   - 第一個 point (起點, 冇 trigger): trigger 設返自己 (index=0, date=klines[0].date, price=klines[0].low)
+   - 最後 ongoing point: 對齊 4.56.0 精神, 拎 K 線最後 close 做 trigger 價
+   - Docstring `Returns` 段改埋: `list of {date, value, type, index, triggerIndex, triggerDate, triggerPrice}`
+
+2. **Frontend** (`testing-page/testing-page.js`):
+   - `_formatZigZagLatestPointsForDebug` 改 signature: 加 `threshold` + `thresholdMode` 2 個參數
+   - Mini-table header 由 4 欄變 6 欄: 加「獨發點日期」+ 「獨發點股價」2 個 column
+   - 標題上邊加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
+   - `renderDebugPanel` call helper 嗰陣必傳 `verdict.meta?.zigzagThreshold` + `verdict.meta?.zigzagThresholdMode || '?'`
+   - `fetchAndInjectBackendZigZag` 多 inject `lastVerdict.meta.zigzagThresholdMode = thresholdMode`
+   - Frontend fallback (4.18.0 拎走): 唔適用, backend 拎唔到 verdict.meta.zigzagPoints 永遠 undefined, table 顯示「冇 points」
+
+3. **Cache bust**:
+   - `testing-page.js` bump `ALGO_CACHE_BUST` 4.56.0 → 4.57.0 (4.56.0 已經 push 咗 Sscript 還原點 commit 1fca411b, 我哋用 4.57.0 避免撞)
+   - `testing-page/index.html` bump `?v=2.3.116` → `2.3.117` (2 個地方: CSS line 10 + JS line 184)
+
+**永久 rule**:
+- ✅ Backend `calculate_zigzag` 每個 point dict 必加 3 個 field (對齊 4.15.0 + 4.56.0 規則):
+  - `triggerIndex`: 獨發點 K 線 index (即係 algorithm 入面 `i`, 達到 threshold 嗰個 K 線)
+  - `triggerDate`: 獨發點 K 線日期 (`_zigzag_normalize_date(klines[triggerIndex])`)
+  - `triggerPrice`: 對齊 4.15.0 永久 rule, trough 拎嗰日 K 線 high (升到 high 先 confirm), peak 拎嗰日 K 線 low (跌到 low 先 confirm)
+- ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, Trough (low) trigger → 拎嗰日 K 線 `high`, Peak (high) trigger → 拎嗰日 K 線 `low`
+- ✅ 對齊 4.56.0 精神「加今日 close 做 P1」: 最後 ongoing point 拎 K 線最後 close 做 trigger 價 (K 線行緊, 仲未 trigger 5% 變動)
+- ✅ 第一個 point (起點, 冇 trigger): trigger 設返自己 (index=0, date=klines[0].date, price=klines[0].low)
+- ✅ Frontend `_formatZigZagLatestPointsForDebug` 必加 2 個參數: `threshold` + `thresholdMode`
+- ✅ Mini-table header 必加 2 個 column: 「獨發點日期」+ 「獨發點股價」
+- ✅ Mini-table title 上邊必加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
+- ✅ `renderDebugPanel` call helper 嗰陣必傳 `verdict.meta?.zigzagThreshold` + `verdict.meta?.zigzagThresholdMode`
+- ✅ `fetchAndInjectBackendZigZag` 必 inject `lastVerdict.meta.zigzagThresholdMode = thresholdMode`
+- ✅ Backend 改後必 restart backend (§15.51 hot-reload 永久 rule)
+- ✅ Testing page 改後必同步 bump:
+  - testing-page.js 嘅 `ALGO_CACHE_BUST` (4.56.0 → 4.57.0)
+  - testing-page/index.html 嘅 `?v=2.3.116` → `2.3.117` (2 個地方)
+- ✅ 凡人話: 獨發點 (trigger confirm 嗰個 K 線) 唔等於 P point 自己嗰日, 兩者嘅 index 唔同
+  - 例如 P2 (trough) 喺 8月15日, 獨發點 (升到 +threshold) 可能喺 8月22日
+  - 對齊 K 線時序, trigger 一定係 P point 之後 (因為要「之後反方向」先 confirm)
+- ✅ Edge case: triggerIndex / triggerDate / triggerPrice 拎唔到 → 顯示「(?)」, 唔 crash
+
+**凡人話**: 大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價, 標題上邊見到「🔧 Threshold: X.XX% (mode: auto|manual)」, 唔使再 scroll 開 DevTools console 拎 raw data。
+
+對應 doc: ARCHITECTURE.md §15.56
+
+對應 commit: 即將 push (4.57.0 fix + Spec Sync 流程)
+
+對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.56.0 加今日 close 做 P1 + §15.51 Backend hot-reload + §15.46 testing-page cache bust sync
+
+
 ### Backup Admin Page 4 個優化永久 rule (大少 2026-08-31 17:37 trigger, §15.55)
 
 **凡人話解釋**: 大少 17:37 trigger「全部都做,但還完了後我不想删走那個還完點,因為可能會再用」— 對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule, 對 backup admin page 做 4 個優化 (missing warning UI + Sscript set helper + audit trail + recover script)。
