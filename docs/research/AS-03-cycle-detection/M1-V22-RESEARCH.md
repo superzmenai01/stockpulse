@@ -950,4 +950,83 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 
 對應 commit: 即將 push (Spec Sync §15.53 流程)
 
+---
+
+## 🟢 大少 trigger #N+4 — Backup Admin Page (大少 2026-08-31 12:00 trigger)
+
+> **大少 trigger (8月31日 12:00)**: 「你去做一個新Page,係比我管理所有一鍵還原的備份,要有備份資料和備份的原因,如果我想還原我可以查看後簡單話你知就可以做到」
+>
+> **大少 trigger (8月31日 12:03)**: 揀「跟 testing-page 風格 (推薦)」 + 「Double confirm modal + 撳 yes (推薦)」
+
+### 凡人話解釋
+
+大少想統一管理所有備份點,睇到每個備份嘅 metadata (commit hash, 日期, 原因) 同揀邊個做一鍵還原。對齊 §15.45 Sscript pattern (annotated tag + backup branch + restore script),Backend 拎所有備份,Frontend 顯示 list + double confirm modal 做還原。
+
+### 改動範圍 (5 個 file)
+
+| # | File | 改動 |
+|---|------|------|
+| 1 | `backend/api/backup_admin.py` | 新加 endpoint: `GET /api/backup-points/list` 拎所有備份 list, `POST /api/backup-points/restore` 揀 tag 跑對應 restore script |
+| 2 | `backend/main.py` | Register `backup_admin_router` 落 FastAPI app |
+| 3 | `backup-admin/index.html` | 新加 Page UI: header + 載入掣 + 備份 list container + double confirm modal + progress modal + footer (跟 testing-page 風格) |
+| 4 | `backup-admin/backup-admin.js` | JS: loadBackupList + renderBackupList + showRestoreConfirm (double modal) + executeRestore (POST + 顯示 output) + event listeners |
+| 5 | `backup-admin/backup-admin.css` | CSS: 備份 card layout + modal 樣式 + status banner + badge 配色 (testing-page 風格) |
+
+### API endpoint shape
+
+#### `GET /api/backup-points/list`
+- 掃 `refs/tags/restore-*` + `refs/heads/backup-*` + `scripts/restore_*.sh`
+- Dedup by commit hash, combine tag + branch + script 入同一個 point
+- Sort by date desc
+- Return: `{ ok, points: [{ name, tag, branch, commit, commit_short, date, reason_short, reason_long, script_path, has_script, missing }], script_count, scripts }`
+
+#### `POST /api/backup-points/restore`
+- Body: `{ "tag": "restore-after-zigzag-4.53.0", "confirm": "RESET" }`
+- 兩層 confirm 跟 Sscript pattern: backend 驗 `confirm == "RESET"` + frontend modal 撳 yes 才發 request
+- 跑對應 `scripts/restore_<name>.sh`, auto input `"yes\nRESET\n"` 落 stdin
+- Return: `{ ok, tag, commit, script, returncode, stdout, stderr }`
+
+### Frontend UX (大少 8月31日 12:03 揀 double confirm modal + 撳 yes)
+- 撳「🔄 載入備份 list」→ fetch API → render card list
+- 每個 card: 名字 (優先 tag) + 日期 + commit_short + badge (tag/branch/script/reason) + reason_long box
+- 撳「⚠️ 還原到呢個備份」掣 → double confirm modal 顯示警告 + command preview
+- 撳「確認還原 (RESET)」才發 request → progress modal 顯示 stdout / stderr
+- Esc 取消 modal
+
+### 永久 rule
+- ✅ 對齊 §15.45 Sscript pattern (annotated tag + backup branch + restore script)
+- ✅ 對齊 §15.39 還原備份還原點 pattern
+- ✅ 兩層 confirm 防止意外: frontend modal + backend 驗 "RESET"
+- ✅ Backend 用 `_resolve_commit_from_ref` peel annotated tag, dedup by commit hash
+- ✅ Backend `_scan_restore_scripts` 拎 EXPECTED_HEAD 配對 commit
+- ✅ Frontend auto input `"yes\nRESET\n"` 落 stdin, 跟 Sscript double confirm 對齊
+- ✅ Restore script timeout 60s
+- ✅ UI 對齊 testing-page 風格 (跟 zigzag-testing/), simple HTML + JS + CSS
+- ✅ 對應 8月29日 22:44 永久 rule「所有改動要 confirm」: 大少 12:00 + 12:03 trigger 明確揀 options
+
+### Curl verify (8月31日 12:08, 對齊 §15.51 Backend hot-reload 永久 rule)
+```bash
+curl -s "http://localhost:18792/api/backup-points/list"
+```
+✅ ok: True
+✅ points count: 2 (restore-after-zigzag-4.53.0 + restore-before-sprint-4-followup)
+✅ script count: 2
+✅ 全部有 tag + branch + script (missing: [])
+
+### 對應 file
+- `backend/api/backup_admin.py` (新加, 12KB)
+- `backend/main.py` (加 import + include_router)
+- `backup-admin/index.html` (新加, 3.7KB)
+- `backup-admin/backup-admin.js` (新加, 8.7KB)
+- `backup-admin/backup-admin.css` (新加, 7KB)
+
+### 對應 commit
+- `chore: 加 Backup Admin Page (§15.54 永久 rule, 大少 8月31日 12:00 trigger) (跟 testing-page 風格 + double confirm modal) + Spec Sync`
+- Spec Sync: ARCHITECTURE.md §15.54 + AGENTS.md + M1-V22-RESEARCH.md
+
+### 教訓
+- 之後大項目改動, 必先 set Sscript 還原點 (跟 §15.45 永久 rule)
+- Backup Admin Page 自動 scan git tags + branches + scripts, 唔需要人手 update
+- 之後新增備份 script, 必 set 對應 annotated tag (`restore-xxx`) + backup branch (`backup-xxx`), 跟 Sscript pattern
+
 

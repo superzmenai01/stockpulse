@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>備份還原點管理 — StockPulse</title>
+  <link rel="stylesheet" href="backup-admin.css?v=1.0.0">
+</head>
+<body>
+  <div class="container">
+    <!-- 大少 2026-08-31 12:00 trigger — 備份還原點管理 Page (跟 testing-page 風格) -->
+    <!-- 對齊 §15.45 永久 rule Sscript pattern (annotated tag + backup branch + restore script) -->
+    <header>
+      <h1>📦 備份還原點管理</h1>
+      <p class="subtitle">一鍵還原所有備份點 (對齊 §15.45 Sscript pattern)</p>
+    </header>
+
+    <!-- 狀態列 (大少 8月31日 11:01 永久 rule「Backend hot-reload」) -->
+    <div id="status-banner" class="status-banner"></div>
+
+    <!-- 備份 list (大少撳 load 按鈕載入) -->
+    <section class="actions">
+      <button id="load-btn" class="primary-btn">🔄 載入備份 list</button>
+      <button id="refresh-btn" class="secondary-btn">🔃 手動刷新</button>
+      <span class="meta-info">
+        <span id="last-load-time">未載入</span>
+      </span>
+    </section>
+
+    <!-- 備份 list container -->
+    <section id="backup-list-container">
+      <p class="empty-state">👆 撳「載入備份 list」拎所有備份還原點</p>
+    </section>
+
+    <!-- Footer info -->
+    <footer>
+      <hr>
+      <details>
+        <summary>🛠️ 永久 rule §15.45 Sscript pattern 細節</summary>
+        <p>每個備份點包含 3 個 component:</p>
+        <ol>
+          <li><strong>Annotated tag</strong> (e.g. <code>restore-after-zigzag-4.53.0</code>) — 永久 marker, 唔會被 future commit 改變</li>
+          <li><strong>Backup branch</strong> (e.g. <code>backup-after-zigzag-4.53.0</code>) — 大少可以 <code>git checkout</code> 入去睇</li>
+          <li><strong>Restore script</strong> (e.g. <code>scripts/restore_after_zigzag_4.53.0.sh</code>) — 一鍵還原, double confirm 撳 <code>yes</code> + <code>RESET</code></li>
+        </ol>
+        <p>對齊永久 rule §15.39「還原備份還原點」pattern + §15.45 8月31日 07:52 Sscript pattern (大少 8月31日 11:59 trigger 對齊)。</p>
+      </details>
+    </footer>
+  </div>
+
+  <!-- Double confirm modal (大少 8月31日 11:59 trigger 揀 double confirm modal + 撳 yes) -->
+  <div id="confirm-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2>⚠️ 確認還原到 <span id="modal-tag-name"></span>?</h2>
+      <div class="warning">
+        <p><strong>此 action 會 destroy main 上面所有新 commit</strong> (除咗呢個備份點之後嘅 commit)。</p>
+        <p>如果想保留之後嘅改動, 請先 <code>git stash</code> / <code>git branch</code> 留底, 然後再跑還原。</p>
+        <p>還原之後, tag + branch 仍然存在, 可以用 <code>git checkout &lt;tag&gt;</code> 切返去看。</p>
+      </div>
+      <div class="command-preview">
+        <strong>還原 command:</strong>
+        <pre id="modal-command">bash scripts/restore_...</pre>
+      </div>
+      <div class="modal-actions">
+        <button id="modal-cancel-btn" class="cancel-btn">取消</button>
+        <button id="modal-confirm-btn" class="danger-btn">確認還原 (RESET)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore progress modal -->
+  <div id="progress-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2>🔄 還原中...</h2>
+      <pre id="progress-output" class="progress-output">啟動中...</pre>
+      <div class="modal-actions">
+        <button id="progress-close-btn" class="cancel-btn" disabled>關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="backup-admin.js?v=1.0.0"></script>
+</body>
+</html>

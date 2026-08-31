@@ -712,6 +712,49 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 
 對應 commit: 即將 push (Spec Sync §15.53 流程)
 
+### Backup Admin Page 永久 rule (大少 2026-08-31 12:00 trigger)
+
+**凡人話解釋**: 大少 8月31日 12:00 trigger「你去做一個新Page,係比我管理所有一鍵還原的備份,要有備份資料和備份的原因,如果我想還原我可以查看後簡單話你知就可以做到」— 統一管理所有備份點,睇到 metadata (commit hash, 日期, 原因) 同揀邊個做一鍵還原。
+
+**改動範圍** (5 個 file):
+- ✅ `backend/api/backup_admin.py` (新加 12KB) — `GET /api/backup-points/list` 拎所有備份 list, `POST /api/backup-points/restore` 揀 tag 跑對應 restore script
+- ✅ `backend/main.py` (加 import + include_router)
+- ✅ `backup-admin/index.html` (新加 3.7KB) — Page UI: header + 載入掣 + 備份 list container + double confirm modal + progress modal
+- ✅ `backup-admin/backup-admin.js` (新加 8.7KB) — loadBackupList + renderBackupList + showRestoreConfirm + executeRestore + event listeners
+- ✅ `backup-admin/backup-admin.css` (新加 7KB) — 備份 card layout + modal 樣式 + status banner + badge 配色
+
+**API endpoint shape**:
+- `GET /api/backup-points/list` 掃 `refs/tags/restore-*` + `refs/heads/backup-*` + `scripts/restore_*.sh`, dedup by commit hash, 拎 metadata
+- `POST /api/backup-points/restore` 兩層 confirm: backend 驗 `confirm == "RESET"` + frontend modal 撳 yes 才發 request, auto input `"yes\nRESET\n"` 落 stdin
+
+**Frontend UX** (大少 8月31日 12:03 揀 double confirm modal + 撳 yes):
+- 撳「🔄 載入備份 list」→ fetch API → render card list
+- 每個 card: 名字 (優先 tag) + 日期 + commit_short + badge (tag/branch/script/reason) + reason_long box
+- 撳「⚠️ 還原到呢個備份」掣 → double confirm modal 顯示警告 + command preview
+- 撳「確認還原 (RESET)」才發 request → progress modal 顯示 stdout / stderr
+- Esc 取消 modal
+
+**永久 rule** (對齊 §15.45 Sscript pattern):
+- ✅ 對齊 §15.39 還原備份還原點 pattern
+- ✅ 兩層 confirm 防止意外: frontend modal + backend 驗 "RESET"
+- ✅ Backend 用 `_resolve_commit_from_ref` peel annotated tag, dedup by commit hash
+- ✅ Backend `_scan_restore_scripts` 拎 EXPECTED_HEAD 配對 commit
+- ✅ Frontend auto input `"yes\nRESET\n"` 落 stdin, 跟 Sscript double confirm 對齊
+- ✅ Restore script timeout 60s
+- ✅ UI 對齊 testing-page 風格 (跟 zigzag-testing/), simple HTML + JS + CSS
+- ✅ 之後新增備份必 set Sscript pattern (tag + branch + script), Backup Admin Page 自動顯示
+
+**Curl verify** (8月31日 12:08):
+- ✅ `GET /api/backup-points/list` 拎到 2 個備份 (restore-after-zigzag-4.53.0 + restore-before-sprint-4-followup)
+- ✅ 全部 missing: [] (有齊 tag + branch + script)
+- ✅ reason_short + reason_long 都拎到 (annotated tag message)
+
+對應 doc: ARCHITECTURE.md §15.54 (本段), M1-V22-RESEARCH.md 即將加
+
+對應 commit: 即將 push (Spec Sync §15.54 流程)
+
+對應 Sscript 永久 rule: §15.45 + §15.53
+
 
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 
