@@ -699,3 +699,61 @@ zigzagFlagMarkersRef.current = createSeriesMarkers(zigzagSeries, flagMarkers);
 
 - 即將 push (跟 Spec Sync 旗仔 marker commit 同步)
 
+---
+
+## 🟢 大少 trigger #N — ZigZag P 點 sequence label 排序統一 (2026-08-29 14:32 + 8月31日 09:00)
+
+> **大少 trigger (2026-08-29 14:32)**: 大少附 K 線圖, 定義 P1 = 最新紫色 ZigZag 點 (zzp[-1]), P2 = 第二新, P3 = 第三新, P4 = 第四新
+>
+> **大少 trigger (8月31日 09:00)**: 「Zigzag的Point排序從右到左是從P1開始的，現在是從P 2開始，你去查明原因」
+
+### 凡人話解釋
+
+大少 8月29日 trigger 永久 rule 定義 P1 = 最新紫色 ZigZag 點, 用嚟做 M1 sub-scenario trigger (強上升/強下跌/到頂/到底)。但 testing page 紫色 marker label 一直由 2 號開始, 因為 1 號俾咗鮮綠色 close extension 終點拎咗 (4.9.0 永久 rule 2026-08-19)。
+
+呢個係 **規則衝突**:
+- 4.9.0 永久 rule (2026-08-19 11:15)：「1 號 = 鮮綠色 close extension 終點」(4.10.0 spirit)
+- 大少 2026-08-29 14:32 永久 rule：「P1 = 最新紫色 ZigZag 點 (zzp[-1])」
+
+8月31日 01:59 拎返 setMarkers 嗰陣, 4.49.0 永久 rule 盲目拎返 4.10.0 嗰個 spirit, 冇 reconcile 兩個 rule 嘅衝突, 紫色 marker label 繼續由 `idx + 2` 開始。
+
+### Root cause
+
+- `algorithms/AS-03-cycle-detection/adapter.mjs:5245` (4.49.0 拎返 setMarkers 嗰個 block): `text: String(idx + 2)` 紫色由 2 號開始
+- `algorithms/AS-03-cycle-detection/adapter.mjs:5250-5257` 鮮綠色 close extension 終點 label 係 "1" (4.9.0 rule)
+- `algorithms/AS-03-cycle-detection/adapter.mjs:5260` `const allMarkers = [...greenMarkers, ...purpleMarkers]`, 1 號 (鮮綠色) 排最前
+- 鮮綠色 "1" 號 marker 喺 `klines[klines.length-1]` (今日 K 線), 但 testing page 預設 visible range = 最近 126 個交易日 (半年, `testing-page.js:1481`), 今日 K 線有時 out-of-range, 鮮綠色字 #00C853 又淺, 大少睇唔到「1」號以為錯咗
+
+### 永久 rule (大少 8月31日 09:00 trigger — 4.51.0)
+
+- ✅ **改寫 4.9.0 永久 rule**: 刪除「1 號 = 鮮綠色 close extension 終點」描述
+- ✅ **統一跟大少 2026-08-29 14:32 永久 rule**:
+  - P1 = 最新紫色 ZigZag 點 (verdict.meta.zigzagPoints 倒序後第一個, zzp[-1])
+  - P2 = 第二新, P3 = 第三新, P4 = 第四新 (zzp[-2/-3/-4])
+  - 上升: P1>P3, P2>P4
+  - 下跌: P1<P3, P2<P4
+  - 到頂轉勢: P1>P3 + P2>P4 + ZZ_slope<-3%
+  - 到底轉勢: P1<P3 + P2>P4 + ZZ_slope>+3%
+- ✅ **鮮綠色 close extension 線** (代表「趨勢延續到今日 close」) 仍然 render (對齊 4.8.3 永久 rule), 但冇 sequence label
+- ✅ **testing page 紫色 marker label** 由 `idx + 2` 改 `idx + 1` (P1, P2, P3, ... 順序)
+- ✅ **鮮綠色 close extension 終點 "1" 號 marker 拎走** (原 4.9.0 規則)
+- ✅ **改 `adapter.mjs` 嗰陣, 必同步 bump 2 個地方 cache bust** (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X)
+- ✅ **凡人話: 撳 showZigzagSequence toggle, 由右到左 P1, P2, P3, ... 全部紫色 circle, 對齊大少 8月29日 trigger**
+
+### 改動 file
+
+| File | Line | 改動 |
+|------|------|------|
+| `algorithms/AS-03-cycle-detection/adapter.mjs` | 5238-5260 | `idx + 2` → `idx + 1`, 拎走 `greenMarkers` block, `allMarkers = purpleMarkers` |
+| `algorithms/AS-03-cycle-detection/adapter.mjs` | 5168-5169 | comment update 拎走「鮮綠色 1 號 marker」描述, 加 4.51.0 永久 rule 解釋 |
+| `algorithms/AS-03-cycle-detection/adapter.mjs` | 5283 | console.log 拎走 "+ 鮮綠色: greenMarkers.length" |
+| `testing-page/testing-page.js` | 402 | ALGO_CACHE_BUST '4.50.0' → '4.51.0' + 新永久 rule comment |
+| `testing-page/index.html` | 10, 194 | ?v=2.3.111 → ?v=2.3.112 |
+| `AGENTS.md` | (新加) | 加新永久 rule section |
+| `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` | (本文) | 加呢個章節 (4.51.0 永久 rule 同步) |
+
+### 對應 commit (即將 push)
+
+- `fix(testing-page): ZigZag P 點 indexing 統一 (P1 = 紫色 zzp[-1], 拎走鮮綠色 1 號 marker, 4.51.0 永久 rule)`
+- 改: `adapter.mjs` + `testing-page/testing-page.js` + `testing-page/index.html` + `AGENTS.md` + `M1-V22-RESEARCH.md`
+

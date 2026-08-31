@@ -5165,8 +5165,13 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // 大少 8月31日 01:59 trigger — 拎返 4.10.0 setMarkers 嗰個 spirit + 改用 v5 createSeriesMarkers plugin API (4.49.0 永久 rule)
           //   對齊 production frontend `web/src/components/chart/ChartContainer.tsx` line 852 嗰個做法
           //   v5 native marker 唔會有 v4.2.3 嗰個 out-of-range marker silent render bug
-          //   拎返 4.10.0 嗰個 `let greenMarkerTime = null` (鮮綠色 1 號 marker 嗰個 close extension time)
-          let greenMarkerTime = null;  // 大少 2026-08-19 11:15 — sequence 號碼 1 用
+          //
+          // 大少 8月31日 09:00 trigger — 4.51.0 永久 rule: 拎走鮮綠色 close extension 終點嘅 "1" 號 marker
+          //   原本 4.9.0 嗰個「1 號 = 鮮綠線終點」規則同大少 8月29日 14:32 P1=zzp[-1] 規則衝突
+          //   紫色 marker label 由 `idx + 2` 改 `idx + 1` (P1 = 最新紫色 ZigZag 點), 鮮綠色 1 號 marker 拎走
+          //   鮮綠色 close extension 線 保留 (對齊 4.8.3 永久 rule「趨勢延續」視覺化), 但冇 sequence label
+          //   保留 `let greenMarkerTime = null` 因為可能之後有其他用途 (e.g. tooltip)
+          let greenMarkerTime = null;  // 4.51.0 永久 rule 拎走 "1" 號 marker 之後, 保留 variable 以備將來用
           if (klines && klines.length > 0) {
             const lastKline = klines[klines.length - 1];
             const lastClose = lastKline.close;
@@ -5231,7 +5236,9 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           if (showZigzagSequence && typeof LightweightCharts !== 'undefined' && chartRefs.candleSeries && typeof LightweightCharts.createSeriesMarkers === 'function') {
             try {
               // 拎返 4.10.0 嗰個 setMarkers 整個 block 嗰個 spirit, 改用 v5 createSeriesMarkers plugin API
-              // 紫色 ZigZag 161 個 points 倒序排, 號碼 2-162
+              // 紫色 ZigZag 161 個 points 倒序排, 號碼 1-161 (P1 = 最新紫色 ZigZag 點 = 倒序後第一個, zzp[-1])
+              // 4.51.0 永久 rule: 紫色 marker label 由 `idx + 1` 開始 (對齊大少 8月29日 14:32 P1/P2/P3/P4 indexing 規則)
+              // 廢 4.9.0 嗰個「1 號 = 鮮綠色 close extension 終點」規則, 因為同大少 8月29日 P1=zzp[-1] 規則衝突
               // verdict.meta.zigzagPoints 已經係 chronological (舊→新), 倒返轉就係「新→舊」
               // 大少 2026-08-19 16:43 fix — Peak 號碼擺 aboveBar, Trough 號碼擺 belowBar (原本全部 inBar 錯)
               // 凡人話: high type point (Peak / 山頂) 號碼喺 K 線上面, low type point (Trough / 山谷) 號碼喺 K 線下面
@@ -5242,22 +5249,16 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
                 position: reversedZigzagPoints[idx].type === 'high' ? 'aboveBar' : 'belowBar',
                 color: '#9C27B0',   // 紫色字
                 shape: 'circle',
-                text: String(idx + 2),  // 4.9.0 永久 rule 拎返嚟 (Option B 拎走 4.45.0,1 號 = 鮮綠線終點, 2 號 = 紫色最後 1 個)
+                text: String(idx + 1),  // 4.51.0 永久 rule: 紫色由 1 號開始 (P1 = 最新紫色 ZigZag 點)
                 size: 1,
               }));
 
-              // 鮮綠色 close extension point 號碼 1 (拎返 4.10.0 嗰個, 4.9.0 永久 rule 拎返嚟)
-              const greenMarkers = greenMarkerTime != null ? [{
-                time: greenMarkerTime,
-                position: 'aboveBar',
-                color: '#00C853',  // 鮮綠色字
-                shape: 'circle',
-                text: '1',
-                size: 1,
-              }] : [];
+              // 4.51.0 永久 rule: 拎走鮮綠色 close extension 終點嘅 "1" 號 marker (原本 4.9.0 規則)
+              // 鮮綠色 close extension 線本身保留 (對齊 4.8.3「趨勢延續」視覺化), 但冇 sequence label
+              // 大少撳 showZigzagSequence toggle, 由右到左 P1, P2, P3, ... 全部紫色 circle
 
-              // 合併: 1 號 (close, 鮮綠) 排最前, 之後紫色倒序 2-N+1
-              const allMarkers = [...greenMarkers, ...purpleMarkers];
+              // 合併: 全部紫色倒序 1-N (4.51.0 永久 rule, 拎走鮮綠色 greenMarkers)
+              const allMarkers = purpleMarkers;
 
               // 只顯示最近 N 個 (預設 30), 因為 161 個 marker 會太擠
               const visibleMarkers = allMarkers.slice(0, zigzagSequenceMaxCount);
@@ -5280,7 +5281,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
                   markersPlugin.setMarkers([..._fm, ...(m || [])]);
                 },
               };
-              console.log('[M1 v2.0] ✅ ZigZag sequence markers set (4.49.0 永久 rule v5 createSeriesMarkers plugin API):', visibleMarkers.length, '個 (max:', zigzagSequenceMaxCount, ', 紫色:', purpleMarkers.length, '+ 鮮綠色:', greenMarkers.length, ', 橙色旗仔:', _flagMarkersForMerge.length, ')');
+              console.log('[M1 v2.0] ✅ ZigZag sequence markers set (4.49.0 永久 rule v5 createSeriesMarkers plugin API + 4.51.0 永久 rule P 點 indexing 統一):', visibleMarkers.length, '個 (max:', zigzagSequenceMaxCount, ', 紫色:', purpleMarkers.length, ', 橙色旗仔:', _flagMarkersForMerge.length, ')');
             } catch (e) {
               console.error('[M1 v2.0] ❌ ZigZag sequence markers 失敗:', e);
             }

@@ -566,6 +566,40 @@ K 線 A (peak, e.g. 100元)        K 線 B (跌穿 5% 到 94元, 確認轉勢)
 
 對應 doc: M1-V22-RESEARCH.md 「🆕 大少 2026-08-30 17:50 Trigger — ZigZag 決定點 橙色旗仔 marker」section
 
+### ZigZag P 點 sequence label 排序統一 永久 rule (大少 2026-08-31 09:00, 4.51.0)
+
+**凡人話解釋**: 大少 8月31日 09:00 trigger「Zigzag的Point排序從右到左是從P1開始的，現在是從P 2開始，你去查明原因」— 統一 testing page ZigZag sequence label 對齊大少 8月29日 14:32 永久 rule (P1 = zzp[-1])。
+
+**Root cause** (4.9.0 規則衝突):
+- `algorithms/AS-03-cycle-detection/adapter.mjs:5245` 紫色 marker label 由 `idx + 2` 開始
+- 鮮綠色 "1" 號 marker 喺 close extension 終點 (`adapter.mjs:5255`, `testing-page.js:1481` 預設 visible range = 最近 126 日，今日 K 線有時 out-of-range + 鮮綠色字 #00C853 淺色)
+- 8月31日 01:59 拎返 setMarkers 嗰陣 (4.49.0 永久 rule) 盲目拎返 4.10.0 嗰個 spirit, 冇 reconcile 4.9.0 同 8月29日 P1 rule 衝突
+
+**永久 rule** (4.51.0 新加):
+- ✅ 改寫 4.9.0 永久 rule: 刪除「1 號 = 鮮綠色 close extension 終點」描述
+- ✅ 統一跟大少 2026-08-29 14:32 永久 rule:
+  - **P1 = 最新紫色 ZigZag 點** (verdict.meta.zigzagPoints 倒序後第一個, zzp[-1])
+  - P2 = 第二新, P3 = 第三新, P4 = 第四新 (zzp[-2/-3/-4])
+  - 上升: P1>P3, P2>P4
+  - 下跌: P1<P3, P2<P4
+  - 到頂轉勢: P1>P3 + P2>P4 + ZZ_slope<-3%
+  - 到底轉勢: P1<P3 + P2>P4 + ZZ_slope>+3%
+- ✅ Testing page 紫色 marker label 由 `idx + 2` 改 `idx + 1` (P1, P2, P3, ... 順序)
+- ✅ 鮮綠色 close extension 終點 "1" 號 marker 拎走 (原 4.9.0 規則)
+- ✅ 鮮綠色 close extension 線本身保留 (對齊 4.8.3 永久 rule「趨勢延續」視覺化), 但冇 sequence label
+- ✅ 改 `adapter.mjs` 嗰陣, 必同步 bump 2 個地方 cache bust (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X, 跟 2026-08-09 13:10 永久 rule)
+- ✅ 凡人話: 撳 showZigzagSequence toggle, 由右到左 P1, P2, P3, ... 全部紫色 circle, 對齊大少 8月29日 trigger
+
+**對應 file**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (line 5238-5260): 改 `idx + 2` → `idx + 1` + 拎走 `greenMarkers` block + `allMarkers = purpleMarkers`
+- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.50.0' → '4.51.0' + 4.51.0 永久 rule comment
+- `testing-page/index.html` ?v=2.3.111 → ?v=2.3.112
+
+對應 doc: M1-V22-RESEARCH.md 「🟢 大少 trigger #N — ZigZag P 點 sequence label 排序統一 (2026-08-29 14:32 + 8月31日 09:00)」section
+
+對應 commit: 即將 push (Spec Sync #48 流程)
+
+
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 
 **凡人話解釋**: 之前 backend KlineCache response 有 2 種 time format 混雜 (date-only `"2026-08-26"` vs datetime `"2026-08-26 00:00:00"`), 同一日 2 個 entry time field 唔同, 之字 points 撞 time 嗰陣 Lightweight Charts 4.2.3 silent reject 破壞 chart state, 紫線飛上去。

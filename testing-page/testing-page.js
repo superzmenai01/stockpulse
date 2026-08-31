@@ -399,7 +399,16 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ Lightweight Charts v4.2.3 out-of-range marker 嗰個 silent render bug 治本 fix (bump v4.2.3 → v5.2.0, v5 重新 design, 唔會有呢個 bug)
 // 對齊 git reset: `git reset --hard 3a5c2fa4` (Option B,拎走 4.45.0 + 4.48.1 un-committed, keep 4.42.2 + 4.42.3 + 4.43.0)
 // 對應 commit (將會 commit): fix(testing-page): bump lightweight-charts v4.2.3 → v5.2.0 + 拎返 setMarkers 改用 v5 createSeriesMarkers plugin API (大少 8月31日 01:59 trigger「找回 vs 重新做」揀 Approach B + 4.49.0 永久 rule)
-const ALGO_CACHE_BUST = '4.50.0';
+//
+// 大少 8月31日 09:00 trigger — 4.51.0 永久 rule 改寫 P 點 indexing: ALGO_CACHE_BUST = '4.51.0'
+//   改寫 4.9.0 永久 rule: 刪除「1 號 = 鮮綠色 close extension 終點」描述
+//   統一跟大少 8月29日 14:32 永久 rule: P1 = 最新紫色 ZigZag 點 (zzp[-1], 倒序後第一個)
+//   testing page 紫色 marker label 由 `idx + 2` 改 `idx + 1`, 鮮綠色 1 號 marker 拎走
+//   鮮綠色 close extension 線保留 (對齊 4.8.3 永久 rule「趨勢延續」視覺化), 但冇 sequence label
+//   凡人話: 撳 showZigzagSequence toggle, 由右到左 P1, P2, P3, ... 全部紫色 circle, 對齊大少 trigger
+//   大少 trigger 原因: 4.9.0 嗰個「1 號 = 鮮綠線終點」規則同大少 8月29日 P1=zzp[-1] 規則衝突, 紫色由 2 號開始錯
+//   對應 commit (將會 commit): fix(testing-page): ZigZag P 點 indexing 統一 (P1 = 紫色 zzp[-1], 拎走鮮綠色 1 號 marker, 4.51.0 永久 rule)
+const ALGO_CACHE_BUST = '4.51.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
