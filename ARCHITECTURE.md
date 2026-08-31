@@ -4161,3 +4161,30 @@ Task 3 純後台: KlineCache `__init__` 開 background thread 30 秒 1 次 ping 
 - 富途 OpenD 死咗: banner 顯示 + 撳跑掣 disable, runAlgorithm() 開頭 check 即刻 fail
 - 撳跑 M9 完: 頂部 5 個 stage 嘅 progress bar table (data_validation 5% / walk_forward_cv_starting 10% / walk_forward_cv_folds_split 15% / walk_forward_cv_fold 20-80% / walk_forward_cv_done 90%)
 - testing page 加載即時 `pollFutuHealth()` 一次 (避免 5 秒 delay)
+
+### 15.48 Sprint 4 Follow-up 完整 Test 覆蓋 (大少 2026-08-31 08:12「你幫我做測試」trigger, Spec Sync #56)
+
+### 大少 trigger
+8月31日 08:12「你幫我做測試」— Sprint 4 follow-up 3 個 task 完成之後, 寫新 test 覆蓋 Sprint 4 改動, 防 regression。
+
+### 凡人話解釋
+Sprint 4 改咗 3 個 critical system (KlineCache background thread / OPEN_D_UNAVAILABLE warning / LLM_RATE_LIMIT retry), 寫 18 個 test 覆蓋, 之後改呢 3 個 system 嗰陣, test 立刻 fail 提示邊個改錯。
+
+### 改動範圍 (1 新 test file)
+- `backend/tests/test_sprint_4_changes.py` (新 18 個 test, +400 行)
+  - 6 個 KlineCache health state test (default / thread-safe getter / lock 存在 / success update / consecutive_failures / thread starts on init)
+  - 2 個 OPEN_D_UNAVAILABLE warning test (code 存在 / factory work)
+  - 2 個 algorithm_progress test (in-memory store / make_progress_callback)
+  - 1 個 warning codes count test (17 個, 6/8/3 分佈)
+  - 2 個 LLM_RATE_LIMIT warning test (code 存在 / factory work)
+  - 1 個 cache bust consistency test (永久 rule §21:24 雙 bump 驗證)
+  - 3 個 Sprint 4 還原點結構 test (tag 存在 / branch 存在 / script executable)
+  - 1 個 17 warning codes required fields test (永久 rule §Module Warning v1.1.0 強制)
+
+### Verify
+- pytest 285/286 pass (+18 個 Sprint 4 新 test 全部 pass, 1 個 pre-existing asyncio fail 唔關事)
+- Sprint 4 3 個 task 全部有 test 覆蓋, 之後改嗰陣防 regression
+
+### 對應 commit
+- `test(sprint-4): Sprint 4 Follow-up 完整 test 覆蓋 (18 個新 test) (大少 8月31日 08:12「你幫我做測試」trigger)`
+- Spec Sync: ARCHITECTURE.md §15.48 (本段)
