@@ -1787,3 +1787,37 @@ After fix:  0 WARNING, 拎到正確 reason
 - 結論: 限頻 + retry fix work, 60 隻 OpenD NoDataAvailable 唔可以 fix (個別 stock 限制)
 
 **對應 commit**: Spec Sync #43 (即將 push)
+### M1 P 點 sequence marker 拎返 永久 rule (4.62.0, 大少 2026-09-01 22:58 trigger)
+
+**凡人話解釋**: 大少 trigger「現在把在Backend已計好的P1，P2, P3,.....的點放到圖表裡，要寫上P1，P2， P3...」— 拎返 4.51.0 拎返嘅紫色 ZigZag P 點 sequence marker，但**唔拎返** 4.53.0/4.61.5 拎走嘅其他嘢 (橙旗 / 鮮綠 close extension 線 / 紅色獨發點 / P 點 toggle 同 spinbutton)。
+
+**永久 rule**:
+- ✅ **Render 位置**: `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (line 5103 之後, 紫色 ZigZag line setData 成功後即 call)
+- ✅ **Label**: 用 backend `verdict.points[].sequence` field 直接做 `"P1"`, `"P2"`, `"P3"...` (1=最新, N=最舊, 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing)
+- ✅ **Position**: high (Peak / 山頂) → `aboveBar`, low (Trough / 山谷) → `belowBar` (4.51.0 永久 rule peak/trough 對齊)
+- ✅ **Shape**: `circle`
+- ✅ **Color**: 紫色 `#9C27B0` (4.51.0 永久 rule)
+- ✅ **Size**: 1
+- ✅ **Time field**: business day object `{year, month, day}` (4.41.2 永久 rule 對齊紫色 ZigZag line setData 格式)
+- ✅ **Dedupe by time**: 拎返避免 Lightweight Charts silent reject (4.40.0 永久 rule)
+- ✅ **v5 plugin API**: `LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, _dedupedPmarkers)` 拎 plugin handle 存 `chartRefs.zigzagSequenceMarkers` (4.49.0 永久 rule)
+- ✅ **v4 fallback**: plugin API 唔 work 時 fallback 落 `candleSeries.setMarkers(...)` (4.10.0 永久 rule v5 向後兼容)
+- ✅ **Edge case**: 唔拎返 `lastChartRefs.zigzagSequenceMarkers.setMarkers` 嗰個 re-set after setVisibleLogicalRange — 因為 v5 plugin API 唔受 setVisibleLogicalRange 影響 (4.53.0 拎走嗰陣一齊拎走)
+
+**唔拎返** (4.53.0 / 4.61.5 拎走嘅永久 rule 保留):
+- ❌ P 點 toggle (checkbox) + max count spinbutton — 4.53.0 拎走嗰陣拎走咗, 拎返會重新引入 49 行 reRenderZigZagSequence function 複雜度
+- ❌ 橙旗決定點 marker (4.42.2 已拎走)
+- ❌ 鮮綠 close extension 線 (4.8.3 / 4.51.0 已拎走)
+- ❌ 紅色獨發點 marker (4.61.5 已拎走)
+
+**Backend**: 唔改 (algorithm.py 嘅 `sequence` field 已經喺 backend 計好, 1=最新, N=最舊, 4.43.0 永久 rule「ZigZag 全部 backend 計」)
+
+**Production frontend**: 唔改 (ChartContainer.tsx + ElliottWaveTestPage.tsx 唔喺呢次 scope, 之後如果大少 want 拎返, 跟返 testing page pattern 1-to-1 port)
+
+**Cache bust** (跟 2026-08-09 13:10 永久 rule):
+- `ALGO_CACHE_BUST` 4.61.8 → 4.62.0
+- `?v=2.3.129` → 2.3.130 (CSS + JS)
+
+**凡人話**: 撳跑完 M1 algorithm, 圖表紫色 ZigZag 線 + 紫色 P1, P2, P3... 圓圈 marker 一齊出, 鮮綠線 / 橙旗 / 紅色獨發點都唔見, 大少睇得清 P 點 sequence (最新到最舊排 P1, P2, P3...)
+
+**對應 commit**: `feat(adapter): 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 對齊 8月29日 14:32 P1/P2/P3/P4 indexing)`

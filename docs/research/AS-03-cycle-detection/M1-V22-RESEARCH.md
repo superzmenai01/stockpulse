@@ -1326,3 +1326,47 @@ D 方向: KNOWN ISSUE - uvicorn subprocess 拎空 stdout (workaround: 大少手�
 - 改 Git endpoint 必先 restart backend + curl verify (對齊 §15.51 永久 rule)
 - uvicorn subprocess + git reflog 拎 dangling commit 嘅 issue 屬於 OS-level, 之後 follow-up (可能要改用 os.system + file I/O)
 - 凡人話: 大少 4 個優化方向 (missing warning + Sscript helper + audit + recover) 全部對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule, 之後任何備份還原點 set / reset / recover 都要 verify 拎到
+
+## 🟢 大少 trigger #N+8 — 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 2026-09-01 22:58)
+
+### 凡人話解釋
+大少 9月1日 22:58 trigger「現在把在Backend已計好的P1，P2, P3,.....的點放到圖表裡，要寫上P1，P2， P3...」— 拎返 4.51.0 拎返嘅紫色 ZigZag P 點 sequence marker，但**唔拎返** 4.53.0/4.61.5 拎走嘅其他嘢 (橙旗 / 鮮綠 close extension 線 / 紅色獨發點 / P 點 toggle 同 spinbutton)。只係拎返 P 點視覺化, 拎走嗰陣拎走嘅其他嘢保留拎走。
+
+### 改動清單
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (line 5103 之後) 拎返 P 點 marker block (約 65 行)
+- `testing-page.js` ALGO_CACHE_BUST 4.61.8 → 4.62.0
+- `testing-page/index.html` ?v=2.3.129 → 2.3.130
+- 3 個 spec doc 同步 (AGENTS.md + ARCHITECTURE.md + M1-V22-RESEARCH.md)
+
+### P 點 marker 規格
+- **Label**: `P${point.sequence}` 直接用 backend `verdict.points[].sequence` (1=最新, N=最舊)
+- **Position**: high → aboveBar, low → belowBar (4.51.0 永久 rule)
+- **Shape**: circle
+- **Color**: 紫色 #9C27B0
+- **Size**: 1
+- **Time**: business day object `{year, month, day}` (4.41.2 永久 rule)
+- **Dedupe by time** (4.40.0 永久 rule)
+- **v5 plugin API**: `LightweightCharts.createSeriesMarkers` (4.49.0 + 9月1日 22:38 永久 rule)
+- **v4 fallback**: `candleSeries.setMarkers` (4.10.0 永久 rule v5 向後兼容)
+
+### 對齊永久 rule
+- 4.49.0 v5 createSeriesMarkers plugin API
+- 4.51.0 P 點 label/color/shape/position 規格
+- 4.10.0 v4 candleSeries.setMarkers fallback
+- 4.40.0 dedupe by time
+- 4.41.2 business day object time field
+- 4.43.0 ZigZag 全部 backend 計 (frontend 唔重計)
+- 8月29日 14:32 P1/P2/P3/P4 indexing (P1=zzp[-1] 最新)
+- 9月1日 22:38 PPP 永久 rule (v5 plugin API + v4 fallback)
+- 8月29日 22:44 所有改動要 confirm (大少 explicit trigger 已 confirm)
+- 2026-08-09 13:10 testing-page .mjs cache bust (ALGO_CACHE_BUST + ?v=2.3.X)
+
+### 唔拎返 (保留 4.53.0/4.61.5 拎走嘅永久 rule)
+- ❌ P 點 toggle (checkbox) + max count spinbutton (4.53.0)
+- ❌ 橙旗決定點 marker (4.42.2)
+- ❌ 鮮綠 close extension 線 (4.8.3 / 4.51.0)
+- ❌ 紅色獨發點 marker (4.61.5)
+
+### 對應 commit
+- 即將 push (`feat(adapter): 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 對齊 8月29日 14:32 P1/P2/P3/P4 indexing)`)
+- Spec Sync: ARCHITECTURE.md §15.61 + AGENTS.md 「M1 P 點 sequence marker 拎返 永久 rule (4.62.0)」section + M1-V22-RESEARCH.md 「🟢 大少 trigger #N+8」(本段)

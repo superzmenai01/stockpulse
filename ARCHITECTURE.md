@@ -5067,3 +5067,85 @@ git push origin main
 - 永久 rule: 改 algorithm / 加新 algorithm 嗰陣, 必先 read K-line Cache T-1 rule (§3.5), 確認 K 線 array 有冇包括今日 partial bar, 對齊大少 trigger「紫色 P point 唔應該喺今日 trigger」嘅 intent
 - 對齊 4.55.0 lesson learned: 改 algorithm 邏輯之前, 必先用 curl / test script 拎 evidence 確認 K 線 array 嘅 date range, 避免 algorithm 拎到 stale K 線做錯 decision
 - 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」: 凡人話理解 trigger 嘅定義, 必先 confirm 大少「P1/P2 同日 bug」呢個 constraint, 同時 confirm 改動範圍 (algorithm.py + algorithm_runner.py)
+
+## §15.61 — M1 紫色 ZigZag P 點 sequence marker 拎返 (大少 2026-09-01 22:58 trigger「現在把在Backend已計好的P1，P2, P3,.....的點放到圖表裡，要寫上P1，P2， P3...」, 4.62.0) [2026-09-01]
+
+### Context
+大少 4.61.5 拎走晒 P 點 sequence marker / 橙旗 / 鮮綠線 / 紅色獨發點 (trigger「之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要」)。9月1日 22:58 大少 trigger 拎返 P 點 marker 但**唔拎返**其他拎走嘅嘢: 橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色獨發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)。
+
+### 改動
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (line 5103 之後) 拎返 P 點 marker block
+- 唔拎返: 4.53.0/4.61.5 拎走嘅橙旗 / 鮮綠線 / 紅色獨發點 / P 點 toggle 同 spinbutton
+- `testing-page.js` ALGO_CACHE_BUST 4.61.8 → 4.62.0
+- `testing-page/index.html` ?v=2.3.129 → 2.3.130
+- 3 個 spec doc 同步 (AGENTS.md + ARCHITECTURE.md + M1-V22-RESEARCH.md)
+
+### Render flow
+```
+runAlgorithm() (testing-page.js)
+  ↓
+fetchAndInjectBackendZigZag() → verdict.points 注入 lastVerdict.meta.zigzagPoints
+  ↓
+renderChart(klines, code, period) → chart instance
+  ↓
+currentAdapter.renderChartOverlay(verdict, klines, chartRefs)
+  ↓
+renderMAAlignmentV2ChartOverlay (adapter.mjs)
+  ├─ addLineSeries 紫色 ZigZag 線 (existing)
+  └─ setMarkers P 點 sequence marker (拎返)
+     ├─ 嘗試 LightweightCharts.createSeriesMarkers (v5 plugin API)
+     └─ 失敗 fallback 落 candleSeries.setMarkers (v4 向後兼容)
+```
+
+### P 點 marker 規格
+- **Label**: 用 backend `verdict.points[].sequence` field 直接做 "P1", "P2", "P3"... (1=最新, N=最舊)
+- **Position**: high (Peak) → aboveBar, low (Trough) → belowBar (4.51.0 永久 rule peak/trough 對齊)
+- **Shape**: circle
+- **Color**: 紫色 #9C27B0 (4.51.0 永久 rule)
+- **Size**: 1
+- **Time field**: business day object `{year, month, day}` (4.41.2 永久 rule)
+- **Dedupe by time**: 拎返避免 Lightweight Charts silent reject (4.40.0 永久 rule)
+
+### 對齊永久 rule
+- 4.49.0 v5 createSeriesMarkers plugin API
+- 4.51.0 P 點 label/color/shape/position 規格
+- 4.10.0 v4 candleSeries.setMarkers fallback
+- 4.40.0 dedupe by time
+- 4.41.2 business day object time field
+- 4.43.0 ZigZag 全部 backend 計 (frontend 唔重計, 拎 fetch verdict)
+- 8月29日 14:32 P1/P2/P3/P4 indexing (P1 = zzp[-1] 最新)
+- 9月1日 22:38 PPP 永久 rule (v5 plugin API + v4 fallback)
+- 8月29日 22:44 所有改動要 confirm (大少 explicit trigger 已 confirm)
+- 2026-08-09 13:10 testing-page .mjs cache bust (ALGO_CACHE_BUST + ?v=2.3.X 2 個地方 sync bump)
+
+### 唔拎返 (4.53.0 + 4.61.5 拎走嘅永久 rule 保留)
+- ❌ P 點 toggle (checkbox) + max count spinbutton (4.53.0 拎走, 拎返會重新引入 49 行 reRenderZigZagSequence function 複雜度)
+- ❌ 橙旗決定點 marker (4.42.2 已拎走)
+- ❌ 鮮綠 close extension 線 (4.8.3 + 4.51.0 已拎走)
+- ❌ 紅色獨發點 marker (4.61.5 已拎走)
+
+### Backend
+- 唔改 (algorithm.py 嘅 `sequence` field 已經喺 backend 計好, 1=最新, N=最舊)
+- 4.59.0 (大少 9月1日 14:10 trigger) 拎走 'today' point filter (dead code) 永久 rule 保留
+
+### Production frontend
+- 唔改 (ChartContainer.tsx + ElliottWaveTestPage.tsx 唔喺呢次 scope)
+- 之後如果大少 want 拎返 production frontend, 跟返 testing page 嘅 pattern 1-to-1 port
+
+### Acceptance tests
+- Curl verify: `curl -s "http://127.0.0.1:18792/api/algorithms/run?algo=zigzag&symbol=HK.00019&period=1d&data_window_days=1260&threshold_mode=auto&lookback=20&multiplier=2.5" | python3 -m json.tool | head -40`
+  - 預期: verdict.ok = true, verdict.points[].sequence 1-12
+- Reload testing page (hard reload `cmd+shift+R`)
+- 撳跑 M1 (AS-03-MA) HK.00019 太古
+  - 預期: 紫色 P1, P2, P3... 圓圈 marker 全部出 (12 個對 5 年)
+  - 預期: P1 = 最後 (最右) 紫色 ZigZag 點
+  - 預期: high 號碼喺 K 線上面, low 號碼喺 K 線下面
+  - 預期: 冇橙旗, 冇鮮綠線, 冇紅色獨發點, 冇 toggle
+  - 預期: Console log `[M1 v2.0] ✅ ZigZag P 點 sequence marker (v5 createSeriesMarkers plugin API): 12 個 (P1 = 最新, P12 = 最舊)`
+- 撳股票 (e.g. HK.00700 騰訊) 確認 P 點 marker 重新 render (唔 stale)
+- 切 ZigZag 啟用 toggle 確認 P 點 marker 一齊 toggle 顯示/隱藏 (跟 zigzagEnabled)
+- 切 threshold (auto → manual) 確認 P 點 marker 跟新 verdict 重新 render
+
+### 對應 commit
+- 即將 push (`feat(adapter): 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 對齊 8月29日 14:32 P1/P2/P3/P4 indexing)`)
+- Spec Sync: ARCHITECTURE.md §15.61 (本段) + AGENTS.md 「M1 P 點 sequence marker 拎返 永久 rule (4.62.0)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
