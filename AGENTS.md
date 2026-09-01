@@ -602,6 +602,45 @@ def _compute_fetch_max_count(period):
 - `4094fbd6` fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)
 - `689ace77` fix(stockpulse): 鮮紫獨發點 marker + 離開 K 線 body (4.65.0, 對齊 4.64.0 大少 00:48 trigger「用鮮紫色, 不要在那支竹內, 要在離開那支竹少少」)
 
+### ZigZag P 點 + 鮮紫獨發點 marker toggle 永久 rule (4.66.0, 大少 2026-09-02 00:52 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」) — **拎返 4.53.0 拎走嘅 marker toggle 嗰個 spirit, 但 default off 拎返 visual clean**
+
+**凡人話解釋**: 4.64.0 拎返 P 點 marker + 4.65.0 拎返鮮紫獨發點 marker, default 開, 大少睇咗覺得太亂「很不好看」, 想要 toggle 控制顯示/隱藏。對齊 4.51.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE 嗰個 spirit 拎返 (4.53.0 commit 拎走晒 P 點 toggle + state + LS_KEY, 4.61.5 commit 拎走晒 dead code, 4.66.0 拎返返用新 LS_KEY_SHOW_MARKERS)。大少 00:52 explicit「預設是關的」, default `false` 保持 chart 視覺 clean (只有紫色折線 + 4 條 MA + volume, 冇任何 marker), 撳開先見 P1-P10 紫色圓圈 + 鮮紫 trigger arrow 10 個。
+
+**4.66.0 永久 rule**:
+- ✅ **UI 位置**: `testing-page/index.html` chart-section 內 ma-toggle-bar 之前 (對齊 8月19日 23:20 永久 rule chart-control layout, 跟 #zigzag-enabled ZigZag 啟用 toggle 同 pattern)
+- ✅ **HTML element**: `<input type="checkbox" id="zigzag-markers-enabled">` 喺 `<div id="zigzag-markers-controls">` 入面
+- ✅ **Label**: 「啟用 P 點 + 鮮紫獨發點 (P1-P10 紫色圓圈 + 鮮紫 arrow trigger)」+ 細字「(撳即時 re-render, 唔需要跑算法 · 預設關)」
+- ✅ **Default**: `false` (大少 00:52 trigger「預設是關的」, 對齊 4.53.0 拎走嘅 visual clean default spirit)
+- ✅ **State variable**: `let zigzagMarkersEnabled = false;` (testing-page.js line 689, default off, init 從 localStorage 拎返)
+- ✅ **localStorage key**: `LS_KEY_SHOW_MARKERS = 'stockpulse.zigzag.showMarkers'` (testing-page.js line 92, 對齊 8月19日 13:03 Config UX 模式 spirit)
+- ✅ **Helper**: `getShowMarkers()` return `localStorage.getItem(LS_KEY_SHOW_MARKERS) === 'true'` (default false), `setShowMarkers(v)` set boolean string
+- ✅ **Init 同步**: page load 嗰陣從 localStorage 拎返, sync checkbox state
+- ✅ **Change handler**: 撳 checkbox 即時 `setShowMarkers(zigzagMarkersEnabled)` + `lastChartRefs.zigzagMarkersEnabled = ...` + re-call `currentAdapter.renderChartOverlay()` 即時 re-render (唔需要撅跑 algorithm, 對齊 8月19日 13:03 Config UX 模式 spirit)
+- ✅ **adapter.mjs check**: P 點 + 鮮紫 trigger 兩個 block 入口前加 `if (chartRefs.zigzagMarkersEnabled !== true) return;` 拎走晒 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
+- ✅ **大少 explicit 預設關**: 撅完 reload page 預設關, 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice
+
+**對齊永久 rule** (6 條):
+- 4.51.0: 拎走嘅 #show-sequence 嗰個 toggle 拎返 (4.66.0 拎返用新 LS_KEY_SHOW_MARKERS, 4.61.5 commit 拎走嗰個 LS_KEY_SHOW_SEQUENCE 拎返 4.66.0 拎返拎返 spirit)
+- 4.53.0: 拎走嘅 toggle block + state + LS_KEY 拎返 spirit 拎返, 預設關拎返 4.53.0 拎走嘅 visual clean default
+- 4.61.5: 拎走嘅 `#zigzag-sequence-controls` + `#show-sequence` toggle + `LS_KEY_SHOW_SEQUENCE` + `getShowSequence` / `setShowSequence` + toggle handler (~35 行 dead code), 4.66.0 拎返 spirit 但用新 LS_KEY_SHOW_MARKERS (避免 conflict 4.61.5 拎走嘅 dead code)
+- 4.62.0 + 4.63.0 + 4.64.0 + 4.65.0: P 點 + 鮮紫 trigger marker 拎返嘅永久 rule, 4.66.0 加 toggle 控制佢哋
+- 8月19日 13:03 Config UX 模式: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
+- 8月19日 23:20 chart-control layout: `#zigzag-markers-controls` div 喺 chart-section 內 ma-toggle-bar 之前
+
+**對應 commit**: `fix(stockpulse): 拎返 P 點 + 鮮紫獨發點 marker toggle (4.66.0, 預設關, 大少 9月2日 00:52 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」)` (6d3fae89)
+
+### ZigZag 4.53.0 拎走 marker toggle 嗰個對齊 (4.66.0 拎返)
+
+**4.53.0 拎走嘅嘢** (line 631-673 section 描述):
+- ✅ 拎走紫色 P 點 sequence marker toggle (4.51.0 永久 rule 拎走 toggle) — 4.66.0 拎返嗰個 toggle spirit, 用新 `LS_KEY_SHOW_MARKERS` + `#zigzag-markers-enabled` checkbox
+- ✅ 拎走 `#show-sequence` toggle (4.51.0 加) + `LS_KEY_SHOW_SEQUENCE` + `getShowSequence` / `setShowSequence` helpers + `#show-sequence` toggle handler — 4.66.0 拎返 spirit 但用新 LS_KEY_SHOW_MARKERS (避免 conflict 4.61.5 拎走嘅 dead code)
+- ✅ 拎走 `showZigzagSequence` + `zigzagSequenceMaxCount` state (4.66.0 拎返 spirit 但用 `zigzagMarkersEnabled` state, 因為 4.66.0 控制 P 點 + 鮮紫 trigger 一齊 toggle, 唔只係 P 點 sequence marker)
+
+**4.66.0 拎返**:
+- 對齊 4.51.0 + 4.53.0 拎走嘅 toggle spirit 拎返, 但 default off 拎返 visual clean (大少 explicit「預設是關的」)
+- 用新 `LS_KEY_SHOW_MARKERS` (唔係 `LS_KEY_SHOW_SEQUENCE`, 因為 4.66.0 控制 P 點 + 鮮紫 trigger, 唔只係 P 點 sequence)
+- 用新 `let zigzagMarkersEnabled = false;` (唔係 `showZigzagSequence`, 因為 4.66.0 control 範圍唔同)
+
 ### ZigZag Threshold 切 manual mode 永久 rule (大少 2026-08-31 09:24, 4.52.0)
 
 **凡人話解釋**: 大少 8月31日 09:24 trigger「Zigzag Threshold 模式 轉手動時沒有跟據輸入而更新，請檢查」— 統一切 manual mode 嗰陣用大少手動輸入過嘅 value 優先，唔好用 recent auto 結果 overwrite 佢輸入嘅 value。

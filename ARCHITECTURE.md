@@ -5357,5 +5357,72 @@ renderMAAlignmentV2ChartOverlay (adapter.mjs)
 - `fix(stockpulse): 鮮紫獨發點 marker + 離開 K 線 body (4.65.0, 對齊 4.64.0 大少 00:48 trigger「用鮮紫色, 不要在那支竹內, 要在離開那支竹少少」)` (689ace77)
 - Spec Sync: ARCHITECTURE.md §15.64 (本段) + AGENTS.md 「M1 P 點 marker v5 plugin API + Max 10 + 紅色獨發點 marker 永久 rule (4.64.0, 4.65.0 改進 visual 鮮紫 + aboveBar/belowBar)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
 
+---
+
+## §15.65 — M1 P 點 + 鮮紫獨發點 marker toggle 拎返 (大少 2026-09-02 00:52 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」, 4.66.0) [2026-09-02]
+
+### Context (4.53.0 拎走 marker toggle, 4.66.0 拎返返但 default off)
+
+4.62.0 拎返 P 點 marker (冇拎返 toggle) + 4.64.0 拎返紅色 trigger marker + 4.65.0 改鮮紫 + aboveBar/belowBar 改進 visual。但 4.65.0 撅完之後大少睇咗話「很不好看」, 想拎返 1 個 toggle 控制 P 點 + 鮮紫 trigger 顯示/隱藏。
+
+4.51.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE + 拎走嘅 toggle 嗰個 spirit, 4.53.0 拎走晒 (大少 11:09 trigger「拎走不要, 可能影響正常 ZigZag」), 4.61.5 拎走晒 dead code 嗰個 toggle 連 LS_KEY, 4.66.0 拎返返用新 `LS_KEY_SHOW_MARKERS` 因為 4.66.0 control 範圍唔同 (4.51.0 只 control P 點 sequence, 4.66.0 control P 點 + 鮮紫 trigger 一齊)。
+
+### 大少 trigger
+
+- 2026-09-02 00:52 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」
+
+### 永久 rule (4.66.0 fix, 大少 00:52 confirm 預設關)
+
+- ✅ **UI 位置**: `testing-page/index.html` chart-section 內 ma-toggle-bar 之前 (對齊 8月19日 23:20 永久 rule chart-control layout, 跟 #zigzag-enabled ZigZag 啟用 toggle 同 pattern)
+- ✅ **HTML element**: `<input type="checkbox" id="zigzag-markers-enabled">` 喺 `<div id="zigzag-markers-controls">` 入面
+- ✅ **Label**: 「啟用 P 點 + 鮮紫獨發點 (P1-P10 紫色圓圈 + 鮮紫 arrow trigger)」+ 細字「(撳即時 re-render, 唔需要跑算法 · 預設關)」
+- ✅ **Default**: `false` (大少 00:52 trigger「預設是關的」, 對齊 4.53.0 拎走嘅 visual clean default spirit)
+- ✅ **State variable**: `let zigzagMarkersEnabled = false;` (testing-page.js, default off, init 從 localStorage 拎返)
+- ✅ **localStorage key**: `LS_KEY_SHOW_MARKERS = 'stockpulse.zigzag.showMarkers'` (對齊 8月19日 13:03 Config UX 模式 spirit)
+- ✅ **Helper**: `getShowMarkers()` return `localStorage.getItem(LS_KEY_SHOW_MARKERS) === 'true'` (default false), `setShowMarkers(v)` set boolean string
+- ✅ **Init 同步**: page load 嗰陣從 localStorage 拎返, sync checkbox state
+- ✅ **Change handler**: 撳 checkbox 即時 `setShowMarkers(zigzagMarkersEnabled)` + `lastChartRefs.zigzagMarkersEnabled = ...` + re-call `currentAdapter.renderChartOverlay()` 即時 re-render (唔需要撅跑 algorithm)
+- ✅ **adapter.mjs check**: P 點 + 鮮紫 trigger 兩個 block 入口前加 `if (chartRefs.zigzagMarkersEnabled !== true) return;` 拎走晒 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
+- ✅ **大少 explicit 預設關**: 撅完 reload page 預設關, 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice
+
+### 凡人話解釋
+
+4.66.0 加返 1 個 toggle checkbox, 控制 P 點 + 鮮紫獨發點 marker 顯示/隱藏。預設關 (default `false`), 撳 page 預設只見紫色 ZigZag 折線 + 4 條 MA + volume 視覺 clean。撳開 toggle 即時 re-render chart overlay, 拎返 P1-P10 紫色圓圈 + 鮮紫 trigger arrow 10 個 (對齊 4.65.0 鮮紫 + aboveBar/belowBar design)。撳關即時拎走 marker, 只剩視覺 clean 嘅 4 樣嘢 (紫折線 + MA + volume + K 線)。
+
+### Affected files
+
+- `testing-page/index.html` line 140-149 (新增): `#zigzag-markers-controls` div 喺 chart-section 內 ma-toggle-bar 之前
+- `testing-page/testing-page.js`:
+  - line 91-100 (新增): `LS_KEY_SHOW_MARKERS` + `getShowMarkers()` + `setShowMarkers()` helpers
+  - line 688-689 (新增): `let zigzagMarkersEnabled = false;` state variable
+  - line 564 (modify): `ALGO_CACHE_BUST` 4.65.0 → 4.66.0
+  - line 1709-1731 (新增): `#zigzag-markers-enabled` checkbox change handler
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5205-5219 (新增): P 點 + 鮮紫 trigger 兩個 block 入口前加 `if (chartRefs.zigzagMarkersEnabled !== true) return;` 拎走晒 marker
+
+### Acceptance tests
+
+- Reload testing page (`http://localhost:8765/testing-page/?v=2.3.137`, hard reload `cmd+shift+R`):
+  - 預設: P 點 + 鮮紫 trigger marker 唔 render (chart 視覺 clean: 紫折線 + MA + volume + K 線)
+- 撅跑 M1 (AS-03-MA) HK.01888 撳跑 → verify chart 仍然只有紫折線 + MA + volume (冇 P 點 + 鮮紫 trigger)
+- 撳「啟用 P 點 + 鮮紫獨發點」checkbox → 即時 re-render 拎返 P1-P10 + 鮮紫 arrow 10 個
+- 撳 toggle 關 → 即時拎走 P 點 + 鮮紫 trigger marker, 只剩紫折線 + MA + volume
+- Reload page → 跟返大少最後 toggle 嘅 state (localStorage 自動記住)
+- 撅 2 次同一隻股票 → 第 2 次撅完如果 toggle 開仍然見到 P 點 + 鮮紫 trigger (唔受 cache 影響)
+
+### 對齊永久 rule (6 條)
+
+- 4.51.0: 拎走嘅 #show-sequence 嗰個 toggle 拎返 (4.66.0 拎返用新 LS_KEY_SHOW_MARKERS, 4.61.5 拎走嗰個 LS_KEY_SHOW_SEQUENCE 拎返 4.66.0 拎返拎返 spirit)
+- 4.53.0: 拎走嘅 toggle block + state + LS_KEY 拎返 spirit 拎返, 預設關拎返 4.53.0 拎走嘅 visual clean default
+- 4.61.5: 拎走嘅 `#zigzag-sequence-controls` + `#show-sequence` toggle + `LS_KEY_SHOW_SEQUENCE` + `getShowSequence` / `setShowSequence` + toggle handler (~35 行 dead code), 4.66.0 拎返 spirit 但用新 LS_KEY_SHOW_MARKERS
+- 4.62.0 + 4.63.0 + 4.64.0 + 4.65.0: P 點 + 鮮紫 trigger marker 拎返嘅永久 rule, 4.66.0 加 toggle 控制佢哋
+- 8月19日 13:03 Config UX 模式: 即時 localStorage + 即時 re-render
+- 8月19日 23:20 chart-control layout: `#zigzag-markers-controls` div 喺 chart-section 內 ma-toggle-bar 之前
+
+### 對應 commit
+
+- `fix(stockpulse): 拎返 P 點 + 鮮紫獨發點 marker toggle (4.66.0, 預設關, 大少 9月2日 00:52 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」)` (6d3fae89)
+- Spec Sync: ARCHITECTURE.md §15.65 (本段) + AGENTS.md 「ZigZag P 點 + 鮮紫獨發點 marker toggle 永久 rule (4.66.0)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
+
+
 
 
