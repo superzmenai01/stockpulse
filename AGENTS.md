@@ -561,15 +561,23 @@ def _compute_fetch_max_count(period):
 - `047ed1e8` fix(stockpulse): 拎返 v5 createSeriesMarkers plugin API + max 10 + fallback chain 10→5→3 (4.63.0)
 - `4094fbd6` fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)
 
-### M1 P 點 marker v5 plugin API + Max 10 + 紅色獨發點 marker 永久 rule (4.64.0, 大少 2026-09-02 00:23 trigger「用咩符號來標號好」+ 00:27 confirm Option D)
+### M1 P 點 marker v5 plugin API + Max 10 + 紅色獨發點 marker 永久 rule (4.64.0, 大少 2026-09-02 00:23 trigger「用咩符號來標號好」+ 00:27 confirm Option D) — **4.65.0 改進 visual (鮮紫 + 離開 K 線 body)**
 
 **凡人話解釋**: 4.63.0 拎返紫色 P 點 sequence marker (P1, P2, P3...) 之後, 大少 00:23 trigger「現在把在 Backend 已計好了的 zigzag 獨發點也標上, 用什麼符號來標號好呢?」+ 00:27 confirm 4 個 decisions (Option D + max 10 + filter ongoing + filter first point)。每一個 ZigZag P 點 (peak 山頂 / trough 山谷) 都有一個 trigger date — 即係「呢個 P 點係由邊日 K 線確認」嘅日子。e.g. 8月31日 P1 high 47.68 嗰個 peak, 要等到之後跌穿 5% threshold 嗰日先 confirm, trigger 嗰支 K 線就係「獨發點」。Backend `verdict.points[].triggerDate` 已經有呢個 data (4.57.0 加, 4.60.0 改 null 處理 ongoing point)。
 
-**4.64.0 永久 rule** (Option D design, 大少 00:27 confirm):
+4.64.0 撅完之後大少睇咗話「很不好看」, 原因:
+1. 紅色 `#FF5252` 撞 K 線 body 跌紅色 `#ef5350`, 紅撞紅視覺唔 clear
+2. position `inBar` 喺 K 線 body 內 (大少叫「支竹」即係 K 線 body 形狀), 紅色 arrow plot 喺 body 範圍內視覺撞色
+
+大少 9月2日 00:48 trigger「用鮮紫色, 還有不要在那支竹內, 要在離開那支竹少少」+ 4.65.0 fix:
+- color 改鮮紫 `#BA68C8` (Material Design Purple 300, 對齊 P 點紫 `#9C27B0` Purple 500 hue family 但淺 1 級)
+- position 改 `aboveBar` (peak trigger) / `belowBar` (trough trigger), 離開 K 線 body, 對齊 P 點 marker 4.51.0 永久 rule position pattern
+
+**4.64.0 永久 rule** (Option D design, 大少 00:27 confirm, **4.65.0 改進 2 個 field**):
 - ✅ **Render 位置**: `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` P 點 marker block 之後 (line 5207-5283)
 - ✅ **Shape**: `arrowUp` (trough trigger) / `arrowDown` (peak trigger) — 對齊 4.51.0 永久 rule P 點 arrow 風格 (P 點 high→arrowDown, low→arrowUp)
-- ✅ **Color**: 紅色 `#FF5252` — 對齊 4.61.0 design (4.61.5 commit comment 確認)
-- ✅ **Position**: `inBar` (K 線 body 中間) — 因為 trigger price 係嗰日 K 線 high (trough) / low (peak), plot 喺 body middle 最視覺自然
+- ✅ **Color**: **4.65.0 改** 紅色 `#FF5252` → 鮮紫 `#BA68C8` (Material Design Purple 300, 對齊 P 點紫 `#9C27B0` Purple 500 hue family 但淺 1 級, 視覺 contrast 對 K 線 body 升綠/跌紅都清楚)
+- ✅ **Position**: **4.65.0 改** `inBar` → `p.type === 'high' ? 'aboveBar' : 'belowBar'` (peak trigger 喺 K 線上面, trough trigger 喺 K 線下面, 對齊 P 點 marker 4.51.0 永久 rule position pattern, 鮮紫 trigger 喺紫 P 點對面 side, 視覺 unified)
 - ✅ **Label**: 冇 — 大少 confirm 簡潔風格
 - ✅ **Size**: 1 — 對齊 P 點 size 1 (4.51.0 永久 rule)
 - ✅ **Time field**: business day object `{year, month, day}` (4.41.2 永久 rule 對齊 P 點 marker setData 格式, trigger date 都用同一個 format)
@@ -584,13 +592,15 @@ def _compute_fetch_max_count(period):
 - 4.15.0: 之字拎 point 同 trigger 都用 high/low (wick extreme) — 4.57.0 backend 永久 rule spirit
 - 4.40.0: dedupe by time
 - 4.41.2: time field 用 business day object `{year, month, day}`
-- 4.51.0: P 點 arrow 風格 (high→arrowDown, low→arrowUp), 4.64.0 trigger arrow shape 對齊
+- 4.51.0: P 點 arrow 風格 (high→arrowDown, low→arrowUp) + position pattern (high→aboveBar, low→belowBar), 4.64.0 trigger arrow shape + 4.65.0 trigger position 對齊
 - 4.57.0: backend `triggerDate / triggerPrice / is_ongoing` 4 個 field, frontend 拎返 render
 - 4.60.0: Ongoing point 嘅 trigger 設 null + is_ongoing=true, frontend filter 拎走
-- 4.61.0: 「Frontend ZigZag 只 render 紫色折線」改為「Frontend ZigZag 紫色折線 + 紅色獨發點 marker (4.64.0)」
+- 4.61.0: 「Frontend ZigZag 只 render 紫色折線」改為「Frontend ZigZag 紫色折線 + 紅色獨發點 marker (4.64.0)」, 4.65.0 改為「Frontend ZigZag 紫色折線 + 鮮紫獨發點 marker (4.65.0)」
 - 4.63.0: v5 `LightweightCharts.createSeriesMarkers` plugin API + max 10 + fallback chain 10→5→3 (combined 最多 20 markers)
 
-**對應 commit**: `fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)` (4094fbd6)
+**對應 commit**:
+- `4094fbd6` fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)
+- `689ace77` fix(stockpulse): 鮮紫獨發點 marker + 離開 K 線 body (4.65.0, 對齊 4.64.0 大少 00:48 trigger「用鮮紫色, 不要在那支竹內, 要在離開那支竹少少」)
 
 ### ZigZag Threshold 切 manual mode 永久 rule (大少 2026-08-31 09:24, 4.52.0)
 

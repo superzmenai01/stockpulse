@@ -5306,4 +5306,56 @@ renderMAAlignmentV2ChartOverlay (adapter.mjs)
 - `fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)` (4094fbd6)
 - Spec Sync: ARCHITECTURE.md §15.63 (本段) + AGENTS.md 「M1 P 點 marker v5 plugin API + Max 10 + 紅色獨發點 marker 永久 rule (4.64.0)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
 
+---
+
+## §15.64 — M1 鮮紫獨發點 marker + 離開 K 線 body 改進 (大少 2026-09-02 00:48 trigger「用鮮紫色, 不要在那支竹內, 要在離開那支竹少少」, 4.65.0) [2026-09-02]
+
+### Context (4.64.0 紅色 inBar 視覺唔 clear, 4.65.0 改進)
+
+4.64.0 commit `4094fbd6` (2026-09-02 00:30) 拎返紅色獨發點 marker (對齊 4.61.0 design, Option D arrowUp/arrowDown + 紅色 `#FF5252` + `inBar` position + 冇 label)。但大少 9月2日 00:38 reload testing page 撅完睇咗話「很不好看」, 兩個 visual 問題:
+1. **紅色 `#FF5252` 撞 K 線 body 跌紅色 `#ef5350`**: 紅色 arrow plot 喺 K 線 body 範圍 (inBar position) 紅撞紅, 視覺唔 clear
+2. **Position `inBar` 喺 K 線 body 內**: 大少 want 鮮紫 trigger 離開 K 線 body 少少, plot 喺 K 線上面 (peak) 或下面 (trough)
+
+大少 9月2日 00:48 trigger「用鮮紫色, 還有不要在那支竹內, 要在離開那支竹少少」+ 4.65.0 fix:
+- color 改鮮紫 `#BA68C8` (Material Design Purple 300, 對齊 P 點紫 `#9C27B0` Purple 500 hue family 但淺 1 級)
+- position 改 `aboveBar` (peak trigger) / `belowBar` (trough trigger), 對齊 P 點 marker 4.51.0 永久 rule position pattern
+
+### 大少 trigger
+
+- 2026-09-02 00:48 trigger「用鮮紫色, 還有不要在那支竹內, 要在離開那支竹少少」
+
+### 永久 rule (4.65.0 fix, 大少 00:48 confirm)
+
+- ✅ **Color**: 鮮紫 `#BA68C8` (Material Design Purple 300, 中等鮮度) — 4.65.0 改 4.64.0 紅色 `#FF5252`. 對齊 P 點紫 `#9C27B0` (Purple 500) hue family 但淺 1 級, 視覺 contrast 對 K 線 body 升綠/跌紅都清楚
+- ✅ **Position**: `p.type === 'high' ? 'aboveBar' : 'belowBar'` — 4.65.0 改 4.64.0 `inBar`. Peak trigger 喺 K 線上面 (aboveBar), trough trigger 喺 K 線下面 (belowBar), 對齊 P 點 marker 4.51.0 永久 rule position pattern, 鮮紫 trigger 喺紫 P 點對面 side, 視覺 unified
+- ✅ **其他 field 唔改**: arrowUp/arrowDown shape (Option D), size 1, text '' (冇 label), max 10, filter ongoing + first point, dedupe by time (4.40.0), business day object time field (4.41.2), combined markers array 共享 plugin handle (4.63.0)
+
+### 凡人話解釋
+
+4.64.0 紅色 inBar 嗰個紅撞紅 issue 拎走, 鮮紫對齊 P 點紫 hue family 視覺 unified, 兩種 marker 統一 plot 喺 K 線 body 外面 (aboveBar/belowBar) 視覺 clean。Peak (山頂) 嗰個嘅 trigger 用 arrowDown 鮮紫喺 K 線上面, trough (山谷) 嗰個嘅 trigger 用 arrowUp 鮮紫喺 K 線下面, 大少一望就分到「P 點係邊日先 confirm + 對應 peak 定 trough + 鮮紫獨立 hue family 唔撞 K 線 body 顏色」。
+
+### Affected files
+
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5239-5240: trigger marker 2 個 field
+  - `color: '#FF5252'` → `'#BA68C8'` (鮮紫)
+  - `position: 'inBar'` → `p.type === 'high' ? 'aboveBar' : 'belowBar'` (離開 K 線 body)
+- `testing-page/testing-page.js` line 555: ALGO_CACHE_BUST 4.64.0 → 4.65.0
+- `testing-page/index.html` line 10, 184: ?v=2.3.135 → 2.3.136 (CSS + JS)
+
+### Acceptance tests
+
+- 撅跑 M1 (AS-03-MA) HK.01888 (主要 verify target, 49 markers):
+  - 預期: 紫色 P1, P2, P3... 圓圈 marker 出 (aboveBar peak / belowBar trough, 對齊 P 點 marker 4.51.0 永久 rule)
+  - 預期: **鮮紫** arrowUp/arrowDown 10 個 trigger marker 出 (aboveBar peak / belowBar trough, 4.65.0 fix)
+  - 預期: 兩種 marker 都 plot 喺 K 線 body 外面, 鮮紫獨立 hue family 唔撞 K 線 body 紅綠
+  - 預期: 撅完睇住個 chart, 紅色 K 線跌 body 內冇紅色 arrow, 視覺 clean
+- 撅跑 M1 HK.00019 (12 markers) / HK.00700 (189 markers):
+  - 預期: 紫色 P1-P10 + 鮮紫 arrow 10 個 trigger marker 出, 同 HK.01888 一樣 visual
+
+### 對應 commit
+
+- `fix(stockpulse): 鮮紫獨發點 marker + 離開 K 線 body (4.65.0, 對齊 4.64.0 大少 00:48 trigger「用鮮紫色, 不要在那支竹內, 要在離開那支竹少少」)` (689ace77)
+- Spec Sync: ARCHITECTURE.md §15.64 (本段) + AGENTS.md 「M1 P 點 marker v5 plugin API + Max 10 + 紅色獨發點 marker 永久 rule (4.64.0, 4.65.0 改進 visual 鮮紫 + aboveBar/belowBar)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
+
+
 
