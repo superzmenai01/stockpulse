@@ -187,10 +187,12 @@ async def list_backup_points():
         #    用 %(contents:subject) 先拎到 annotated tag 嘅 message subject
         #    凡人話: 之前 bug, 4.64.0 編輯 tag 註解後, list endpoint 仍然拎 commit 嘅舊 reason, 唔顯示新 tag 註解
 
-        # 1a. 掃 restore-* annotated tags (拎 tag 嘅 annotated message 而唔係 commit)
+        # 1a. 大少 9月1日 18:14 trigger (4.64.1) — 拎 ref 嘅基本 info (refname + commit + date), 唔拎 body
+        #     因為 %(contents:body) 如果有 newline, for-each-ref 唔 escape, 會將每行當成獨立 line, parser 會全部 skip
+        #     Fix: 拎 body 同 subject 用 separate git command (`git tag -l --format=...` 同 `git log -1 --format=...`)
         code, tags_out, err = _run_git([
             "for-each-ref",
-            "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)|%(contents:subject)|%(contents:body)",
+            "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)",
             "refs/tags/restore-*",
         ])
         if code != 0:
@@ -205,7 +207,7 @@ async def list_backup_points():
         # 1b. 掃 backup-* branches (branch 冇自己 message, 拎 commit message)
         code, branches_out, err = _run_git([
             "for-each-ref",
-            "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)|%(subject)|%(body)",
+            "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)",
             "refs/heads/backup-*",
         ])
         if code != 0:
@@ -229,16 +231,17 @@ async def list_backup_points():
         script_map = _scan_restore_scripts()  # { filename: commit_hash }
 
         # 3. Dedup by commit hash, combine tag + branch + script
+        # 大少 9月1日 18:14 trigger (4.64.1) — 拎 subject + body 用 separate git command,
+        #     避免 for-each-ref 嘅 body newline 破壞 parser
         points_map: dict = {}
         for line in out.strip().split("\n"):
             if not line.strip():
                 continue
-            parts = line.split("|", 5)
-            if len(parts) < 5:
+            parts = line.split("|", 4)
+            if len(parts) < 4:
                 logger.warning(f"[Backup Admin] 跳過格式錯嘅 line: {line[:100]}")
                 continue
-            ref_name, obj_hash, obj_type, date, subject = parts[0], parts[1], parts[2], parts[3], parts[4]
-            body = parts[5] if len(parts) > 5 else ""
+            ref_name, obj_hash, obj_type, date = parts[0], parts[1], parts[2], parts[3]
             is_tag = ref_name.startswith("restore-")
             is_branch = ref_name.startswith("backup-")
             if not (is_tag or is_branch):
@@ -249,6 +252,65 @@ async def list_backup_points():
             if not commit:
                 logger.warning(f"[Backup Admin] 拎 {ref_name} commit 失敗, skip")
                 continue
+
+            # 拎 subject + body 用 separate git command (避 newline 問題)
+            if is_tag:
+                # Annotated tag: 用 `git cat-file -p <tag-object-hash>` 拎 raw tag object
+                # 凡人話: `git tag -l <name> --format=%(body)` 拎唔到 body (空 string),
+                #          `git cat-file -p` 拎 raw object, parser 自己 split subject + body
+                cat_file_code, cat_file_out, _ = _run_git([
+                    "cat-file", "-p", ref_name
+                ])
+                if cat_file_code == 0 and cat_file_out:
+                    # Tag object format:
+                    #   <object-type> <object-hash>\n
+                    #   type <type>\n
+                    #   tag <name>\n
+                    #   tagger <name> <email> <timestamp>\n
+                    #   \n
+                    #   <message (subject + body, separated by blank line)>
+                    cat_file_lines = cat_file_out.split("\n")
+                    # 搵 message start: 第一個空行之後
+                    msg_start_idx = None
+                    for i, line in enumerate(cat_file_lines):
+                        if i > 0 and line.strip() == "" and i + 1 < len(cat_file_lines) and cat_file_lines[i + 1].strip() != "":
+                            msg_start_idx = i + 1
+                            break
+                    if msg_start_idx is not None:
+                        msg_lines = cat_file_lines[msg_start_idx:]
+                        # subject = 第一段 (到下一個空行)
+                        # body = 後面所有段
+                        subject_lines = []
+                        body_lines = []
+                        in_body = False
+                        for line in msg_lines:
+                            if not in_body and line.strip() == "":
+                                in_body = True
+                                continue
+                            if in_body:
+                                body_lines.append(line)
+                            else:
+                                subject_lines.append(line)
+                        subject = "\n".join(subject_lines).strip()
+                        body = "\n".join(body_lines).strip()
+                    else:
+                        subject = ""
+                        body = ""
+                else:
+                    subject = ""
+                    body = ""
+            else:
+                # Branch: 拎 commit 嘅 subject + body
+                # `git log -1 --format=%s` 拎 subject, `--format=%b` 拎 body
+                # 注意: %b 已經 trim 過 trailing newline, 唔需要 .strip()
+                subject_code, subject_out, _ = _run_git([
+                    "log", "-1", "--format=%s", ref_name
+                ])
+                body_code, body_out, _ = _run_git([
+                    "log", "-1", "--format=%b", ref_name
+                ])
+                subject = subject_out if subject_code == 0 else ""
+                body = body_out if body_code == 0 else ""
 
             # 拎 (init or reuse) 對應 commit 嘅 point
             if commit not in points_map:
@@ -266,7 +328,7 @@ async def list_backup_points():
                     "commit_short": commit[:8],
                     "date": date,
                     "reason_short": subject,
-                    "reason_long": body.strip(),
+                    "reason_long": body,
                     "script_path": script_path,
                     "has_script": script_path is not None,
                     "missing": [],
@@ -274,12 +336,17 @@ async def list_backup_points():
             point = points_map[commit]
             if is_tag:
                 point["tag"] = ref_name
-                if subject and not point["tag"]:
-                    point["reason_short"] = subject
-                if body.strip() and not point["reason_long"]:
-                    point["reason_long"] = body.strip()
+                # 大少 9月1日 18:18 trigger (4.64.1) — tag 嘅 reason 永遠用 tag 嘅 (唔繼承 commit 嘅舊 reason)
+                # 之前 `not point["reason_short"]` 邏輯有 bug, 當 dedup by commit 撞到多個 tag 指去同一個 commit 嗰陣,
+                # 第二個 tag 嘅 reason 唔會 overwrite, 會用返第一個 tag 嘅舊 reason
+                # Fix: tag 永遠用自己嘅 subject + body, 唔繼承之前 entry
+                # 注意: 即使 subject/body 係 empty string 都要 set (避免被第一個 entry 嘅 value 影響)
+                point["reason_short"] = subject
+                point["reason_long"] = body
             elif is_branch:
                 point["branch"] = ref_name
+                # Branch 拎 commit 嘅 subject + body, 但因為 dedup by commit,
+                # 第一個 entry 已經 set 咗, 後續 entry 唔需要再 set (內容一樣)
 
         # 4. 填 name + missing + can_restore (§15.55 A 方向)
         points = []

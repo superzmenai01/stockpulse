@@ -1220,6 +1220,69 @@ git push origin main
 
 對應永久 rule: §15.45 Sscript pattern + §15.46 cache bust sync + §15.53 Sscript 還原點 + §15.54 Backup Admin Page + 12:08 user memory「一鍵還原 Backup Admin Page 永久更新」
 
+### Backup Admin List Endpoint Multi-line Body Parser 永久 rule (大少 2026-09-01 18:11 trigger, 4.64.1)
+
+**凡人話解釋**: 大少 18:11 trigger「我修改了註解, 但沒有更新到, 請檢查」— 4.64.0 加完 annotate endpoint 之後, 大少 reload page 拎 list endpoint 嘅時候, 拎唔到自己改嘅新註解, 仍然見到舊內容。Root cause: list endpoint 用 `git for-each-ref --format=...%(contents:body)` 拎 K 線, 如果 tag 嘅 message body 有 newline, for-each-ref 唔 escape, 將每行當成獨立 line, parser `split("|", 5)` 後每行都唔夠 5 parts 全部 skip, 拎返嚟嘅 data 唔齊全。
+
+**Root cause** (4.64.0 list endpoint 有 3 個 bugs):
+1. **Bug 1 - Multi-line body parsing** (主要問題):
+   - `git for-each-ref --format=...%(contents:body)` 拎出嚟如果有 newline, 唔 escape
+   - Parser `line.split("\n")` 將每行當成獨立 ref line
+   - 每行 < 5 parts → 全部 skip
+   - 結果: list endpoint return 唔完整 data 或 0 個 point
+
+2. **Bug 2 - 拎 body 用 `git tag -l <name> --format=%(body)` 拎唔到**:
+   - `git tag -l <name> --format=%(body)` 永遠返空 string (git 嘅 format 唔支援 tag body)
+   - 改用 `git cat-file -p <tag>` 拎 raw tag object, parser 自己 split subject + body
+
+3. **Bug 3 - Multi-tag 同一 commit 嗰陣 reason 唔 overwrite**:
+   - Dedup by commit 邏輯, 後續 tag 嘅 `if not point[...]:` 永遠 skip (因為第一個 entry 已經 set)
+   - 第二個 tag 嘅 reason 用返第一個 tag 嘅舊 reason
+   - Fix: tag 永遠 overwrite 自己嘅 reason (even if empty), branch 保留 dedup
+
+**改動 (4.64.1)**:
+
+1. **list endpoint query 改** (backend/api/backup_admin.py line 190-218):
+   - `%(contents:body)` 拎走, for-each-ref 只拎 refname + commit + date
+   - 改用 separate `git cat-file -p <tag>` 同 `git log -1 --format=...` 拎 body
+
+2. **list endpoint parser 改** (line 234-310):
+   - `parts = line.split("|", 4)` 4 parts (冇 body)
+   - 每個 ref 拎 subject + body 用 separate git command:
+     - Tag: `git cat-file -p <tag>` 拎 raw object, parser 自己 split (subject = 第一段, body = 餘下段)
+     - Branch: `git log -1 --format=%s|%b` 拎 commit 嘅 subject + body
+   - 改 dedup 邏輯: tag 永遠 overwrite reason (even if empty), branch skip
+
+3. **annotated tag 永久 rule**:
+   - ✅ list endpoint 拎 tag 嘅 subject + body 用 `git cat-file -p`, 唔用 for-each-ref 嘅 `%(contents:body)`
+   - ✅ list endpoint 拎 branch 嘅 subject + body 用 `git log -1 --format=%s|%b`
+   - ✅ 對齊 4.64.0 永久 rule: list endpoint 拎 reason 永遠用 ref 嘅 (tag 拎 annotated message, branch 拎 commit message)
+   - ✅ 改 `%(contents:body)` 後要測 multi-line 情況, 避免 body 有 newline 破壞 parser
+   - ✅ Tag 嘅 reason 永遠 overwrite 自己嘅 (even if empty), 唔繼承 dedup entry 嘅舊 value
+
+**Verify** (大少 18:14 試):
+```
+Set multi-line restore-test-multiline tag:
+  subject: "Test subject"
+  body: "Line 2 of body\nLine 3 of body"
+
+Before fix: WARNING 「跳過格式錯嘅 line: ...」× N 條 (body newline 破壞 parser)
+After fix:  0 WARNING, 拎到正確 reason
+```
+
+**User impact** (4.64.0 → 4.64.1):
+- ✅ 之前 4.64.0 編輯 tag 註解後, list endpoint 拎唔到 / 拎錯 body, 大少 reload 見唔到新註解
+- ✅ 4.64.1 拎 fix, reload 拎到 reason_short + reason_long 正確顯示
+- ✅ 對齊 §15.45 Sscript pattern: 永遠拎 ref 嘅真實 reason (tag 拎 annotated, branch 拎 commit)
+
+對應 file:
+- `backend/api/backup_admin.py` (list endpoint for-each-ref format 改, parser 改, cat-file-p 拎 body)
+- `AGENTS.md` (加 4.64.1 永久 rule section)
+
+對應 commit: 即將 push (4.64.1 fix + Spec Sync 流程)
+
+對應永久 rule: §15.45 Sscript pattern + §15.53 Sscript 還原點 + §15.54 Backup Admin Page + 12:08 user memory
+
 ### Sscript 還原點統一管理 永久 rule (大少 2026-09-01 17:50 trigger, 4.63.0)
 
 **凡人話解釋**: 大少 17:50 trigger「現在做一個一鍵備份, 也把之前那些一鍵備份全部刪除, 只留現在的這個, 要更新頁面」— 清晒 7 個舊 Sscript 還原點 (4.53.0 - 4.58.0 + sprint 4), 只留 1 個新嘅 `restore-2026-09-01-stocks-async` 還原點(包 4.59.0 - 4.62.0 全部改動), Backup Admin Page 自動動態 render 只見呢個新嘅。對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory「一鍵還原 Backup Admin Page 永久更新」永久 rule。
