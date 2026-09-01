@@ -7,11 +7,12 @@
 //   D. Recover script (redefined cleanup): recoverScript handler (大少 trigger「保留 tag + 可能會再用」)
 
 const API_BASE = 'http://localhost:18792/api/backup-points';
-const CACHE_BUST = '1.1.0';  // §15.55 bump: 1.0.0 → 1.1.0 (4 個新方向)
+const CACHE_BUST = '1.3.0';  // §15.55 bump: 1.1.0 → 1.2.0 (4.63.0 清舊) → 1.3.0 (4.64.0 加 annotate)
 
 let currentPoints = [];  // 拎到嘅 backup points cache
 let currentRestoreTag = null;  // 撳咗「還原」嘅 tag name
 let currentRecoverTag = null;  // 撳咗「Recover script」嘅 tag name (§15.55 D 方向)
+let currentAnnotateTag = null;  // 撳咗「編輯註解」嘅 tag name (4.64.0)
 
 // === DOM refs ===
 const statusBanner = document.getElementById('status-banner');
@@ -48,6 +49,17 @@ const recoverTagName = document.getElementById('recover-tag-name');
 const recoverScriptPath = document.getElementById('recover-script-path');
 const recoverCancelBtn = document.getElementById('recover-cancel-btn');
 const recoverConfirmBtn = document.getElementById('recover-confirm-btn');
+
+// 大少 9月1日 18:00 trigger (4.64.0): Annotate modal refs
+const annotateModal = document.getElementById('annotate-modal');
+const annotateTagName = document.getElementById('annotate-tag-name');
+const annotateCommit = document.getElementById('annotate-commit');
+const annotateReasonShortInput = document.getElementById('annotate-reason-short');
+const annotateReasonLongInput = document.getElementById('annotate-reason-long');
+const annotateUpdateScriptInput = document.getElementById('annotate-update-script');
+const annotateScriptPathHint = document.getElementById('annotate-script-path-hint');
+const annotateCancelBtn = document.getElementById('annotate-cancel-btn');
+const annotateConfirmBtn = document.getElementById('annotate-confirm-btn');
 
 // === 工具 function ===
 function showBanner(type, msg) {
@@ -166,6 +178,7 @@ function renderBackupList(points, scripts) {
             ${canRestore ? '⚠️ 還原到呢個備份' : '🚫 缺 component, 撳 Recover'}
           </button>
           ${!canRestore && p.tag ? `<button class="btn btn-recover" data-tag="${escapeHtml(p.tag)}" title="對齊 §15.55 D 方向, 拎返 reset 之前 commit 嘅 script">🔧 Recover script</button>` : ''}
+          ${p.tag ? `<button class="btn btn-annotate" data-tag="${escapeHtml(p.tag)}" title="大少 9月1日 18:00 trigger (4.64.0): 編輯 tag 註解 + 同步更新 script header (commit hash 永遠唔郁)">✏️ 編輯註解</button>` : ''}
         </div>
       </div>
     `;
@@ -191,6 +204,17 @@ function renderBackupList(points, scripts) {
       const point = currentPoints.find(p => p.tag === tag);
       if (point) {
         showRecoverConfirm(point);
+      }
+    });
+  });
+
+  // 4.64.0: 綁定「編輯註解」掣 click handler
+  backupListContainer.querySelectorAll('.btn-annotate').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tag = btn.dataset.tag;
+      const point = currentPoints.find(p => p.tag === tag);
+      if (point) {
+        showAnnotateModal(point);
       }
     });
   });
@@ -303,6 +327,85 @@ async function executeRecoverScript() {
   } catch (err) {
     progressOutput.textContent += `\n\n❌ 網絡錯誤: ${err.message}`;
     showBanner('error', `❌ Recover 失敗: ${err.message}`);
+  } finally {
+    progressCloseBtn.disabled = false;
+  }
+}
+
+// === 4.64.0: Annotate modal (編輯備份還原點註解) ===
+function showAnnotateModal(point) {
+  if (!point.tag) {
+    showBanner('error', '❌ 冇 tag 唔可以編輯註解');
+    return;
+  }
+  currentAnnotateTag = point.tag;
+  annotateTagName.textContent = point.tag;
+  annotateCommit.textContent = point.commit || '(拎唔到)';
+  // 預填現有值
+  annotateReasonShortInput.value = point.reason_short || '';
+  annotateReasonLongInput.value = point.reason_long || '';
+  annotateUpdateScriptInput.checked = true;  // 預設同步更新 script
+  annotateScriptPathHint.textContent = point.script_path || '(冇 script)';
+  annotateModal.style.display = 'flex';
+}
+
+function hideAnnotateModal() {
+  annotateModal.style.display = 'none';
+  currentAnnotateTag = null;
+}
+
+async function executeAnnotate() {
+  if (!currentAnnotateTag) {
+    showBanner('error', '❌ 冇選 tag');
+    return;
+  }
+  const tag = currentAnnotateTag;
+  const reasonShort = annotateReasonShortInput.value.trim();
+  const reasonLong = annotateReasonLongInput.value.trim();
+  const updateScript = annotateUpdateScriptInput.checked;
+
+  if (!reasonShort) {
+    showBanner('error', '❌ Reason (short) 唔可以空');
+    return;
+  }
+  if (!reasonLong) {
+    showBanner('error', '❌ Reason (long) 唔可以空');
+    return;
+  }
+
+  hideAnnotateModal();
+
+  progressOutput.textContent = `啟動中... 編輯註解 ${tag} (commit ${tag} 永遠唔郁)...`;
+  progressModal.style.display = 'flex';
+  progressCloseBtn.disabled = true;
+
+  try {
+    const resp = await fetch(`${API_BASE}/${encodeURIComponent(tag)}/annotate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reason_short: reasonShort,
+        reason_long: reasonLong,
+        update_script: updateScript,
+      }),
+    });
+    const data = await resp.json();
+    progressOutput.textContent = JSON.stringify(data, null, 2);
+
+    if (data.ok) {
+      let msg = data.message || `✅ 編輯註解成功: ${data.tag}`;
+      if (data.script_updated) {
+        msg += ` (commit: ${data.commit_short || data.commit?.substring(0, 8)})`;
+      }
+      showBanner('success', msg);
+      // Reload 拎返新註解
+      loadBackupList();
+    } else {
+      showBanner('error', `❌ 編輯失敗: ${data.error || '未知錯誤'}`);
+    }
+  } catch (err) {
+    progressOutput.textContent += `\n\n❌ 網絡錯誤: ${err.message}`;
+    showBanner('error', `❌ 編輯失敗: ${err.message}`);
   } finally {
     progressCloseBtn.disabled = false;
   }
@@ -439,6 +542,10 @@ loadAuditBtn.addEventListener('click', loadAuditTrail);
 recoverCancelBtn.addEventListener('click', hideRecoverModal);
 recoverConfirmBtn.addEventListener('click', executeRecoverScript);
 
+// 4.64.0: Annotate modal listeners
+annotateCancelBtn.addEventListener('click', hideAnnotateModal);
+annotateConfirmBtn.addEventListener('click', executeAnnotate);
+
 // Esc 關閉 modal
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -448,6 +555,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (sscriptSetModal.style.display === 'flex') hideSscriptSetModal();
     if (recoverModal.style.display === 'flex') hideRecoverModal();
+    if (annotateModal.style.display === 'flex') hideAnnotateModal();
   }
 });
 

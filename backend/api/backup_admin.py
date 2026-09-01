@@ -182,21 +182,48 @@ async def list_backup_points():
         }
     """
     try:
-        # 1. 掃 restore-* annotated tags + backup-* branches
-        code, out, err = _run_git([
+        # 1. 大少 9月1日 18:00 trigger (4.64.0) — 分開 query tag + branch
+        #    因為 %(subject) 拎 commit subject (tag 指去 commit, 所以會拎 commit 而唔係 tag 嘅 message)
+        #    用 %(contents:subject) 先拎到 annotated tag 嘅 message subject
+        #    凡人話: 之前 bug, 4.64.0 編輯 tag 註解後, list endpoint 仍然拎 commit 嘅舊 reason, 唔顯示新 tag 註解
+
+        # 1a. 掃 restore-* annotated tags (拎 tag 嘅 annotated message 而唔係 commit)
+        code, tags_out, err = _run_git([
             "for-each-ref",
-            "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)|%(subject)|%(body)",
+            "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)|%(contents:subject)|%(contents:body)",
             "refs/tags/restore-*",
-            "refs/heads/backup-*",
         ])
         if code != 0:
-            logger.error(f"[Backup Admin] git for-each-ref 失敗: {err}")
+            logger.error(f"[Backup Admin] git for-each-ref tags 失敗: {err}")
             return {
                 "ok": False,
                 "points": [],
                 "script_count": 0,
-                "error": f"git for-each-ref 失敗: {err[:200]}",
+                "error": f"git for-each-ref tags 失敗: {err[:200]}",
             }
+
+        # 1b. 掃 backup-* branches (branch 冇自己 message, 拎 commit message)
+        code, branches_out, err = _run_git([
+            "for-each-ref",
+            "--format=%(refname:short)|%(objectname)|%(objecttype)|%(committerdate:iso8601)|%(subject)|%(body)",
+            "refs/heads/backup-*",
+        ])
+        if code != 0:
+            logger.error(f"[Backup Admin] git for-each-ref branches 失敗: {err}")
+            return {
+                "ok": False,
+                "points": [],
+                "script_count": 0,
+                "error": f"git for-each-ref branches 失敗: {err[:200]}",
+            }
+
+        # 合併 tags + branches output
+        out_lines = []
+        if tags_out.strip():
+            out_lines.extend(tags_out.strip().split("\n"))
+        if branches_out.strip():
+            out_lines.extend(branches_out.strip().split("\n"))
+        out = "\n".join(out_lines)
 
         # 2. 掃 restore_*.sh scripts, 拎 EXPECTED_HEAD 對應 commit
         script_map = _scan_restore_scripts()  # { filename: commit_hash }
@@ -783,6 +810,182 @@ echo "記住: backend 要 restart 先 load 對應 code (§15.51 永久 rule)"
         }
     except Exception as e:
         logger.exception(f"[Backup Admin] set 失敗: name={req.name}")
+        return {
+            "ok": False,
+            "error": f"內部錯誤: {e}",
+        }
+
+
+# 大少 2026-09-01 18:00 trigger (4.64.0) — Backup Admin Page 加「編輯註解」功能
+# 對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule
+class AnnotateRequest(BaseModel):
+    """凡人話: 編輯備份還原點註解請求, 改 git tag message 唔郁 commit
+
+    - tag: 現有 annotated tag 名 (e.g. "restore-2026-09-01-stocks-async")
+    - reason_short: 新 short reason (拎做 tag message subject)
+    - reason_long: 新 long reason (拎做 tag message body)
+    - update_script: True/False, 同步更新對應 script header comment
+    """
+    reason_short: str
+    reason_long: str
+    update_script: bool = True
+
+
+@router.post("/{tag_name}/annotate")
+async def annotate_backup_point(tag_name: str, req: AnnotateRequest):
+    """凡人話: 改現有 annotated tag 嘅 message, 唔郁 commit hash
+
+    大少 9月1日 18:00 trigger「把備份還原點管理 增加我可以修改或加入註解」
+
+    Algorithm:
+    1. 拎返 tag 對應 commit hash (用 _resolve_commit_from_ref)
+    2. 驗證 tag 存在
+    3. Force update tag message: `git tag -f <tag> <commit> -m <new_msg>`
+       (保留 commit 唔郁, 永遠唔郁 evidence, 改 message)
+    4. Force push tag 去 origin: `git push origin --force <tag>`
+    5. (Optional) 同步更新對應 script header comment:
+       - 拎 tag 對應 backup branch
+       - 拎返 script 內容
+       - 改 header 段 (`# Restore script for ...` + reason_short + reason_long)
+       - 寫返落 disk
+       - Git add + commit + push (喺 backup branch 上)
+    6. Return 新嘅 tag 註解
+
+    Returns:
+        {
+            "ok": bool,
+            "tag": str,
+            "commit": str,
+            "script_updated": bool,
+            "script_path": str or None,
+            "message": str
+        }
+    """
+    try:
+        # 1. 拎返 tag 對應 commit (annotated tag peel)
+        commit = _resolve_commit_from_ref(tag_name)
+        if not commit:
+            return {
+                "ok": False,
+                "error": f"Tag {tag_name} 唔存在, 拎唔到對應 commit",
+            }
+
+        # 2. 驗證 reason_short + reason_long 唔可以空
+        if not req.reason_short.strip():
+            return {
+                "ok": False,
+                "error": "Reason (short) 唔可以空",
+            }
+        if not req.reason_long.strip():
+            return {
+                "ok": False,
+                "error": "Reason (long) 唔可以空",
+            }
+
+        # 3. Force update tag message
+        new_tag_msg = f"{req.reason_short}\n\n{req.reason_long}"
+        code, out, err = _run_git(["tag", "-f", tag_name, commit, "-m", new_tag_msg])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git tag -f 失敗: {err[:300]}",
+            }
+
+        # 4. Force push tag 去 origin
+        code, out, err = _run_git(["push", "origin", "--force", tag_name])
+        if code != 0:
+            return {
+                "ok": False,
+                "error": f"git push --force tag 失敗: {err[:300]}",
+            }
+
+        # 5. Optional: 同步更新 script header
+        script_updated = False
+        script_path_rel = None
+        if req.update_script:
+            # 拎返 backup branch 名 (e.g. restore-2026-09-01-stocks-async → backup-2026-09-01-stocks-async)
+            branch_name = tag_name.replace("restore-", "backup-", 1)
+            # 對應 script 路徑 (e.g. scripts/restore_2026_09_01_stocks_async.sh)
+            script_basename = tag_name.replace("restore-", "restore_", 1).replace("-", "_") + ".sh"
+            script_path_rel = f"scripts/{script_basename}"
+            script_path_abs = os.path.join(PROJECT_ROOT, script_path_rel)
+
+            if os.path.exists(script_path_abs):
+                # 讀現有 script, 改 header 段 (由 `# Restore script` 到第一個空行)
+                with open(script_path_abs, "r", encoding="utf-8") as f:
+                    script_lines = f.readlines()
+
+                new_header_lines = [
+                    f"# Restore script for {tag_name}\n",
+                    f"# 對齊 §15.45 永久 rule Sscript pattern (annotated tag + backup branch + restore script + double confirm)\n",
+                    f"#\n",
+                    f"# 大少 2026-09-01 18:00 trigger 編輯註解 (4.64.0)\n",
+                    f"# Reason (short): {req.reason_short}\n",
+                    f"#\n",
+                    f"# Reason (long):\n",
+                ]
+                # 加 long reason (每行前加 # 拎做 comment)
+                for line in req.reason_long.split("\n"):
+                    new_header_lines.append(f"#   {line}\n")
+                new_header_lines.append(f"#\n")
+
+                # 搵原本 header 結束位置 (第一個空行 或 "set -e" line)
+                body_start_idx = 0
+                for i, line in enumerate(script_lines):
+                    if line.strip() == "" and i > 5:  # 跳過最前幾行註解
+                        body_start_idx = i + 1
+                        break
+                    if line.strip() == "set -e":
+                        body_start_idx = i
+                        break
+
+                # 合併新 header + 原本 body
+                new_script = "".join(new_header_lines) + "".join(script_lines[body_start_idx:])
+
+                with open(script_path_abs, "w", encoding="utf-8") as f:
+                    f.write(new_script)
+
+                # Git add + commit + push (喺 main branch 上)
+                code, _, err = _run_git(["add", script_path_rel])
+                if code != 0:
+                    return {
+                        "ok": False,
+                        "error": f"git add script 失敗: {err[:300]}",
+                    }
+                commit_msg = f"docs(scripts): 編輯 {tag_name} script header 對齊新註解\n\n{req.reason_long}\n\n對齊 4.64.0 Backup Admin 編輯註解永久 rule"
+                code, _, err = _run_git(["commit", "-m", commit_msg])
+                if code != 0:
+                    return {
+                        "ok": False,
+                        "error": f"git commit script 失敗: {err[:300]}",
+                    }
+                code, _, err = _run_git(["push", "origin", "main"])
+                if code != 0:
+                    return {
+                        "ok": False,
+                        "error": f"git push main 失敗: {err[:300]}",
+                    }
+                script_updated = True
+            else:
+                return {
+                    "ok": True,
+                    "tag": tag_name,
+                    "commit": commit,
+                    "script_updated": False,
+                    "script_path": None,
+                    "message": f"✅ 已更新 {tag_name} 註解 (但 script {script_path_rel} 唔存在, 冇改 script)",
+                }
+
+        return {
+            "ok": True,
+            "tag": tag_name,
+            "commit": commit,
+            "script_updated": script_updated,
+            "script_path": script_path_rel,
+            "message": f"✅ 已更新 {tag_name} 註解" + (f" + script {script_path_rel}" if script_updated else ""),
+        }
+    except Exception as e:
+        logger.exception(f"[Backup Admin] annotate 失敗: tag={tag_name}")
         return {
             "ok": False,
             "error": f"內部錯誤: {e}",

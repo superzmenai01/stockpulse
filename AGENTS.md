@@ -1164,6 +1164,62 @@ git push origin main
 
 對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.57.2 date format 統一 + 4.60.0 ongoing point trigger null + §15.45 Sscript pattern + §15.51 Backend hot-reload + §15.53 Sscript 還原點 + §15.54 Backup Admin Page
 
+### Backup Admin 編輯註解 永久 rule (大少 2026-09-01 18:00 trigger, 4.64.0)
+
+**凡人話解釋**: 大少 18:00 trigger「把備份還原點管理 增加我可以修改或加入註解」— Backup Admin Page 加「✏️ 編輯註解」掣 + 對應 modal, 大少可以改現有 Sscript 還原點嘅 tag 註解(reason_short + reason_long), 仲可以勾選同步更新對應 script header。改 tag 註解**唔郁 commit hash**(evidence 永遠保留), 自動 force push 去 origin。對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule。
+
+**改動 (4.64.0)**:
+
+1. **Backend 加 endpoint** (`backend/api/backup_admin.py`):
+   - `POST /api/backup-points/{tag_name}/annotate`
+   - Input: `reason_short` + `reason_long` + `update_script` (boolean)
+   - Algorithm:
+     a. `_resolve_commit_from_ref(tag)` 拎返 commit hash (永遠唔郁, 只拎用)
+     b. `git tag -f <tag> <commit> -m <new_msg>` force update tag message
+     c. `git push origin --force <tag>` force push tag
+     d. (Optional) 同步更新 script header: 改 `scripts/restore_<name>.sh` header 段 (由 `# Restore script` 到第一個空行/`set -e`), 加 `Reason (short)` + `Reason (long)` comment, 然後 `git add + commit + push main`
+   - Response: `{ok, tag, commit, script_updated, script_path, message}`
+
+2. **List endpoint bug fix** (`backend/api/backup_admin.py` line 184+):
+   - **大少發現**: 之前 list endpoint 用 `for-each-ref ... %(subject)|%(body)` 拎到 commit subject 而唔係 annotated tag 嘅 message
+   - 結果: 4.64.0 改完 tag 註解後, list endpoint 仍然拎 commit 嘅舊 reason, 唔顯示新 tag 註解
+   - **Fix**: 分開 query tag + branch, tag 用 `%(contents:subject)|%(contents:body)` 拎 tag 嘅 annotated message, branch 用 `%(subject)|%(body)` 拎 commit message, 然後合併 output
+   - 凡人話: 大少改完 tag 註解 reload 頁面, 即刻見到新 reason_short + reason_long (唔再係 commit 嘅)
+
+3. **Frontend 加 modal** (`backup-admin/index.html` + `backup-admin.js`):
+   - 每個 backup card 加「✏️ 編輯註解」button (放喺 `.backup-card-actions`, 對齊其他 button style)
+   - 新 modal `#annotate-modal` (對齊 #sscript-set-modal 風格):
+     - 預填 `reason_short` + `reason_long` (大少唔使從頭打)
+     - 預填 `update_script` checkbox 為 checked (預設同步更新 script)
+     - 顯示 script path hint (e.g. `scripts/restore_2026_09_01_stocks_async.sh`)
+     - 「✅ 儲存」button + 「取消」button
+   - `?v=1.2.0` → `?v=1.3.0` cache bust sync (對齊 §15.46 永久 rule)
+
+**永久 rule**:
+- ✅ Backup Admin Page 永遠可以編輯現有 Sscript 還原點嘅註解
+- ✅ 改 tag 註解永遠唔郁 commit hash (evidence 保留), 用 `git tag -f <tag> <commit> -m <msg>`
+- ✅ 改 tag 註解必 force push 去 origin (`git push origin --force <tag>`)
+- ✅ 預設同步更新對應 script header (大少可以 uncheck 跳過)
+- ✅ 編輯 modal 必預填現有值 (大少唔使從頭打, 對齊 UX 改善)
+- ✅ List endpoint 拎 tag 嘅 `%(contents:subject)|%(contents:body)` 而唔係 commit 嘅 `%(subject)|%(body)`
+- ✅ 對齊 §15.46 cache bust sync: 改 UI 同步 bump `?v=1.2.0 → 1.3.0`
+- ✅ 對齊 §15.45 + §15.53 + §15.54 永久 rule
+- ✅ 對齊 12:08 user memory「一鍵還原 Backup Admin Page 永久更新」
+
+**凡人話**: 大少 reload `~/stockpulse/backup-admin/index.html`, 撳任何 backup card 嘅「✏️ 編輯註解」掣, modal 預填現有 reason, 大少改完撳「✅ 儲存」自動 `git tag -f` + `git push --force`, 1 秒內 list endpoint 拎返新註解 (commit hash 永遠唔郁, 保留 evidence)。
+
+對應 file:
+- `backend/api/backup_admin.py` (加 AnnotateRequest + annotate_backup_point endpoint, fix list endpoint 用 `%(contents:subject)`)
+- `backup-admin/index.html` (加 #annotate-modal, ?v=1.2.0 → 1.3.0)
+- `backup-admin/backup-admin.js` (加 showAnnotateModal + executeAnnotate + btn-annotate handler)
+- `AGENTS.md` (加 4.64.0 永久 rule section)
+
+對應 doc: ARCHITECTURE.md §15.54 (Backup Admin Page 拎 tag contents 而唔係 commit)
+
+對應 commit: 即將 push (4.64.0 feat + Spec Sync 流程)
+
+對應永久 rule: §15.45 Sscript pattern + §15.46 cache bust sync + §15.53 Sscript 還原點 + §15.54 Backup Admin Page + 12:08 user memory「一鍵還原 Backup Admin Page 永久更新」
+
 ### Sscript 還原點統一管理 永久 rule (大少 2026-09-01 17:50 trigger, 4.63.0)
 
 **凡人話解釋**: 大少 17:50 trigger「現在做一個一鍵備份, 也把之前那些一鍵備份全部刪除, 只留現在的這個, 要更新頁面」— 清晒 7 個舊 Sscript 還原點 (4.53.0 - 4.58.0 + sprint 4), 只留 1 個新嘅 `restore-2026-09-01-stocks-async` 還原點(包 4.59.0 - 4.62.0 全部改動), Backup Admin Page 自動動態 render 只見呢個新嘅。對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory「一鍵還原 Backup Admin Page 永久更新」永久 rule。
