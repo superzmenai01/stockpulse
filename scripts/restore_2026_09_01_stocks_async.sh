@@ -6,19 +6,7 @@
 #
 # Reason (long):
 #   大少 2026-09-01 17:50 trigger: 整新一鍵還原點 + 清舊 (只留現在這個)
-#   
-#   呢個還原點包含以下 commit:
-#   - 4.59.0 (89e316aa): 拎走 ZigZag 4.56.0 today point + 鮮綠線 + 4.57.x skip_today (full revert)
-#   - 4.60.0 commit: 拎走 ongoing point 講大話 bug (trigger 改 null + is_ongoing flag)
-#   - 4.61.0 (579434d9): KlineCache SQL filter + cache migration (233 隻 stock 50704 條 datetime format 嘥清)
-#   - 4.62.0 (5e63528e): stocks endpoint sync→async (避 anyio 4.13.0 + Python 3.14 weakref bug)
-#   
-#   對齊 §15.45 + §15.53 + §15.54 永久 rule
-#   對齊 §15.46 testing-page cache bust sync
-#   對齊 §15.51 Backend hot-reload
-#   對齊 12:08 user memory 永久 rule
-#   
-#   4.64.0 測試: 編輯 tag 註解, commit hash 永遠唔郁, 同步更新 script header
+#   zigzag正常，之後準備加獨發點和最後一條線設做P0
 #
 set -e
 
