@@ -5111,7 +5111,8 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // 對齊 4.40.0 永久 rule: P 點 marker setData 之前 dedupe by time 拎返避免 Lightweight Charts silent reject
           // 對齊 4.41.2 永久 rule: P 點 marker time field 用 business day object {year, month, day} 對齊紫色 ZigZag line setData 格式
           // 對齊 4.43.0 永久 rule: P 點 data 來源 verdict.meta.zigzagPoints (4.43.0 拎返後由 backend 注入, frontend 唔重計)
-          // 唔拎返: 4.53.0/4.61.5 拎走嘅橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色獨發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)
+          // 唔拎返: 4.53.0 拎走嘅橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / P 點 toggle 同 spinbutton (4.53.0)
+          // 4.64.0 拎返: 紅色獨發點 (Trigger 確認點) marker (Option D arrow shape + #FF5252 紅色 + inBar + size 1, 見 P 點 marker block 之後)
           // 大少 9月1日 23:11 trigger (Fix 3 debug) — 加入口 log 查「P 點 marker 唔出」issue
           console.log(`[M1 v2.0 P-Debug] P 點 marker 入口: verdict.meta.zigzagPoints length=${verdict.meta?.zigzagPoints?.length}, zigzagSeries length=${zigzagSeries.length}, chartRefs.candleSeries=${chartRefs.candleSeries ? '✅ 存在' : '❌ 唔存在'}`);
           const reversedZigzagPoints = [...verdict.meta.zigzagPoints];  // 已經係 (新 → 舊) 排, sequence 1 = 最新
@@ -5200,6 +5201,84 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
                   console.error('[M1 v2.0] ❌ v5 plugin 對 3/5/10 markers 全部 crash, P 點 marker 唔 render (紫色 ZigZag 線仍然 render)');
                 }
               }
+            }
+          }
+
+          // ============ 大少 9月2日 00:23 trigger (4.64.0 fix) — 拎返紅色獨發點 (Trigger 確認點) marker ============
+          //   凡人話: 每一個 P 點 (peak 山頂 / trough 山谷) 都有一個 trigger date — 即係「呢個 P 點係由邊日 K 線確認」
+          //   對齊 4.57.0 backend 永久 rule: Peak trigger 拎嗰日 K 線 low, Trough trigger 拎嗰日 K 線 high
+          //   對齊 4.15.0 永久 rule: 之字拎 point 同 trigger 都用 high/low (wick extreme)
+          //   對齊 4.60.0 永久 rule: Ongoing point 嘅 trigger 改 null + is_ongoing=true (frontend skip 唔 render)
+          //   對齊 4.40.0 永久 rule: Dedupe by time (避免 Lightweight Charts silent reject)
+          //   對齊 Option D (大少 00:27 confirm): arrowUp (trough trigger) / arrowDown (peak trigger) + #FF5252 紅色 + inBar + 冇 label
+          //   對齊 4.51.0 永久 rule: arrow shape 對齊 P 點 arrow 風格 (P 點 high→aboveBar arrowDown, low→belowBar arrowUp)
+          //   對齊 4.63.0 永久 rule: v5 createSeriesMarkers plugin API, 拎 plugin handle 共享俾 P 點 + Trigger (combined markers array)
+          //   對齊 4.63.0 永久 rule: max count 10 (跟 P 點 max 同步, 大少 00:27 confirm, combined 最多 20 markers)
+          //   凡人話: 撅 HK.01888 嗰陣, 紫色 P1-P10 marker (peak/trough) 上面 / 下面 + 紅色 arrow trigger marker
+          //   喺 trigger date K 線 body middle 出 (arrowUp 表 trough trigger, arrowDown 表 peak trigger)
+          //   大少一望就知「呢個 P 點係邊日先 confirm, 對應 arrow 方向」
+
+          // Filter ongoing + null trigger (4.60.0 永久 rule + 大少 confirm filter 拎走)
+          const _triggerCandidates = verdict.meta.zigzagPoints.filter(p =>
+            p.is_ongoing !== true && p.triggerDate != null && p.triggerIndex != null
+          );
+          // 4.57.0 永久 rule: 第一個 point trigger 設返自己 (i=0, date=klines[0].date, price=klines[0].low)
+          // 凡人話: 第一個 point 係起點, 冇「前一個 point 等 trigger」, 拎返自己, render 出嚟重複唔 useful, skip
+          // 大少 00:27 confirm: filter 拎走
+          const _filteredTriggers = _triggerCandidates.filter(p => p.index !== 0);
+
+          // Build trigger markers (Option D: arrowUp/arrowDown + #FF5252 紅色 + inBar + 冇 label, 大少 00:27 confirm)
+          // arrow 方向對齊 P 點 type: P 點 high → arrowDown (peak trigger), P 點 low → arrowUp (trough trigger)
+          // 對齊 4.51.0 永久 rule: P 點 high→arrowDown, low→arrowUp (但 trigger 用 inBar 而唔係 aboveBar/belowBar)
+          const _triggerMarkers = _filteredTriggers.map(p => {
+            const _dateKey = String(p.triggerDate || '').slice(0, 10);
+            const _dateParts = _dateKey.split('-').map(Number);
+            if (!_dateParts[0] || !_dateParts[1] || !_dateParts[2]) return null;
+            return {
+              time: { year: _dateParts[0], month: _dateParts[1], day: _dateParts[2] },
+              position: 'inBar',  // K 線 body 中間 (對應 K 線 body middle, 因為 trigger price 係嗰日 K 線 high/low, plot 喺 body middle 最視覺自然)
+              color: '#FF5252',  // 紅色 (對齊 4.61.0 design)
+              shape: p.type === 'high' ? 'arrowDown' : 'arrowUp',  // Option D: arrow shape 對齊 P 點 type
+              text: '',  // 冇 label (大少 confirm)
+              size: 1,  // 對齊 P 點 size 1 (4.51.0 永久 rule, 4.61.3 嗰陣 size 2/1.5 對齊 P 點 + 0.5, 4.64.0 簡化 1)
+            };
+          }).filter(m => m != null);
+
+          // Dedupe by time (4.40.0 永久 rule, 同 P 點 dedupe 邏輯對齊)
+          const _seenTriggerTimes = new Set();
+          const _dedupedTriggers = [];
+          for (const m of _triggerMarkers) {
+            const _tKey = `${m.time.year}-${m.time.month}-${m.time.day}`;
+            if (!_seenTriggerTimes.has(_tKey)) {
+              _seenTriggerTimes.add(_tKey);
+              _dedupedTriggers.push(m);
+            }
+          }
+
+          // Slice to max count (大少 00:27 confirm 10, 對齊 P 點 max 同步)
+          const _triggerMaxCount = Number.isFinite(chartRefs.zigzagTriggerMaxCount) ? chartRefs.zigzagTriggerMaxCount : 10;
+          const _visibleTriggers = _dedupedTriggers.slice(0, _triggerMaxCount);
+
+          // 合併 P 點 markers + Trigger markers, 用同一個 plugin handle (4.63.0 永久 rule)
+          // LightweightCharts v5 plugin 接受 combined markers array
+          if (chartRefs.candleSeries && _visibleTriggers.length > 0) {
+            // 拎 P 點 marker handle, 拎返 P1-P10 + Trigger 一齊 set
+            if (chartRefs.zigzagSequenceMarkers && chartRefs.zigzagSequenceMarkers.handle) {
+              try {
+                const _combinedMarkers = [
+                  ...(chartRefs.zigzagSequenceMarkers.markers || []),
+                  ..._visibleTriggers,
+                ];
+                chartRefs.zigzagSequenceMarkers.handle.setMarkers(_combinedMarkers);
+                chartRefs.zigzagSequenceMarkers.markers = _combinedMarkers;  // update for re-set block
+                console.log('[M1 v2.0] ✅ 紅色獨發點 (Trigger 確認點) marker (4.64.0 拎返 4.61.0 design, Option D arrow):',
+                  _visibleTriggers.length, '個 (對齊 P 點 max=10)');
+              } catch (e) {
+                console.warn('[M1 v2.0] ⚠️ v5 plugin 合併 P + Trigger markers crash:', e.message);
+                // 唔 crash P 點 markers, fallback 唔 render trigger marker
+              }
+            } else {
+              console.warn('[M1 v2.0] ⚠️ P 點 marker handle 唔存在, 唔 render trigger marker');
             }
           }
         } else {

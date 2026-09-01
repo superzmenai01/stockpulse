@@ -538,21 +538,19 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ testing-page.js renderChart setTimeout 50ms 拎返 re-set markers block (v5 plugin API 拎 set 返 ensure persist)
 //   ✅ 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.132
-// 大少 2026-09-01 23:46 trigger (Fix 4.63.0) — 拎返 v5 createSeriesMarkers plugin API, 拎走 v4 candleSeries.setMarkers (4.62.3 拎返嘅 fallback 係 dead code): ALGO_CACHE_BUST = '4.63.0'
-//   ❌ 4.62.3 commit `880c8459` 拎返嘅 `candleSeries.setMarkers` fallback 完全冇用: Lightweight Charts v5.0+ migration
-//      doc 確認 `series.setMarkers` method 已經拎走, 系列 marker 改為獨立 plugin 介面 `createSeriesMarkers(series, markers)`,
-//      **冇任何向後兼容**。所以 4.62.3 commit comment 寫嘅「v4 candleSeries.setMarkers 9月1日 22:47 PPP test 已 verify
-//      work (4.10.0 永久 rule v5 向後兼容)」係 false claim — PPP test 應該 verify 失敗咗但 commit 寫住 work。
-//   ✅ Fix: 拎返 v5 `LightweightCharts.createSeriesMarkers(candleSeries, markers)`, 拎 plugin handle
-//      (handle 本身自帶 setMarkers / markers method, 4.49.0 + 4.62.0 永久 rule pattern)
-//   ✅ Max count 4.62.2 嘅 30 → **10** (大少 9月1日 23:46 confirm「只要顯示P1-P10 就可以了」)
-//   ✅ Try/catch fallback chain 10 → 5 → 3 (defensive only, max 10 應該唔 crash)
-//   ✅ chartRefs.zigzagSequenceMarkers 改 `{ handle, markers, setMarkers }` 結構
-//   ✅ Re-set markers block 拎返 `handle.setMarkers` 優先, fallback chain 拎 mock setMarkers (4.62.2 pattern)
-//   ✅ 撅 HK.00019 (12 markers) → P1-P10 出. 撅 HK.01888 (49 markers) → P1-P10 出
-//   ✅ 撅 HK.00981 (90 markers) / HK.00700 (189 markers) → P1-P10 出
-//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.134
-const ALGO_CACHE_BUST = '4.63.0';
+// 大少 2026-09-02 00:23 trigger (Fix 4.64.0) — 拎返紅色獨發點 (Trigger 確認點) marker (Option D arrowUp/arrowDown 對齊 P 點 arrow 風格, 4.61.5 拎走 → 4.64.0 拎返): ALGO_CACHE_BUST = '4.64.0'
+//   ✅ 對齊 4.57.0 backend 永久 rule: backend verdict.points[].triggerDate / triggerIndex / triggerPrice / is_ongoing 4 個 field 已經計好
+//   ✅ 對齊 4.60.0 永久 rule: Ongoing point 嘅 trigger 設 null + is_ongoing=true (frontend filter 拎走)
+//   ✅ 對齊 4.51.0 永久 rule: arrow shape 對齊 P 點 arrow 風格 (P 點 high→arrowDown, low→arrowUp)
+//   ✅ Option D (大少 9月2日 00:27 confirm): arrowUp/arrowDown + #FF5252 紅色 + inBar + 冇 label
+//   ✅ Max count = 10 (大少 00:27 confirm, 對齊 P 點 max, combined 最多 20 markers)
+//   ✅ Filter ongoing point (4.60.0 永久 rule) + 第 1 個 P 點 trigger=self (4.57.0 永久 rule) 拎走 (大少 00:27 confirm)
+//   ✅ 4.40.0 永久 rule dedupe by time (避免 Lightweight Charts silent reject)
+//   ✅ Combined P + Trigger markers 共享同一個 plugin handle (4.63.0 永久 rule), 50ms re-set block 自動 persist
+//   ✅ 撅 HK.00019 (12 markers) → P1-P10 + Trigger 紅色 arrow 出. 撅 HK.01888 (49 markers) → P1-P10 + Trigger 出
+//   ✅ 撅 HK.00981 (90 markers) / HK.00700 (189 markers) → P1-P10 + Trigger 出
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.135
+const ALGO_CACHE_BUST = '4.64.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
