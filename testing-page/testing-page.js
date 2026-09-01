@@ -482,6 +482,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   對應 commit: fix(zigzag): P1 拎 K 線最後 close (backend algorithm 加 'today' point, 4.56.0)
 //
 // 大少 8月31日 17:42 trigger (修改版 20:51 + 20:57) — M1 console log 加 Threshold % + 獨發點 (Trigger 確認點): ALGO_CACHE_BUST = '4.57.0'
+// 大少 9月1日 13:39 trigger (4.58.0 cache bust sync) — 4.58.0 backend code (P1/P2 同日 bug fix + 4.57.2 date format 統一重新做返) 已經 push origin main, frontend 仲係 4.57.0, 大少 reload testing page 拎 stale verdict, 必 cache bust 同步: ALGO_CACHE_BUST = '4.58.0' (對齊 §15.46 永久 rule)
 //   4.57.0 永久 rule (新加, 大少 trigger 1+2):
 //     ✅ testing-page.js renderDebugPanel 加 _formatZigZagLatestPointsForDebug helper 改 signature 加 threshold + thresholdMode 2 個參數
 //     ✅ Mini-table 由 4 欄變 6 欄: 序號 (P1-P10) / 日子 (YYYY-MM-DD) / 點數 (2 位小數) / 類型 (📈 Peak / 📉 Trough) / 獨發點日期 / 獨發點股價
@@ -498,7 +499,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //     ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
 //     ✅ 凡人話: 大少撳跑 M1 即刻喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價
 //   對應 commit: feat(testing-page): M1 console log 加 Threshold % + 獨發點 (4.57.0)
-const ALGO_CACHE_BUST = '4.57.0';
+const ALGO_CACHE_BUST = '4.58.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
