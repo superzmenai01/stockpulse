@@ -89,16 +89,14 @@ function setLookback(v) {
 }
 
 // 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
-// 對齊 4.51.0 拎走嘅 #show-sequence toggle 嗰個 LS_KEY 命名 pattern, 4.61.5 拎走, 4.66.0 拎返
-// 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage + 即時 re-render
-// 對齊 8月21日 00:02 永久 rule「手動 mode 預設」: 預設 false, 撳開就見 P1-P10 + 鮮紫 trigger
-const LS_KEY_SHOW_MARKERS = 'stockpulse.zigzag.showMarkers';
-function getShowMarkers() {
-  // 大少 00:52 明確 trigger「預設是關的」, localStorage 冇 record 時 return false (拎返拎走 4.62.0 default 拎返拎走 4.53.0 拎走嘅 spirit)
-  return localStorage.getItem(LS_KEY_SHOW_MARKERS) === 'true';
-}
-function setShowMarkers(v) {
-  localStorage.setItem(LS_KEY_SHOW_MARKERS, String(!!v));
+// 4.66.5 fix: 拎走 4.66.0 嗰個 localStorage 自動記住 user choice 嘅 spec
+//   大少 9月2日 07:34 trigger「把紅框這個制預備是 Off 的」, 改為永遠 default false
+//   之前 4.66.0 commit 寫嘅「localStorage 自動記住大少 choice」係 Mavis 推斷, 大少真正意思係永遠 default Off
+//   撳 toggle 即時 render marker (8月19日 13:03 Config UX 模式即時 re-render 嗰個 spirit 保留), 但 reload 永遠返 unchecked
+//   拎走 LS_KEY_SHOW_MARKERS + getShowMarkers + setShowMarkers (冇用,拎走清 clean code)
+//   對齊 4.66.0 原始 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」, 拎走 user choice 自動記住
+function getShowMarkersDefault() {
+  return false;  // 4.66.5 永久 rule: 永遠 default false
 }
 
 // ===== 大少 2026-08-30 22:04 — 4.43.0 Testing page ZigZag 全部 backend 計 =====
@@ -566,11 +564,13 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ testing-page.js toggle handler 拎走 4.66.3 hotfix debug log, 改用 adapter.mjs setMarkers log 確認 fix work
 //   ✅ testing-page.js:1481 撳「跑算法」嗰陣 reset lastChartRefs.zigzagSequenceMarkers = null, 避免 stale handle 殘留 (memory leak + visual stale)
 //   ✅ 撅 HK.01888 撳 toggle cycle 開/關/開/關 5 次, P 點 + 鮮紫 trigger 永遠 0 個 (關) / 20 個 (開) 切換, 冇殘留, 冇重複
-//   ✅ 對齊 4.66.0 commit 寫嘅 spec 行為 (撳關拎走 P 點 + 鮮紫 trigger)
-//   ✅ 對齊「啟用之字」紫色折線 toggle pattern (testing-page.js:1707-1712 chart.removeSeries + null, 對稱拎走)
-//   ✅ 對齊 8月19日 13:03 Config UX 模式永久 rule: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
-//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.140 → ?v=2.3.141 (Step 5)
-const ALGO_CACHE_BUST = '4.66.4';
+//   ✅ 4.66.5 fix (大少 9月2日 07:34 trigger「把紅框這個制預備是 Off 的」): 拎走 4.66.0 嗰個 localStorage 自動記住嘅 spec
+//   ✅ 拎走 LS_KEY_SHOW_MARKERS + getShowMarkers + setShowMarkers, 改為永遠 default false (line 95-105 + 1746-1747 + 1756)
+//   ✅ 撳 toggle 仍然即時 render marker (8月19日 13:03 Config UX 模式即時 re-render 嗰個 spirit 保留)
+//   ✅ Reload page 永遠返 unchecked (拎走 4.66.4 寫嘅「localStorage 自動記住大少 choice」)
+//   ✅ 對齊 4.66.0 原始 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」, 拎走 user choice 自動記住
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.141 → ?v=2.3.142 (Step 5)
+const ALGO_CACHE_BUST = '4.66.5';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -1742,9 +1742,11 @@ if (zigzagEnabledEl) {
 // 凡人話: 撳開即時 re-render chart overlay, 拎返 P1-P10 紫色圓圈 + 鮮紫 trigger arrow 10 個. 撳關即時拎走, 只剩紫色折線 + 4 條 MA + volume 視覺 clean.
 const zigzagMarkersEnabledEl = document.getElementById('zigzag-markers-enabled');
 if (zigzagMarkersEnabledEl) {
-  // Init: 從 localStorage 拎返 default (大少 00:52 explicit「預設是關的」, 冇 record return false), sync checkbox state
-  zigzagMarkersEnabled = getShowMarkers();
-  zigzagMarkersEnabledEl.checked = zigzagMarkersEnabled;
+  // Init: 永遠 default false (4.66.5 永久 rule, 跟大少 9月2日 07:34 trigger「預備是 Off」)
+  //   拎走 4.66.0 嗰個 localStorage 自動記住嘅 spec, 改為每次 reload 永遠 unchecked
+  //   撳 toggle 仍然即時 render marker (跟 8月19日 13:03 Config UX 模式即時 re-render 永久 rule)
+  zigzagMarkersEnabled = false;
+  zigzagMarkersEnabledEl.checked = false;
 
   // 4.66.4 fix: 拎走 4.66.3 hotfix debug log (改由 adapter.mjs line 5132 console.log 拎走 marker 動作 log 取代)
   //   4.66.0 漏咗撳關 toggle 嗰陣拎走殘留 P 點 + 鮮紫 trigger marker, 4.66.4 喺 adapter.mjs:5125-5134 補返 setMarkers([])
@@ -1753,8 +1755,9 @@ if (zigzagMarkersEnabledEl) {
   //   凡人話: 撳關 toggle 即時拎走 P1-P10 紫色圓圈 + 鮮紫 arrow, 撳返開即時 render 返
   zigzagMarkersEnabledEl.addEventListener('change', (e) => {
     zigzagMarkersEnabled = e.target.checked;
-    setShowMarkers(zigzagMarkersEnabled);
-    console.log(`[M1 v2.0 4.66.4 fix] 🔘 toggle 撳完: e.target.checked=${e.target.checked}, zigzagMarkersEnabled=${zigzagMarkersEnabled} (拎走 4.66.3 hotfix debug log, 改用 adapter.mjs setMarkers log)`);
+    // 4.66.5 fix: 拎走 setShowMarkers() (跟拎走 4.66.0 localStorage 自動記住嗰個 spec 一齊拎走)
+    //   撳 toggle 即時 render marker, 但 reload 永遠返 unchecked (跟大少 9月2日 07:34 trigger「預備是 Off」)
+    console.log(`[M1 v2.0 4.66.5 fix] 🔘 toggle 撳完: e.target.checked=${e.target.checked}, zigzagMarkersEnabled=${zigzagMarkersEnabled} (拎走 4.66.0 localStorage 記住, 永遠 default false)`);
     if (lastVerdict && lastKlines && lastChartRefs && currentAdapter && currentAdapter.renderChartOverlay) {
       // 通知 overlay 拎新嘅 enabled state, renderChartOverlay 嗰陣 check chartRefs.zigzagMarkersEnabled flag 決定 render 唔 render
       // 撳開: re-render 拎返 P 點 + 鮮紫 trigger (因為 chart 上面已經有紫色折線 + 4 條 MA + volume, re-render 唔影響佢哋)

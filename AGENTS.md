@@ -611,13 +611,13 @@ def _compute_fetch_max_count(period):
 - ✅ **HTML element**: `<input type="checkbox" id="zigzag-markers-enabled">` 喺 `<div id="zigzag-markers-controls">` 入面
 - ✅ **Label**: 「啟用 P 點 + 鮮紫獨發點 (P1-P10 紫色圓圈 + 鮮紫 arrow trigger)」+ 細字「(撳即時 re-render, 唔需要跑算法 · 預設關)」
 - ✅ **Default**: `false` (大少 00:52 trigger「預設是關的」, 對齊 4.53.0 拎走嘅 visual clean default spirit)
-- ✅ **State variable**: `let zigzagMarkersEnabled = false;` (testing-page.js line 689, default off, init 從 localStorage 拎返)
-- ✅ **localStorage key**: `LS_KEY_SHOW_MARKERS = 'stockpulse.zigzag.showMarkers'` (testing-page.js line 92, 對齊 8月19日 13:03 Config UX 模式 spirit)
-- ✅ **Helper**: `getShowMarkers()` return `localStorage.getItem(LS_KEY_SHOW_MARKERS) === 'true'` (default false), `setShowMarkers(v)` set boolean string
-- ✅ **Init 同步**: page load 嗰陣從 localStorage 拎返, sync checkbox state
-- ✅ **Change handler**: 撳 checkbox 即時 `setShowMarkers(zigzagMarkersEnabled)` + `lastChartRefs.zigzagMarkersEnabled = ...` + re-call `currentAdapter.renderChartOverlay()` 即時 re-render (唔需要撅跑 algorithm, 對齊 8月19日 13:03 Config UX 模式 spirit)
+- ✅ **State variable**: `let zigzagMarkersEnabled = false;` (testing-page.js, default off, **4.66.5 fix 拎走 localStorage 拎返, 改為永遠 default false**)
+- ✅ **localStorage key (4.66.5 拎走)**: `LS_KEY_SHOW_MARKERS = 'stockpulse.zigzag.showMarkers'` (4.66.5 拎走, 拎走 4.66.0 嗰個 localStorage 自動記住嘅 spec, 改為永遠 default false)
+- ✅ **Helper (4.66.5 拎走)**: `getShowMarkers()` return `localStorage.getItem(LS_KEY_SHOW_MARKERS) === 'true'` (default false), `setShowMarkers(v)` set boolean string (4.66.5 拎走曬, 改為 `getShowMarkersDefault()` 永遠 return false)
+- ✅ **Init 同步 (4.66.5 改寫)**: page load 嗰陣 `zigzagMarkersEnabled = false; zigzagMarkersEnabledEl.checked = false;` (拎走 localStorage 拎返, 永遠 unchecked)
+- ✅ **Change handler (4.66.5 改寫)**: 撳 checkbox 即時 `lastChartRefs.zigzagMarkersEnabled = ...` + re-call `currentAdapter.renderChartOverlay()` 即時 re-render (拎走 `setShowMarkers` 嗰個 localStorage set, 唔需要撅跑 algorithm, 對齊 8月19日 13:03 Config UX 模式 spirit)
 - ✅ **adapter.mjs check**: P 點 + 鮮紫 trigger 兩個 block 入口前加 `if (chartRefs.zigzagMarkersEnabled !== true) return;` 拎走晒 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
-- ✅ **大少 explicit 預設關**: 撅完 reload page 預設關, 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice
+- ✅ **大少 explicit 預設關 (4.66.5 改寫)**: 撅完 reload page 永遠返 unchecked (拎走 4.66.0 嗰個「localStorage 自動記住大少 choice」spec, 跟大少 9月2日 07:34 trigger「把紅框這個制預備是 Off 的」)
 
 **對齊永久 rule** (6 條):
 - 4.51.0: 拎走嘅 #show-sequence 嗰個 toggle 拎返 (4.66.0 拎返用新 LS_KEY_SHOW_MARKERS, 4.61.5 commit 拎走嗰個 LS_KEY_SHOW_SEQUENCE 拎返 4.66.0 拎返拎返 spirit)
@@ -653,6 +653,35 @@ def _compute_fetch_max_count(period):
 - 8月19日 13:03 Config UX 模式: 即時 localStorage + 即時 re-render
 
 **對應 commit** (將來 push): `fix(stockpulse): M1 「啟用 P 點」toggle 撳關拎走殘留 P 點 + 鮮紫 trigger marker (4.66.4, 大少 9月2日 01:31 trigger 揭發 4.66.0 漏咗拎走動作)`
+
+### M1 「啟用 P 點 + 鮮紫獨發點」toggle 永遠 default Off 永久 rule (4.66.5, 大少 2026-09-02 07:34 trigger「把紅框這個制預備是 Off 的」) — **拎走 4.66.0 嗰個 localStorage 自動記住 user choice 嘅 spec, 改為永遠 default false**
+
+**凡人話解釋**: 4.66.0 commit `6d3fae89` spec 寫「Reload page 預設關, 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice」, 跟住 implementation 用 `LS_KEY_SHOW_MARKERS` + `getShowMarkers()`/`setShowMarkers()` 記住 user 撳過嘅 state。但係大少 9月2日 07:34 trigger「把紅框這個制預備是 Off 的」, 揭發 implementation 同 4.66.0 原始 trigger「預設是關的」真正意思唔對: 大少 want **永遠 default Off**, user 撳開 reload 仍然返 unchecked, 純 visual toggle 唔 persist。拎走 localStorage 自動記住嗰個 spec, 改為 page load 永遠 default false。
+
+**4.66.5 fix 永久 rule**:
+- ✅ **拎走 `LS_KEY_SHOW_MARKERS`** (`testing-page/testing-page.js:95`): 4.66.0 嗰個 `'stockpulse.zigzag.showMarkers'` 拎走, 因為 user choice 唔再 persist, 冇需要 localStorage key
+- ✅ **拎走 `getShowMarkers()`** (`testing-page/testing-page.js:96-99`): 拎走 localStorage 拎返邏輯, 改為 `getShowMarkersDefault()` 永遠 return `false`
+- ✅ **拎走 `setShowMarkers()`** (`testing-page/testing-page.js:100-102`): 拎走 localStorage set 邏輯, 因為冇 key 都冇需要 set
+- ✅ **Init 改寫** (`testing-page/testing-page.js:1746-1748`): `zigzagMarkersEnabled = false; zigzagMarkersEnabledEl.checked = false;` (拎走 `getShowMarkers()` call, 永遠 unchecked)
+- ✅ **Change handler 改寫** (`testing-page/testing-page.js:1756-1758`): 拎走 `setShowMarkers(zigzagMarkersEnabled)` 嗰個 call, 改為只 set `zigzagMarkersEnabled = e.target.checked` + 即時 re-render (對齊 8月19日 13:03 Config UX 模式即時 re-render 嗰個 spirit)
+- ✅ **凡係 user choice 唔記住**: 撳 toggle 即時 render marker (紫圓圈 + 鮮紫 trigger), 但 reload page 永遠返 unchecked。對齊 4.66.0 原始 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」真正意思: 「預設」= page load default 永遠 false, 唔係「user choice 自動記住」
+- ✅ **保留嘅嘢**:
+  - 撳 toggle 即時 re-render marker (8月19日 13:03 Config UX 模式 spirit 保留)
+  - 4.66.4 fix 對稱拎走 marker 動作 (line 1758-1762) 保留, `if (chartRefs.zigzagMarkersEnabled !== true) return;` 仍然喺 adapter.mjs 入口前
+  - 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (唔受 toggle 影響)
+- ✅ **Failure mode coverage**:
+  - 撳 toggle 即時 render/拎走 marker, 唔 crash
+  - Reload 永遠 default false, 唔受之前 user 撳過影響
+  - localStorage 之前 set 過嘅 `'true'` 會被忽略, 永遠 default false (拎走舊 state 拎返)
+
+**對齊永久 rule** (5 條):
+- 4.66.0: 拎返 P 點 + 鮮紫 trigger marker toggle, default off (大少 00:52 trigger「預設是關的」原始意思)
+- 4.66.4: 對稱拎走 marker 動作 (撳關嗰陣 setMarkers([]))
+- 4.66.5 (新加): 拎走 localStorage 自動記住, 永遠 default false
+- 8月19日 13:03 Config UX 模式: 撳 toggle 即時 re-render (唔需要撅跑 algorithm, 保留 spirit 但拎走 localStorage 記住嗰部分)
+- 8月19日 23:20 chart-control layout: `#zigzag-markers-controls` div 喺 chart-section 內 ma-toggle-bar 之前 (保留)
+
+**對應 commit** (將來 push): `fix(stockpulse): M1 「啟用 P 點 + 鮮紫獨發點」toggle 永遠 default Off, 拎走 4.66.0 localStorage 自動記住 (4.66.5, 大少 9月2日 07:34 trigger「把紅框這個制預備是 Off 的」)`
 
 ### ZigZag 4.53.0 拎走 marker toggle 嗰個對齊 (4.66.0 拎返)
 
