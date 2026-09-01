@@ -1740,7 +1740,6 @@ if (zigzagMarkersEnabledEl) {
     }
   });
 }
-}
 
 // 大少 2026-08-30 22:04 — 4.43.0 拎走 applyFrontendZigZagOverlay 整個 function (4.42.3 fix 嘅 98 行)
 // 改用 fetchAndInjectBackendZigZag (line 282 嘅新 function) 拎 backend verdict, caller 同步 call
