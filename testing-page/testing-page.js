@@ -561,7 +561,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ 撅 HK.01888 撳 toggle 開 → P1-P10 + 鮮紫 trigger 出. 撳 toggle 關 → 只見紫色折線 + 4 條 MA + volume 視覺 clean
 //   ✅ Reload page 預設關 (跟大少 00:52 trigger「預設是關的」), 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.137
-const ALGO_CACHE_BUST = '4.66.0';
+const ALGO_CACHE_BUST = '4.66.1';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified

@@ -5213,7 +5213,12 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           //   用 #zigzag-markers-enabled 1 個 checkbox 控制 P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和獨發點的」)
           if (chartRefs.zigzagMarkersEnabled !== true) {
             // 大少 trigger 預設關: 拎走 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
+            // 4.66.1 hotfix debug: console.log 嗰個 value 嚟 verify 大少 reload 之後 load 咗 4.66.0 check 邏輯
+            console.log(`[M1 v2.0 4.66.1 debug] 🛡️ zigzagMarkersEnabled toggle OFF: 拎走 P 點 + 鮮紫 trigger marker (chartRefs.zigzagMarkersEnabled=${chartRefs.zigzagMarkersEnabled}, typeof=${typeof chartRefs.zigzagMarkersEnabled})`);
             return;
+          } else {
+            // 4.66.1 hotfix debug: confirm 4.66.0 check pass, 拎返 P 點 + 鮮紫 trigger
+            console.log(`[M1 v2.0 4.66.1 debug] ✅ zigzagMarkersEnabled toggle ON: 拎返 P 點 + 鮮紫 trigger marker (chartRefs.zigzagMarkersEnabled=true)`);
           }
 
           // ============ 大少 9月2日 00:23 trigger (4.64.0 fix) — 拎返紅色獨發點 (Trigger 確認點) marker ============
