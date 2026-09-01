@@ -135,6 +135,33 @@ def _zigzag_normalize_date(kline: Dict[str, Any]) -> str:
 
 
 # ============================================================
+# 凡人話: 判斷 K 線係咪今日 partial bar (T-1 rule 精神, 大少 2026-09-01 11:00 trigger)
+# ============================================================
+def _is_today_partial(kline: Dict[str, Any]) -> bool:
+    """凡人話: 判斷 K 線係咪今日 partial bar
+
+    大少 2026-09-01 11:00 trigger (P1/P2 同日 bug fix):
+    - 今日 K 線 partial bar 唔應該 trigger 紫色 P point, 因為今日仲行緊
+    - 對齊 K-line Cache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB, 只喺 response 出」嘅精神
+    - 對齊 KlineCache._fetch_and_store line 658 嘅 `datetime.date.today().isoformat()` pattern
+
+    Returns: True if kline 嘅 date (YYYY-MM-DD) == 今日 (local date)
+    """
+    raw = (
+        kline.get('time')
+        or kline.get('date')
+        or kline.get('timestamp')
+        or ''
+    )
+    if not raw:
+        return False
+    # 對齊 _zigzag_normalize_date 拎 date-only (YYYY-MM-DD)
+    kline_date = str(raw).split(' ')[0]
+    today_str = datetime.date.today().isoformat()
+    return kline_date == today_str
+
+
+# ============================================================
 # 凡人話: 對齊 testing-page.js:61-155 calculateZigZagFrontend (1-to-1 port)
 # ============================================================
 def calculate_zigzag(
@@ -163,6 +190,18 @@ def calculate_zigzag(
     result = []
     threshold = threshold_percent / 100.0
 
+    # 大少 2026-09-01 11:00 trigger (P1/P2 同日 bug fix):
+    # 跳過今日 partial bar, 紫色 P point 算法只睇 T-1 嘅 K 線
+    # 凡人話: 今日 K 線仲行緊, 算法拎到今日 high / low 就 trigger 新 P point 喺今日
+    #         但 4.56.0 加嘅 'today' point 都用今日 close, 兩個同日 → 鮮綠線 P1/P2 同日 bug
+    # 對齊 K-line Cache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB」嘅精神
+    # 對齊 KlineCache._fetch_and_store line 658 嘅 `datetime.date.today().isoformat()` pattern
+    # 永久 rule: ZigZag 紫色 P point 算法永遠 skip 今日 partial bar
+    #            'today' point (鮮綠線終點) 仍然用今日 close, 鮮綠線 P1 (今日) 同 P2 (T-1) 唔同日, bug 自動解決
+    n_minus_1 = len(klines) - 1
+    skip_today = 1 if n_minus_1 >= 0 and _is_today_partial(klines[n_minus_1]) else 0
+    end_idx = len(klines) - skip_today
+
     # 拎第一個 point: 永遠用 klines[0].low (frontend 算法 1-to-1)
     # 凡人話: 第一個 point 永遠從第一支 K 線開始, 拎佢嘅 low 做為起點
     # 大少 8月31日 17:42 trigger (4.56.0) — 第一個 point 係起點, 冇「前一個 point 等 trigger」
@@ -181,10 +220,12 @@ def calculate_zigzag(
     last_swing_low = klines[0]['low']
     last_swing_idx = 0
     # inUptrend 用 klines[1].close vs klines[0].close 對齊決定初始方向 (frontend 算法 1-to-1)
-    in_uptrend = klines[1]['close'] > klines[0]['close']
+    # 大少 2026-09-01 11:00 trigger: end_idx < 2 (K 線太短, 跳過今日後得 0/1 條), 用 False 默認避免 IndexError
+    in_uptrend = klines[1]['close'] > klines[0]['close'] if end_idx >= 2 else False
 
     # 第一個 loop: 找第一個顯著高/低點 (frontend algorithm.mjs:1523-1568)
-    for i in range(1, len(klines)):
+    # 大少 2026-09-01 11:00 trigger (P1/P2 同日 bug fix): range 用 end_idx, 跳過今日 partial bar
+    for i in range(1, end_idx):
         # 大少 4.15.0 fix: 用 high/low 拎 point 同 trigger (唔好用 close)
         change_from_high = (klines[i]['low'] - last_swing_high) / last_swing_high   # 用 low 對 high
         change_from_low = (klines[i]['high'] - last_swing_low) / last_swing_low     # 用 high 對 low
@@ -243,11 +284,15 @@ def calculate_zigzag(
                     break
                 # else: P point K 線 = trigger K 線 (intra-bar volatility 邊界 case), 跳過, 等下一個 K 線升夠 +threshold 先 confirm
 
-    if len(result) <= 1:
-        return result
+    # 大少 2026-09-01 11:00 trigger (P1/P2 同日 bug fix):
+    # 拎走原本 `if len(result) <= 1: return result` 嘅 early return
+    # 因為我哋已經 skip 今日 partial bar, 對小 K 線 (e.g. 3 條 T-2 + T-1 + 今日) 拎唔到 P point 嘅情況下,
+    # 仍然要 continue 落去 append ongoing point + 'today' point, 鮮綠線 P1 (今日) 同 P2 (T-1 or T-2 first point) 唔同日
+    # 永久 rule: 'today' point (鮮綠線終點) 永遠 append, 鮮綠線 P1 永遠存在
 
     # 第二個 loop: 繼續追蹤轉向點 (frontend algorithm.mjs:1572-1609)
-    for i in range(last_swing_idx + 1, len(klines)):
+    # 大少 2026-09-01 11:00 trigger: range 用 end_idx, 跳過今日 partial bar
+    for i in range(last_swing_idx + 1, end_idx):
         change_from_high = (klines[i]['low'] - last_swing_high) / last_swing_high
         change_from_low = (klines[i]['high'] - last_swing_low) / last_swing_low
 
@@ -305,6 +350,10 @@ def calculate_zigzag(
         # 凡人話: 最後一個 point 係「ongoing」, 仲未確認轉勢 (K 線行緊)
         # 大少 4.56.0 永久 rule 精神: 最後 ongoing point 仲未 trigger 5%, 對齊「加今日 close 做 P1」精神
         # 凡人話: 拎 K 線最後 close 做 trigger 價 (K 線行緊, 仲未 trigger 5% 變動)
+        # 大少 2026-09-01 11:00 trigger (P1/P2 同日 bug fix):
+        # 紫色 P point 算法跳過今日 (上面 skip_today 邏輯), last_swing_idx 一定指 T-1, 紫色 ongoing point date = T-1 嘅 date
+        # triggerIndex / triggerDate / triggerPrice 仍用 K 線最後 (今日 partial close), 對齊 4.56.0 精神
+        # 結果: 鮮綠線 P2 = 紫色 T-1, P1 = 'today' point (今日 close), 兩者唔同日, bug 自動解決
         last_kline_idx = len(klines) - 1
         last_kline = klines[last_kline_idx]
         result.append({
@@ -337,6 +386,10 @@ def calculate_zigzag(
     # 5. backend/algorithms/ma_alignment/algorithm.py (M1 v2.0 zigzagPoints 拎取)
     # 6. backend/services/algorithm_runner.py (M7 Synthesizer zigzagPoints 拎取)
     # 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(backend 加 'today' point, frontend 拎 'today' 做 P1)
+    #
+    # 大少 2026-09-01 11:00 trigger (P1/P2 同日 bug fix):
+    # 紫色 P point 算法已經喺上面 skip_today 邏輯跳過今日 partial bar, 紫色 ongoing point (last_swing_idx) 一定指 T-1
+    # 'today' point 仍然用 K 線最後 close (今日 partial close), 鮮綠線 P1 (今日 close) 同 P2 (T-1 紫色) 唔同日, bug 自動解決
     last_kline = klines[-1]
     last_kline_date = _zigzag_normalize_date(last_kline)
     last_kline_close = last_kline.get('close')
