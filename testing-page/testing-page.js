@@ -538,7 +538,14 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ testing-page.js renderChart setTimeout 50ms 拎返 re-set markers block (v5 plugin API 拎 set 返 ensure persist)
 //   ✅ 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.132
-const ALGO_CACHE_BUST = '4.62.2';
+// 大少 2026-09-01 23:31 trigger (Fix 5) — 拎走 v5 plugin API, 永久用 v4 candleSeries.setMarkers (v5 plugin production crash fix): ALGO_CACHE_BUST = '4.62.3'
+//   ✅ v5 plugin API render 嗰陣 crash `this.OS.map is not a function` (lightweight-charts.standalone.production.js:7)
+//   ✅ 拎走 v5 plugin API, 永久用 v4 candleSeries.setMarkers (4.10.0 永久 rule v5 向後兼容, 9月1日 22:47 PPP test 已 verify work)
+//   ✅ 拎 plugin handle 一齊拎返 (re-set block 仍可 call 拎返), 拎 setMarkers function 拎返對 v4 setMarkers
+//   ✅ 拎走 v5 internal crash 風險, 對齊 9月1日 22:38 PPP 永久 rule 拎 v4 fallback spirit
+//   ✅ 改寫 4.49.0 永久 rule spirit (v5 plugin API 拎 set 唔到嘅 bug 解咗 → 拎 v4 永久), 大少 evidence 證明 v5 plugin 仍然有 production bug
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.133
+const ALGO_CACHE_BUST = '4.62.3';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
