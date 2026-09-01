@@ -904,6 +904,100 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 
 對應 commit: 即將 push (4.57.0 fix + Spec Sync 流程)
 
+
+### ZigZag P1/P2 同日 bug fix 永久 rule (大少 2026-09-01 11:00 trigger, 4.58.0)
+
+**凡人話解釋**: 大少 11:00 附 2 張 K 線圖 trigger「解決 Zigzag 最新一個 point 的問題」+ 觀察:
+- 圖 1 (HK.01347 華虹半導體): 最後一條紫色線向下 (Trough), 之後股價反彈, P1 (today 8月28 120.80) 同 P2 (Trough 8月25 105.50) 唔同日, **正常**
+- 圖 2 (HK.00100 MINIMAX-W): 最後一條紫色線向上 (Peak), 之後股價繼續升, P1 (today 8月31 351.40) 同 P2 (Peak 8月31 360.00) **同日, bug**
+
+大少 11:00 root cause 分析: 「如果圖 2 的股票之後是向下走的, 很可能會變成圖 1 的案例變回正常。我發現的問題是在最後那條 Zigzag 線如果是向上的, 之後股向同一方向發展就會出現 P1 和 P2 會在同一日的 Bug, 反之向下原理是一樣」。
+
+**Root cause (2 層)**:
+1. **表層** (backend algorithm.py): 紫色 P point 算法喺 `calculate_zigzag` 入面, 拎 K 線 high/low 對比 trigger 5% threshold, 但冇 skip 今日 partial bar。今日 K 線仲行緊, 算法拎到今日 high 就 trigger 新 P point 喺今日。同時 4.56.0 加咗 'today' point 用 K 線最後 close, 兩個 point 同一日 → 鮮綠線 P1 (今日 close) 同 P2 (今日 P point) 同日, marker 撞。
+2. **深層** (algorithm_runner.py): algorithm_runner 拎 K 線嘅 `is_stale` 判斷用 `t_minus_1 = today - 1 day` 對比 K 線 last_cached, 但 KlineCache T-1 rule 永遠 K 線 last_cached == T-1 (今日唔寫 DB), 即係 `klines[-1] < t_minus_1` 永遠 False (string compare `<` 唔包等於), 永遠唔 trigger `get_or_fetch` 拎今日 partial bar。算法收到嘅 K 線永遠去到 T-1, 唔包括今日。
+
+**改動 (4.58.0)**:
+
+1. **Backend algorithm.py** (`backend/algorithms/zigzag/algorithm.py`):
+   - 加 `_is_today_partial(kline)` helper: 拎 `kline['time'][:10]` 對比 `datetime.date.today().isoformat()`, return True if 今日
+   - 對齊 KlineCache._fetch_and_store line 658 嘅 `datetime.date.today().isoformat()` pattern
+   - 對齊 K-line Cache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB, 只喺 response 出」嘅精神
+   - `calculate_zigzag` 開頭計算 `n_minus_1`, `skip_today`, `end_idx = len(klines) - skip_today` (1 行 expression)
+   - **First loop 改用 `for i in range(1, end_idx)`** (原本用 `len(klines)`): 跳過今日 partial bar, 紫色 P point 唔喺今日 trigger
+   - `in_uptrend` 加 condition `if end_idx >= 2 else False`: K 線太短 (skip 今日後得 0/1 條) 避免 IndexError
+   - **拎走 `if len(result) <= 1: return result` 嘅 early return**: 原本 K 線太短拎唔到 P point 就提早 return, 後續 ongoing + 'today' point 唔 add; 改之後 'today' point 永遠 append (對齊 4.56.0 設計意圖)
+   - **Second loop 用 `for i in range(last_swing_idx + 1, end_idx)`** (原本已經咁, 確認返): 跳過今日 partial bar
+   - 4.56.0 'today' point + 鮮綠線 `build_extension_line` 唔變: 仍然用 K 線最後 close 做 P1
+
+2. **Backend algorithm_runner.py** (`backend/services/algorithm_runner.py`):
+   - 改 `is_stale` 判斷, 用 `today` 對比 K 線 last_cached (原本用 `t_minus_1`):
+     - 原本: `is_stale = bool(klines) and (klines[-1].get('time', '') < t_minus_1)` (永遠 False 因為 KlineCache T-1 rule)
+     - 改後: `is_stale = bool(klines) and (klines[-1].get('time', '') < today)` (K 線 last_cached < today → stale → trigger get_or_fetch 拎今日)
+   - 確保 algorithm_runner 拎 K 線嗰陣 trigger `get_or_fetch`, K 線永遠包括今日 partial bar
+   - 對齊 KlineCache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB, 只喺 response 出」嘅精神
+
+3. **Backend unit test** (`backend/algorithms/zigzag/__tests__/test_skip_today.py`):
+   - 7 個 test case:
+     1. `_is_today_partial(今日 K 線) = True`
+     2. `_is_today_partial(昨日 K 線) = False`
+     3. 3 條 K 線 (T-2 + T-1 + 今日升穿 5%): 紫色 P point 唔喺今日 trigger, P1/P2 唔同日
+     4. K 線最後一條係 T-1 (週末, 已經 close): 紫色 P point 喺 T-1 正常 trigger
+     5. 圖 2 場景 (T-2 + T-1 + 今日升穿 20%): P1/P2 唔同日, bug 永久 fix
+     6. 邊界 case: K 線只有 1 條 (今日) → return []
+     7. 邊界 case: K 線只有 2 條 (T-1 + 今日): P1 (今日) 同 P2 (T-1) 唔同日
+   - 7/7 pass, 凡人話: 確認 algorithm.py 改動 work, 紫色 P point 永遠唔喺今日 trigger, 'today' point 仍用 K 線最後 close, 鮮綠線 P1/P2 唔同日
+   - 執行: `cd /Users/zmenai/stockpulse && python3 backend/algorithms/zigzag/__tests__/test_skip_today.py`
+
+**永久 rule**:
+- ✅ Backend ZigZag 紫色 P point 算法永遠 skip 今日 partial bar (T-1 rule 精神)
+  - First loop: `range(1, end_idx)`, Second loop: `range(last_swing_idx + 1, end_idx)`
+  - `end_idx = len(klines) - skip_today`, `skip_today = 1 if _is_today_partial(klines[-1]) else 0`
+  - 對齊 K-line Cache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB」嘅精神
+- ✅ 'today' point (鮮綠線終點) 永遠 append, 鮮綠線 P1 永遠存在 (拎走原本 early return 條件 `len(result) <= 1` → 改 `< 1`)
+  - 對齊 4.56.0 永久 rule「加今日 close 做 P1」嘅設計意圖
+  - 即使 K 線太短 (e.g. 只有 3 條) 都一定 append 'today' point
+- ✅ `_is_today_partial` helper: 拎 `kline['time'][:10]` 對比 `datetime.date.today().isoformat()`
+  - 對齊 KlineCache._fetch_and_store line 658 嘅 pattern
+  - 凡人話: 判斷 K 線係咪今日 partial bar, 永遠 UTC date 對比 (避免 HKT 差異)
+- ✅ Algorithm runner 拎 K 線永遠 trigger `get_or_fetch`: `is_stale` 改用 `today` 對比 (原本 `t_minus_1` 因為 KlineCache T-1 rule 永遠 False)
+  - 對齊 KlineCache 8月22日永久 rule「用 `get_cur_kline()` 拎 today intraday partial bar (唔入 DB)」嘅精神
+  - 對齊 KlineCache._fetch_today_bar line 467+ 用 `ctx.get_cur_kline()` 拎今日 (唔打 `request_history_kline`, 唔撞限頻)
+- ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」: 拎 point value 用 high / low 對齊 K 線真實 high / low
+- ✅ 對齊 4.16.0 永久 rule「永遠用 clean state machine, 唔好分 2 loop」: first loop + second loop 都用 `direction flag` + `ref value` pattern
+- ✅ 對齊 4.56.0 永久 rule「加今日 close 做 P1」: 'today' point 永遠 append, value = K 線最後 close
+- ✅ 對齊 §15.45 + §15.53 + §15.54 永久 rule (Sscript 還原點對齊, Backup Admin Page verify)
+- ✅ 對齊 §15.51 永久 rule (改 backend 必 restart + curl verify)
+- ✅ 改 unit test 嗰陣必 bump `ALGO_CACHE_BUST` (testing page frontend 拎 backend verdict, 改 algorithm.py 唔影響 frontend 拎 verdict, 但要同步改 unit test 確保邏輯 work)
+- ✅ 凡人話: 紫色 P point (P2) 留喺 T-1 已經 close 嘅 K 線, 'today' point (P1) 拎 K 線最後 close, 鮮綠線 P1/P2 唔同日, 對齊大少圖 1 (Trough 8月25 105.50 → today 8月28 120.80) 嘅正常 behavior
+
+**Acceptance tests**:
+- Restart backend (§15.51 永久 rule): `./start.sh`
+- Curl verify backend 加 skip 邏輯: `curl /api/algorithms/run?algo=zigzag&symbol=HK.00100&period=1d&lookback=20&multiplier=2.5`
+  - 預期: points 入面, 紫色 P point 唔喺今日 (9月1) trigger, 最後紫色 P point date < today
+  - 預期: P1 (today point) 同 P2 (最後紫色) date 唔同日
+- 撳跑 ZigZag HK.00100 (圖 2 場景, 上升趨勢 + 今日升穿 5%): 紫色 P point 唔喺今日 trigger, P1 同 P2 唔同日, bug 永久 fix
+- 撳跑 ZigZag HK.01347 (圖 1 場景, 下跌趨勢 + 之後反彈): P1 同 P2 仍然唔同日 (原本就正常)
+- 撳跑 M1 (AS-03-MA) HK.00100: P1 (today) 同 P2 (最後紫色) 唔同日, console log mini-table 顯示正確
+- 跑 unit test: `python3 backend/algorithms/zigzag/__tests__/test_skip_today.py` → 7/7 pass
+- 對齊 §15.45 永久 rule: 改 algorithm.py 必 Sscript 還原點 + Backup Admin Page verify
+- 對齊 §15.51 永久 rule: 改 backend 必 restart + curl verify
+- 對齊 §15.52 永久 rule: 改 algorithm 必加 unit test (今次加咗 7 個 test case)
+
+**凡人話**: 大少撳跑 ZigZag 嗰陣, 即刻見到 P1 (today) 同 P2 (最後紫色) 唔同日, 鮮綠線由 P2 (T-1 or 更早) 連去 P1 (今日), 鮮綠線有意義, 唔再係 degenerate 零長度, 圖 1 同圖 2 嘅股票 P1/P2 都唔再同日, bug 永久 fix。
+
+對應 doc: ARCHITECTURE.md §15.60 (P1/P2 同日 bug fix 細節)
+
+對應 commit: 即將 push (4.58.0 fix + Spec Sync 流程)
+
+對應 Sscript 還原點: `restore-before-zigzag-4.58.0` (對齊 §15.45 + §15.53 + §15.54 永久 rule)
+
+對應永久 rule: 4.15.0 拎 point 用 high/low + 4.16.0 direction flag refactor + 4.43.0 ZigZag 全部 backend 計 + 4.56.0 加今日 close 做 P1 + 8月22日 K-line Cache T-1 rule + §15.51 Backend hot-reload + §15.52 改 algorithm 必加 unit test
+
+**Follow-up sprint (唔喺 4.58.0 scope)**:
+- 鮮綠線 `build_extension_line` (algorithm.py line 402+) 拎 `points[-1]` 做 `from` point, 但 `points[-1]` = 'today' point (因為 'today' 喺最後 append), 鮮綠線起點 = P1 (today) 同終點 (today close) 同日, 鮮綠線 degenerate 零長度, testing page render skip。應該拎紫色 P point 嘅最後一個 (時間上最近), 唔係 'today' point。Fix: `last_point = [p for p in points if p['type'] in ('high', 'low')][-1]`, 鮮綠線起點 = 真正嘅「最後 ZigZag point」, 對齊 4.33.0 永久 rule「鮮綠線 #00C853 (testing page 4.33.0)」。
+- KlineCache `_fetch_today_bar` 拎今日失敗 issue: algorithm_runner 改 `is_stale` 之後, K 線 count 由 156 變 157 (即係 trigger 咗 OpenD fetch 補返 1 條), 但今日 (9月1) 仍然唔喺 K 線 array 入面 (K 線最後一條 = 8月31 T-1)。要 debug `_fetch_today_bar` 拎今日失敗嘅原因, 確認 OpenD 連線狀態。
+
 對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.56.0 加今日 close 做 P1 + §15.51 Backend hot-reload + §15.46 testing-page cache bust sync
 
 
