@@ -2,11 +2,11 @@
 # 對齊 §15.45 永久 rule Sscript pattern (annotated tag + backup branch + restore script + double confirm)
 #
 # 大少 2026-09-01 18:00 trigger 編輯註解 (4.64.0)
-# Reason (short): fix(zigzag+kline+api): 4.59.0-4.62.0 stocks-async bundle (4.64.0 編輯註解測試)
+# Reason (short): test-update-debug
 #
 # Reason (long):
-#   大少 2026-09-01 17:50 trigger: 整新一鍵還原點 + 清舊 (只留現在這個)
-#   zigzag正常，之後準備加獨發點和最後一條線設做P0
+#   Debug test 18:13 — 查大少 18:11 嘅 annotate 點解冇 update 到
+#   Test
 #
 set -e
 
