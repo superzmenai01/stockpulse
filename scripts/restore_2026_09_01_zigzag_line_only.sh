@@ -12,10 +12,11 @@
 #
 set -e
 
-# EXPECTED_HEAD 對齊 tag commit (4.61.5 cleanup commit, stocks-async pattern 規則: tag commit = EXPECTED_HEAD)
-EXPECTED_HEAD="d72e858f3285f712642fd6eeae9b1f8900603237"
+# EXPECTED_HEAD 對齊 b8a67d6e commit (4.61.5 cleanup commit, stocks-async pattern: tag commit = EXPECTED_HEAD)
+# 9月1日 22:30 fix: 之前 amend d72e858f 改 hash 做 b8a67d6e, EXPECTED_HEAD 要對齊新 hash
+EXPECTED_HEAD="b8a67d6eb09a7ebf7a92d9494ad0c93330113b45"
 
-echo "⚠️  WARNING: 拎走 4.61.0 - 4.61.5 改動, 還原到 zigzag-line-only state (4.61.5 cleanup commit 之後)"
+echo "⚠️  WARNING: 拎走 4.61.0 - 4.61.5 改動, 還原到 zigzag-line-only state (4.61.5 cleanup commit b8a67d6e 嗰度)"
 echo ""
 echo "4.61.0 - 4.61.5 改動內容:"
 echo "  4.61.0 (大少 17:55): initial 拎返 P 點 + 加新獨發點 marker (setMarkers v4 API)"
@@ -84,7 +85,7 @@ fi
 echo ""
 echo "✅ 一切 ready"
 echo ""
-echo "⚠️  重要: 大少而家已經喺 4.61.5 cleanup state (d72e858f), 唔需要 reset"
+echo "⚠️  重要: 大少而家已經喺 4.61.5 cleanup state (b8a67d6e), 唔需要 reset"
 echo "⚠️  呢個 script 主要係 evidence / 一鍵確認 documentation"
 echo "⚠️  如果想 rollback 去 4.61.5 cleanup 之前, 用 'git reset --hard \$EXPECTED_HEAD'"
 echo ""
