@@ -1164,6 +1164,51 @@ git push origin main
 
 對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.57.2 date format 統一 + 4.60.0 ongoing point trigger null + §15.45 Sscript pattern + §15.51 Backend hot-reload + §15.53 Sscript 還原點 + §15.54 Backup Admin Page
 
+### Sscript 還原點統一管理 永久 rule (大少 2026-09-01 17:50 trigger, 4.63.0)
+
+**凡人話解釋**: 大少 17:50 trigger「現在做一個一鍵備份, 也把之前那些一鍵備份全部刪除, 只留現在的這個, 要更新頁面」— 清晒 7 個舊 Sscript 還原點 (4.53.0 - 4.58.0 + sprint 4), 只留 1 個新嘅 `restore-2026-09-01-stocks-async` 還原點(包 4.59.0 - 4.62.0 全部改動), Backup Admin Page 自動動態 render 只見呢個新嘅。對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory「一鍵還原 Backup Admin Page 永久更新」永久 rule。
+
+**清前狀態** (大少 17:50 之前):
+- 7 個 Sscript tag: `restore-after-zigzag-4.53.0` / `restore-before-zigzag-4.56.0` / `restore-before-zigzag-4.57.1` / `restore-before-zigzag-4.57.2` / `restore-before-zigzag-4.57.3` / `restore-before-zigzag-4.58.0` / `restore-before-sprint-4-followup`
+- 7 個 backup branch: `backup-after-zigzag-4.53.0` / `backup-before-sprint-4-followup` / `backup-before-zigzag-4.56.0` / `backup-before-zigzag-4.58.0` / `backup/zigzag-4.57.1` / `backup/zigzag-4.57.2` / `backup/zigzag-4.57.3`
+- 7 個 restore script: `scripts/restore_*.sh` (6 個 zigzag + 1 個 sprint 4)
+
+**新還原點** (4.63.0):
+- Tag: `restore-2026-09-01-stocks-async` (annotated, push 去 origin)
+- Branch: `backup-2026-09-01-stocks-async` (push 去 origin)
+- Script: `scripts/restore_2026_09_01_stocks_async.sh` (對齊 §15.45 Sscript pattern, double confirm `yes` + `RESET`)
+- HEAD: `5e63528efb638d2b1939a4f924276374d78ff8c1` (4.62.0 stocks async fix 之後)
+- 包嘅改動: 4.59.0 + 4.60.0 + 4.61.0 + 4.62.0 全部 + AGENTS.md 永久 rule
+
+**永久保留** (唔郁):
+- `backup-2026-08-06-0022` (backup tag, 唔係 Sscript)
+- `now-2026-07-22-0936` / `pre-adaptive-thresholdpct-2026-08-21` / `pre-bigchange-2026-07-27` / `pre-issue1-deeper-dig-2026-07-28` / `pre-optimization-2026-07-22` / `pre-port-optimization-2026-08-02` / `pre-zigzag-backend-refactor-2026-08-20` / `v2026-08-03-pre-big-changes` (development milestone tags, 唔係 Sscript 還原點)
+- `backup/now-2026-07-22-0936` / `backup/pre-optimization-2026-07-22` (dev branches, 唔係 Sscript 還原點)
+
+**永久 rule** (對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory):
+- ✅ Sscript 還原點永遠保持 1 個 active (對齊 12:08 user memory「保留 tag + 可能會再用」), 大少 trigger「只留現在的這個」就清舊整新
+- ✅ 整新 Sscript 還原點對齊 §15.45 Sscript pattern: annotated tag + backup branch + restore script + double confirm `yes` + `RESET`
+- ✅ Tag 命名: `restore-YYYY-MM-DD-<short-name>` (例如 `restore-2026-09-01-stocks-async`)
+- ✅ Branch 命名: `backup-YYYY-MM-DD-<short-name>` (對齊 tag)
+- ✅ Script 命名: `scripts/restore_YYYY_MM_DD_<short_name>.sh` (對齊 tag + branch, 底線替代 hyphen)
+- ✅ 推 tag + branch 全部去 origin (`git push origin <tag>` + `git push origin <branch>`)
+- ✅ 清舊 Sscript 還原點: 全部 3 個 component 都要清 (tag + branch + script), 唔好留半套
+- ✅ Backup Admin Page `?v=` cache bust 同步 bump (1.1.0 → 1.2.0), 對齊 §15.46 testing-page cache bust sync 永久 rule
+- ✅ 對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule
+
+**凡人話**: 大少撳 `~/stockpulse/backup-admin/index.html` reload 拎新 `?v=1.2.0`, 即刻見到得返 1 個還原點 row (restore-2026-09-01-stocks-async), 撳「還原」掣自動 double confirm `yes` + `RESET` 一鍵還原到 4.59.0-4.62.0 狀態。
+
+對應 file:
+- `scripts/restore_2026_09_01_stocks_async.sh` (新增, Sscript pattern)
+- `backup-admin/index.html` (?v=1.1.0 → 1.2.0 cache bust sync)
+- Git: 新 tag `restore-2026-09-01-stocks-async` + branch `backup-2026-09-01-stocks-async`, 刪 7 個舊 Sscript tag + branch
+
+對應 doc: ARCHITECTURE.md §15.45 + §15.53 + §15.54 + 12:08 user memory
+
+對應 commit: 即將 push (4.63.0 chore + Spec Sync 流程)
+
+對應永久 rule: §15.45 Sscript pattern + §15.46 cache bust sync + §15.53 Sscript 還原點 + §15.54 Backup Admin Page + 12:08 user memory「一鍵還原 Backup Admin Page 永久更新」
+
 ### FastAPI Sync Endpoint Async-化 永久 rule (大少 2026-09-01 17:25 trigger, 4.62.0)
 
 **凡人話解釋**: 大少 17:25 trigger「輸入股票的autocomplete停然沒有了」— testing page 嘅股票代碼 autocomplete 突然 500 Internal Server Error。Root cause: backend `backend/api/stocks.py` 3 個 endpoint (`/search`, `/{code}`, `/`) 用 `def` (sync), 經 uvicorn HTTP/1.1 server 觸發 anyio 4.13.0 嘅 threadpool 喺 Python 3.14 上面 weakref bug (`TypeError: cannot create weak reference to 'NoneType' object`), 100% 500。TestClient 直接 call 唔 trigger (因為冀 threadpool 跳轉), 但 uvicorn 一定 trigger。
