@@ -533,7 +533,12 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ adapter.mjs renderMAAlignmentV2ChartOverlay P 點 marker block 加入口 debug log (1 個)
 //   ✅ Debug evidence 撅 00019 frontend verdict 正常, 撅 01888/0981/00700 frontend verdict 拎空 (ok=None, meta keys=[]), 因為 line 147 early return
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.131
-const ALGO_CACHE_BUST = '4.62.1';
+// 大少 2026-09-01 23:27 trigger (Fix 4) — 拎返 4.49.0 拎返嗰陣 2 個 protection (max count 30 + re-set after setVisibleLogicalRange): ALGO_CACHE_BUST = '4.62.2'
+//   ✅ adapter.mjs P 點 marker block 拎返 max count 30 限制 (對齊 4.49.0 拎返嗰陣 default), 49 個 marker silent reject fix
+//   ✅ testing-page.js renderChart setTimeout 50ms 拎返 re-set markers block (v5 plugin API 拎 set 返 ensure persist)
+//   ✅ 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.132
+const ALGO_CACHE_BUST = '4.62.2';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1623,6 +1628,13 @@ function renderChart(klines, code, period) {
     // 之前用 chartRefs (line 1256 runAlgorithm 嘅 local const), renderChart 內部 access 唔到
     // Fix: 改用 lastChartRefs (global, line 591-592 定義, line 1263 assign 過, 跟 chartRefs 同 shape)
     // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 re-set markers after setVisibleLogicalRange 嗰個 if block (P 點 sequence marker 拎走後唔再需要)
+    // 大少 9月1日 23:27 trigger (4.62.2 fix) — 拎返 re-set markers block (P 點 sequence marker 拎返 4.62.0, setVisibleLogicalRange 嗰陣 v5 plugin marker 可能丟失, 50ms 後再 set 返一次確保 persist)
+    if (lastChartRefs && lastChartRefs.zigzagSequenceMarkers && typeof lastChartRefs.zigzagSequenceMarkers.setMarkers === 'function') {
+      try {
+        lastChartRefs.zigzagSequenceMarkers.setMarkers(lastChartRefs.zigzagSequenceMarkers.markers || []);
+        console.log('[Chart] 🛠️ re-set P 點 markers after setVisibleLogicalRange (v5 plugin API, 確保 persist, 4.62.2 fix)');
+      } catch (e) { /* ignore */ }
+    }
   }, 50);
 
   chartInstance = chart;

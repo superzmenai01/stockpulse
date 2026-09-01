@@ -5146,18 +5146,23 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           }
 
           // 對齊 9月1日 22:38 PPP 永久 rule: v5 plugin API, 失敗 fallback 落 v4 candleSeries.setMarkers
-          if (chartRefs.candleSeries && _dedupedPmarkers.length > 0) {
+          // 大少 9月1日 23:27 trigger (4.62.2 fix) — 拎返 4.49.0 拎返嗰陣 max count 30 限制 (49 個 marker 唔 render silent bug)
+          // 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
+          // 推測: v5 plugin API 對多 marker (>30) silent reject, 對齊 4.49.0 拎返嗰陣 default 拎 limit 30
+          const _pmarkerMaxCount = Number.isFinite(chartRefs.zigzagSequenceMaxCount) ? chartRefs.zigzagSequenceMaxCount : 30;
+          const _visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount);
+          if (chartRefs.candleSeries && _visiblePmarkers.length > 0) {
             if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
               try {
-                chartRefs.zigzagSequenceMarkers = LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, _dedupedPmarkers);
-                console.log('[M1 v2.0] ✅ ZigZag P 點 sequence marker (v5 createSeriesMarkers plugin API):', _dedupedPmarkers.length, '個 (P1 = 最新, P' + _dedupedPmarkers.length + ' = 最舊)');
+                chartRefs.zigzagSequenceMarkers = LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, _visiblePmarkers);
+                console.log('[M1 v2.0] ✅ ZigZag P 點 sequence marker (v5 createSeriesMarkers plugin API):', _visiblePmarkers.length, '個 (P1 = 最新, P' + _visiblePmarkers.length + ' = 最舊, max=' + _pmarkerMaxCount + ', deduped=' + _dedupedPmarkers.length + ')');
               } catch (e) {
                 console.error('[M1 v2.0] ❌ P 點 marker v5 plugin API 失敗, fallback 落 v4 setMarkers:', e);
-                try { chartRefs.candleSeries.setMarkers(_dedupedPmarkers); } catch (e2) { /* ignore */ }
+                try { chartRefs.candleSeries.setMarkers(_visiblePmarkers); } catch (e2) { /* ignore */ }
               }
             } else if (typeof chartRefs.candleSeries.setMarkers === 'function') {
-              chartRefs.candleSeries.setMarkers(_dedupedPmarkers);
-              console.log('[M1 v2.0] ✅ P 點 marker v4 candleSeries.setMarkers fallback (v5 向後兼容):', _dedupedPmarkers.length, '個');
+              chartRefs.candleSeries.setMarkers(_visiblePmarkers);
+              console.log('[M1 v2.0] ✅ P 點 marker v4 candleSeries.setMarkers fallback (v5 向後兼容):', _visiblePmarkers.length, '個');
             } else {
               console.error('[M1 v2.0] ❌ 冇 setMarkers API available, 請檢查 lightweight-charts v5.2.0 載入');
             }
