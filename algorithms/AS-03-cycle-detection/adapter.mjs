@@ -5145,31 +5145,61 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             );
           }
 
-          // 對齊 9月1日 22:38 PPP 永久 rule: v5 plugin API, 失敗 fallback 落 v4 candleSeries.setMarkers
-          // 大少 9月1日 23:27 trigger (4.62.2 fix) — 拎返 4.49.0 拎返嗰陣 max count 30 限制 (49 個 marker 唔 render silent bug)
-          // 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
-          // 推測: v5 plugin API 對多 marker (>30) silent reject, 對齊 4.49.0 拎返嗰陣 default 拎 limit 30
-          // 大少 9月1日 23:31 trigger (4.62.3 fix) — 拎走 v5 plugin API (4.49.0 永久 rule), 永久用 v4 candleSeries.setMarkers (4.10.0 永久 rule)
-          //   ✅ 大少 evidence: v5 plugin API render 嗰陣 production crash `this.OS.map is not a function` (內部 array.map 拎 undefined)
-          //   ✅ v4 candleSeries.setMarkers 9月1日 22:47 PPP test 已 verify work (4.10.0 永久 rule v5 向後兼容)
-          //   ✅ 拎走 v5 plugin API 拎 v4 setMarkers 永久, 拎 v5 internal crash 風險拎走
-          const _pmarkerMaxCount = Number.isFinite(chartRefs.zigzagSequenceMaxCount) ? chartRefs.zigzagSequenceMaxCount : 30;
-          const _visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount);
+          // 大少 9月1日 23:46 trigger (4.63.0 fix) — 拎返 v5 createSeriesMarkers plugin API, 拎走 v4 setMarkers fallback (死火 dead code)
+          //   ❌ 4.62.3 commit `880c8459` 拎返嘅 `candleSeries.setMarkers` fallback 完全冇用: Lightweight Charts v5.0+ migration
+          //      doc 確認 `series.setMarkers` method 已經拎走, 系列 marker 改為獨立 plugin 介面 `createSeriesMarkers(series, markers)`,
+          //      **冇任何向後兼容**。所以 4.62.3 commit comment 寫嘅「v4 candleSeries.setMarkers 9月1日 22:47 PPP test 已 verify
+          //      work (4.10.0 永久 rule v5 向後兼容)」係 false claim — PPP test 應該 verify 失敗咗但 commit 寫住 work。
+          //   ✅ Fix: 拎返 v5 `LightweightCharts.createSeriesMarkers(candleSeries, markers)`, 拎 plugin handle
+          //      (handle 本身自帶 setMarkers / markers method, 4.49.0 + 4.62.0 永久 rule pattern)
+          //   ✅ Max count 4.62.2 嘅 30 → **10** (大少 9月1日 23:46 confirm「只要顯示P1-P10 就可以了」)。
+          //      4.62.3 實測 30 markers 嗰陣 v5 plugin 會 production crash `this.OS.map is not a function`
+          //      (內部 array.map 拎 undefined), 收緊到 10 之後 trigger 機會近乎 0。
+          //   ✅ Try/catch fallback chain 10 → 5 → 3 (defensive only, max 10 應該唔 crash, 兜底 cover 極端情況)
+          //   ✅ chartRefs.zigzagSequenceMarkers 改 `{ handle, markers, setMarkers }` 結構:
+          //      - `handle` = v5 plugin handle (LightweightCharts.createSeriesMarkers return value, 自帶 setMarkers / markers method)
+          //      - `markers` = array of marker objects (for re-set block 50ms 後用)
+          //      - `setMarkers` = wrapper function (delegates to `handle.setMarkers`, 4.62.2 re-set block 兼容)
+          // 對齊永久 rule:
+          //   - 4.49.0: v5 createSeriesMarkers plugin API (v4 setMarkers 拎走, 必須用 v5 plugin)
+          //   - 4.62.0: 拎返 P 點 marker block (v5 plugin API + v4 setMarkers fallback)
+          //   - 4.62.2: 50ms re-set markers block (setVisibleLogicalRange 後 persist)
+          //   - 4.63.0: max 10 + 拎返 v5 plugin API + 拎走 v4 fallback (本 fix)
+          const _pmarkerMaxCount = Number.isFinite(chartRefs.zigzagSequenceMaxCount) ? chartRefs.zigzagSequenceMaxCount : 10;
+          const _tryAttachPmarkers = (markers, retryCount) => {
+            if (!chartRefs.candleSeries) return false;
+            if (typeof LightweightCharts === 'undefined' || typeof LightweightCharts.createSeriesMarkers !== 'function') {
+              console.error('[M1 v2.0] ❌ LightweightCharts.createSeriesMarkers 唔存在, 請檢查 lightweight-charts v5.2.0 載入');
+              return false;
+            }
+            try {
+              const _handle = LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, markers);
+              chartRefs.zigzagSequenceMarkers = {
+                handle: _handle,  // v5 plugin handle, 自帶 setMarkers / markers method
+                markers,
+                setMarkers: (m) => { try { _handle.setMarkers(m || []); } catch (e) { /* ignore */ } },
+              };
+              console.log(`[M1 v2.0] ✅ ZigZag P 點 sequence marker (v5 createSeriesMarkers plugin API, retry #${retryCount}):`,
+                markers.length, '個 (P1 = 最新, P' + markers.length + ' = 最舊)');
+              return true;
+            } catch (e) {
+              console.warn(`[M1 v2.0] ⚠️ v5 plugin createSeriesMarkers crash (retry #${retryCount}, ${markers.length} 個 markers):`, e.message);
+              return false;
+            }
+          };
+          let _visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount);
           if (chartRefs.candleSeries && _visiblePmarkers.length > 0) {
-            if (typeof chartRefs.candleSeries.setMarkers === 'function') {
-              try {
-                chartRefs.candleSeries.setMarkers(_visiblePmarkers);
-                console.log('[M1 v2.0] ✅ ZigZag P 點 sequence marker (v4 candleSeries.setMarkers 永久, 4.10.0 永久 rule v5 向後兼容):', _visiblePmarkers.length, '個 (P1 = 最新, P' + _visiblePmarkers.length + ' = 最舊, max=' + _pmarkerMaxCount + ', deduped=' + _dedupedPmarkers.length + ')');
-                // 大少 23:31 fix: 拎 v4 setMarkers 拎 plugin handle 一齊拎返 (re-set block 仍可 call 拎返)
-                chartRefs.zigzagSequenceMarkers = {
-                  markers: _visiblePmarkers,
-                  setMarkers: (m) => { try { chartRefs.candleSeries.setMarkers(m || []); } catch (e) { /* ignore */ } },
-                };
-              } catch (e) {
-                console.error('[M1 v2.0] ❌ P 點 marker v4 setMarkers 失敗:', e);
+            if (!_tryAttachPmarkers(_visiblePmarkers, 1)) {
+              // Fallback 1: 收緊到 5 個
+              _visiblePmarkers = _dedupedPmarkers.slice(0, 5);
+              if (_visiblePmarkers.length > 0 && !_tryAttachPmarkers(_visiblePmarkers, 2)) {
+                // Fallback 2: 收緊到 3 個 (最後兜底)
+                _visiblePmarkers = _dedupedPmarkers.slice(0, 3);
+                if (_visiblePmarkers.length > 0 && !_tryAttachPmarkers(_visiblePmarkers, 3)) {
+                  // 全部 crash, log + 唔 render P 點 marker (紫色 ZigZag 線仍然 render)
+                  console.error('[M1 v2.0] ❌ v5 plugin 對 3/5/10 markers 全部 crash, P 點 marker 唔 render (紫色 ZigZag 線仍然 render)');
+                }
               }
-            } else {
-              console.error('[M1 v2.0] ❌ 冇 setMarkers API available, 請檢查 lightweight-charts v5.2.0 載入');
             }
           }
         } else {

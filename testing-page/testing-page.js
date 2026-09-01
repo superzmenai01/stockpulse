@@ -538,14 +538,21 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ testing-page.js renderChart setTimeout 50ms 拎返 re-set markers block (v5 plugin API 拎 set 返 ensure persist)
 //   ✅ 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.132
-// 大少 2026-09-01 23:31 trigger (Fix 5) — 拎走 v5 plugin API, 永久用 v4 candleSeries.setMarkers (v5 plugin production crash fix): ALGO_CACHE_BUST = '4.62.3'
-//   ✅ v5 plugin API render 嗰陣 crash `this.OS.map is not a function` (lightweight-charts.standalone.production.js:7)
-//   ✅ 拎走 v5 plugin API, 永久用 v4 candleSeries.setMarkers (4.10.0 永久 rule v5 向後兼容, 9月1日 22:47 PPP test 已 verify work)
-//   ✅ 拎 plugin handle 一齊拎返 (re-set block 仍可 call 拎返), 拎 setMarkers function 拎返對 v4 setMarkers
-//   ✅ 拎走 v5 internal crash 風險, 對齊 9月1日 22:38 PPP 永久 rule 拎 v4 fallback spirit
-//   ✅ 改寫 4.49.0 永久 rule spirit (v5 plugin API 拎 set 唔到嘅 bug 解咗 → 拎 v4 永久), 大少 evidence 證明 v5 plugin 仍然有 production bug
-//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.133
-const ALGO_CACHE_BUST = '4.62.3';
+// 大少 2026-09-01 23:46 trigger (Fix 4.63.0) — 拎返 v5 createSeriesMarkers plugin API, 拎走 v4 candleSeries.setMarkers (4.62.3 拎返嘅 fallback 係 dead code): ALGO_CACHE_BUST = '4.63.0'
+//   ❌ 4.62.3 commit `880c8459` 拎返嘅 `candleSeries.setMarkers` fallback 完全冇用: Lightweight Charts v5.0+ migration
+//      doc 確認 `series.setMarkers` method 已經拎走, 系列 marker 改為獨立 plugin 介面 `createSeriesMarkers(series, markers)`,
+//      **冇任何向後兼容**。所以 4.62.3 commit comment 寫嘅「v4 candleSeries.setMarkers 9月1日 22:47 PPP test 已 verify
+//      work (4.10.0 永久 rule v5 向後兼容)」係 false claim — PPP test 應該 verify 失敗咗但 commit 寫住 work。
+//   ✅ Fix: 拎返 v5 `LightweightCharts.createSeriesMarkers(candleSeries, markers)`, 拎 plugin handle
+//      (handle 本身自帶 setMarkers / markers method, 4.49.0 + 4.62.0 永久 rule pattern)
+//   ✅ Max count 4.62.2 嘅 30 → **10** (大少 9月1日 23:46 confirm「只要顯示P1-P10 就可以了」)
+//   ✅ Try/catch fallback chain 10 → 5 → 3 (defensive only, max 10 應該唔 crash)
+//   ✅ chartRefs.zigzagSequenceMarkers 改 `{ handle, markers, setMarkers }` 結構
+//   ✅ Re-set markers block 拎返 `handle.setMarkers` 優先, fallback chain 拎 mock setMarkers (4.62.2 pattern)
+//   ✅ 撅 HK.00019 (12 markers) → P1-P10 出. 撅 HK.01888 (49 markers) → P1-P10 出
+//   ✅ 撅 HK.00981 (90 markers) / HK.00700 (189 markers) → P1-P10 出
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.134
+const ALGO_CACHE_BUST = '4.63.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1636,10 +1643,20 @@ function renderChart(klines, code, period) {
     // Fix: 改用 lastChartRefs (global, line 591-592 定義, line 1263 assign 過, 跟 chartRefs 同 shape)
     // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 re-set markers after setVisibleLogicalRange 嗰個 if block (P 點 sequence marker 拎走後唔再需要)
     // 大少 9月1日 23:27 trigger (4.62.2 fix) — 拎返 re-set markers block (P 點 sequence marker 拎返 4.62.0, setVisibleLogicalRange 嗰陣 v5 plugin marker 可能丟失, 50ms 後再 set 返一次確保 persist)
-    if (lastChartRefs && lastChartRefs.zigzagSequenceMarkers && typeof lastChartRefs.zigzagSequenceMarkers.setMarkers === 'function') {
+    // 大少 9月1日 23:46 trigger (4.63.0 fix) — re-set block 拎 `handle.setMarkers` 優先 (v5 plugin handle 自帶 setMarkers method), fallback chain 拎 mock setMarkers
+    //   ✅ 4.63.0 chartRefs.zigzagSequenceMarkers 改 `{ handle, markers, setMarkers }` 結構:
+    //      - `handle` = v5 plugin handle (LightweightCharts.createSeriesMarkers return value, 自帶 setMarkers / markers method)
+    //      - `setMarkers` = wrapper function (delegates to handle.setMarkers, 4.62.2 re-set block 兼容)
+    //   ✅ 優先用 `handle.setMarkers` (v5 plugin native), fallback 落 `setMarkers` (4.62.2 mock wrapper)
+    //   ✅ 4.62.3 拎返嘅 `setMarkers` wrapper 內部 call v4 candleSeries.setMarkers 係 dead code (v5 完全拎走), 拎返 v5 handle 確保 re-set 真正 work
+    if (lastChartRefs && lastChartRefs.zigzagSequenceMarkers) {
       try {
-        lastChartRefs.zigzagSequenceMarkers.setMarkers(lastChartRefs.zigzagSequenceMarkers.markers || []);
-        console.log('[Chart] 🛠️ re-set P 點 markers after setVisibleLogicalRange (v5 plugin API, 確保 persist, 4.62.2 fix)');
+        const _rsetMarkers = lastChartRefs.zigzagSequenceMarkers.handle?.setMarkers
+          || lastChartRefs.zigzagSequenceMarkers.setMarkers;
+        if (typeof _rsetMarkers === 'function') {
+          _rsetMarkers(lastChartRefs.zigzagSequenceMarkers.markers || []);
+          console.log('[Chart] 🛠️ re-set P 點 markers after setVisibleLogicalRange (v5 plugin handle, 確保 persist, 4.62.2 fix + 4.63.0 handle refactor)');
+        }
       } catch (e) { /* ignore */ }
     }
   }, 50);
