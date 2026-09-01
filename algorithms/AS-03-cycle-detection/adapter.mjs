@@ -5236,9 +5236,9 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             if (!_dateParts[0] || !_dateParts[1] || !_dateParts[2]) return null;
             return {
               time: { year: _dateParts[0], month: _dateParts[1], day: _dateParts[2] },
-              position: 'inBar',  // K 線 body 中間 (對應 K 線 body middle, 因為 trigger price 係嗰日 K 線 high/low, plot 喺 body middle 最視覺自然)
-              color: '#FF5252',  // 紅色 (對齊 4.61.0 design)
-              shape: p.type === 'high' ? 'arrowDown' : 'arrowUp',  // Option D: arrow shape 對齊 P 點 type
+              position: p.type === 'high' ? 'aboveBar' : 'belowBar',  // 4.65.0 fix: 離開 K 線 body, peak trigger 喺 K 線上面 (aboveBar), trough trigger 喺 K 線下面 (belowBar). 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar). 大少 9月2日 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」
+              color: '#BA68C8',  // 4.65.0 fix: 鮮紫色 (Material Design Purple 300, 中等鮮度). 對齊 P 點紫色 #9C27B0 (Purple 500) hue family 但淺 1 級, 視覺 contrast 對 K 線 body 升綠/跌紅都清楚. 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改用鮮紫
+              shape: p.type === 'high' ? 'arrowDown' : 'arrowUp',  // Option D 保留: arrow shape 對齊 P 點 type
               text: '',  // 冇 label (大少 confirm)
               size: 1,  // 對齊 P 點 size 1 (4.51.0 永久 rule, 4.61.3 嗰陣 size 2/1.5 對齊 P 點 + 0.5, 4.64.0 簡化 1)
             };

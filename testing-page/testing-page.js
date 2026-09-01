@@ -538,19 +538,16 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ testing-page.js renderChart setTimeout 50ms 拎返 re-set markers block (v5 plugin API 拎 set 返 ensure persist)
 //   ✅ 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.132
-// 大少 2026-09-02 00:23 trigger (Fix 4.64.0) — 拎返紅色獨發點 (Trigger 確認點) marker (Option D arrowUp/arrowDown 對齊 P 點 arrow 風格, 4.61.5 拎走 → 4.64.0 拎返): ALGO_CACHE_BUST = '4.64.0'
-//   ✅ 對齊 4.57.0 backend 永久 rule: backend verdict.points[].triggerDate / triggerIndex / triggerPrice / is_ongoing 4 個 field 已經計好
-//   ✅ 對齊 4.60.0 永久 rule: Ongoing point 嘅 trigger 設 null + is_ongoing=true (frontend filter 拎走)
-//   ✅ 對齊 4.51.0 永久 rule: arrow shape 對齊 P 點 arrow 風格 (P 點 high→arrowDown, low→arrowUp)
-//   ✅ Option D (大少 9月2日 00:27 confirm): arrowUp/arrowDown + #FF5252 紅色 + inBar + 冇 label
-//   ✅ Max count = 10 (大少 00:27 confirm, 對齊 P 點 max, combined 最多 20 markers)
-//   ✅ Filter ongoing point (4.60.0 永久 rule) + 第 1 個 P 點 trigger=self (4.57.0 永久 rule) 拎走 (大少 00:27 confirm)
-//   ✅ 4.40.0 永久 rule dedupe by time (避免 Lightweight Charts silent reject)
-//   ✅ Combined P + Trigger markers 共享同一個 plugin handle (4.63.0 永久 rule), 50ms re-set block 自動 persist
-//   ✅ 撅 HK.00019 (12 markers) → P1-P10 + Trigger 紅色 arrow 出. 撅 HK.01888 (49 markers) → P1-P10 + Trigger 出
-//   ✅ 撅 HK.00981 (90 markers) / HK.00700 (189 markers) → P1-P10 + Trigger 出
-//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.135
-const ALGO_CACHE_BUST = '4.64.0';
+// 大少 2026-09-02 00:48 trigger (Fix 4.65.0) — 紅色獨發點 marker 改鮮紫 + 離開 K 線 body (aboveBar/belowBar): ALGO_CACHE_BUST = '4.65.0'
+//   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
+//   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
+//   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
+//   ✅ 對齊 P 點紫色 #9C27B0 (Purple 500) hue family 但淺 1 級 (#BA68C8 Purple 300), 視覺 contrast 對 K 線 body 升綠/跌紅都清楚
+//   ✅ 其他 field 唔改: arrowUp/arrowDown shape (Option D), size 1, text '' (冇 label), max 10, filter ongoing + first point
+//   ✅ 撅 HK.00019 (12 markers) → P1-P10 紫色圓圈 (aboveBar/belowBar) + 鮮紫 arrow 10 個 (aboveBar peak / belowBar trough) 出
+//   ✅ 撅 HK.01888 (49 markers) → P1-P10 + 鮮紫 arrow 10 個出. 撅 HK.00700 (189 markers) → P1-P10 + 鮮紫 arrow 10 個出
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.136
+const ALGO_CACHE_BUST = '4.65.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
