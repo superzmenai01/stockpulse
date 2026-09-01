@@ -525,33 +525,72 @@ def _compute_fetch_max_count(period):
 對應 Spec Sync #47 entry (永久 rule update 拎走 2 條 + 加 1 條)
 對應 doc: ARCHITECTURE.md §3.6 + §3.7 (ZigZag data flow)
 
-### ZigZag Frontend 只 render 紫色折線 永久 rule (大少 9月1日 22:02, 4.61.5)
+### ZigZag Frontend 只 render 紫色折線 永久 rule (大少 9月1日 22:02, 4.61.5) — **4.64.0 部分拎返 (紅色獨發點 marker)**
 
 **凡人話解釋**: 大少 9月1日 22:02 trigger「**之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要**」— Frontend 拎走晒 5 個 non-line ZigZag visual elements, chart 只 render 紫色 ZigZag 折線。
 
 **拎走嘅 5 個 non-line visual elements** (對齊 8月29日 22:44 永久 rule「所有改動要 confirm」, 大少明確 trigger 拎走):
-- ❌ 紫色 P 點 sequence marker (peak/trough arrow + 1/2/3/4 號碼) — 4.9.0 加 → 4.51.0 拎走 → 4.61.0 拎返返 → 4.61.5 拎走
-- ❌ 紅色獨發點 circle marker (#FF5252 trigger circle) — 4.61.0 新加 → 4.61.5 拎走
+- ❌ 紫色 P 點 sequence marker (peak/trough arrow + 1/2/3/4 號碼) — 4.9.0 加 → 4.51.0 拎走 → 4.61.0 拎返返 → 4.61.5 拎走 → 4.62.0 拎返返 → 4.63.0 fix 拎返 v5 plugin API (現存永久)
+- ✅ **4.64.0 拎返** 紅色獨發點 (Trigger 確認點) marker (Option D arrow shape + #FF5252 紅色 + inBar + size 1) — 4.61.0 新加 → 4.61.5 拎走 → 4.64.0 拎返返
 - ❌ 鮮綠色 close extension line (#00C853) — 4.8.3/4.33.0 加 → 4.51.0 拎走 → 9月1日 14:10 拎走 confirm
 - ❌ 鮮綠色 "1" 號 marker (today close arrow) — 4.8.3 加 → 4.51.0 拎走
 - ❌ 橙色 #FF9800 旗仔 decision flag — 4.42.2 加 → 4.53.0 拎走
 
-**永久 rule** (4.61.5 新加):
-- ✅ **Frontend ZigZag chart 只 render 紫色折線** (`#9C27B0` LineSeries), 唔 render 任何 marker / 旗仔 / 獨發點 / 鮮綠線
-- ✅ Backend `triggerDate` / `triggerPrice` / `is_ongoing` field **全部保留** (大少 trigger「之後想重新再做過」, backend field 對 frontend visual 0 effect 因為 frontend 唔 render marker)
-- ✅ 拎返拎走 `#zigzag-sequence-controls` div + `#show-sequence` toggle + `LS_KEY_SHOW_SEQUENCE` helper (testing page)
-- ✅ 拎返拎走 `LightweightCharts.createSeriesMarkers` 整段 marker build + setMarkers (adapter.mjs)
-- ✅ 對齊 4.43.0 永久 rule: ZigZag 全部 backend 計, frontend 拎 fetch verdict, frontend 只 render 紫色折線
-- ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做
+**永久 rule** (4.61.5 新加, 4.64.0 部分改寫):
+- ✅ **Frontend ZigZag chart render 紫色折線** (`#9C27B0` LineSeries) + **紫色 P 點 sequence marker** (4.62.0 + 4.63.0 拎返) + **紅色獨發點 marker** (4.64.0 拎返, Option D arrow shape)
+- ✅ Backend `triggerDate` / `triggerPrice` / `is_ongoing` field **全部保留** (大少 trigger「之後想重新再做過」, 4.64.0 拎返 frontend render trigger marker 用呢啲 field)
+- ✅ 拎返拎走 `#zigzag-sequence-controls` div + `#show-sequence` toggle + `LS_KEY_SHOW_SEQUENCE` helper (testing page, 4.61.5)
+- ✅ 拎返拎走 `LightweightCharts.createSeriesMarkers` 整段 marker build + setMarkers (adapter.mjs, 4.61.5 拎走 → 4.62.0/4.63.0/4.64.0 拎返返)
+- ✅ 對齊 4.43.0 永久 rule: ZigZag 全部 backend 計, frontend 拎 fetch verdict, frontend 只 render 紫色折線 + markers
+- ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做 (4.61.5 拎走), 4.64.0 拎返紅色獨發點大少 00:23 明確 trigger「用咩符號來標號好」+ 00:27 confirm Option D
 
 **對應 file**:
-- `testing-page/testing-page.js`: 拎返拎走 `LS_KEY_SHOW_SEQUENCE` const + `getShowSequence` / `setShowSequence` helpers + `#show-sequence` toggle handler (~35 行 dead code 拎走)
-- `testing-page/index.html`: 拎返拎走 `#zigzag-sequence-controls` div block (~11 行 dead UI 拎走)
-- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay`: 拎返拎走 P 點 arrow marker + 紅色獨發點 circle marker + `createSeriesMarkers` 整段 (~66 行 dead code 拎走)
-- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.61.4' → '4.61.5' + `?v=2.3.125` → `?v=2.3.126`
-- Backend `backend/algorithms/zigzag/algorithm.py` **唔郁** (trigger field 保留)
+- `testing-page/testing-page.js`: 拎返拎走 `LS_KEY_SHOW_SEQUENCE` const + `getShowSequence` / `setShowSequence` helpers + `#show-sequence` toggle handler (~35 行 dead code 拎走, 4.61.5)
+- `testing-page/index.html`: 拎返拎走 `#zigzag-sequence-controls` div block (~11 行 dead UI 拎走, 4.61.5)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay`:
+  - 4.61.5 拎返拎走 P 點 arrow marker + 紅色獨發點 circle marker + `createSeriesMarkers` 整段 (~66 行 dead code 拎走)
+  - 4.62.0 拎返 P 點 marker block
+  - 4.63.0 拎返 v5 plugin API, max 10, fallback chain 10→5→3
+  - 4.64.0 拎返紅色獨發點 marker block (P 點 marker block 之後, Option D arrowUp/arrowDown + #FF5252 紅 + inBar + 冇 label + max 10 + filter ongoing + filter first point)
+- `testing-page/testing-page.js` ALGO_CACHE_BUST: '4.61.4' → '4.61.5' → '4.62.0' → '4.63.0' → '4.64.0' + `?v=2.3.125` → '?v=2.3.135' (CSS + JS)
+- Backend `backend/algorithms/zigzag/algorithm.py` **唔郁** (trigger field 保留, 4.64.0 frontend 拎返 render)
 
-對應 commit: refactor(frontend): 拎走 ZigZag non-line visual elements (P 點 / 旗仔 / 獨發點 / 鮮綠線), chart 只 render 紫色折線 (4.61.5 cache bust sync)
+對應 commit:
+- `b8a67d6e` refactor(frontend): 拎走 ZigZag non-line visual elements (4.61.5)
+- `578c5ab8` feat(adapter): 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0)
+- `047ed1e8` fix(stockpulse): 拎返 v5 createSeriesMarkers plugin API + max 10 + fallback chain 10→5→3 (4.63.0)
+- `4094fbd6` fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)
+
+### M1 P 點 marker v5 plugin API + Max 10 + 紅色獨發點 marker 永久 rule (4.64.0, 大少 2026-09-02 00:23 trigger「用咩符號來標號好」+ 00:27 confirm Option D)
+
+**凡人話解釋**: 4.63.0 拎返紫色 P 點 sequence marker (P1, P2, P3...) 之後, 大少 00:23 trigger「現在把在 Backend 已計好了的 zigzag 獨發點也標上, 用什麼符號來標號好呢?」+ 00:27 confirm 4 個 decisions (Option D + max 10 + filter ongoing + filter first point)。每一個 ZigZag P 點 (peak 山頂 / trough 山谷) 都有一個 trigger date — 即係「呢個 P 點係由邊日 K 線確認」嘅日子。e.g. 8月31日 P1 high 47.68 嗰個 peak, 要等到之後跌穿 5% threshold 嗰日先 confirm, trigger 嗰支 K 線就係「獨發點」。Backend `verdict.points[].triggerDate` 已經有呢個 data (4.57.0 加, 4.60.0 改 null 處理 ongoing point)。
+
+**4.64.0 永久 rule** (Option D design, 大少 00:27 confirm):
+- ✅ **Render 位置**: `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` P 點 marker block 之後 (line 5207-5283)
+- ✅ **Shape**: `arrowUp` (trough trigger) / `arrowDown` (peak trigger) — 對齊 4.51.0 永久 rule P 點 arrow 風格 (P 點 high→arrowDown, low→arrowUp)
+- ✅ **Color**: 紅色 `#FF5252` — 對齊 4.61.0 design (4.61.5 commit comment 確認)
+- ✅ **Position**: `inBar` (K 線 body 中間) — 因為 trigger price 係嗰日 K 線 high (trough) / low (peak), plot 喺 body middle 最視覺自然
+- ✅ **Label**: 冇 — 大少 confirm 簡潔風格
+- ✅ **Size**: 1 — 對齊 P 點 size 1 (4.51.0 永久 rule)
+- ✅ **Time field**: business day object `{year, month, day}` (4.41.2 永久 rule 對齊 P 點 marker setData 格式, trigger date 都用同一個 format)
+- ✅ **Dedupe by time**: 拎返避免 Lightweight Charts silent reject (4.40.0 永久 rule, 同 P 點 dedupe 邏輯對齊)
+- ✅ **Filter ongoing**: `p.is_ongoing === true || p.triggerDate == null` skip (4.60.0 永久 rule + 大少 confirm)
+- ✅ **Filter 第 1 個 P 點**: `p.index !== 0` skip (4.57.0 永久 rule trigger=self, visual useless, 大少 confirm)
+- ✅ **Max count = 10**: 對齊 P 點 max 10, combined 最多 20 markers (4.63.0 永久 rule safe range, 大少 confirm)
+- ✅ **Combined markers array**: P 點 markers + Trigger markers 用同一個 `chartRefs.zigzagSequenceMarkers.handle.setMarkers([...p, ...trigger])` (4.63.0 永久 rule spirit, 共享 plugin handle)
+- ✅ **Re-set markers block**: 對齊 4.63.0 永久 rule, 50ms 後 `setVisibleLogicalRange` 嗰陣 re-set combined markers, trigger marker 自動 persist
+
+**對齊永久 rule** (8 條):
+- 4.15.0: 之字拎 point 同 trigger 都用 high/low (wick extreme) — 4.57.0 backend 永久 rule spirit
+- 4.40.0: dedupe by time
+- 4.41.2: time field 用 business day object `{year, month, day}`
+- 4.51.0: P 點 arrow 風格 (high→arrowDown, low→arrowUp), 4.64.0 trigger arrow shape 對齊
+- 4.57.0: backend `triggerDate / triggerPrice / is_ongoing` 4 個 field, frontend 拎返 render
+- 4.60.0: Ongoing point 嘅 trigger 設 null + is_ongoing=true, frontend filter 拎走
+- 4.61.0: 「Frontend ZigZag 只 render 紫色折線」改為「Frontend ZigZag 紫色折線 + 紅色獨發點 marker (4.64.0)」
+- 4.63.0: v5 `LightweightCharts.createSeriesMarkers` plugin API + max 10 + fallback chain 10→5→3 (combined 最多 20 markers)
+
+**對應 commit**: `fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)` (4094fbd6)
 
 ### ZigZag Threshold 切 manual mode 永久 rule (大少 2026-08-31 09:24, 4.52.0)
 

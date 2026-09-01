@@ -5223,3 +5223,87 @@ renderMAAlignmentV2ChartOverlay (adapter.mjs)
 - `fix(stockpulse): 拎返 v5 createSeriesMarkers plugin API + max 10 + fallback chain 10→5→3 (4.63.0, P 點 marker 對 49+ markers 唔 render fix)` (047ed1e8)
 - Spec Sync: ARCHITECTURE.md §15.62 (本段) + AGENTS.md 「M1 P 點 marker v5 plugin API + Max 10 永久 rule (4.63.0)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
 
+---
+
+## §15.63 — M1 紅色獨發點 (Trigger 確認點) marker 拎返 (大少 2026-09-02 00:23 trigger「用咩符號來標號好」+ 00:27 confirm Option D, 4.64.0) [2026-09-02]
+
+### Context (4.61.5 拎走嘅死火 dead code, 4.64.0 拎返)
+
+4.61.5 commit `b8a67d6e` (2026-09-01 22:23) 拎走 4.61.0 嘅「紅色獨發點 circle marker (#FF5252)」。4.61.0 commit 唔存在喺 git history (大少 8月31日 17:55 trigger 嘅 un-committed 改動), 4.61.5 commit comment 確認「紅色獨發點 circle marker (#FF5252 trigger circle) — 4.61.0 新加 → 4.61.5 拎走」。4.61.5 永久 rule 列「❌ 紅色獨發點 circle marker — 4.61.0 新加 → 4.61.5 拎走」。
+
+4.63.0 拎返 P 點 sequence marker (4.62.0 + 4.63.0 fix) 之後, 大少 9月2日 00:23 trigger「現在把在 Backend 已計好了的 zigzag 獨發點也標上, 用什麼符號來標號好呢?」+ 00:27 confirm 4 個 decisions (Option D + max 10 + filter ongoing + filter first point)。
+
+### 大少 trigger
+
+- 2026-09-02 00:23 trigger「用咩符號來標號好」
+- 2026-09-02 00:27 confirm 4 個 decisions:
+  - **Option D** (推薦 + 大少 explicit 揀): arrowUp/arrowDown + #FF5252 紅色 + inBar + 冇 label
+  - **Max count = 10** (對齊 P 點 max, 推薦)
+  - **Ongoing point: filter 拎走** (推薦)
+  - **第 1 個 P 點 (index=0): filter 拎走** (推薦)
+
+### 凡人話解釋
+
+每一個 ZigZag P 點 (peak 山頂 / trough 山谷) 都有一個 trigger date — 即係「呢個 P 點係由邊日 K 線確認」嘅日子。e.g. 8月31日 P1 high 47.68 嗰個 peak, 要等到之後跌穿 5% threshold 嗰日先 confirm, trigger 嗰支 K 線就係「獨發點」。Backend `verdict.points[].triggerDate` 已經有呢個 data (4.57.0 加, 4.60.0 改 null 處理 ongoing point), frontend 4.61.5 拎走, 4.64.0 拎返 render。
+
+### 永久 rule (Option D design, 大少 00:27 confirm)
+
+- ✅ **Render 位置**: `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` P 點 marker block 之後 (line 5207-5283)
+- ✅ **Shape**: `arrowUp` (trough trigger) / `arrowDown` (peak trigger) — 對齊 4.51.0 永久 rule P 點 arrow 風格 (P 點 high→arrowDown, low→arrowUp)
+- ✅ **Color**: 紅色 `#FF5252` — 對齊 4.61.0 design (4.61.5 commit comment 確認)
+- ✅ **Position**: `inBar` (K 線 body 中間) — 因為 trigger price 係嗰日 K 線 high (trough) / low (peak), plot 喺 body middle 最視覺自然
+- ✅ **Label**: 冇 — 大少 confirm 簡潔風格
+- ✅ **Size**: 1 — 對齊 P 點 size 1 (4.51.0 永久 rule)
+- ✅ **Time field**: business day object `{year, month, day}` (4.41.2 永久 rule 對齊 P 點 marker setData 格式)
+- ✅ **Dedupe by time**: 拎返避免 Lightweight Charts silent reject (4.40.0 永久 rule, 同 P 點 dedupe 邏輯對齊)
+- ✅ **Filter ongoing**: `p.is_ongoing === true || p.triggerDate == null` skip (4.60.0 永久 rule + 大少 confirm)
+- ✅ **Filter 第 1 個 P 點**: `p.index !== 0` skip (4.57.0 永久 rule trigger=self, visual useless, 大少 confirm)
+- ✅ **Max count = 10**: 對齊 P 點 max 10, combined 最多 20 markers (4.63.0 永久 rule safe range, 大少 confirm)
+- ✅ **Combined markers array**: P 點 markers + Trigger markers 用同一個 `chartRefs.zigzagSequenceMarkers.handle.setMarkers([...p, ...trigger])` (4.63.0 永久 rule spirit, 共享 plugin handle)
+- ✅ **Re-set markers block**: 對齊 4.63.0 永久 rule, 50ms 後 `setVisibleLogicalRange` 嗰陣 re-set combined markers, trigger marker 自動 persist
+
+### 對齊永久 rule (8 條)
+
+- 4.15.0: 之字拎 point 同 trigger 都用 high/low (wick extreme) — 4.57.0 backend 永久 rule spirit
+- 4.40.0: dedupe by time
+- 4.41.2: time field 用 business day object `{year, month, day}`
+- 4.51.0: P 點 arrow 風格 (high→arrowDown, low→arrowUp), 4.64.0 trigger arrow shape 對齊
+- 4.57.0: backend `triggerDate / triggerPrice / is_ongoing` 4 個 field, frontend 拎返 render
+- 4.60.0: Ongoing point 嘅 trigger 設 null + is_ongoing=true, frontend filter 拎走
+- 4.61.0: 「Frontend ZigZag 只 render 紫色折線」改為「Frontend ZigZag 紫色折線 + 紅色獨發點 marker (4.64.0)」
+- 4.63.0: v5 `LightweightCharts.createSeriesMarkers` plugin API + max 10 + fallback chain 10→5→3 (combined 最多 20 markers)
+
+### Affected files
+
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5105-5283:
+  - line 5114 comment: 拎走「紅色獨發點 (4.61.5)」, 加「4.64.0 拎返」reference
+  - line 5207-5283: 新加 Trigger marker block (Option D design, P 點 marker block 之後)
+- `testing-page/testing-page.js` line 548: ALGO_CACHE_BUST 4.63.0 → 4.64.0
+- `testing-page/index.html` line 10, 184: ?v=2.3.134 → 2.3.135 (CSS + JS)
+
+### Acceptance tests
+
+- 撅跑 M1 (AS-03-MA) HK.00019 太古:
+  - 預期: 紫色 P1, P2, P3... 圓圈 marker 出 (12 個 dedupe 完 slice 0-10, 對齊 4.63.0)
+  - 預期: 紅色 arrow trigger marker 出 (11 個 dedupe 完 slice 0-10, 因為第 1 個 point filter 拎走)
+  - 預期: Console log 印 `[M1 v2.0] ✅ 紅色獨發點 (Trigger 確認點) marker (4.64.0 拎返 4.61.0 design, Option D arrow): 10 個 (對齊 P 點 max=10)`
+  - 預期: P 點 high→arrowDown 紅色, P 點 low→arrowUp 紅色, 兩個 plot 喺 trigger date K 線 body middle (`inBar` position)
+- 撅跑 M1 HK.01888 (主要 verify target, 49 markers):
+  - 預期: 紫色 P1-P10 + 紅色 arrow 10 個 trigger marker 出
+  - 預期: 大少一望就知「P1 嘅 trigger 係邊日, 對應 arrow 方向」
+- 撅跑 M1 HK.00700 (189 markers):
+  - 預期: 紫色 P1-P10 + 紅色 arrow 10 個 trigger marker 出
+  - 對齊 4.64.0 永久 rule (最近 10 個 P + 10 個 Trigger marker, combined 最多 20)
+- Visual verify (撅 HK.01888 嗰陣):
+  - 紫色 P 點 marker (peak/trough): high→aboveBar, low→belowBar, 紫色 #9C27B0, circle, size 1
+  - 紅色 Trigger marker: inBar (K 線 body 中間), 紅色 #FF5252, arrowUp/arrowDown, size 1
+  - 兩者 plot 喺唔同日 K 線 (P 點 plot 喺 P 點 date, Trigger plot 喺 trigger date)
+- setVisibleLogicalRange re-set 50ms 仍然 work:
+  - 撅跑 HK.01888 → P1-P10 紫色 + Trigger 紅色 marker 出
+  - 手動 zoom/pan chart → P1-P10 + Trigger 仍然 persist (re-set block work, combined markers persist)
+
+### 對應 commit
+- `fix(stockpulse): 拎返紅色獨發點 (Trigger 確認點) marker (4.64.0, Option D arrowUp/arrowDown 對齊 P 點 arrow 風格)` (4094fbd6)
+- Spec Sync: ARCHITECTURE.md §15.63 (本段) + AGENTS.md 「M1 P 點 marker v5 plugin API + Max 10 + 紅色獨發點 marker 永久 rule (4.64.0)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
+
+
