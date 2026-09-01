@@ -5102,6 +5102,22 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             chartRefs.maV2LineSeries.zigzag = null;
           }
 
+          // 大少 9月2日 00:52 trigger (4.66.0 fix) — 拎返 P 點 + 鮮紫獨發點 marker toggle (預設關, 大少 explicit)
+          //   對齊 4.53.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE 嗰個 spirit 拎返, 4.61.5 commit 拎走嗰個 toggle 拎返
+          //   對齊 8月19日 13:03 Config UX 模式永久 rule: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
+          //   凡人話: 撳開見 P1-P10 紫色圓圈 + 鮮紫 arrow trigger, 撳關只見紫色折線 + 4 條 MA + volume 視覺 clean
+          //   大少 00:52 explicit「預設是關的」— 撳 page default 唔見任何 marker, 撳開 toggle 即時 re-render 拎返
+          //   拎走 #show-sequence 嗰個 toggle (4.51.0 加 → 4.53.0 拎走 → 4.61.5 拎走 toggle + state 拎走晒 → 4.66.0 拎返 spirit)
+          //   用 #zigzag-markers-enabled 1 個 checkbox 控制 P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和獨發點的」)
+          // 4.66.2 fix: 拎返 check 移到 P 點 + trigger 入口之前
+          //   4.66.0 嗰陣 check 喺 P 點 marker render 完成之後 (line 5214, 喺 P 點 block 入面), return 拎走嘅係鮮紫 trigger block 而唔係 P 點 marker
+          //   凡人話「check 位置錯咗, P 點已經 render 咗先 return 拎走 trigger, 所以 P 點一直出」.
+          //   4.66.2 fix 將 check 移到 P 點 + trigger 入口之前, 拎走整個 P 點 + trigger 兩個 block
+          if (chartRefs.zigzagMarkersEnabled !== true) {
+            // 大少 trigger 預設關: 拎走 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
+            return;
+          }
+
           // ============ 大少 9月1日 22:58 trigger (4.62.0) — 拎返紫色 ZigZag P 點 sequence marker ============
           // 凡人話: 將 backend 已經計好嘅 P 點 (sequence 1=最新, 2=第二新, ..., N=最舊) 放落 chart, label 寫 "P1", "P2", "P3"...
           // 對齊 4.49.0 永久 rule: v5 createSeriesMarkers plugin API
@@ -5202,23 +5218,6 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
                 }
               }
             }
-          }
-
-          // 大少 9月2日 00:52 trigger (4.66.0 fix) — 拎返 P 點 + 鮮紫獨發點 marker toggle (預設關, 大少 explicit)
-          //   對齊 4.53.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE 嗰個 spirit 拎返, 4.61.5 commit 拎走嗰個 toggle 拎返
-          //   對齊 8月19日 13:03 Config UX 模式永久 rule: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
-          //   凡人話: 撳開見 P1-P10 紫色圓圈 + 鮮紫 arrow trigger, 撳關只見紫色折線 + 4 條 MA + volume 視覺 clean
-          //   大少 00:52 explicit「預設是關的」— 撳 page default 唔見任何 marker, 撳開 toggle 即時 re-render 拎返
-          //   拎走 #show-sequence 嗰個 toggle (4.51.0 加 → 4.53.0 拎走 → 4.61.5 拎走 toggle + state 拎走晒 → 4.66.0 拎返 spirit)
-          //   用 #zigzag-markers-enabled 1 個 checkbox 控制 P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和獨發點的」)
-          if (chartRefs.zigzagMarkersEnabled !== true) {
-            // 大少 trigger 預設關: 拎走 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
-            // 4.66.1 hotfix debug: console.log 嗰個 value 嚟 verify 大少 reload 之後 load 咗 4.66.0 check 邏輯
-            console.log(`[M1 v2.0 4.66.1 debug] 🛡️ zigzagMarkersEnabled toggle OFF: 拎走 P 點 + 鮮紫 trigger marker (chartRefs.zigzagMarkersEnabled=${chartRefs.zigzagMarkersEnabled}, typeof=${typeof chartRefs.zigzagMarkersEnabled})`);
-            return;
-          } else {
-            // 4.66.1 hotfix debug: confirm 4.66.0 check pass, 拎返 P 點 + 鮮紫 trigger
-            console.log(`[M1 v2.0 4.66.1 debug] ✅ zigzagMarkersEnabled toggle ON: 拎返 P 點 + 鮮紫 trigger marker (chartRefs.zigzagMarkersEnabled=true)`);
           }
 
           // ============ 大少 9月2日 00:23 trigger (4.64.0 fix) — 拎返紅色獨發點 (Trigger 確認點) marker ============
