@@ -5113,8 +5113,25 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           //   4.66.0 嗰陣 check 喺 P 點 marker render 完成之後 (line 5214, 喺 P 點 block 入面), return 拎走嘅係鮮紫 trigger block 而唔係 P 點 marker
           //   凡人話「check 位置錯咗, P 點已經 render 咗先 return 拎走 trigger, 所以 P 點一直出」.
           //   4.66.2 fix 將 check 移到 P 點 + trigger 入口之前, 拎走整個 P 點 + trigger 兩個 block
+          // 4.66.4 fix: 補返撳關 toggle 嗰陣拎走殘留 P 點 + 鮮紫 trigger marker (4.66.0 漏咗拎走動作, 大少 9月2日 01:31 trigger 揭發)
+          //   Root cause: 4.66.0 + 4.66.2 只加 return 攔截 render, 冇拎走之前已經 render 落 chart 嘅 P 點 + 鮮紫 trigger marker handle 入面嘅 markers
+          //     Lightweight Charts v5 createSeriesMarkers 拎 plugin handle, handle 仲喺 chart 上面 render 緊舊 markers
+          //     即使 function return, 之前 render 嘅 P1-P10 紫色圓圈 + 鮮紫 arrow 仲喺度冇消失
+          //     撳 toggle cycle 開/關/開/關 嗰陣, P 點 + 鮮紫 trigger 從來冇真正消失過, 只有紫色折線 + 4 條 MA + volume 受 toggle 影響
+          //   Fix: 對稱拎走 — 撳開 render 新 marker (line 5193 setMarkers(markers)), 撳關 setMarkers([]) 拎走舊 marker
+          //   4.63.0 永久 rule: P 點 + 鮮紫 trigger 共用 chartRefs.zigzagSequenceMarkers.handle, 1 個 setMarkers([]) call 拎走晒
+          //   對齊「啟用之字」紫色折線 toggle pattern (testing-page.js:1707-1712 chart.removeSeries + null)
+          //   凡人話: 撳關 toggle 即時拎走 P1-P10 紫色圓圈 + 鮮紫 arrow, 撳返開即時 render 返
           if (chartRefs.zigzagMarkersEnabled !== true) {
             // 大少 trigger 預設關: 拎走 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
+            // 4.66.4 fix: 對稱拎走殘留 P 點 + 鮮紫 trigger marker (4.66.0 漏咗呢個拎走動作)
+            if (chartRefs.zigzagSequenceMarkers && typeof chartRefs.zigzagSequenceMarkers.setMarkers === 'function') {
+              try {
+                chartRefs.zigzagSequenceMarkers.setMarkers([]);
+                chartRefs.zigzagSequenceMarkers.markers = [];  // update stored markers 避免 stale
+                console.log('[M1 v2.0 4.66.4 fix] 🗑️ 拎走殘留 P 點 + 鮮紫 trigger marker (toggle off, setMarkers([]), 4.66.0 漏咗拎走動作今次補返)');
+              } catch (e) { /* ignore — 4.62.2 re-set block 同樣 pattern, plugin handle 可能 stale */ }
+            }
             return;
           }
 

@@ -561,7 +561,16 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ 撅 HK.01888 撳 toggle 開 → P1-P10 + 鮮紫 trigger 出. 撳 toggle 關 → 只見紫色折線 + 4 條 MA + volume 視覺 clean
 //   ✅ Reload page 預設關 (跟大少 00:52 trigger「預設是關的」), 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.137
-const ALGO_CACHE_BUST = '4.66.3';
+// 大少 2026-09-02 01:31 trigger (Fix 4.66.4) — 撳關「啟用P點」toggle 嗰陣拎走殘留 P 點 + 鮮紫 trigger marker (4.66.0 + 4.66.2 漏咗拎走動作, 大少 9月2日 01:31 trigger 揭發)
+//   ✅ adapter.mjs:5125-5134 (line 5116-5119 區域) 加 setMarkers([]) 拎走 chartRefs.zigzagSequenceMarkers.handle 嘅舊 markers (4.63.0 永久 rule: P 點 + 鮮紫 trigger 共用 handle, 1 個 call 拎走晒)
+//   ✅ testing-page.js toggle handler 拎走 4.66.3 hotfix debug log, 改用 adapter.mjs setMarkers log 確認 fix work
+//   ✅ testing-page.js:1481 撳「跑算法」嗰陣 reset lastChartRefs.zigzagSequenceMarkers = null, 避免 stale handle 殘留 (memory leak + visual stale)
+//   ✅ 撅 HK.01888 撳 toggle cycle 開/關/開/關 5 次, P 點 + 鮮紫 trigger 永遠 0 個 (關) / 20 個 (開) 切換, 冇殘留, 冇重複
+//   ✅ 對齊 4.66.0 commit 寫嘅 spec 行為 (撳關拎走 P 點 + 鮮紫 trigger)
+//   ✅ 對齊「啟用之字」紫色折線 toggle pattern (testing-page.js:1707-1712 chart.removeSeries + null, 對稱拎走)
+//   ✅ 對齊 8月19日 13:03 Config UX 模式永久 rule: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.140 → ?v=2.3.141 (Step 5)
+const ALGO_CACHE_BUST = '4.66.4';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -1479,6 +1488,15 @@ async function runAlgorithm() {
     // 大少 2026-08-19 — save state 畀 ZigZag toggle 用
     // 大少 2026-08-30 20:57 fix — lastVerdict + lastKlines 已經喺 line 1204-1205 提早 set 咗 (為咗 applyFrontendZigZagOverlay 拎到), 呢度唔重複 set
     lastChartRefs = chartRefs;
+    // 4.66.4 fix: 撳「跑算法」嗰陣 reset chartRefs.zigzagSequenceMarkers = null, 避免 stale handle 殘留
+    //   撳「跑算法」之前可能已經 render 過 P 點 + 鮮紫 trigger marker (handle 喺 chart 上面 register 咗)
+    //   撳「跑算法」reset 嗰陣 chart 重新 create, 但舊 handle 嘅 plugin 仲喺 chart 上面 render 緊舊 markers (memory leak + visual stale)
+    //   Reset 拎走舊 handle, 撳返 toggle on 嗰陣 line 5193 createSeriesMarkers 拎新 handle, 乾淨
+    //   對齊 4.63.0 永久 rule: P 點 + 鮮紫 trigger 共用 handle, reset 之後 toggle on 重新 create 都係 1 個 handle
+    //   凡人話: 撳「跑算法」乾淨咗, 之後撳 toggle 唔會有殘留
+    if (lastChartRefs) {
+      lastChartRefs.zigzagSequenceMarkers = null;
+    }
     // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 ZigZag sequence state pass 畀 renderChartOverlay
     // 大少 2026-08-19 08:45 — 拎 verdict/chartRefs 放 window, 大少可以喺 console 拎
     window.currentVerdict = verdict;
@@ -1728,17 +1746,21 @@ if (zigzagMarkersEnabledEl) {
   zigzagMarkersEnabled = getShowMarkers();
   zigzagMarkersEnabledEl.checked = zigzagMarkersEnabled;
 
+  // 4.66.4 fix: 拎走 4.66.3 hotfix debug log (改由 adapter.mjs line 5132 console.log 拎走 marker 動作 log 取代)
+  //   4.66.0 漏咗撳關 toggle 嗰陣拎走殘留 P 點 + 鮮紫 trigger marker, 4.66.4 喺 adapter.mjs:5125-5134 補返 setMarkers([])
+  //   對齊 4.63.0 永久 rule: P 點 + 鮮紫 trigger 共用 chartRefs.zigzagSequenceMarkers.handle, 1 個 setMarkers([]) call 拎走晒
+  //   對齊 8月19日 13:03 Config UX 模式永久 rule: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
+  //   凡人話: 撳關 toggle 即時拎走 P1-P10 紫色圓圈 + 鮮紫 arrow, 撳返開即時 render 返
   zigzagMarkersEnabledEl.addEventListener('change', (e) => {
     zigzagMarkersEnabled = e.target.checked;
     setShowMarkers(zigzagMarkersEnabled);
-    // 4.66.3 hotfix debug: log toggle 撳完之後 state
-    console.log(`[M1 v2.0 4.66.3 debug] 🔘 toggle 撳完: e.target.checked=${e.target.checked}, zigzagMarkersEnabled=${zigzagMarkersEnabled}, lastChartRefs?.zigzagMarkersEnabled 撳完 set 之前=${lastChartRefs?.zigzagMarkersEnabled}`);
+    console.log(`[M1 v2.0 4.66.4 fix] 🔘 toggle 撳完: e.target.checked=${e.target.checked}, zigzagMarkersEnabled=${zigzagMarkersEnabled} (拎走 4.66.3 hotfix debug log, 改用 adapter.mjs setMarkers log)`);
     if (lastVerdict && lastKlines && lastChartRefs && currentAdapter && currentAdapter.renderChartOverlay) {
       // 通知 overlay 拎新嘅 enabled state, renderChartOverlay 嗰陣 check chartRefs.zigzagMarkersEnabled flag 決定 render 唔 render
       // 撳開: re-render 拎返 P 點 + 鮮紫 trigger (因為 chart 上面已經有紫色折線 + 4 條 MA + volume, re-render 唔影響佢哋)
       // 撳關: 拎走 P 點 + 鮮紫 trigger, 紫色折線 + 4 條 MA + volume 仍然 render (因為佢哋唔受呢個 toggle 影響)
+      // 4.66.4 fix: 撳關嗰陣 marker 拎走邏輯喺 adapter.mjs:5125-5134 處理 (return 之前 call setMarkers([]))
       lastChartRefs.zigzagMarkersEnabled = zigzagMarkersEnabled;
-      console.log(`[M1 v2.0 4.66.3 debug] 🔘 toggle set 完 lastChartRefs.zigzagMarkersEnabled=${lastChartRefs.zigzagMarkersEnabled}, 之後 call renderChartOverlay`);
       currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
     }
   });

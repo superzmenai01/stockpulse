@@ -629,6 +629,31 @@ def _compute_fetch_max_count(period):
 
 **對應 commit**: `fix(stockpulse): 拎返 P 點 + 鮮紫獨發點 marker toggle (4.66.0, 預設關, 大少 9月2日 00:52 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」)` (6d3fae89)
 
+### M1 「啟用 P 點」toggle 對稱拎走 marker 永久 rule (4.66.4, 大少 2026-09-02 01:31 trigger「在M1 裡有個制是啟用P點的，但有問題」) — **補返 4.66.0 漏咗嘅對稱拎走動作**
+
+**凡人話解釋**: 大少 4.66.0 拎返 P 點 + 鮮紫獨發點 marker toggle 嗰陣, 撳關 toggle 之後**之前 render 嘅 P 點 P1-P10 紫色圓圈 + 鮮紫 trigger arrow 仲殘留喺 chart 上面, 冇拎走**。4.66.0 + 4.66.2 嘅 `if (chartRefs.zigzagMarkersEnabled !== true) return;` 攔截 render, 但**冇對稱拎走**之前已經 render 落 chart 嘅 marker。Lightweight Charts v5 `createSeriesMarkers` 拎 plugin handle, handle 仲喺 chart 上面 render 緊舊 markers。撳 toggle cycle 開/關/開/關 嗰陣, P 點 + 鮮紫 trigger 從來冇真正消失過。
+
+**4.66.4 fix 永久 rule**:
+- ✅ **對稱拎走 marker 邏輯** (`algorithms/AS-03-cycle-detection/adapter.mjs:5125-5134`): 喺 `if (chartRefs.zigzagMarkersEnabled !== true) { return; }` 之前, call `chartRefs.zigzagSequenceMarkers.setMarkers([])` 拎走舊 markers, 同步 set `markers = []` 避免 stale
+- ✅ **4.63.0 永久 rule 對齊**: P 點 + 鮮紫 trigger 共用 `chartRefs.zigzagSequenceMarkers.handle`, 1 個 `setMarkers([])` call 拎走晒 2 種 marker, 唔需要分開拎
+- ✅ **對齊「啟用之字」紫色折線 toggle pattern** (testing-page.js:1707-1712 `chart.removeSeries` + `null`): 撳 toggle 之前主動拎走 series / marker, 唔可以只 return
+- ✅ **撳「跑算法」reset stale handle** (`testing-page/testing-page.js:1481+`): `lastChartRefs.zigzagSequenceMarkers = null` 避免舊 handle 殘留, 之後撳 toggle on 嗰陣 line 5193 `createSeriesMarkers` 拎新 handle, 乾淨
+- ✅ **拎走 4.66.3 hotfix debug log** (`testing-page/testing-page.js:1734-1741`): 改用 adapter.mjs setMarkers log 確認 fix work, 拎走 2 個 `console.log(...4.66.3 debug...)`
+- ✅ **加 4.66.4 fix log** (`adapter.mjs:5132`): `console.log('[M1 v2.0 4.66.4 fix] 🗑️ 拎走殘留 P 點 + 鮮紫 trigger marker (toggle off, setMarkers([]), 4.66.0 漏咗拎走動作今次補返)')` 方便大少 confirm
+- ✅ **cache bust sync bump**: `testing-page.js` `ALGO_CACHE_BUST = '4.66.3' → '4.66.4'`, `testing-page/index.html` `?v=2.3.140 → ?v=2.3.141` (2 個地方, 跟 cache bust self-check 永久 rule)
+- ✅ **Failure mode coverage**:
+  - `chartRefs.zigzagSequenceMarkers` undefined (例如 reset chart refs 之前未 render 過 P 點): `?.setMarkers` 唔 call, return 走佬, 冇 crash
+  - `chartRefs.zigzagSequenceMarkers.setMarkers` 唔係 function: `typeof === 'function'` check 過, skip, return 走佬, 冇 crash
+  - Lightweight Charts plugin handle 已經 destroy: `setMarkers([])` 內部有 try/catch, silent fail, 唔 crash
+
+**對齊永久 rule** (4 條):
+- 4.66.0: 拎返 P 點 + 鮮紫獨發點 marker toggle (預設關, 大少 00:52 trigger)
+- 4.66.2: 拎返 check 移到 P 點 + trigger 入口之前
+- 4.63.0: P 點 + 鮮紫 trigger 共用 `chartRefs.zigzagSequenceMarkers.handle`, 1 個 `setMarkers([])` call 拎走晒
+- 8月19日 13:03 Config UX 模式: 即時 localStorage + 即時 re-render
+
+**對應 commit** (將來 push): `fix(stockpulse): M1 「啟用 P 點」toggle 撳關拎走殘留 P 點 + 鮮紫 trigger marker (4.66.4, 大少 9月2日 01:31 trigger 揭發 4.66.0 漏咗拎走動作)`
+
 ### ZigZag 4.53.0 拎走 marker toggle 嗰個對齊 (4.66.0 拎返)
 
 **4.53.0 拎走嘅嘢** (line 631-673 section 描述):
