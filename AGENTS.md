@@ -1112,6 +1112,57 @@ git push origin main
 對應永久 rule: 8月29日 14:32 P1/P2/P3/P4 indexing + 4.43.0 ZigZag 全部 backend 計 + 4.15.0 之字用 high/low + 2026-08-09 13:10 cache bust sync
 
 
+### KlineCache SQL Filter Date Format 統一 永久 rule (大少 2026-09-01 17:05 trigger, 4.61.0)
+
+**凡人話解釋**: 大少 17:05 trigger「00100 嘅 P1 拎錯」— 之字 P1 拎到 2026-08-31 360.00 但漏咗今日 2026-09-01 嘅新高 381.4。Root cause: KlineCache 嘅 SQL filter `time <= '2026-09-01'` (date-only format) 用 string compare, 但 cache 入面今日 K 線係 datetime format `"2026-09-01 00:00:00"`, string compare 排除咗, 今日 K 線永遠入唔到 result。Cache 內有 233 隻 stock 嘅 datetime format 嘥 50704 條 entry, 全部要清返 date-only 統一。對齊 4.57.2 永久 rule「backend date 統一 YYYY-MM-DD, 唔可以有 datetime」+ SQL filter 永久做 date-only normalized 比對。
+
+**Root cause**:
+- KlineCache `get_klines` SQL filter `time <= ?` (line 114) 用 raw string compare
+- Cache 內有 `"2026-09-01 00:00:00"` (datetime format, 從舊 write path 寫入) 共存 date-only format
+- String compare: `"2026-09-01 00:00:00" <= "2026-09-01"` → False ❌, 排除今日 K 線
+- 結果: 之字 algorithm 拎唔到今日新高 (e.g. 00100 2026-09-01 H=381.4 漏咗, P1 拎錯 8月31日 360.0)
+- 永久影響: 233 隻 stock 嘅 50704 條 datetime format entry 全部受影響
+
+**改動 (4.61.0 三重 fix)**:
+
+1. **Fix 1 (surgical, KlineCache read-side)**: `backend/services/kline_cache.py:114` SQL filter 改用 `substr(time, 1, 10) <= ?` 做 date-only normalized 比對, 對齊 dedup 嘅 date key (`t[:10]`)
+   - 對 datetime format + date-only format 兩種寫法都 work
+   - 永久 rule: 之後 KlineCache read-side SQL filter 必用 date-only normalized 比對
+   - 影響: 即時見效, 9月1日 K 線 (e.g. 00100 嘅 H=381.4) 拎到
+
+2. **Fix 2 (根本, cache migration)**: `scripts/migrate_kline_datetime_to_dateonly.py` 清走 233 隻 stock 嘅 50704 條 datetime format 嘥
+   - 對每條 datetime entry, 拎 `time[:10]` 改做 date-only
+   - 用 INSERT OR REPLACE + PRIMARY KEY (code, period, time) 撞 unique key 自動 dedup
+   - 對齊 KlineCache 永久 rule 8月30日 00:30「dedupe by date, 保留 LAST entry」
+   - 永久 rule: 之後清 cache 走呢個 script
+   - 影響: 50704 條 datetime 全部清走, 540 條新增 date-only, 50164 條 dedup 保留原 date-only
+
+3. **Fix 3 (defense, write-side)**: `backend/services/kline_cache.py` 3 個 write path (`_fetch_klines` × 2 + `_fetch_today_bar`) 加 normalize assert
+   - normalize 之後再 assert 一次: 唔可以再含 ' ' 或 'T'
+   - 如果 normalize 漏咗, 立即 log warning 拎出嚟 debug, 強制再 normalize
+   - 永久 rule: 之後所有 write path 必加 normalize assert, 違反即 warning
+   - 影響: 之後新寫入都必走 date-only, 不會再有 datetime format entry
+
+**永久 rule**:
+- ✅ KlineCache SQL filter 永遠用 `substr(time, 1, 10)` 做 date-only normalized 比對 (line 114)
+- ✅ KlineCache 永遠唔可以寫 datetime format entry (write path 必 normalize 3 次 + assert 1 次)
+- ✅ Cache datetime format migration script (`scripts/migrate_kline_datetime_to_dateonly.py`) 永久可用, 跟 §15.45 Sscript pattern
+- ✅ 對齊 4.57.2 永久 rule「backend date 統一 YYYY-MM-DD, 唔可以有 datetime」
+- ✅ 對齊 8月22日 K-line Cache T-1 rule「T-1 rule: 今日 bar 唔寫 DB」 (4.61.0 唔改 T-1 規則, 只係統一 date format)
+- ✅ 對齊 §15.51 Backend hot-reload: 改 kline_cache.py 必 restart backend + curl verify
+- ✅ 對齊 §15.45 Sscript pattern: migration script 永久 set 還原點, 對齊 §15.53 + §15.54
+
+**凡人話**: 大少撳跑 00100 即刻見到 P1 = 2026-09-01 381.4 📈 Peak (待觸發), 拎到今日新高, 唔再用 8月31日 360.0 嘅 stale peak。Cache 入面 233 隻 stock 嘅 50704 條 datetime format entry 全部清返 date-only, 之後新寫入都必走 normalize assert, 永久唔再有 datetime 寫入。
+
+對應 file:
+- `backend/services/kline_cache.py` line 114 (SQL filter 改 substr), 3 個 write path 加 normalize assert
+- `scripts/migrate_kline_datetime_to_dateonly.py` (新增, 清 50704 條 datetime entry)
+
+對應 doc: ARCHITECTURE.md §3.6 + §3.7 (ZigZag data flow, K-line Cache T-1 rule)
+
+對應 commit: 即將 push (4.61.0 fix + Spec Sync 流程)
+
+對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.57.2 date format 統一 + 4.60.0 ongoing point trigger null + §15.45 Sscript pattern + §15.51 Backend hot-reload + §15.53 Sscript 還原點 + §15.54 Backup Admin Page
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 
 **凡人話解釋**: 之前 backend KlineCache response 有 2 種 time format 混雜 (date-only `"2026-08-26"` vs datetime `"2026-08-26 00:00:00"`), 同一日 2 個 entry time field 唔同, 之字 points 撞 time 嗰陣 Lightweight Charts 4.2.3 silent reject 破壞 chart state, 紫線飛上去。

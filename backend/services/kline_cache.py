@@ -99,6 +99,13 @@ class KlineCache:
         (api/kline.py, api/zigzag_testing.py, frontend testing page, chart)
         一勞永逸, 之後 frontend 唔再需要 defensive code。
         保留第一個 entry (T-1 intraday update 唔會撞原本 K 線, 第一個係 stable value)。
+
+        大少 2026-09-01 17:05 (4.61.0) — SQL filter date-only normalized 比對 (永久 rule):
+        之前 cache 內有 datetime format ("2026-09-01 00:00:00") 同 date-only format ("2026-09-01") 共存,
+        SQL filter `time <= '2026-09-01'` (date-only) string compare 會排除 datetime format
+        嘅今日 K 線,之字 algorithm 拎唔到今日嘅新高 (e.g. 00100 嘅 2026-09-01 H=381.4)
+        Fix: SQL filter 用 `substr(time, 1, 10) <= ?` (date-only normalized 比對),
+        對齊 dedup 嘅 date key,datetime format 同 date-only format 兩種寫法都拎到
         """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row  # 大少 #8511: fix ValueError (dict(row) on default Row)
@@ -107,11 +114,13 @@ class KlineCache:
                    "FROM kline_cache WHERE code = ? AND period = ?")
             params: list = [code, period]
             if start:
-                sql += " AND time >= ?"
-                params.append(start)
+                # 大少 4.61.0: 用 substr(time, 1, 10) 做 date-only normalized 比對
+                # (對齊 dedup 嘅 date key),避免 datetime format 寫法被 string compare 排除
+                sql += " AND substr(time, 1, 10) >= ?"
+                params.append(start[:10] if start else start)
             if end:
-                sql += " AND time <= ?"
-                params.append(end)
+                sql += " AND substr(time, 1, 10) <= ?"
+                params.append(end[:10] if end else end)
             sql += " ORDER BY time ASC"
             raw = [dict(row) for row in conn.execute(sql, params).fetchall()]
             # 大少 2026-08-30 00:30: dedupe by date, 保留 LAST entry 而唔係 first
@@ -245,6 +254,18 @@ class KlineCache:
                 time_str = time_str.split(' ')[0]
             elif 'T' in time_str:
                 time_str = time_str.split('T')[0]
+            # 大少 4.61.0 Fix 3 defense: assert time_str 已經 date-only, 唔可以再含 ' ' 或 'T'
+            # (永久 rule 4.57.2「backend date 統一 YYYY-MM-DD, 唔可以有 datetime」)
+            # 如果 normalize 漏咗, 立即 log warning 拎出嚟 debug
+            if ' ' in time_str or 'T' in time_str:
+                logger.warning(
+                    f"KLineCache _fetch_klines normalize slip {code} {time_str}, "
+                    f"forcing date-only split"
+                )
+                if ' ' in time_str:
+                    time_str = time_str.split(' ')[0]
+                elif 'T' in time_str:
+                    time_str = time_str.split('T')[0]
             try:
                 o = float(row['open'])
                 h = float(row['high'])
@@ -304,6 +325,16 @@ class KlineCache:
                             time_str = time_str.split(' ')[0]
                         elif 'T' in time_str:
                             time_str = time_str.split('T')[0]
+                        # 大少 4.61.0 Fix 3 defense: assert time_str 已經 date-only
+                        if ' ' in time_str or 'T' in time_str:
+                            logger.warning(
+                                f"KLineCache _fetch_klines(raw fallback) normalize slip {code} {time_str}, "
+                                f"forcing date-only split"
+                            )
+                            if ' ' in time_str:
+                                time_str = time_str.split(' ')[0]
+                            elif 'T' in time_str:
+                                time_str = time_str.split('T')[0]
                         try:
                             o = float(row['open'])
                             h = float(row['high'])
@@ -494,6 +525,18 @@ class KlineCache:
                 time_str = time_str.split(' ')[0]
             elif 'T' in time_str:
                 time_str = time_str.split('T')[0]
+            # 大少 4.61.0 Fix 3 defense: assert time_str 已經 date-only, 唔可以再含 ' ' 或 'T'
+            # (永久 rule 4.57.2「backend date 統一 YYYY-MM-DD, 唔可以有 datetime」)
+            # 如果 normalize 漏咗, 立即 log warning 拎出嚟 debug
+            if ' ' in time_str or 'T' in time_str:
+                logger.warning(
+                    f"KLineCache _fetch_today_bar normalize slip {code} {time_str}, "
+                    f"forcing date-only split"
+                )
+                if ' ' in time_str:
+                    time_str = time_str.split(' ')[0]
+                elif 'T' in time_str:
+                    time_str = time_str.split('T')[0]
             return {
                 'time': time_str,
                 'open': float(row['open']),
