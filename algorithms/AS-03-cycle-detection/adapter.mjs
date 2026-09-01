@@ -5112,6 +5112,8 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // 對齊 4.41.2 永久 rule: P 點 marker time field 用 business day object {year, month, day} 對齊紫色 ZigZag line setData 格式
           // 對齊 4.43.0 永久 rule: P 點 data 來源 verdict.meta.zigzagPoints (4.43.0 拎返後由 backend 注入, frontend 唔重計)
           // 唔拎返: 4.53.0/4.61.5 拎走嘅橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色獨發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)
+          // 大少 9月1日 23:11 trigger (Fix 3 debug) — 加入口 log 查「P 點 marker 唔出」issue
+          console.log(`[M1 v2.0 P-Debug] P 點 marker 入口: verdict.meta.zigzagPoints length=${verdict.meta?.zigzagPoints?.length}, zigzagSeries length=${zigzagSeries.length}, chartRefs.candleSeries=${chartRefs.candleSeries ? '✅ 存在' : '❌ 唔存在'}`);
           const reversedZigzagPoints = [...verdict.meta.zigzagPoints];  // 已經係 (新 → 舊) 排, sequence 1 = 最新
           const purpleMarkers = reversedZigzagPoints.map(p => {
             const _dateKey = String(p.date || '').slice(0, 10);

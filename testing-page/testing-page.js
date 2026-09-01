@@ -144,10 +144,26 @@ async function fetchBackendZigZag(code, period, thresholdMode, manualThreshold, 
  */
 let _zigzagFetchController = null;
 async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookback, multiplier) {
-  if (!lastVerdict || !lastKlines || !currentAdapter) return null;
+  // 大少 2026-09-01 23:11 trigger (Fix 3 debug) — 加 5 個 console.log 查「撅其他股票 P 點 marker 唔出」issue
+  // Debug evidence 顯示 backend 拎到 points (01888:49, 0981:90, 00700:189), frontend algorithm verdict 拎空, 紫色線 + P 點 marker 都不 render
+  // 撅 00019 嗰陣 frontend algorithm verdict 正常, P 點 marker 出. 撅 01888/0981/00700 frontend algorithm verdict 拎空 (ok=None, meta keys=[]), 因為 line 147 early return 令 backend ZigZag fetch 唔跑
+  console.log(
+    `[ZigZag Debug] fetchAndInjectBackendZigZag 入口: code=${currentOptions.code}, ` +
+    `lastVerdict=${lastVerdict ? `存在 (ok=${lastVerdict.ok}, meta keys=${Object.keys(lastVerdict.meta || {}).length})` : '❌ null'}, ` +
+    `lastKlines=${lastKlines ? `${lastKlines.length} 條` : '❌ null'}, ` +
+    `currentAdapter=${currentAdapter ? currentAdapter.id : '❌ null'}, ` +
+    `thresholdMode=${thresholdMode}, lookback=${lookback}, multiplier=${multiplier}`
+  );
+  if (!lastVerdict || !lastKlines || !currentAdapter) {
+    console.warn(`[ZigZag Debug] ⚠️ early return 原因: lastVerdict=${!lastVerdict}, lastKlines=${!lastKlines}, currentAdapter=${!currentAdapter} (P 點 marker 唔出)`);
+    return null;
+  }
   const code = currentOptions.code;
   const period = currentOptions.period || '1d';
-  if (!code) return null;
+  if (!code) {
+    console.warn('[ZigZag Debug] ⚠️ early return 原因: currentOptions.code 唔存在');
+    return null;
+  }
 
   // 大少 4.43.0 safety improvement #2: AbortController cancel stale fetch
   // (slider 即時 re-render 撳緊 debounce 200ms 之間 user 再撳會 cancel stale fetch)
@@ -158,9 +174,11 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
   const signal = _zigzagFetchController.signal;
 
   try {
+    console.log(`[ZigZag Debug] fetch start: ${BACKEND_URL}/api/algorithms/run?algo=zigzag&symbol=${code}&period=${period}&data_window_days=1260&threshold_mode=${thresholdMode}&lookback=${lookback}&multiplier=${multiplier}`);
     const verdict = await fetchBackendZigZag(
       code, period, thresholdMode, manualThreshold, lookback, multiplier, signal
     );
+    console.log(`[ZigZag Debug] fetch success: verdict.ok=${verdict.ok}, points count=${verdict.points?.length}, meta keys=${Object.keys(verdict.meta || {}).join(',')}`);
 
     // 拎 lastSwingHigh / lastSwingLow (對齊 testing page 拎法, frontend 之後 inject 8 個 field)
     const reversePoints = [...verdict.points].reverse();
@@ -188,10 +206,10 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
     return verdict;
   } catch (e) {
     if (e.name === 'AbortError') {
-      console.log('[ZigZag Backend] fetch cancelled (stale request)');
+      console.log(`[ZigZag Debug] ⚠️ fetch cancelled (AbortError, stale request for ${code})`);
       return null;
     }
-    console.warn('[ZigZag Backend] fetch 失敗, fallback 唔 render:', e);
+    console.warn(`[ZigZag Debug] ❌ fetch 失敗, fallback 唔 render:`, e);
     return null;
   }
 }
@@ -510,7 +528,12 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ Shape circle, color 紫色 #9C27B0 (4.51.0 永久 rule)
 //   ✅ 唔拎返 4.53.0/4.61.5 拎走嘅其他嘢: 橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色獨發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.130
-const ALGO_CACHE_BUST = '4.62.0';
+// 大少 2026-09-01 23:11 trigger (Fix 3 debug) — 加 5 個 console.log 查「撅其他股票 P 點 marker 唔出」issue: ALGO_CACHE_BUST = '4.62.1'
+//   ✅ testing-page.js fetchAndInjectBackendZigZag 加入口 + 早 return 原因 + fetch start + fetch success + AbortError debug log (5 個)
+//   ✅ adapter.mjs renderMAAlignmentV2ChartOverlay P 點 marker block 加入口 debug log (1 個)
+//   ✅ Debug evidence 撅 00019 frontend verdict 正常, 撅 01888/0981/00700 frontend verdict 拎空 (ok=None, meta keys=[]), 因為 line 147 early return
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.131
+const ALGO_CACHE_BUST = '4.62.1';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
