@@ -6,7 +6,7 @@
 #
 # Reason (long):
 #   Debug test 18:13 — 查大少 18:11 嘅 annotate 點解冇 update 到
-#   Test
+#   準備好了zigzag，之後要加獨發點和最後一條線
 #
 set -e
 
