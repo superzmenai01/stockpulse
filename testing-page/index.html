@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>股票演算法測試頁</title>
-  <link rel="stylesheet" href="testing-page.css?v=2.3.136">
+  <link rel="stylesheet" href="testing-page.css?v=2.3.137">
   <style>
     /* 大少 2026-08-22 23:35 trigger — chart 上方顯示股票名稱 + 號碼 */
     .stock-name-display {
@@ -138,7 +138,15 @@
             <span style="color:#999;font-size:12px;display:block;margin-top:4px;">(改完即時更新紫色線, 唔使撳跑算法)</span>
           </div>
           <!-- 大少 9月1日 22:02 trigger 拎走 #zigzag-sequence-controls div (4.61.5 永久 rule「Frontend ZigZag 只 render 紫色折線, 唔 render P 點 / 旗仔 / 獨發點 / 鮮綠線」) -->
-          <!-- chart-section 入面只保留 ZigZag 啟用 toggle + Threshold mode, 冇 marker toggle (拎返拎走 4.62.0 拎返嘅 #show-sequence) -->
+          <!-- 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關) -->
+          <!-- 凡人話: 4.61.5 拎走所有 non-line markers, 4.62.0 + 4.64.0 + 4.65.0 拎返 P 點 + 鮮紫 trigger marker 但 default 開, 大少睇咗覺得太亂要拎返 toggle. 拎返 default 關 (chart 視覺 clean, 只有紫色折線 + 4 條 MA + volume), 撳開即時 re-render 拎返 P1-P10 紫色圓圈 + 鮮紫 trigger arrow. 對齊 4.51.0 拎走嘅 #show-sequence toggle pattern + 8月19日 13:03 Config UX 模式永久 rule 即時 localStorage + 即時 re-render -->
+          <div id="zigzag-markers-controls" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
+            <label style="margin-right:8px;cursor:pointer;">
+              <input type="checkbox" id="zigzag-markers-enabled" style="vertical-align:middle;">
+              啟用 P 點 + 鮮紫獨發點 (P1-P10 紫色圓圈 + 鮮紫 arrow trigger)
+            </label>
+            <span style="color:#999;font-size:12px;display:block;margin-top:4px;">(撳即時 re-render, 唔需要跑算法 · 預設關)</span>
+          </div>
           <!-- 大少 2026-08-19 17:05 trigger — MA 線獨立 toggle 放喺圖表上邊 (即時生效) -->
           <div id="ma-toggle-bar" style="background:#f5f5f5;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:13px;">
             <span style="color:#666;margin-right:8px;">MA 線:</span>
@@ -181,6 +189,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.136"></script>
+  <script type="module" src="testing-page.js?v=2.3.137"></script>
 </body>
 </html>

@@ -5204,6 +5204,18 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             }
           }
 
+          // 大少 9月2日 00:52 trigger (4.66.0 fix) — 拎返 P 點 + 鮮紫獨發點 marker toggle (預設關, 大少 explicit)
+          //   對齊 4.53.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE 嗰個 spirit 拎返, 4.61.5 commit 拎走嗰個 toggle 拎返
+          //   對齊 8月19日 13:03 Config UX 模式永久 rule: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
+          //   凡人話: 撳開見 P1-P10 紫色圓圈 + 鮮紫 arrow trigger, 撳關只見紫色折線 + 4 條 MA + volume 視覺 clean
+          //   大少 00:52 explicit「預設是關的」— 撳 page default 唔見任何 marker, 撳開 toggle 即時 re-render 拎返
+          //   拎走 #show-sequence 嗰個 toggle (4.51.0 加 → 4.53.0 拎走 → 4.61.5 拎走 toggle + state 拎走晒 → 4.66.0 拎返 spirit)
+          //   用 #zigzag-markers-enabled 1 個 checkbox 控制 P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和獨發點的」)
+          if (chartRefs.zigzagMarkersEnabled !== true) {
+            // 大少 trigger 預設關: 拎走 P 點 + 鮮紫 trigger marker, 紫色 ZigZag 折線 + 4 條 MA + volume 仍然 render (因為佢哋喺 return 之前 render 咗)
+            return;
+          }
+
           // ============ 大少 9月2日 00:23 trigger (4.64.0 fix) — 拎返紅色獨發點 (Trigger 確認點) marker ============
           //   凡人話: 每一個 P 點 (peak 山頂 / trough 山谷) 都有一個 trigger date — 即係「呢個 P 點係由邊日 K 線確認」
           //   對齊 4.57.0 backend 永久 rule: Peak trigger 拎嗰日 K 線 low, Trough trigger 拎嗰日 K 線 high

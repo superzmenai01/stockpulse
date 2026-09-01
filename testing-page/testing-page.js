@@ -88,6 +88,19 @@ function setLookback(v) {
   localStorage.setItem(LS_KEY_LOOKBACK, String(v));
 }
 
+// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
+// 對齊 4.51.0 拎走嘅 #show-sequence toggle 嗰個 LS_KEY 命名 pattern, 4.61.5 拎走, 4.66.0 拎返
+// 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage + 即時 re-render
+// 對齊 8月21日 00:02 永久 rule「手動 mode 預設」: 預設 false, 撳開就見 P1-P10 + 鮮紫 trigger
+const LS_KEY_SHOW_MARKERS = 'stockpulse.zigzag.showMarkers';
+function getShowMarkers() {
+  // 大少 00:52 明確 trigger「預設是關的」, localStorage 冇 record 時 return false (拎返拎走 4.62.0 default 拎返拎走 4.53.0 拎走嘅 spirit)
+  return localStorage.getItem(LS_KEY_SHOW_MARKERS) === 'true';
+}
+function setShowMarkers(v) {
+  localStorage.setItem(LS_KEY_SHOW_MARKERS, String(!!v));
+}
+
 // ===== 大少 2026-08-30 22:04 — 4.43.0 Testing page ZigZag 全部 backend 計 =====
 // 凡人話: 拎走 5 個 frontend ZigZag function, 改 fetch backend `/api/algorithms/run?algo=zigzag` 拎 verdict
 // 對齊 production frontend ChartContainer.tsx 已經用緊嘅 pattern
@@ -538,7 +551,17 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ testing-page.js renderChart setTimeout 50ms 拎返 re-set markers block (v5 plugin API 拎 set 返 ensure persist)
 //   ✅ 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.132
-// 大少 2026-09-02 00:48 trigger (Fix 4.65.0) — 紅色獨發點 marker 改鮮紫 + 離開 K 線 body (aboveBar/belowBar): ALGO_CACHE_BUST = '4.65.0'
+// 大少 2026-09-02 00:52 trigger (Fix 4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 #show-sequence 拎返, 預設關): ALGO_CACHE_BUST = '4.66.0'
+//   ✅ 對齊 4.53.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE 嗰個 spirit 拎返, 4.61.5 commit 拎走嗰個 toggle 拎返
+//   ✅ 對齊 4.51.0 拎走嘅 LS_KEY_SHOW_SEQUENCE naming pattern, 4.66.0 用 LS_KEY_SHOW_MARKERS ('stockpulse.zigzag.showMarkers')
+//   ✅ 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
+//   ✅ 大少 00:52 explicit「預設是關的」— default false, 撳開先見 P1-P10 + 鮮紫 trigger, 撳關拎走 marker
+//   ✅ 對齊 4.65.0 永久 rule: P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和獨發點的」)
+//   ✅ 對齊 8月19日 永久 rule chart-control layout: #zigzag-markers-controls div 喺 chart-section 內 ma-toggle-bar 之前
+//   ✅ 撅 HK.01888 撳 toggle 開 → P1-P10 + 鮮紫 trigger 出. 撳 toggle 關 → 只見紫色折線 + 4 條 MA + volume 視覺 clean
+//   ✅ Reload page 預設關 (跟大少 00:52 trigger「預設是關的」), 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.137
+const ALGO_CACHE_BUST = '4.66.0';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -547,7 +570,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ 撅 HK.00019 (12 markers) → P1-P10 紫色圓圈 (aboveBar/belowBar) + 鮮紫 arrow 10 個 (aboveBar peak / belowBar trough) 出
 //   ✅ 撅 HK.01888 (49 markers) → P1-P10 + 鮮紫 arrow 10 個出. 撅 HK.00700 (189 markers) → P1-P10 + 鮮紫 arrow 10 個出
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.136
-const ALGO_CACHE_BUST = '4.65.0';
+// (4.65.0 const 拎走, 4.66.0 const 喺上面 line 564)
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -684,6 +707,10 @@ let currentAdapter = null;
 let currentOptions = {};
 // 大少 2026-08-19 trigger — ZigZag toggle state
 let zigzagEnabled = true;
+// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle state (4.53.0 拎走嘅 spirit 拎返, 預設關)
+// 對齊 4.51.0 拎走嘅 showZigzagSequence 嗰個 pattern, 4.61.5 拎走, 4.66.0 拎返用 1 個新 toggle 控制 P 點 + 鮮紫 trigger 一齊顯示/隱藏
+// 大少 00:52 explicit「預設是關的」— 預設 false 保持 chart 視覺 clean (只有紫色折線 + 4 條 MA + volume, 冇 P 點 + 鮮紫 trigger), 撳開即時 re-render 拎返 P1-P10 + 鮮紫 arrow
+let zigzagMarkersEnabled = false;
 // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 ZigZag 點順序號碼 toggle state
 // 拎走 showZigzagSequence + zigzagSequenceMaxCount (P 點 sequence marker 拎走後唔再需要)
 let lastVerdict = null;
@@ -1688,6 +1715,31 @@ if (zigzagEnabledEl) {
       currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
     }
   });
+}
+
+// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
+// 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
+// 對齊 4.51.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE + handler pattern, 4.61.5 commit 拎走嗰個 toggle block 拎返
+// 對齊 4.65.0 永久 rule: P 點 + 鮮紫 trigger 一齊 toggle (大少 00:52 trigger「控制這個P點和獨發點的」)
+// 凡人話: 撳開即時 re-render chart overlay, 拎返 P1-P10 紫色圓圈 + 鮮紫 trigger arrow 10 個. 撳關即時拎走, 只剩紫色折線 + 4 條 MA + volume 視覺 clean.
+const zigzagMarkersEnabledEl = document.getElementById('zigzag-markers-enabled');
+if (zigzagMarkersEnabledEl) {
+  // Init: 從 localStorage 拎返 default (大少 00:52 explicit「預設是關的」, 冇 record return false), sync checkbox state
+  zigzagMarkersEnabled = getShowMarkers();
+  zigzagMarkersEnabledEl.checked = zigzagMarkersEnabled;
+
+  zigzagMarkersEnabledEl.addEventListener('change', (e) => {
+    zigzagMarkersEnabled = e.target.checked;
+    setShowMarkers(zigzagMarkersEnabled);
+    if (lastVerdict && lastKlines && lastChartRefs && currentAdapter && currentAdapter.renderChartOverlay) {
+      // 通知 overlay 拎新嘅 enabled state, renderChartOverlay 嗰陣 check chartRefs.zigzagMarkersEnabled flag 決定 render 唔 render
+      // 撳開: re-render 拎返 P 點 + 鮮紫 trigger (因為 chart 上面已經有紫色折線 + 4 條 MA + volume, re-render 唔影響佢哋)
+      // 撳關: 拎走 P 點 + 鮮紫 trigger, 紫色折線 + 4 條 MA + volume 仍然 render (因為佢哋唔受呢個 toggle 影響)
+      lastChartRefs.zigzagMarkersEnabled = zigzagMarkersEnabled;
+      currentAdapter.renderChartOverlay(lastVerdict, lastKlines, lastChartRefs);
+    }
+  });
+}
 }
 
 // 大少 2026-08-30 22:04 — 4.43.0 拎走 applyFrontendZigZagOverlay 整個 function (4.42.3 fix 嘅 98 行)
