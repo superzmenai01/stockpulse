@@ -796,201 +796,96 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 對應 doc: ARCHITECTURE.md §15.55, M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 12:50」section
 
 
-### M1 console log P1 拎 K 線最後 close 永久 rule (大少 2026-08-31 15:19 trigger, 4.56.0)
+### ZigZag 拎走 4.56.0 'today' point + 鮮綠線 + 4.57.x skip_today 永久 rule (大少 2026-09-01 14:10 trigger, 4.59.0, Full Revert 4.56.0)
 
-**凡人話解釋**: 大少撳跑 M1 之後, 想 P1 對齊 K 線最後 close (今日 8月31日), 即使未 trigger 5% threshold 都要拎「最新」嘅 K 線 close, 唔好拎最後 confirmed ZigZag point (8月28日 peak 46.50) 落後過 K 線最後一日。
+**凡人話解釋**: 大少 14:10 trigger「處理M1 zigzag 最後一個Point的問題, 這是01347的console結果... P1 還未被獨發的情況下就定了在2026-08-31 的 123價位, 這是錯誤的因為這個Peak還未被獨發, 隨時也因應股價上升而改變」+「我覺得可能是以前我要求把今日的Close來做P1, 所以去揾出除了正常計算zigzag之外, 有那些日是額外做出來的, 包括我之前要求的鮮綠線, 連線到今日等這些要求, 我全要删除重新再做」。
 
-**改動 (4.56.0)**:
-- `backend/algorithms/zigzag/algorithm.py` `calculate_zigzag` 函數喺 result 最後 add 多個 `type: 'today'` point, value = `klines[-1].close`
-- 6 個 caller filter 走 `type: 'today'` point 對齊 4.53.0 chart decision (拎走橙旗 + 鮮綠線 + 1 號 marker):
-  1. `algorithms/AS-03-cycle-detection/adapter.mjs` (renderMAAlignmentV2ChartOverlay)
-  2. `web/src/components/chart/ChartContainer.tsx` (fetchBackendZigZag)
-  3. `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` (fetchBackendZigZag)
-  4. `web/src/utils/elliottWave.ts` (detectElliottWave 避免 EWave pattern index shift)
-  5. M1 v2.0 (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要 filter
-  6. M7 Synthesizer (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要 filter
-- `testing-page/testing-page.js` `_formatZigZagLatestPointsForDebug` 拎 'today' point 做 P1 (display 改善)
-- Bump `ALGO_CACHE_BUST` 4.55.0 → 4.56.0
-- Bump `?v=2.3.116` → `2.3.117`
+**Root cause**: 4 個 source 加咗 special case 影響 P1, 全部要拎走:
+1. **4.56.0 'today' point injection** (8月31日 15:19 大少自己 trigger): backend algorithm.py `calculate_zigzag` 永遠 append 一個 `type='today'` point, value = `klines[-1].close`, 拎走後 P1 = 紫色 algorithm 拎到嘅最後 confirmed ZigZag point
+2. **4.33.0 鮮綠線 `build_extension_line` function**: 永遠喺 verdict meta 加一個 `extension_line` field, 由最後 ZigZag point 連去 K 線最後 close (#00C853 鮮綠色), 拎走後 chart 完全乾淨, 紫色 line 最後 1 個 point = 8月25日 105.50
+3. **4.57.x skip_today 邏輯** (9月1日 11:00 大少 trigger 為咗修 P1/P2 同日 bug): 拎 `_is_today_partial` helper + `end_idx = len(klines) - skip_today` 跳過今日 partial bar。拎走 'today' point 之後呢個 skip 邏輯冇需要, 紫色 P point 計返 T-0 (用全部 K 線, 對齊 frontend algorithm 1-to-1)
+4. **4.56.0 ongoing point 嘅 trigger 用 K線最後 close**: ongoing point 拎 `triggerPrice: float(last_kline.get('close', 0))`, 改返對齊 4.15.0 規則用 last_swing_idx K線 high/low
 
-**永久 rule**:
-- ✅ Backend algorithm 加 `type: 'today'` point 入 verdict.points, value = `klines[-1].close`
-- ✅ 凡人話: P1 對齊 K 線最後 close (今日 8月31日), 即使未 trigger 5% threshold
-- ✅ Chart 上面紫線最後 1 個 point 仍然係 8月28日 confirmed peak (對齊 4.53.0 拎走鮮綠線 decision)
-- ✅ Production frontend ChartContainer + ElliottWaveTestPage + adapter.mjs + elliottWave.ts 全部 filter 走 'today' point 對齊 4.53.0 chart decision
-- ✅ Testing page console log P1 拎 'today' point (display 改善, 對齊 K 線最後 close)
-- ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(backend 加 'today' point, frontend 拎 'today' 做 P1)
-- ✅ 對齊 4.53.0 永久 rule「拎走橙旗 + 鮮綠線 + 1 號 marker」(chart 唔 render 鮮綠線, 對齊大少 trigger 「影響正常 ZigZag」)
-- ✅ 對齊 §15.45 + §15.53 + §15.54 永久 rule (Sscript 還原點對齊, Backup Admin Page verify)
-- ✅ 對齊 §15.51 永久 rule (改 algorithm.py 必 restart backend + curl verify)
-- ✅ Edge case: K 線 close 拎唔到 (e.g. K 線 data missing) → backend 'today' point 唔 add (skip), 對齊 4.43.0 永久 rule
-
-**Acceptance tests**:
-- Restart backend (§15.51 永久 rule): `./start.sh`
-- Curl verify backend 加 'today' point: `curl /api/algorithms/run?algo=zigzag&symbol=HK.00019&threshold_mode=auto&data_window_days=1260` 拎到 points count: 11 (10 + 1 'today'), last point type='today'
-- 撳跑 M1 (AS-03-MA) HK.00019 → reload testing page → 落黑色 🔧 Chart Debug panel 底部
-- P1 = 2026-08-28 value=104.4 type='today' (今日 K 線最後 close, 對齊 K 線最近嗰個交易日)
-- P2 = 2026-08-21 value=106.0 type='high' (原本 P1, 對齊 4.55.0 array 排法)
-- P3-P10 = 8月28日之前 confirmed ZigZag points
-- Chart 上面紫線最後 1 個 point 仍然係 8月21日 high 106.0 (對齊 4.53.0 chart decision)
-- 撳跑 zmen / M9 → mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
-
-對應 doc: ARCHITECTURE.md §15.55, M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 15:19」section
-
-對應 commit: 即將 push (4.56.0 fix + Spec Sync 流程)
-
-對應 Sscript 還原點: `restore-before-zigzag-4.56.0` (commit 1fca411b, 對齊 §15.45 + §15.53 + §15.54 永久 rule)
-
-對應永久 rule: 4.43.0 ZigZag 全部 backend 計 + 4.53.0 拎走鮮綠線 + §15.45 Sscript pattern + §15.51 Backend hot-reload
-
-
-### ZigZag 獨發點 (Trigger 確認點) + Threshold % 顯示 永久 rule (大少 2026-08-31 17:42 修改版 20:51 + 20:57, 4.57.0)
-
-**凡人話解釋**: 大少 17:42 trigger「優化 zigzag. 在 console Log 的 zigzag 10 P 點的上邊加入 Threshold 的 %數值, 要顯示出是用了那個數值來計 zigzag. 2. 在那 P1 - P 10 加多兩個資訊, 是那日什麼價格 Trigger 到 ZigZag 的」+ 20:51 trigger 修正方向「我不是要 Trigger 上下限, 我要的是, 例如在 P2 是 Trough 那是因為在之後是反方向走勢去到 Threshold % 就能肯定了 P2 是 Through, 這個我叫他做獨發點, 我就是想要這個獨發點的日期和股價」+ 20:57 確認「獨發點股價對齊 4.15.0 永久 rule 拎 1 個價 (trough 拎嗰日 high, peak 拎嗰日 low)」。
-
-凡人話「大少所講『獨發點』定義」:
-- P2 係 Trough 嘅原因: 唔係因為 P2 嗰日嘅 low, 而係因為**之後**反方向走勢 (即係升) 去到 threshold %, 所以 P2 先至肯定係 Trough
-- 嗰個「之後升到 threshold % 確認 P2 嘅嗰一日 K 線」就係「獨發點」
-- 反過來: Peak 嘅獨發點 = 之後跌到 -threshold % 嗰一日 K 線
-
-**改動 (4.57.0)**:
-
-1. **Backend** (`backend/algorithms/zigzag/algorithm.py` `calculate_zigzag`):
-   - 6 個 `result.append({...})` 全部加 3 個 field (`triggerIndex` / `triggerDate` / `triggerPrice`)
-   - `triggerIndex`: 獨發點 K 線 index (即係 algorithm 入面 `i`, 達到 threshold 嗰個 K 線)
-   - `triggerDate`: 獨發點 K 線日期 (`_zigzag_normalize_date(klines[triggerIndex])`)
-   - `triggerPrice`: 對齊 4.15.0 規則拎嗰個 K 線 high (trough) / low (peak)
-   - 第一個 point (起點, 冇 trigger): trigger 設返自己 (index=0, date=klines[0].date, price=klines[0].low)
-   - 最後 ongoing point: 對齊 4.56.0 精神, 拎 K 線最後 close 做 trigger 價
-   - Docstring `Returns` 段改埋: `list of {date, value, type, index, triggerIndex, triggerDate, triggerPrice}`
-
-2. **Frontend** (`testing-page/testing-page.js`):
-   - `_formatZigZagLatestPointsForDebug` 改 signature: 加 `threshold` + `thresholdMode` 2 個參數
-   - Mini-table header 由 4 欄變 6 欄: 加「獨發點日期」+ 「獨發點股價」2 個 column
-   - 標題上邊加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
-   - `renderDebugPanel` call helper 嗰陣必傳 `verdict.meta?.zigzagThreshold` + `verdict.meta?.zigzagThresholdMode || '?'`
-   - `fetchAndInjectBackendZigZag` 多 inject `lastVerdict.meta.zigzagThresholdMode = thresholdMode`
-   - Frontend fallback (4.18.0 拎走): 唔適用, backend 拎唔到 verdict.meta.zigzagPoints 永遠 undefined, table 顯示「冇 points」
-
-3. **Cache bust**:
-   - `testing-page.js` bump `ALGO_CACHE_BUST` 4.56.0 → 4.57.0 (4.56.0 已經 push 咗 Sscript 還原點 commit 1fca411b, 我哋用 4.57.0 避免撞)
-   - `testing-page/index.html` bump `?v=2.3.116` → `2.3.117` (2 個地方: CSS line 10 + JS line 184)
-
-**永久 rule**:
-- ✅ Backend `calculate_zigzag` 每個 point dict 必加 3 個 field (對齊 4.15.0 + 4.56.0 規則):
-  - `triggerIndex`: 獨發點 K 線 index (即係 algorithm 入面 `i`, 達到 threshold 嗰個 K 線)
-  - `triggerDate`: 獨發點 K 線日期 (`_zigzag_normalize_date(klines[triggerIndex])`)
-  - `triggerPrice`: 對齊 4.15.0 永久 rule, trough 拎嗰日 K 線 high (升到 high 先 confirm), peak 拎嗰日 K 線 low (跌到 low 先 confirm)
-- ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, Trough (low) trigger → 拎嗰日 K 線 `high`, Peak (high) trigger → 拎嗰日 K 線 `low`
-- ✅ 對齊 4.56.0 精神「加今日 close 做 P1」: 最後 ongoing point 拎 K 線最後 close 做 trigger 價 (K 線行緊, 仲未 trigger 5% 變動)
-- ✅ 第一個 point (起點, 冇 trigger): trigger 設返自己 (index=0, date=klines[0].date, price=klines[0].low)
-- ✅ Frontend `_formatZigZagLatestPointsForDebug` 必加 2 個參數: `threshold` + `thresholdMode`
-- ✅ Mini-table header 必加 2 個 column: 「獨發點日期」+ 「獨發點股價」
-- ✅ Mini-table title 上邊必加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
-- ✅ `renderDebugPanel` call helper 嗰陣必傳 `verdict.meta?.zigzagThreshold` + `verdict.meta?.zigzagThresholdMode`
-- ✅ `fetchAndInjectBackendZigZag` 必 inject `lastVerdict.meta.zigzagThresholdMode = thresholdMode`
-- ✅ Backend 改後必 restart backend (§15.51 hot-reload 永久 rule)
-- ✅ Testing page 改後必同步 bump:
-  - testing-page.js 嘅 `ALGO_CACHE_BUST` (4.56.0 → 4.57.0)
-  - testing-page/index.html 嘅 `?v=2.3.116` → `2.3.117` (2 個地方)
-- ✅ 凡人話: 獨發點 (trigger confirm 嗰個 K 線) 唔等於 P point 自己嗰日, 兩者嘅 index 唔同
-  - 例如 P2 (trough) 喺 8月15日, 獨發點 (升到 +threshold) 可能喺 8月22日
-  - 對齊 K 線時序, trigger 一定係 P point 之後 (因為要「之後反方向」先 confirm)
-- ✅ Edge case: triggerIndex / triggerDate / triggerPrice 拎唔到 → 顯示「(?)」, 唔 crash
-
-**凡人話**: 大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價, 標題上邊見到「🔧 Threshold: X.XX% (mode: auto|manual)」, 唔使再 scroll 開 DevTools console 拎 raw data。
-
-對應 doc: ARCHITECTURE.md §15.56
-
-對應 commit: 即將 push (4.57.0 fix + Spec Sync 流程)
-
-
-### ZigZag P1/P2 同日 bug fix 永久 rule (大少 2026-09-01 11:00 trigger, 4.58.0)
-
-**凡人話解釋**: 大少 11:00 附 2 張 K 線圖 trigger「解決 Zigzag 最新一個 point 的問題」+ 觀察:
-- 圖 1 (HK.01347 華虹半導體): 最後一條紫色線向下 (Trough), 之後股價反彈, P1 (today 8月28 120.80) 同 P2 (Trough 8月25 105.50) 唔同日, **正常**
-- 圖 2 (HK.00100 MINIMAX-W): 最後一條紫色線向上 (Peak), 之後股價繼續升, P1 (today 8月31 351.40) 同 P2 (Peak 8月31 360.00) **同日, bug**
-
-大少 11:00 root cause 分析: 「如果圖 2 的股票之後是向下走的, 很可能會變成圖 1 的案例變回正常。我發現的問題是在最後那條 Zigzag 線如果是向上的, 之後股向同一方向發展就會出現 P1 和 P2 會在同一日的 Bug, 反之向下原理是一樣」。
-
-**Root cause (2 層)**:
-1. **表層** (backend algorithm.py): 紫色 P point 算法喺 `calculate_zigzag` 入面, 拎 K 線 high/low 對比 trigger 5% threshold, 但冇 skip 今日 partial bar。今日 K 線仲行緊, 算法拎到今日 high 就 trigger 新 P point 喺今日。同時 4.56.0 加咗 'today' point 用 K 線最後 close, 兩個 point 同一日 → 鮮綠線 P1 (今日 close) 同 P2 (今日 P point) 同日, marker 撞。
-2. **深層** (algorithm_runner.py): algorithm_runner 拎 K 線嘅 `is_stale` 判斷用 `t_minus_1 = today - 1 day` 對比 K 線 last_cached, 但 KlineCache T-1 rule 永遠 K 線 last_cached == T-1 (今日唔寫 DB), 即係 `klines[-1] < t_minus_1` 永遠 False (string compare `<` 唔包等於), 永遠唔 trigger `get_or_fetch` 拎今日 partial bar。算法收到嘅 K 線永遠去到 T-1, 唔包括今日。
-
-**改動 (4.58.0)**:
+**改動 (4.59.0)**:
 
 1. **Backend algorithm.py** (`backend/algorithms/zigzag/algorithm.py`):
-   - 加 `_is_today_partial(kline)` helper: 拎 `kline['time'][:10]` 對比 `datetime.date.today().isoformat()`, return True if 今日
-   - 對齊 KlineCache._fetch_and_store line 658 嘅 `datetime.date.today().isoformat()` pattern
-   - 對齊 K-line Cache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB, 只喺 response 出」嘅精神
-   - `calculate_zigzag` 開頭計算 `n_minus_1`, `skip_today`, `end_idx = len(klines) - skip_today` (1 行 expression)
-   - **First loop 改用 `for i in range(1, end_idx)`** (原本用 `len(klines)`): 跳過今日 partial bar, 紫色 P point 唔喺今日 trigger
-   - `in_uptrend` 加 condition `if end_idx >= 2 else False`: K 線太短 (skip 今日後得 0/1 條) 避免 IndexError
-   - **拎走 `if len(result) <= 1: return result` 嘅 early return**: 原本 K 線太短拎唔到 P point 就提早 return, 後續 ongoing + 'today' point 唔 add; 改之後 'today' point 永遠 append (對齊 4.56.0 設計意圖)
-   - **Second loop 用 `for i in range(last_swing_idx + 1, end_idx)`** (原本已經咁, 確認返): 跳過今日 partial bar
-   - 4.56.0 'today' point + 鮮綠線 `build_extension_line` 唔變: 仍然用 K 線最後 close 做 P1
+   - 拎走 `_is_today_partial` function (lines 137-161, 拎走 skip_today 之後冇 caller)
+   - `calculate_zigzag` 拎走 `n_minus_1` / `skip_today` / `end_idx` 3 行 init (lines 193-203)
+   - First loop 改返 `for i in range(1, len(klines))` (拎走 `end_idx`)
+   - `in_uptrend` condition 改返 `if len(klines) >= 2 else False` (拎走 `end_idx`)
+   - 拎走 P1/P2 同日 bug fix 嘅 comment (lines 287-291, 拎走 'today' point 後冇呢個 bug)
+   - Second loop 改返 `for i in range(last_swing_idx + 1, len(klines))` (拎走 `end_idx`)
+   - 拎走 'today' point 整段 injection (lines 393-408)
+   - Ongoing point 改返用 last_swing_idx K線 high/low + date (拎走 `triggerPrice = last_kline.close`)
+   - 拎走 `build_extension_line` function (lines 332-371)
+   - 拎走 `EXTENSION_LINE_COLOR = "#00C853"` constant
+   - 拎走 `point_marker_position` 入面 'today' check
+   - 拎走 `run_zigzag` 入面 `extension_line` field + `build_extension_line` call
+   - 拎走 `ZigZagAlgorithm.run` 入面 `extension_line` meta field (由 7 個 field 變 6 個)
+   - 拎走 file 頂部 docstring 嘅 4.56.0 鮮綠線 + 4 個 step 提及
+   - `ZigZagAlgorithm.version` 0.1.0 → 0.3.0 (記錄拎走嘅嘢)
+   - Docstring `Returns` 段拎走「4.56.0 精神最後 ongoing point 拎 close」
 
-2. **Backend algorithm_runner.py** (`backend/services/algorithm_runner.py`):
-   - 改 `is_stale` 判斷, 用 `today` 對比 K 線 last_cached (原本用 `t_minus_1`):
-     - 原本: `is_stale = bool(klines) and (klines[-1].get('time', '') < t_minus_1)` (永遠 False 因為 KlineCache T-1 rule)
-     - 改後: `is_stale = bool(klines) and (klines[-1].get('time', '') < today)` (K 線 last_cached < today → stale → trigger get_or_fetch 拎今日)
-   - 確保 algorithm_runner 拎 K 線嗰陣 trigger `get_or_fetch`, K 線永遠包括今日 partial bar
-   - 對齊 KlineCache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB, 只喺 response 出」嘅精神
+2. **Backend __init__.py** (`backend/algorithms/zigzag/__init__.py`):
+   - 拎走 `build_extension_line` + `EXTENSION_LINE_COLOR` import + export
+   - Docstring 拎走 4.56.0 鮮綠線 + 4 個 step 提及
+   - 加返「4.59.0 拎走 4 個 source」section
 
-3. **Backend unit test** (`backend/algorithms/zigzag/__tests__/test_skip_today.py`):
-   - 7 個 test case:
-     1. `_is_today_partial(今日 K 線) = True`
-     2. `_is_today_partial(昨日 K 線) = False`
-     3. 3 條 K 線 (T-2 + T-1 + 今日升穿 5%): 紫色 P point 唔喺今日 trigger, P1/P2 唔同日
-     4. K 線最後一條係 T-1 (週末, 已經 close): 紫色 P point 喺 T-1 正常 trigger
-     5. 圖 2 場景 (T-2 + T-1 + 今日升穿 20%): P1/P2 唔同日, bug 永久 fix
-     6. 邊界 case: K 線只有 1 條 (今日) → return []
-     7. 邊界 case: K 線只有 2 條 (T-1 + 今日): P1 (今日) 同 P2 (T-1) 唔同日
-   - 7/7 pass, 凡人話: 確認 algorithm.py 改動 work, 紫色 P point 永遠唔喺今日 trigger, 'today' point 仍用 K 線最後 close, 鮮綠線 P1/P2 唔同日
-   - 執行: `cd /Users/zmenai/stockpulse && python3 backend/algorithms/zigzag/__tests__/test_skip_today.py`
+3. **Backend algorithm_runner.py** (`backend/services/algorithm_runner.py`):
+   - 拎走 P1/P2 同日 bug fix 嘅 stale K 線判斷 comment
+   - `is_stale` 邏輯保留 (拎走 'today' point 後仍然 work, 拎今日 partial bar 對齊 frontend algorithm 1-to-1)
+
+4. **6 個 caller 拎走 'today' filter dead code**:
+   - `algorithms/AS-03-cycle-detection/adapter.mjs` (renderMAAlignmentV2ChartOverlay): 拎走 `.filter(p => p.type !== 'today')`
+   - `web/src/components/chart/ChartContainer.tsx` (fetchBackendZigZag): 拎走 `.filter((p) => p.type !== 'today')`
+   - `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` (fetchBackendZigZag): 拎走 `.filter((p) => p.type !== 'today')`
+   - `web/src/utils/elliottWave.ts` (calculateElliottWave): 拎走 `filteredPoints` 整段, 直接用 `zigzagPoints`
+   - M1 v2.0 (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要改
+   - M7 Synthesizer (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要改
+
+5. **Frontend testing-page.js** (`testing-page/testing-page.js`):
+   - `_formatZigZagLatestPointsForDebug` 拎走 `todayPoint` + `confirmedPoints` 邏輯, 改返 `slice(0, 10)` 直接拎
+   - 凡人話 message 改返「P1 = 紫色 ZigZag algorithm 拎到嘅最後 confirmed point」
+   - 拎走 4.56.0 永久 rule 註釋 (lines 462-482)
+   - 拎走 4.58.0 cache bust sync 註釋
+   - Bump `ALGO_CACHE_BUST` 4.58.0 → 4.59.0
+   - 拎走 testing-page/index.html 嘅 `?v=2.3.118` → `?v=2.3.119`
+
+6. **Backend unit test** (`backend/algorithms/zigzag/__tests__/test_skip_today.py`):
+   - 拎走成個 file (skip_today logic 拎走後, 個 test 對應嘅 logic 已經唔存在)
+   - 拎走 `__tests__/` folder
+
+7. **AGENTS.md Spec Sync**:
+   - 拎走 4.56.0 entry (M1 console log P1 拎 K 線最後 close, 整段 36 行)
+   - 拎走 4.57.0 entry (ZigZag 獨發點 + Threshold % 顯示, 整段 60 行) - 因為 4.56.0 拎走後, 4.57.0 嘅「對齊 4.56.0 精神 + skip_today」都拎走
+   - 拎走 4.58.0 entry (ZigZag P1/P2 同日 bug fix, 整段 80 行) - 因為 4.57.x skip_today 拎走後, P1/P2 同日 bug 唔再存在
+   - 加返 4.59.0 entry (今次 Spec Sync, 講述拎走 4 個 source)
 
 **永久 rule**:
-- ✅ Backend ZigZag 紫色 P point 算法永遠 skip 今日 partial bar (T-1 rule 精神)
-  - First loop: `range(1, end_idx)`, Second loop: `range(last_swing_idx + 1, end_idx)`
-  - `end_idx = len(klines) - skip_today`, `skip_today = 1 if _is_today_partial(klines[-1]) else 0`
-  - 對齊 K-line Cache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB」嘅精神
-- ✅ 'today' point (鮮綠線終點) 永遠 append, 鮮綠線 P1 永遠存在 (拎走原本 early return 條件 `len(result) <= 1` → 改 `< 1`)
-  - 對齊 4.56.0 永久 rule「加今日 close 做 P1」嘅設計意圖
-  - 即使 K 線太短 (e.g. 只有 3 條) 都一定 append 'today' point
-- ✅ `_is_today_partial` helper: 拎 `kline['time'][:10]` 對比 `datetime.date.today().isoformat()`
-  - 對齊 KlineCache._fetch_and_store line 658 嘅 pattern
-  - 凡人話: 判斷 K 線係咪今日 partial bar, 永遠 UTC date 對比 (避免 HKT 差異)
-- ✅ Algorithm runner 拎 K 線永遠 trigger `get_or_fetch`: `is_stale` 改用 `today` 對比 (原本 `t_minus_1` 因為 KlineCache T-1 rule 永遠 False)
-  - 對齊 KlineCache 8月22日永久 rule「用 `get_cur_kline()` 拎 today intraday partial bar (唔入 DB)」嘅精神
-  - 對齊 KlineCache._fetch_today_bar line 467+ 用 `ctx.get_cur_kline()` 拎今日 (唔打 `request_history_kline`, 唔撞限頻)
-- ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」: 拎 point value 用 high / low 對齊 K 線真實 high / low
-- ✅ 對齊 4.16.0 永久 rule「永遠用 clean state machine, 唔好分 2 loop」: first loop + second loop 都用 `direction flag` + `ref value` pattern
-- ✅ 對齊 4.56.0 永久 rule「加今日 close 做 P1」: 'today' point 永遠 append, value = K 線最後 close
+- ✅ Backend ZigZag algorithm 永遠唔加 `type: 'today'` point (拎走 4.56.0 永久 rule)
+- ✅ Backend ZigZag algorithm 永遠唔 build extension line (拎走 4.33.0 永久 rule 嘅 backend 部分)
+- ✅ Backend ZigZag algorithm 永遠唔 skip 今日 partial bar (拎走 4.57.x 永久 rule, 對齊 frontend algorithm 1-to-1)
+- ✅ Backend ZigZag algorithm 永遠唔用 K線最後 close 做 trigger (拎走 4.56.0 ongoing point 特殊處理, 改返對齊 4.15.0 規則)
+- ✅ P1 永遠 = 紫色 algorithm 拎到嘅最後 confirmed ZigZag point (對齊 8月29日 14:32 永久 rule「P1 = 最新紫色 ZigZag 點」)
+- ✅ Frontend testing page 拎 verdict.points 直接用, 唔再 filter `type: 'today'` (拎走 4.56.0 衍生 dead code)
+- ✅ Production frontend ChartContainer + ElliottWaveTestPage + adapter.mjs + elliottWave.ts 全部拎走 `type !== 'today'` filter (dead code, backend 唔再加)
+- ✅ Chart meta field 由 7 個變 6 個 (拎走 `extension_line`), frontend 對應拎法同步拎走
+- ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 verdict.points, 唔重計, 唔再 filter)
+- ✅ 對齊 4.53.0 永久 rule「拎走橙旗 + 鮮綠線 + 1 號 marker」 (拎走 build_extension_line 函數, chart 完全乾淨, 對齊大少 trigger「影響正常 ZigZag」)
+- ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」 (拎走 4.56.0 ongoing point 特殊處理後, trigger 全部對齊 4.15.0 規則拎 K線 high/low)
 - ✅ 對齊 §15.45 + §15.53 + §15.54 永久 rule (Sscript 還原點對齊, Backup Admin Page verify)
-- ✅ 對齊 §15.51 永久 rule (改 backend 必 restart + curl verify)
-- ✅ 改 unit test 嗰陣必 bump `ALGO_CACHE_BUST` (testing page frontend 拎 backend verdict, 改 algorithm.py 唔影響 frontend 拎 verdict, 但要同步改 unit test 確保邏輯 work)
-- ✅ 凡人話: 紫色 P point (P2) 留喺 T-1 已經 close 嘅 K 線, 'today' point (P1) 拎 K 線最後 close, 鮮綠線 P1/P2 唔同日, 對齊大少圖 1 (Trough 8月25 105.50 → today 8月28 120.80) 嘅正常 behavior
+- ✅ 對齊 §15.51 永久 rule (改 algorithm.py 必 restart backend + curl verify)
+- ✅ 對齊 §15.46 永久 rule (改 testing-page.js 必同步 bump ALGO_CACHE_BUST + ?v= 2 個地方)
 
-**Acceptance tests**:
-- Restart backend (§15.51 永久 rule): `./start.sh`
-- Curl verify backend 加 skip 邏輯: `curl /api/algorithms/run?algo=zigzag&symbol=HK.00100&period=1d&lookback=20&multiplier=2.5`
-  - 預期: points 入面, 紫色 P point 唔喺今日 (9月1) trigger, 最後紫色 P point date < today
-  - 預期: P1 (today point) 同 P2 (最後紫色) date 唔同日
-- 撳跑 ZigZag HK.00100 (圖 2 場景, 上升趨勢 + 今日升穿 5%): 紫色 P point 唔喺今日 trigger, P1 同 P2 唔同日, bug 永久 fix
-- 撳跑 ZigZag HK.01347 (圖 1 場景, 下跌趨勢 + 之後反彈): P1 同 P2 仍然唔同日 (原本就正常)
-- 撳跑 M1 (AS-03-MA) HK.00100: P1 (today) 同 P2 (最後紫色) 唔同日, console log mini-table 顯示正確
-- 跑 unit test: `python3 backend/algorithms/zigzag/__tests__/test_skip_today.py` → 7/7 pass
-- 對齊 §15.45 永久 rule: 改 algorithm.py 必 Sscript 還原點 + Backup Admin Page verify
-- 對齊 §15.51 永久 rule: 改 backend 必 restart + curl verify
-- 對齊 §15.52 永久 rule: 改 algorithm 必加 unit test (今次加咗 7 個 test case)
+**凡人話**: 大少撳跑 01347 即刻見到 P1 = 2026-08-25 105.50 📉 Trough (8月31日 123.00 確認咗呢個 trough, 變成 trigger point), 唔再用 8月31日 123.00 today point, 紫色 ZigZag line 最後 1 個 point 對齊 standard ZigZag algorithm output, chart 完全乾淨冇鮮綠線, 對齊大少 trigger「拎走 4 個 source, 全部要删除重新再做」。
 
-**凡人話**: 大少撳跑 ZigZag 嗰陣, 即刻見到 P1 (today) 同 P2 (最後紫色) 唔同日, 鮮綠線由 P2 (T-1 or 更早) 連去 P1 (今日), 鮮綠線有意義, 唔再係 degenerate 零長度, 圖 1 同圖 2 嘅股票 P1/P2 都唔再同日, bug 永久 fix。
+對應 doc: ARCHITECTURE.md §15.55 + §15.56 + §15.60 (拎走對應章節), 改 §15.61 加返 4.59.0 entry
 
-對應 doc: ARCHITECTURE.md §15.60 (P1/P2 同日 bug fix 細節)
+對應 commit: 即將 push (4.59.0 fix + Spec Sync 流程)
 
-對應 commit: 即將 push (4.58.0 fix + Spec Sync 流程)
+對應 Sscript 還原點: `restore-before-zigzag-4.59.0` (對齊 §15.45 + §15.53 + §15.54 永久 rule)
 
-對應 Sscript 還原點: `restore-before-zigzag-4.58.0` (對齊 §15.45 + §15.53 + §15.54 永久 rule)
+對應永久 rule: 4.43.0 ZigZag 全部 backend 計 + 4.53.0 拎走鮮綠線 + 4.15.0 拎 high/low + §15.45 Sscript pattern + §15.46 cache bust sync + §15.51 Backend hot-reload
 
 對應永久 rule: 4.15.0 拎 point 用 high/low + 4.16.0 direction flag refactor + 4.43.0 ZigZag 全部 backend 計 + 4.56.0 加今日 close 做 P1 + 8月22日 K-line Cache T-1 rule + §15.51 Backend hot-reload + §15.52 改 algorithm 必加 unit test
 
@@ -999,6 +894,61 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 - KlineCache `_fetch_today_bar` 拎今日失敗 issue: algorithm_runner 改 `is_stale` 之後, K 線 count 由 156 變 157 (即係 trigger 咗 OpenD fetch 補返 1 條), 但今日 (9月1) 仍然唔喺 K 線 array 入面 (K 線最後一條 = 8月31 T-1)。要 debug `_fetch_today_bar` 拎今日失敗嘅原因, 確認 OpenD 連線狀態。
 
 對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.56.0 加今日 close 做 P1 + §15.51 Backend hot-reload + §15.46 testing-page cache bust sync
+
+
+### ZigZag Ongoing Point Trigger 永久 rule (大少 2026-09-01 16:48 trigger, 4.60.0)
+
+**凡人話解釋**: 大少 16:48 trigger「在P1 裡的Trough 是對的，但問題在獨發日期和股價都是在同一日，這個應該是攪錯了，獨發日期應該是在之後的日期裡」— 之字 P1 嘅「獨發點」(trigger) 同 P point 自身係同一日, 講大話話「已經 confirm」, 但真實情況係 threshold % 嘅 K 線仲未出現 (ongoing swing 仲未 confirm 翻身)。e.g. 01347 P1 trough 105.5 (2026-08-25), auto threshold 19.33% 需要 high ≥ 125.89 先 trigger, 而家 K 線得 125.6 差 0.3 蚊, 真係未 trigger。對齊 4.59.0 拎走 'today' point 嘅精神, ongoing point 嘅 trigger 永遠 null, 加 `is_ongoing: true` flag 畀 frontend 顯示「(待觸發)」。
+
+**Root cause** (4.59.0 residual bug):
+- 4.59.0 拎走咗 4.56.0 ongoing point 嘅 `triggerPrice = K線最後 close` 特殊處理, 改返對齊 4.15.0 規則用 `last_swing_idx K線 high/low`
+- 但算法仍硬填 `triggerIndex=last_swing_idx, triggerDate=last_date, triggerPrice=last_swing_idx K線 high/low`, 即係用 self trigger 自己 (講大話話「已經 confirm」)
+- 注釋自己都寫「最後一個 point 係 ongoing, 仲未確認轉勢 (K 線行緊)」, 但落 field 嗰陣就假裝 trigger 咗
+- Frontend 拎 `p.triggerDate / p.triggerPrice` 顯示「P1 2026-08-25 105.50 📉 Trough 2026-08-25 105.50」(self trigger), 大少誤以為「呢個 point 已經 confirm 咗」, 實際係未 confirm
+
+**改動 (4.60.0)**:
+
+1. **Backend algorithm.py** (`backend/algorithms/zigzag/algorithm.py` line 306-323, ongoing point block):
+   - `triggerIndex: last_swing_idx` → `triggerIndex: None` (唔好填 self 講大話)
+   - `triggerDate: last_date` → `triggerDate: None` (未 trigger 唔好假設)
+   - `triggerPrice: last_swing_kline[high/low]` → `triggerPrice: None` (未 trigger 唔好假設)
+   - 加 `is_ongoing: True` field (frontend 拎呢個 flag 顯示「(待觸發)」)
+   - 第一個 point (klines[0] 起點) 唔改 (起點, 本來就冇 trigger 概念, 永遠 self)
+
+2. **Frontend testing-page.js** (`_formatZigZagLatestPointsForDebug` line 1955-1962):
+   - 拎 `p.is_ongoing === true` 設 `isOngoing` flag
+   - `triggerDate = isOngoing ? '<em>(待觸發)</em>' : (p.triggerDate || ...)`
+   - `triggerPrice = isOngoing ? '<em>(待觸發)</em>' : (Number.isFinite(p.triggerPrice) ? ... : '(?)')`
+   - 凡人話: 大少撳跑 01347 即刻見到 P1 行嘅 trigger 兩格顯示「(待觸發)」, 一眼分到「呢個未 confirm」
+
+3. **Cache bust sync** (對齊 §15.46 永久 rule):
+   - `testing-page.js` `ALGO_CACHE_BUST = '4.59.0'` → `'4.60.0'`
+   - `testing-page/index.html` `?v=2.3.119` → `?v=2.3.120` (2 個地方: css + js)
+
+**永久 rule**:
+- ✅ Backend ongoing point 嘅 `triggerIndex` / `triggerDate` / `triggerPrice` 永遠 null (唔好填 self 講大話)
+- ✅ Backend ongoing point 必加 `is_ongoing: True` flag 畀 frontend 分到
+- ✅ Frontend 拎 `is_ongoing` 顯示「(待觸發)」取代「(?)」, 大少一眼分到「呢個未 confirm」
+- ✅ 第一個 point (klines[0] 起點) 唔受影響, 永遠 self trigger (起點, 冇 trigger 概念)
+- ✅ 對齊 4.59.0 永久 rule: ongoing point 唔再拎 K線最後 close, 唔再拎 last_swing_idx K線 high/low, 永遠 null
+- ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」: 4.15.0 講「trigger 拎嗰個 K 線 high (trough) / low (peak)」, 而 ongoing point 根本冇 trigger K 線, 所以 null 對齊
+- ✅ 對齊 8月29日 14:32 永久 rule「P1 = 最新紫色 ZigZag 點」: P1 仲係 render, 只係 trigger column 顯示「(待觸發)」
+- ✅ 對齊 §15.51 Backend hot-reload: 改 algorithm.py 之後必 restart backend + curl verify
+- ✅ 對齊 §15.46 cache bust sync: 改 testing-page.js 同時 bump 2 個地方 cache bust
+
+**凡人話**: 大少撳跑 01347 即刻見到 P1 行嘅 trigger 兩格顯示「(待觸發)」(灰色斜體), 唔再用 self=trigger 誤導大少以為「已經 confirm」, 對齊 standard ZigZag interpretation (only show confirmed points or mark ongoing as "pending")。
+
+對應 file:
+- `backend/algorithms/zigzag/algorithm.py` line 306-323: ongoing point block 改 null + is_ongoing
+- `testing-page/testing-page.js` `_formatZigZagLatestPointsForDebug`: 加 isOngoing check + 顯示「(待觸發)」
+- `testing-page/testing-page.js` ALGO_CACHE_BUST 4.59.0 → 4.60.0
+- `testing-page/index.html` ?v=2.3.119 → ?v=2.3.120
+
+對應 doc: ARCHITECTURE.md §3.6 + §3.7 (ZigZag data flow, ongoing point section)
+
+對應 commit: 即將 push (4.60.0 fix + Spec Sync 流程)
+
+對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.57.0 加獨發點 3 個 field + 4.59.0 拎走 'today' point + §15.46 cache bust sync + §15.51 Backend hot-reload
 
 
 ### ZigZag Trigger 邊界 case BUG FIX 永久 rule (大少 2026-08-31 21:29 + 21:46, 4.57.1)

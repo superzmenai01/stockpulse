@@ -5009,13 +5009,8 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             _zigzagKlineByDate.set(String(_zdateStr).slice(0, 10), _zk);
           }
         }
-        // 大少 8月31日 15:19 trigger (4.56.0) — filter 走 'today' point, 對齊 4.53.0 chart decision
-        // 拎走橙旗 + 鮮綠線 + 1 號 marker (4.53.0 永久 rule), 4.56.0 backend 加 'today' point
-        // 但 chart 唔 render 鮮綠線 + 1 號 marker, 所以 renderMAAlignmentV2ChartOverlay filter 走
-        // 'today' point 避免 chart 上面多咗個鮮綠線/1 號 marker
-        // (testing page console log P1 拎 'today' point, 對齊 K 線最後 close)
+        // 大少 9月1日 14:10 trigger (4.59.0 full revert 4.56.0) — 拎走 'today' point filter (dead code, backend 唔再加 'today' point)
         let zigzagSeries = verdict.meta.zigzagPoints
-          .filter(p => p.type !== 'today')  // 4.56.0 filter, 對齊 4.53.0 chart decision
           .map(p => {
             const _dateKey = String(p.date || '').slice(0, 10);
             const _dateParts = _dateKey.split('-').map(Number);

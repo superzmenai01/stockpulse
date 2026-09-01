@@ -299,11 +299,8 @@ async function fetchBackendZigZag(
   if (!verdict.ok || !Array.isArray(verdict.points)) {
     throw new Error(`Backend ZigZag verdict fail: ${verdict.error || 'unknown'}`);
   }
-  // 大少 8月31日 15:19 trigger (4.56.0) — filter 走 'today' point, 對齊 4.53.0 chart decision
-  // 拎走橙旗 + 鮮綠線 + 1 號 marker (4.53.0 永久 rule), 4.56.0 backend 加 'today' point
-  // 但 chart 唔 render 鮮綠線 + 1 號 marker, 所以 production ChartContainer filter 走
+  // 大少 9月1日 14:10 trigger (4.59.0 full revert 4.56.0) — 拎走 'today' point filter (dead code, backend 唔再加 'today' point)
   return verdict.points
-    .filter((p: { type: string }) => p.type !== 'today')  // 4.56.0 filter, 對齊 4.53.0 chart decision
     .map((p: { date: string; value: number; type: string; index: number }) => ({
       time: parseTime(p.date, period),
       value: p.value,

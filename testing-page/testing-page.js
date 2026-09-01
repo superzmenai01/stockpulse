@@ -459,47 +459,33 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //        → 唔喺今次 fix 範圍, 之後 follow-up sprint 先處理
 //   對應 commit: fix(testing-page): M1 console log P1-P10 排法 (verdict.points 排法搞錯, 4.55.0)
 //
-// 大少 8月31日 15:19 trigger — P1 拎 K 線最後 close (backend algorithm 加 'today' point, 4.56.0)
-//   4.56.0 永久 rule (新加, 改 algorithm 行為 + 凡人話 display 改善):
-//     ✅ backend/algorithms/zigzag/algorithm.py calculate_zigzag 加 'today' point 入 verdict.points
-//        - value = klines[-1].close (K 線最後 close, 即使未 trigger 5% threshold)
-//        - date = klines[-1] date normalized
-//        - type = 'today' (marker for testing page console log P1)
-//     ✅ 6 個 caller filter 走 'today' point 對齊 4.53.0 chart decision (拎走橙旗 + 鮮綠線 + 1 號 marker):
-//        1. algorithms/AS-03-cycle-detection/adapter.mjs (renderMAAlignmentV2ChartOverlay)
-//        2. web/src/components/chart/ChartContainer.tsx (fetchBackendZigZag)
-//        3. web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx (fetchBackendZigZag)
-//        4. web/src/utils/elliottWave.ts (detectElliottWave 避免 EWave pattern index shift)
-//        5. M1 v2.0 (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要 filter
-//        6. M7 Synthesizer (Spec Sync #46 拎走 ZigZag 依賴) - 唔需要 filter
-//     ✅ testing-page _formatZigZagLatestPointsForDebug 拎 'today' point 做 P1 (display 改善)
-//     ✅ 凡人話: 大少撳跑 M1 → 喺黑色 console log 底部即時見到 P1 = K線最近嗰個交易日 (今日) close
-//        唔再拎 8月28日 confirmed peak, chart 上面紫線最後 1 個 point 仍然係 8月28日 (對齊 4.53.0 chart decision)
-//     ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (backend 加 'today' point, frontend 拎 'today' 做 P1)
-//     ✅ 對齊 §15.45 + §15.53 + §15.54 永久 rule (Sscript 還原點: tag + branch + script + Backup Admin Page verify)
-//     ✅ 對齊 §15.51 永久 rule (改 algorithm.py 必 restart backend + curl verify)
-//   對應 Sscript 還原點: restore-before-zigzag-4.56.0 (commit 1fca411b)
-//   對應 commit: fix(zigzag): P1 拎 K 線最後 close (backend algorithm 加 'today' point, 4.56.0)
-//
 // 大少 8月31日 17:42 trigger (修改版 20:51 + 20:57) — M1 console log 加 Threshold % + 獨發點 (Trigger 確認點): ALGO_CACHE_BUST = '4.57.0'
 // 大少 9月1日 13:39 trigger (4.58.0 cache bust sync) — 4.58.0 backend code (P1/P2 同日 bug fix + 4.57.2 date format 統一重新做返) 已經 push origin main, frontend 仲係 4.57.0, 大少 reload testing page 拎 stale verdict, 必 cache bust 同步: ALGO_CACHE_BUST = '4.58.0' (對齊 §15.46 永久 rule)
-//   4.57.0 永久 rule (新加, 大少 trigger 1+2):
-//     ✅ testing-page.js renderDebugPanel 加 _formatZigZagLatestPointsForDebug helper 改 signature 加 threshold + thresholdMode 2 個參數
-//     ✅ Mini-table 由 4 欄變 6 欄: 序號 (P1-P10) / 日子 (YYYY-MM-DD) / 點數 (2 位小數) / 類型 (📈 Peak / 📉 Trough) / 獨發點日期 / 獨發點股價
-//     ✅ 標題上邊加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
-//     ✅ 獨發點: 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, Trough trigger 拎嗰日 K 線 high, Peak trigger 拎嗰日 K 線 low
-//     ✅ 對齊 4.56.0 精神: 最後 ongoing point 拎 K 線最後 close 做 trigger 價
-//     ✅ Source 拎 lastVerdict.meta.zigzagPoints (已經由 backend inject, backend 算法 4.57.0 同步加 3 個 field: triggerIndex / triggerDate / triggerPrice)
-//     ✅ 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」 (frontend 拎 backend 注入嘅 data, 唔重計)
-//     ✅ fetchAndInjectBackendZigZag 多 inject lastVerdict.meta.zigzagThresholdMode = thresholdMode
-//     ✅ Frontend fallback (4.18.0 拎走): 唔適用, backend 拎唔到 verdict.meta.zigzagPoints 永遠 undefined, table 顯示「冇 points」
-//     ✅ Edge case: zigzagPoints empty / undefined → 顯示「(冇 points, 可能未跑算法 / threshold 太高)」
-//     ✅ Edge case: zigzagPoints.length < 10 → table 顯示實際有嘅數量 (1-9 行)
-//     ✅ Edge case: triggerIndex / triggerDate / triggerPrice 拎唔到 → 顯示「(?)」, 唔 crash
-//     ✅ Style 全部 inline (唔加 testing-page.css, 跟 popup 註解永久 rule 風格一致)
-//     ✅ 凡人話: 大少撳跑 M1 即刻喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價
-//   對應 commit: feat(testing-page): M1 console log 加 Threshold % + 獨發點 (4.57.0)
-const ALGO_CACHE_BUST = '4.58.0';
+// 大少 9月1日 14:10 trigger (full revert 4.56.0 'today' point + 鮮綠線 + 4.57.x skip_today): ALGO_CACHE_BUST = '4.59.0'
+//   4.59.0 永久 rule (新加, 大少 14:10 trigger full revert 4.56.0):
+//     ✅ backend/algorithms/zigzag/algorithm.py 拎走 4.56.0 嘅 'today' point injection (P1 唔再拎 K線最後 close)
+//     ✅ backend/algorithms/zigzag/algorithm.py 拎走 4.33.0 鮮綠線 build_extension_line function + EXTENSION_LINE_COLOR constant
+//     ✅ backend/algorithms/zigzag/algorithm.py 拎走 4.57.x skip_today 邏輯 (紫色 P point 計返 T-0 對齊 frontend algorithm 1-to-1)
+//     ✅ backend/algorithms/zigzag/algorithm.py ongoing point 嘅 triggerPrice 改返用 last_swing_idx K線 high/low (唔再用 K線最後 close)
+//     ✅ backend/algorithms/zigzag/algorithm.py point_marker_position 拎走 'today' check
+//     ✅ backend/algorithms/zigzag/algorithm.py ZigZagAlgorithm meta field 拎走 extension_line (由 7 個 field 變 6 個)
+//     ✅ backend/algorithms/zigzag/algorithm.py version 0.1.0 → 0.3.0 (記錄拎走嘅嘢)
+//     ✅ backend/algorithms/zigzag/__init__.py 拎走 build_extension_line + EXTENSION_LINE_COLOR import/export
+//     ✅ testing-page.js _formatZigZagLatestPointsForDebug 拎走 todayPoint filter (P1 = 紫色 algorithm 拎到嘅最後 confirmed point, 唔再用 'today' point)
+//     ✅ 凡人話: 大少撳跑 01347 見到 P1 = 2026-08-25 105.50 📉 Trough (8月31日 123.00 trigger 到 5% 升幅確認 trough), 唔再用 8月31日 123.00 today point
+//     ✅ 對齊 8月29日 14:32 永久 rule「P1 = 最新紫色 ZigZag 點」, 拎走 4.56.0 嘅「P1 = 今日 close」special case
+//   對應 commit: fix(zigzag): 拎走 4.56.0 'today' point + 鮮綠線 + skip_today, P1 = standard ZigZag algorithm output
+// 大少 9月1日 16:48 trigger (ongoing point trigger bug fix): ALGO_CACHE_BUST = '4.60.0'
+//   4.60.0 永久 rule (新加, 大少 16:48 trigger fix 01347 P1 ongoing point 講大話 bug):
+//     ✅ backend/algorithms/zigzag/algorithm.py ongoing point 嘅 trigger 改 null (triggerIndex/triggerDate/triggerPrice 全部 None)
+//     ✅ backend/algorithms/zigzag/algorithm.py ongoing point 加 is_ongoing: true flag 畀 frontend 分到
+//     ✅ testing-page.js _formatZigZagLatestPointsForDebug 拎 is_ongoing flag 顯示「(待觸發)」取代「(?)」, 大少一眼分到「呢個未 confirm」
+//     ✅ 凡人話: 之前 ongoing point 硬填 trigger=self (講大話話「已經 confirm」), 但真實情況係 threshold % 嘅 K 線未出現
+//       e.g. 01347 P1 trough 105.5 需要 high ≥ 125.89 先 trigger, 而家 K 線得 125.6 差 0.3 蚊, 真係未 trigger
+//     ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, null 表示「trigger 仍未出現, 唔好假設 confirm」
+//     ✅ 對齊 8月29日 14:32 永久 rule「P1 = 最新紫色 ZigZag 點」, P1 仲係會 render, 只係 trigger column 顯示「(待觸發)」
+//   對應 commit: fix(zigzag): ongoing point trigger 改 null + is_ongoing flag, frontend 顯示「(待觸發)」
+const ALGO_CACHE_BUST = '4.60.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1952,23 +1938,15 @@ function _formatZigZagLatestPointsForDebug(zigzagPoints, threshold, thresholdMod
     return `${thresholdLine}<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong> <em style="color:#888;">(冇 points, 可能未跑算法 / threshold 太高)</em>`;
   }
   // 大少 8月31日 13:14 trigger (4.55.0 fix) — fix 之前 4.54.0 寫錯 verdict.points 排法
-  // 拎最前 10 個 (verdict.points 已經係 (新 → 舊) 排, points[0] = 最新 K線最近嗰個交易日嘅紫色 ZigZag 點)
+  // 大少 9月1日 14:10 trigger 拎走 4.56.0 嘅 'today' point filter:
+  // 之前: 拎 todayPoint (type='today', K線最後 close) 做 P1, P2-P10 拎 confirmed points
+  // 而家: 拎走 'today' point, P1 = 紫色 algorithm 拎到嘅最後 confirmed ZigZag point (standard)
+  // 拎最前 10 個 (verdict.points 已經係 (新 → 舊) 排, points[0] = 最新紫色 ZigZag point)
   // 所以最前 10 個 = 最新嗰 10 個, P1 = points[0] = 最新, 唔需要 reverse
   // curl evidence (8月31日 13:14): HK.00019 verdict.points[0]=2026-08-21 (最新) + points[-1]=2025-08-04 (最舊), 確認 (新 → 舊) 排法
-  // 對齊 8月29日 14:32 永久 rule「P1 = 最新」精神 (雖然此處 array 排法係 (新 → 舊), 意思係 points[0] = 最新, 對齊 K線最近)
+  // 對齊 8月29日 14:32 永久 rule「P1 = 最新」
   // 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(frontend 拎 backend 注入嘅 verdict.meta.zigzagPoints, 唔重計)
-  // 倒序排 (P1=最新, P2=第二新, ...)
-  // zigzagPoints 已經時序排 (新 → 舊), 所以 points[0] = 最新
-  // 大少 8月31日 15:19 trigger (4.56.0) — P1 拎 K 線最後 close (今日, 'today' point) 而非 8月28日 confirmed peak
-  // 凡人話: 大少撳跑 M1 即刻見到 P1 = 今日 K 線 close, 唔再拎最後 confirmed ZigZag point
-  // 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(backend verdict.points 加 'today' point, frontend 拎 'today' 做 P1)
-  // 對齊 4.53.0 永久 rule: chart 唔 render 鮮綠線 (chart 上面紫線最後 1 個 point 仍然係 8月28日 confirmed peak, testing page console log P1 拎 'today' 拎 K線最後 close)
-  // P2-P10 順序拎 'today' 之後嘅 points (對齊 4.55.0 array 排法 (新 → 舊))
-  // filter 'today' point: 拎 confirmed points 嘅頭 9 個加埋 'today' point 做 P1
-  const todayPoint = zigzagPoints.find(p => p.type === 'today');
-  const confirmedPoints = zigzagPoints.filter(p => p.type !== 'today');
-  // P1 = 'today' point, P2-P10 = confirmed points 嘅頭 9 個 (新 → 舊 排)
-  const last10 = todayPoint ? [todayPoint, ...confirmedPoints.slice(0, 9)] : confirmedPoints.slice(0, 10);
+  const last10 = zigzagPoints.slice(0, 10);
   // 大少 4.57.0 trigger 2 — Mini-table header 加 2 個 column: 獨發點日期 + 獨發點股價
   const headerRow = '<tr style="color:#9cdcfe;text-align:left;">' +
     '<th style="padding-right:12px;">序號</th>' +
@@ -1983,10 +1961,16 @@ function _formatZigZagLatestPointsForDebug(zigzagPoints, threshold, thresholdMod
     const typeLabel = p.type === 'high' ? '📈 Peak' : p.type === 'low' ? '📉 Trough' : (p.type || '?');
     const date = p.date || p.decisionDate || '(?)';
     const value = Number.isFinite(p.value) ? p.value.toFixed(2) : (Number.isFinite(p.decisionValue) ? p.decisionValue.toFixed(2) : '(?)');
-    // 大少 4.57.0 trigger 2 — 拎 backend inject 嘅 triggerDate / triggerPrice (對齊 4.15.0 + 4.56.0 精神)
-    const triggerDate = p.triggerDate || p.trigger_date || '(?)';
-    const triggerPrice = Number.isFinite(p.triggerPrice) ? p.triggerPrice.toFixed(2) :
-      (Number.isFinite(p.trigger_price) ? p.trigger_price.toFixed(2) : '(?)');
+    // 大少 4.57.0 trigger 2 — 拎 backend inject 嘅 triggerDate / triggerPrice (對齊 4.15.0 規則)
+    // 大少 2026-09-01 16:48 trigger (4.60.0) — ongoing point 拎 backend 設嘅 is_ongoing flag, 顯示「(待觸發)」取代「(?)」
+    //   凡人話: 之字 ongoing point (P1 最後嗰個) 仲未 trigger 過, trigger 設 null 唔應該顯示「(?)」誤導大少
+    //   改用 backend inject 嘅 is_ongoing flag 顯示「(待觸發)」, 大少一眼分到「呢個未 confirm」
+    const isOngoing = p.is_ongoing === true;
+    const triggerDate = isOngoing ? '<em style="color:#888;">(待觸發)</em>' :
+      (p.triggerDate || p.trigger_date || '(?)');
+    const triggerPrice = isOngoing ? '<em style="color:#888;">(待觸發)</em>' :
+      (Number.isFinite(p.triggerPrice) ? p.triggerPrice.toFixed(2) :
+        (Number.isFinite(p.trigger_price) ? p.trigger_price.toFixed(2) : '(?)'));
     return `<tr>` +
       `<td style="padding-right:12px;"><strong style="color:#dcdcaa;">P${seq}</strong></td>` +
       `<td style="padding-right:12px;">${date}</td>` +
@@ -1998,7 +1982,8 @@ function _formatZigZagLatestPointsForDebug(zigzagPoints, threshold, thresholdMod
   }).join('');
   return `${thresholdLine}<strong style="color:#dcdcaa;">📈 ZigZag 最新 10 點 (P1 為最新, 倒序排):</strong>
 <table style="margin-top:4px;color:#d4d4d4;font-family:monospace;font-size:12px;border-collapse:collapse;">${headerRow}${bodyRows}</table>
-<em style="color:#608b4e;">// P1 = K線最近嗰個交易日嘅紫色 ZigZag 點 (因為 backend verdict.points 排法係 (新 → 舊), points[0] = 最新)
+<em style="color:#608b4e;">// P1 = 紫色 ZigZag algorithm 拎到嘅最後 confirmed point (因為 backend verdict.points 排法係 (新 → 舊), points[0] = 最新)
+// 拎走咗 4.56.0 嘅 'today' point, P1 唔再用 K線最後 close, 對齊 standard ZigZag algorithm
 // 上升判斷: P1>P3 + P2>P4 / 下跌判斷: P1<P3 + P2<P4 (對齊 8月29日 14:32 永久 rule)</em>`;
 }
 

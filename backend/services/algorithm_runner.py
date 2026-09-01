@@ -115,18 +115,11 @@ def run_algorithm(
     # 唔可以直接 instantiate KlineCache 用 mock context 拎 (會拎 stale K 線)
     # 唔可以 server 自己 HTTP call 自己 (5 workers + 細股 OpenD fetch > 3 分鐘 = 撞牆, 100 隻 stock test 60 隻失敗)
     #
-    # T-1 計算: skip 週末, 拎最近一個交易日 (簡化版: today - 1 day, 接受週末誤差)
-    # 永久 rule (大少 2026-08-23 13:19): 以後所有數據處理都喺 server 內部做
-    t_minus_1 = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-    # 大少 2026-09-01 11:00 trigger (P1/P2 同日 bug fix 深層 root cause):
-    # 原本用 t_minus_1 判斷 stale, 但 KlineCache T-1 rule 永遠 K 線 last_cached == T-1 (今日唔寫 DB)
-    # 即係 `klines[-1] < t_minus_1` 永遠 False (因為 == 唔係 <), 永遠唔 trigger get_or_fetch, 永遠冇今日 partial bar
-    # 紫色 ZigZag P point 算法原本拎到 K 線, 拎到 T-1 嘅 high/low, 之後拎今日 close 做 'today' point
-    # 因為今日 partial bar 唔在 K 線入面, 算法冇今日 trigger 紫色 P point, 但 4.56.0 'today' point 用 K 線最後 close (T-1)
-    # 鮮綠線 P1 (T-1 close) 同 P2 (T-1 P point) 同日, P1/P2 同日 bug 出現 (雖然 4.56.0 'today' point 設計係拎今日 close, 但實際拎 T-1 close 因為冇今日)
-    # Fix: 改用 today 判斷 stale, 即係 K 線 last_cached < today → stale → trigger get_or_fetch 拎今日 partial bar
+    # Stale K 線判斷: K 線 last_cached < today → stale → trigger get_or_fetch 拎今日 partial bar
     # 對齊 KlineCache 8月22日永久 rule「T-1 rule: 今日 bar 唔寫 DB, 只喺 response 出」嘅精神
     # 對齊 KlineCache._fetch_today_bar line 467+ 用 ctx.get_cur_kline() 拎今日 real-time bar (唔打 request_history_kline, 唔撞限頻)
+    # 永久 rule (大少 2026-08-23 13:19): 以後所有數據處理都喺 server 內部做
+    # 大少 9月1日 14:10 trigger (4.59.0 full revert 4.56.0): 拎走 'today' point 之後, 紫色 ZigZag algorithm 用 K線 T-0 (今日) 計 ongoing point, 對齊 frontend algorithm 1-to-1
     today = datetime.date.today().isoformat()
     is_stale = bool(klines) and (klines[-1].get('time', '') < today)
     need_refresh = (not klines) or is_stale
