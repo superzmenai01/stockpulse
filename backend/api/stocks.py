@@ -23,7 +23,7 @@ router = APIRouter(prefix='/stocks', tags=['stocks'])
 
 
 @router.get('/search')
-def search(
+async def search(
     q: str = Query('', description='搜索關鍵詞'),
     market: Optional[str] = Query(None, description='市場過濾 (HK/US)'),
     limit: int = Query(20, description='返回數量', ge=1, le=100)
@@ -31,6 +31,13 @@ def search(
     """
     搜索股票\n
     支持按代碼前綴或名稱關鍵詞搜索
+
+    大少 9月1日 17:25 (4.62.0) — 改 async def (永久 rule):
+    之前 sync def 經 uvicorn HTTP/1.1 觸發 anyio 4.13.0 threadpool 嘅 Python 3.14 weakref bug
+    (TypeError: cannot create weak reference to 'NoneType' object), 500 Internal Server Error
+    TestClient 直接 call 唔 trigger, 但 uvicorn HTTP server 100% 觸發
+    Fix: 改 async def, uvicorn 唔再行 threadpool, 直接喺 event loop 跑, 避開 bug
+    對齊 stocks router 其他 endpoint 嘅 pattern (algorithms.py 全部用 async def)
     """
     if not q:
         return []
@@ -39,8 +46,11 @@ def search(
 
 
 @router.get('/{code}')
-def get_by_code(code: str):
-    """獲取股票詳情"""
+async def get_by_code(code: str):
+    """獲取股票詳情
+
+    大少 9月1日 17:25 (4.62.0) — 改 async def (對齊 /search fix, 避 anyio weakref bug)
+    """
     stock = get_stock(code)
     if not stock:
         return {'error': 'Stock not found'}
@@ -48,9 +58,12 @@ def get_by_code(code: str):
 
 
 @router.get('/')
-def list_by_market(
+async def list_by_market(
     market: str = Query(..., description='市場 (HK/US)'),
     limit: int = Query(100, description='返回數量', ge=1, le=500)
 ):
-    """獲取指定市場的股票列表"""
+    """獲取指定市場的股票列表
+
+    大少 9月1日 17:25 (4.62.0) — 改 async def (對齊 /search fix, 避 anyio weakref bug)
+    """
     return get_stocks_by_market(market, limit)

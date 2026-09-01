@@ -1163,6 +1163,45 @@ git push origin main
 對應 commit: 即將 push (4.61.0 fix + Spec Sync 流程)
 
 對應永久 rule: 4.15.0 拎 point 用 high/low + 4.43.0 ZigZag 全部 backend 計 + 4.57.2 date format 統一 + 4.60.0 ongoing point trigger null + §15.45 Sscript pattern + §15.51 Backend hot-reload + §15.53 Sscript 還原點 + §15.54 Backup Admin Page
+
+### FastAPI Sync Endpoint Async-化 永久 rule (大少 2026-09-01 17:25 trigger, 4.62.0)
+
+**凡人話解釋**: 大少 17:25 trigger「輸入股票的autocomplete停然沒有了」— testing page 嘅股票代碼 autocomplete 突然 500 Internal Server Error。Root cause: backend `backend/api/stocks.py` 3 個 endpoint (`/search`, `/{code}`, `/`) 用 `def` (sync), 經 uvicorn HTTP/1.1 server 觸發 anyio 4.13.0 嘅 threadpool 喺 Python 3.14 上面 weakref bug (`TypeError: cannot create weak reference to 'NoneType' object`), 100% 500。TestClient 直接 call 唔 trigger (因為冀 threadpool 跳轉), 但 uvicorn 一定 trigger。
+
+**Root cause** (Python 3.14 + anyio 4.13.0 + uvicorn 0.44.0 compat):
+- FastAPI 對 sync `def` endpoint 自動用 anyio threadpool (`run_in_threadpool`)
+- anyio 4.13.0 threadpool 喺 Python 3.14 上面 weakref 拎 `_task_states[host_task]` 拎到 None, 拋 `TypeError: cannot create weak reference to 'NoneType' object`
+- TestClient 走 `httpx` async client 唔經 threadpool, 所以 work
+- uvicorn 0.44.0 server 走 threadpool 100% 觸發, 全部 sync endpoint 中招
+- 之前測試 page autocomplete work 係因為 backend 已經有呢個 bug, 但大少今次撳跑 (KlineCache migration + restart) 之後先發現
+
+**改動 (4.62.0)**:
+- `backend/api/stocks.py` 3 個 endpoint 全部改 `async def`:
+  - `/search` (line 25)
+  - `/{code}` (line 41)
+  - `/` (line 50)
+- Sync 函數本身 (search_stocks / get_stock / get_stocks_by_market) 唔改, 因為佢哋唔阻塞
+- async endpoint 唔再 trigger threadpool, 直接喺 event loop 跑, 避開 weakref bug
+
+**永久 rule**:
+- ✅ 所有 FastAPI endpoint 必用 `async def`, 永遠唔用 sync `def` (避 anyio 4.13.0 + Python 3.14 weakref bug)
+- ✅ Sync function 喺 async endpoint 入面 call OK (e.g. `await search_stocks(q, market, limit)` 用 `asyncio.to_thread` 包, 或者直接 call 因為 search_stocks 本身都唔阻塞)
+- ✅ 對齊 algorithms.py / kline.py / 等其他 router 已經用 `async def` 嘅 pattern
+- ✅ 之後寫新 endpoint 必用 `async def`
+- ✅ 之後 audit 全部 sync endpoint, 一個個改 async def
+- ✅ 對齊 §15.51 Backend hot-reload: 改 endpoint 之後必 restart backend + curl verify
+- ✅ 對齊 §15.46 testing-page cache bust sync (frontend 唔使改, 因為 frontend 一向 call backend 一樣)
+
+**凡人話**: 大少 reload testing page 撳輸入股票代碼, autocomplete dropdown 即刻出返嚟 (e.g. 打 "tencent" 見到搜尋結果, 打 "騰訊" 見到 HK.00700, 打 "00100" 見到 HK.00100 MINIMAX-W)。
+
+對應 file:
+- `backend/api/stocks.py` (3 個 endpoint 改 async def)
+
+對應 doc: ARCHITECTURE.md §API.md (stocks router 標 async)
+
+對應 commit: 即將 push (4.62.0 fix + Spec Sync 流程)
+
+對應永久 rule: §15.46 testing-page cache bust sync + §15.51 Backend hot-reload
 ### KlineCache Dedupe + A3 治本 Fix 永久 rule (大少 2026-08-30 00:50)
 
 **凡人話解釋**: 之前 backend KlineCache response 有 2 種 time format 混雜 (date-only `"2026-08-26"` vs datetime `"2026-08-26 00:00:00"`), 同一日 2 個 entry time field 唔同, 之字 points 撞 time 嗰陣 Lightweight Charts 4.2.3 silent reject 破壞 chart state, 紫線飛上去。
