@@ -5102,14 +5102,13 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             chartRefs.maV2LineSeries.zigzag = null;
           }
 
-          // ============ 大少 8月31日 11:09 trigger — 拎走橙旗決定點 + 鮮綠色 close extension 線 + P 點 sequence marker (4.53.0 永久 rule) ============
-          // 4.53.0 永久 rule (新加, 拎返 4.51.0 嘅 P 點 + 鮮綠線 + 4.42.2 嘅橙旗):
-          //   ✅ 拎走橙色 #FF9800 細小旗仔 marker (大少 11:09 trigger 講「拎走不要,可能影響正常 ZigZag」)
-          //   ✅ 拎走鮮綠色 #00C853 close extension 線 (4.8.3 + 4.51.0 永久 rule 拎走, 因為影響正常 ZigZag 線)
-          //   ✅ 拎走紫色 P 點 sequence marker (toggle + setMarkers block 一齊拎走, 拎走 P1/P2/P3 視覺化)
-          //   ✅ 紫色 ZigZag 線只 render line, 冇 number marker, 冇 close extension 線, 冇旗仔 (chart 完全乾淨)
-          //   對齊 4.53.0 Spec Sync 永久 rule (8月31日 11:09 拎返)
-          //   對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走不要」先做
+          // 大少 9月1日 22:02 trigger (4.61.5 永久 rule) — Frontend ZigZag 只 render 紫色折線
+          // 拎走 P 點 sequence marker + 紅色獨發點 marker + 鮮綠色 close extension line + 鮮綠色 1 號 marker + 橙色 #FF9800 旗仔
+          // 凡人話: 大少 trigger「之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要」
+          // 對齊 4.43.0 永久 rule: ZigZag 全部 backend 計, frontend 唔重計
+          // 對齊 4.49.0 永久 rule: v5 plugin API (createSeriesMarkers), 唔用 v4 native setMarkers
+          // 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做
+          // Backend triggerDate / triggerPrice / is_ongoing field 全部保留 (大少 trigger「之後想重新再做過」)
         } else {
           console.warn('[M1 v2.0] ⚠️ ZigZag series.length < 2, 唔 render');
         }

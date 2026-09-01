@@ -525,79 +525,33 @@ def _compute_fetch_max_count(period):
 對應 Spec Sync #47 entry (永久 rule update 拎走 2 條 + 加 1 條)
 對應 doc: ARCHITECTURE.md §3.6 + §3.7 (ZigZag data flow)
 
-### ZigZag 決定點 橙色旗仔 marker 永久 rule (大少 2026-08-30 17:50)
+### ZigZag Frontend 只 render 紫色折線 永久 rule (大少 9月1日 22:02, 4.61.5)
 
-**凡人話解釋**: 紫色 ZigZag 線 plot 喺 **peak/trough 嗰支 K 線** (即「確認咗嘅轉向點」), 但「上一支 ZigZag 喺邊一日決定形成」冇記號 — 即係股價反方向走到指定 % 嗰一日。大少想喺「決定嗰一日」加個視覺符號, 等佢即時知道「上一支 ZigZag 喺邊一日決定形成」。
+**凡人話解釋**: 大少 9月1日 22:02 trigger「**之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要**」— Frontend 拎走晒 5 個 non-line ZigZag visual elements, chart 只 render 紫色 ZigZag 折線。
 
-**凡人話 render 效果**:
-```
-K 線 A (peak, e.g. 100元)        K 線 B (跌穿 5% 到 94元, 確認轉勢)
-      ╱╲                                ⚐
-     ╱  ╲                          ↑ 橙色旗仔
-────●────╲──────────────────────────●─── K 線 B
-     ╲                               ↑
-   紫色 P 點                       決定嗰日
-   plot 喺 A                       plot 喺 B
-```
+**拎走嘅 5 個 non-line visual elements** (對齊 8月29日 22:44 永久 rule「所有改動要 confirm」, 大少明確 trigger 拎走):
+- ❌ 紫色 P 點 sequence marker (peak/trough arrow + 1/2/3/4 號碼) — 4.9.0 加 → 4.51.0 拎走 → 4.61.0 拎返返 → 4.61.5 拎走
+- ❌ 紅色獨發點 circle marker (#FF5252 trigger circle) — 4.61.0 新加 → 4.61.5 拎走
+- ❌ 鮮綠色 close extension line (#00C853) — 4.8.3/4.33.0 加 → 4.51.0 拎走 → 9月1日 14:10 拎走 confirm
+- ❌ 鮮綠色 "1" 號 marker (today close arrow) — 4.8.3 加 → 4.51.0 拎走
+- ❌ 橙色 #FF9800 旗仔 decision flag — 4.42.2 加 → 4.53.0 拎走
 
-**永久 rule**:
-- ✅ **ZigZag 決定點 永久用橙色 #FF9800 細小旗仔 marker**, plot 喺決定嗰日 (即股價反方向到達 threshold 嗰支 K 線)
-- ✅ **形狀**: 細小旗仔 (Flag) — Lightweight Charts v4.2.3 / v5 setMarkers 支援 `shape: 'flag'`
-- ✅ **顏色**: 橙色 #FF9800 (Material Orange 500) — 對比紫色 ZigZag 線 (#9C27B0) 鮮明
-- ✅ **位置**: `aboveBar` — 旗仔喺決定嗰日 K 線 close 上面 8px
-- ✅ **文字**: 空白 (純視覺 marker, 唔顯示號碼)
-- ✅ **大小**: 預設 1 (細小)
-- ✅ **跟 ZigZag 啟用 toggle 同步 on/off** (`zigzagEnabled` / `indicatorConfig.ZigZag.enabled`), 唔加新獨立 toggle
-- ✅ **每個 ZigZag point 對應 1 個旗仔** (`decisionDate` 有值嗰陣), 第一個 point 冇旗仔 (永遠從第一支 K 線開始, 冇「決定」概念)
-- ✅ **最後 ongoing point 都冇旗仔** (仲未確認轉勢, 等下一支 K 線先 trigger)
-- ✅ **改 `calculateZigZagFrontend` / `backend/algorithms/zigzag/algorithm.py` 嗰陣, 必同步加 3 個 field** (`decisionDate` / `decisionValue` / `decisionType`), frontend + backend 鏡像
-- ✅ **改 `adapter.mjs` 嗰陣, 必同步 bump 2 個地方 cache bust** (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X, 跟 2026-08-09 13:10 永久 rule)
-- ✅ **setMarkers 跟 sequence marker merge 落 candleSeries** (因為 Lightweight Charts setMarkers 係 per series, 唔可以分開 set), sequence marker skip 嗰陣都要 set 旗仔 marker
-- ✅ **旗仔 marker 拎 setData 之前必 dedupe by time** (對齊 4.40.0 永久 rule, 拎走 silent reject 破壞 chart state)
-- ✅ **旗仔 marker time field 用 business day object** `{year, month, day}` (對齊 4.41.2 永久 rule, 避免 type 衝突 silent reject)
-- ✅ **Production frontend** (`ChartContainer.tsx` + `ElliottWaveTestPage.tsx`) `fetchBackendZigZag` return shape 加 `decisionTime` / `decisionValue`, 用 `createSeriesMarkers` 旗仔 marker 對齊 testing page `setMarkers` 行為
+**永久 rule** (4.61.5 新加):
+- ✅ **Frontend ZigZag chart 只 render 紫色折線** (`#9C27B0` LineSeries), 唔 render 任何 marker / 旗仔 / 獨發點 / 鮮綠線
+- ✅ Backend `triggerDate` / `triggerPrice` / `is_ongoing` field **全部保留** (大少 trigger「之後想重新再做過」, backend field 對 frontend visual 0 effect 因為 frontend 唔 render marker)
+- ✅ 拎返拎走 `#zigzag-sequence-controls` div + `#show-sequence` toggle + `LS_KEY_SHOW_SEQUENCE` helper (testing page)
+- ✅ 拎返拎走 `LightweightCharts.createSeriesMarkers` 整段 marker build + setMarkers (adapter.mjs)
+- ✅ 對齊 4.43.0 永久 rule: ZigZag 全部 backend 計, frontend 拎 fetch verdict, frontend 只 render 紫色折線
+- ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做
 
 **對應 file**:
-- `testing-page/testing-page.js` `calculateZigZagFrontend` (4 個 push point 加 3 個 decision field)
-- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (新加 flag marker render, 跟 sequence marker merge)
-- `backend/algorithms/zigzag/algorithm.py` `calculate_zigzag` (1-to-1 port frontend algorithm, 內部加 3 個 decision field)
-- `web/src/components/chart/ChartContainer.tsx` `fetchBackendZigZag` + ZigZag useEffect (return shape 加 decision field + createSeriesMarkers 旗仔 marker)
-- `web/src/pages/ElliottWaveTestPage/ElliottWaveTestPage.tsx` (對齊 ChartContainer)
+- `testing-page/testing-page.js`: 拎返拎走 `LS_KEY_SHOW_SEQUENCE` const + `getShowSequence` / `setShowSequence` helpers + `#show-sequence` toggle handler (~35 行 dead code 拎走)
+- `testing-page/index.html`: 拎返拎走 `#zigzag-sequence-controls` div block (~11 行 dead UI 拎走)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay`: 拎返拎走 P 點 arrow marker + 紅色獨發點 circle marker + `createSeriesMarkers` 整段 (~66 行 dead code 拎走)
+- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.61.4' → '4.61.5' + `?v=2.3.125` → `?v=2.3.126`
+- Backend `backend/algorithms/zigzag/algorithm.py` **唔郁** (trigger field 保留)
 
-對應 doc: M1-V22-RESEARCH.md 「🆕 大少 2026-08-30 17:50 Trigger — ZigZag 決定點 橙色旗仔 marker」section
-
-### ZigZag P 點 sequence label 排序統一 永久 rule (大少 2026-08-31 09:00, 4.51.0)
-
-**凡人話解釋**: 大少 8月31日 09:00 trigger「Zigzag的Point排序從右到左是從P1開始的，現在是從P 2開始，你去查明原因」— 統一 testing page ZigZag sequence label 對齊大少 8月29日 14:32 永久 rule (P1 = zzp[-1])。
-
-**Root cause** (4.9.0 規則衝突):
-- `algorithms/AS-03-cycle-detection/adapter.mjs:5245` 紫色 marker label 由 `idx + 2` 開始
-- 鮮綠色 "1" 號 marker 喺 close extension 終點 (`adapter.mjs:5255`, `testing-page.js:1481` 預設 visible range = 最近 126 日，今日 K 線有時 out-of-range + 鮮綠色字 #00C853 淺色)
-- 8月31日 01:59 拎返 setMarkers 嗰陣 (4.49.0 永久 rule) 盲目拎返 4.10.0 嗰個 spirit, 冇 reconcile 4.9.0 同 8月29日 P1 rule 衝突
-
-**永久 rule** (4.51.0 新加):
-- ✅ 改寫 4.9.0 永久 rule: 刪除「1 號 = 鮮綠色 close extension 終點」描述
-- ✅ 統一跟大少 2026-08-29 14:32 永久 rule:
-  - **P1 = 最新紫色 ZigZag 點** (verdict.meta.zigzagPoints 倒序後第一個, zzp[-1])
-  - P2 = 第二新, P3 = 第三新, P4 = 第四新 (zzp[-2/-3/-4])
-  - 上升: P1>P3, P2>P4
-  - 下跌: P1<P3, P2<P4
-  - 到頂轉勢: P1>P3 + P2>P4 + ZZ_slope<-3%
-  - 到底轉勢: P1<P3 + P2>P4 + ZZ_slope>+3%
-- ✅ Testing page 紫色 marker label 由 `idx + 2` 改 `idx + 1` (P1, P2, P3, ... 順序)
-- ✅ 鮮綠色 close extension 終點 "1" 號 marker 拎走 (原 4.9.0 規則)
-- ✅ 鮮綠色 close extension 線本身保留 (對齊 4.8.3 永久 rule「趨勢延續」視覺化), 但冇 sequence label
-- ✅ 改 `adapter.mjs` 嗰陣, 必同步 bump 2 個地方 cache bust (testing-page.js ALGO_CACHE_BUST + index.html ?v=2.3.X, 跟 2026-08-09 13:10 永久 rule)
-- ✅ 凡人話: 撳 showZigzagSequence toggle, 由右到左 P1, P2, P3, ... 全部紫色 circle, 對齊大少 8月29日 trigger
-
-**對應 file**:
-- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (line 5238-5260): 改 `idx + 2` → `idx + 1` + 拎走 `greenMarkers` block + `allMarkers = purpleMarkers`
-- `testing-page/testing-page.js` ALGO_CACHE_BUST '4.50.0' → '4.51.0' + 4.51.0 永久 rule comment
-- `testing-page/index.html` ?v=2.3.111 → ?v=2.3.112
-
-對應 doc: M1-V22-RESEARCH.md 「🟢 大少 trigger #N — ZigZag P 點 sequence label 排序統一 (2026-08-29 14:32 + 8月31日 09:00)」section
-
-對應 commit: 即將 push (Spec Sync #48 流程)
+對應 commit: refactor(frontend): 拎走 ZigZag non-line visual elements (P 點 / 旗仔 / 獨發點 / 鮮綠線), chart 只 render 紫色折線 (4.61.5 cache bust sync)
 
 ### ZigZag Threshold 切 manual mode 永久 rule (大少 2026-08-31 09:24, 4.52.0)
 

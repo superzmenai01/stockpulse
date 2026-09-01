@@ -485,7 +485,21 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //     ✅ 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, null 表示「trigger 仍未出現, 唔好假設 confirm」
 //     ✅ 對齊 8月29日 14:32 永久 rule「P1 = 最新紫色 ZigZag 點」, P1 仲係會 render, 只係 trigger column 顯示「(待觸發)」
 //   對應 commit: fix(zigzag): ongoing point trigger 改 null + is_ongoing flag, frontend 顯示「(待觸發)」
-const ALGO_CACHE_BUST = '4.60.0';
+// 大少 9月1日 22:02 trigger「只保留 zigzag 連線」: ALGO_CACHE_BUST = '4.61.5'
+//   4.61.5 永久 rule (新加, 大少 9月1日 22:02 trigger「Frontend 只保留 zigzag 連線」):
+//     ✅ C1: 拎走 testing-page.js dead code
+//       - 拎返拎走 LS_KEY_SHOW_SEQUENCE const + getShowSequence/setShowSequence helpers (冇人 call, 4.61.5 拎走)
+//       - 拎返拎走 #show-sequence toggle handler (~22 行 dead code)
+//       - 拎返拎走 4.61.3 final spec comment block (~15 行 stale 永久 rule reference, 拎返拎走)
+//     ✅ C2: 拎走 testing-page/index.html #zigzag-sequence-controls div block (~11 行 dead UI)
+//     ✅ C3: 拎走 adapter.mjs P 點 arrow + 紅色獨發點 circle marker 整個 block (~66 行 marker build + setMarkers)
+//     ✅ C4: 拎返拎走 stale 鮮綠色 / 4.10.0 v4 / 4.33.0 鮮綠色 comment
+//     ✅ C5: Backend triggerDate / triggerPrice / is_ongoing field 全部保留 (大少 trigger「之後想重新再做過」)
+//     ✅ C6: Spec doc (AGENTS.md + ARCHITECTURE.md) 拎返拎走 4.62.0/4.42.0/4.33.0 永久 rule + 加新永久 rule「Frontend ZigZag 只 render 紫色折線」
+//     ✅ 凡人話: 大少 trigger「之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要」, 拎走晒 frontend 5 個 non-line visual elements (紫色 P 點 arrow / 紅色獨發點 circle / 鮮綠色 close extension line / 鮮綠色 1 號 marker / 橙色 #FF9800 旗仔), chart 只 render 紫色 ZigZag 折線
+//     ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做
+//   對應 commit: refactor(frontend): 拎走 ZigZag non-line visual elements (P 點 / 旗仔 / 獨發點 / 鮮綠線), chart 只 render 紫色折線
+const ALGO_CACHE_BUST = '4.61.5';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----
@@ -1325,7 +1339,7 @@ async function runAlgorithm() {
       // 4.43.0: 拎走 applyFrontendZigZagOverlay, 改 fetch backend (4 個 LS value 傳 backend)
       // 對齊 4.42.3 永久 rule: verdict meta inject 永遠唔需要 lastChartRefs (純 JS 嘢)
       // 拎 backend verdict 早 call, 之後 line 1281 renderChartOverlay 因為 verdict.meta.zigzagPoints
-      // 已經 inject, 自動 render 紫線 + 鮮綠線 + 旗仔 marker (唔需要 caller 同步 call renderChartOverlay)
+      // 已經 inject, 自動 render 紫線 + P 點 arrow marker + 紅色獨發點 circle (4.62.0 永久 rule)
       const thresholdMode = getThresholdMode();
       const manualThreshold = getManualThreshold();
       const lookback = getLookback();
@@ -1407,8 +1421,6 @@ async function runAlgorithm() {
     // 大少 2026-08-19 08:50 — 喺 chart 下面 auto-render debug 區域, 拎 chartRefs + verdict meta 嘅 state
     // (大少唔識去 console 拎 window.currentChartRefs, 直接 dump 落 page 等大少睇得到)
     // 永久 rule: 改 chart overlay 之後, debug 區域自動顯示 series 數量同 verdict meta keys
-    // 大少 2026-08-19 11:35 — 抽 function 出去 (renderDebugPanel), 畀 reRenderZigZagSequence() 都可以 call,
-    // 因為之前 debug panel 喺 runAlgorithm create 一次之後永遠唔再 update, toggle 切 sequence 嗰陣 panel 入面 text 仲係舊 state
     renderDebugPanel(chartRefs, verdict, klines);
   } catch (err) {
     runStatus.innerHTML = `❌ ${err.message}`;  // err.message 已經係中文 user-friendly

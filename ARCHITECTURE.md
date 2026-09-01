@@ -3276,9 +3276,8 @@ M5 VolumePrice:
 - `backend/services/algorithm_runner.py`: 抽 `_inject_zigzag_for_ma_alignment()` helper
   - M7 跑之前 inject ZigZagSlope 落 M1 verdict module_specific
   - ma_alignment direct run 自動 inject (用同一 helper, 唔重複)
-- `algorithms/AS-03-cycle-detection/adapter.mjs`: 鮮綠色 (#00C853) ext line + 1 號 marker
-  - 從 lastZigZag point 拉到最新 close (line series)
-  - 1 號 marker 用箭嘴 icon + 鮮綠色 background (setMarkers)
+- `algorithms/AS-03-cycle-detection/adapter.mjs`: 拎走鮮綠色 (#00C853) ext line + 1 號 marker (4.61.5 永久 rule「Frontend ZigZag 只 render 紫色折線」拎走)
+  - 大少 9月1日 22:02 trigger「之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要」
 
 ### M1 verdict meta 新加 field
 - `state: STATE_MAP[candidate]` (M7 拎到做 cross-module alignment)
@@ -3305,7 +3304,7 @@ M5 VolumePrice:
 
 ### Spec Sync #38 對應 commit (本 commit)
 - `feat(ma-alignment-v2.2.0): Adaptive ThresholdPct` (a01ce2b1) — backend algorithm + config + tests + MODULE-01 spec §16 + frontend display + cache bust 4.35.0 → 4.36.0
-- `feat(zigzag-slope-stage2): M7 cross-module alignment enrichment` (be084aba) — backend zigzag + synthesizer + runner + frontend 鮮綠色 ext line + 1 號 marker
+- `feat(zigzag-slope-stage2): M7 cross-module alignment enrichment` (be084aba) — backend zigzag + synthesizer + runner + frontend 鮮綠色 ext line + 1 號 marker (4.61.5 拎走)
 - `docs(spec-sync-38): M1 v2.2.0 + ZigZagSlope Stage 2 — ARCHITECTURE §15.29 + §15.30 永久 rule 同步` (本 commit) — 4 份 spec doc 永久 rule 同步 (ARCHITECTURE §15.29 + §15.30 + AGENTS.md M1 永久 rule 段 + MODULE-01 spec doc §16 + testing page 永久 rule 段) — 永久 rule「config.thresholdPct default = null (adaptive)」+「ZigZagSlope 只係 enrichment, 唔取代 MA 斜率」+「M7 cross-module alignment Rule 1/2 threshold 2.0%/日」
 
 ### 套用情境
