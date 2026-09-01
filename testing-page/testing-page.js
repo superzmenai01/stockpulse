@@ -499,7 +499,18 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //     ✅ 凡人話: 大少 trigger「之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要」, 拎走晒 frontend 5 個 non-line visual elements (紫色 P 點 arrow / 紅色獨發點 circle / 鮮綠色 close extension line / 鮮綠色 1 號 marker / 橙色 #FF9800 旗仔), chart 只 render 紫色 ZigZag 折線
 //     ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做
 //   對應 commit: refactor(frontend): 拎走 ZigZag non-line visual elements (P 點 / 旗仔 / 獨發點 / 鮮綠線), chart 只 render 紫色折線
-const ALGO_CACHE_BUST = '4.61.5';
+// 大少 2026-09-01 22:51 — 拎走 PPP 測試 marker (大少睇完確認 setMarkers work, 之後準備做 zigzag Point): ALGO_CACHE_BUST = '4.61.8'
+//   ✅ testing page renderChart function 拎走 PPP marker block (53 行) + 拎走 PPP comment (8 行)
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.129
+//   ✅ 永久 rule (新加): 改 testing page 任何 marker 都跟 Lightweight Charts v5 createSeriesMarkers plugin API, 失敗 fallback 落 v4 candleSeries.setMarkers
+// 大少 2026-09-01 22:58 — 拎返 M1 紫色 ZigZag P 點 sequence marker (大少 trigger「現在把在Backend已計好的P1，P2, P3,.....的點放到圖表裡，要寫上P1，P2， P3...」): ALGO_CACHE_BUST = '4.62.0'
+//   ✅ algorithms/AS-03-cycle-detection/adapter.mjs renderMAAlignmentV2ChartOverlay 拎返 P 點 marker block (約 65 行), 用 v5 createSeriesMarkers plugin API + v4 candleSeries.setMarkers fallback
+//   ✅ Label 用 backend verdict.points[].sequence field 直接做 "P1", "P2", "P3"... (1=最新, N=最舊, 對齊 8月29日 14:32 永久 rule)
+//   ✅ Position: high→aboveBar, low→belowBar (4.51.0 永久 rule peak/trough 對齊)
+//   ✅ Shape circle, color 紫色 #9C27B0 (4.51.0 永久 rule)
+//   ✅ 唔拎返 4.53.0/4.61.5 拎走嘅其他嘢: 橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色獨發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.130
+const ALGO_CACHE_BUST = '4.62.0';
 
 const REGISTRY = [
   // ---- AS-03 7 個 modules (M1 done v2.0, M2-M6 done, M7 仍 Pending) ----

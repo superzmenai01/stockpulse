@@ -5102,13 +5102,64 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             chartRefs.maV2LineSeries.zigzag = null;
           }
 
-          // 大少 9月1日 22:02 trigger (4.61.5 永久 rule) — Frontend ZigZag 只 render 紫色折線
-          // 拎走 P 點 sequence marker + 紅色獨發點 marker + 鮮綠色 close extension line + 鮮綠色 1 號 marker + 橙色 #FF9800 旗仔
-          // 凡人話: 大少 trigger「之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要」
-          // 對齊 4.43.0 永久 rule: ZigZag 全部 backend 計, frontend 唔重計
-          // 對齊 4.49.0 永久 rule: v5 plugin API (createSeriesMarkers), 唔用 v4 native setMarkers
-          // 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做
-          // Backend triggerDate / triggerPrice / is_ongoing field 全部保留 (大少 trigger「之後想重新再做過」)
+          // ============ 大少 9月1日 22:58 trigger (4.62.0) — 拎返紫色 ZigZag P 點 sequence marker ============
+          // 凡人話: 將 backend 已經計好嘅 P 點 (sequence 1=最新, 2=第二新, ..., N=最舊) 放落 chart, label 寫 "P1", "P2", "P3"...
+          // 對齊 4.49.0 永久 rule: v5 createSeriesMarkers plugin API
+          // 對齊 9月1日 22:38 PPP 永久 rule: v5 plugin API, 失敗 fallback 落 v4 candleSeries.setMarkers (v5 向後兼容)
+          // 對齊 4.51.0 永久 rule: 紫色 marker color #9C27B0 + shape circle + size 1, position 跟 point.type (high→aboveBar, low→belowBar)
+          // 對齊 8月29日 14:32 永久 rule: P1 = zzp[-1] 最新 (因為 backend verdict.points 已經係 (新→舊) 排, points[0] = 最新 = P1, sequence field 已經喺 backend 計好, 唔需要 frontend reverse)
+          // 對齊 4.40.0 永久 rule: P 點 marker setData 之前 dedupe by time 拎返避免 Lightweight Charts silent reject
+          // 對齊 4.41.2 永久 rule: P 點 marker time field 用 business day object {year, month, day} 對齊紫色 ZigZag line setData 格式
+          // 對齊 4.43.0 永久 rule: P 點 data 來源 verdict.meta.zigzagPoints (4.43.0 拎返後由 backend 注入, frontend 唔重計)
+          // 唔拎返: 4.53.0/4.61.5 拎走嘅橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色獨發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)
+          const reversedZigzagPoints = [...verdict.meta.zigzagPoints];  // 已經係 (新 → 舊) 排, sequence 1 = 最新
+          const purpleMarkers = reversedZigzagPoints.map(p => {
+            const _dateKey = String(p.date || '').slice(0, 10);
+            const _dateParts = _dateKey.split('-').map(Number);
+            if (!_dateParts[0] || !_dateParts[1] || !_dateParts[2]) return null;
+            return {
+              time: { year: _dateParts[0], month: _dateParts[1], day: _dateParts[2] },
+              position: p.type === 'high' ? 'aboveBar' : 'belowBar',  // 4.51.0 永久 rule peak/trough 對齊
+              color: '#9C27B0',  // 紫色 (4.51.0 永久 rule)
+              shape: 'circle',
+              text: `P${p.sequence}`,  // "P1", "P2", "P3"... 用 backend sequence field 直接做 label
+              size: 1,
+            };
+          }).filter(m => m != null);
+
+          // 4.40.0 永久 rule dedupe by time
+          const _seenPmarkerTimes = new Set();
+          const _dedupedPmarkers = [];
+          for (const m of purpleMarkers) {
+            const _tKey = `${m.time.year}-${m.time.month}-${m.time.day}`;
+            if (!_seenPmarkerTimes.has(_tKey)) {
+              _seenPmarkerTimes.add(_tKey);
+              _dedupedPmarkers.push(m);
+            }
+          }
+          if (_dedupedPmarkers.length !== purpleMarkers.length) {
+            console.warn(
+              `[M1 v2.0] dedupe 拎走 ${purpleMarkers.length - _dedupedPmarkers.length} 個 P 點 marker duplicate time (保留 first entry per time, 4.40.0 永久 rule)`
+            );
+          }
+
+          // 對齊 9月1日 22:38 PPP 永久 rule: v5 plugin API, 失敗 fallback 落 v4 candleSeries.setMarkers
+          if (chartRefs.candleSeries && _dedupedPmarkers.length > 0) {
+            if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+              try {
+                chartRefs.zigzagSequenceMarkers = LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, _dedupedPmarkers);
+                console.log('[M1 v2.0] ✅ ZigZag P 點 sequence marker (v5 createSeriesMarkers plugin API):', _dedupedPmarkers.length, '個 (P1 = 最新, P' + _dedupedPmarkers.length + ' = 最舊)');
+              } catch (e) {
+                console.error('[M1 v2.0] ❌ P 點 marker v5 plugin API 失敗, fallback 落 v4 setMarkers:', e);
+                try { chartRefs.candleSeries.setMarkers(_dedupedPmarkers); } catch (e2) { /* ignore */ }
+              }
+            } else if (typeof chartRefs.candleSeries.setMarkers === 'function') {
+              chartRefs.candleSeries.setMarkers(_dedupedPmarkers);
+              console.log('[M1 v2.0] ✅ P 點 marker v4 candleSeries.setMarkers fallback (v5 向後兼容):', _dedupedPmarkers.length, '個');
+            } else {
+              console.error('[M1 v2.0] ❌ 冇 setMarkers API available, 請檢查 lightweight-charts v5.2.0 載入');
+            }
+          }
         } else {
           console.warn('[M1 v2.0] ⚠️ ZigZag series.length < 2, 唔 render');
         }
