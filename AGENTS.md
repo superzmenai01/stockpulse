@@ -1801,7 +1801,7 @@ After fix:  0 WARNING, 拎到正確 reason
 - ✅ **Time field**: business day object `{year, month, day}` (4.41.2 永久 rule 對齊紫色 ZigZag line setData 格式)
 - ✅ **Dedupe by time**: 拎返避免 Lightweight Charts silent reject (4.40.0 永久 rule)
 - ✅ **v5 plugin API**: `LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, _dedupedPmarkers)` 拎 plugin handle 存 `chartRefs.zigzagSequenceMarkers` (4.49.0 永久 rule)
-- ✅ **v4 fallback**: plugin API 唔 work 時 fallback 落 `candleSeries.setMarkers(...)` (4.10.0 永久 rule v5 向後兼容)
+- ❌ **v4 setMarkers fallback 拎走** (4.63.0 fix): Lightweight Charts v5.0+ migration doc 確認 `series.setMarkers` method 已經完全拎走, 系列 marker 改為獨立 plugin 介面, **冇任何向後兼容**。4.62.3 commit 拎返嘅 v4 fallback (`candleSeries.setMarkers`) 係 dead code, 永遠 work 唔到。Commit comment 寫嘅「v4 candleSeries.setMarkers 9月1日 22:47 PPP test 已 verify work (4.10.0 永久 rule v5 向後兼容)」係 false claim。
 - ✅ **Edge case**: 唔拎返 `lastChartRefs.zigzagSequenceMarkers.setMarkers` 嗰個 re-set after setVisibleLogicalRange — 因為 v5 plugin API 唔受 setVisibleLogicalRange 影響 (4.53.0 拎走嗰陣一齊拎走)
 
 **唔拎返** (4.53.0 / 4.61.5 拎走嘅永久 rule 保留):
@@ -1821,3 +1821,28 @@ After fix:  0 WARNING, 拎到正確 reason
 **凡人話**: 撳跑完 M1 algorithm, 圖表紫色 ZigZag 線 + 紫色 P1, P2, P3... 圓圈 marker 一齊出, 鮮綠線 / 橙旗 / 紅色獨發點都唔見, 大少睇得清 P 點 sequence (最新到最舊排 P1, P2, P3...)
 
 **對應 commit**: `feat(adapter): 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 對齊 8月29日 14:32 P1/P2/P3/P4 indexing)`
+
+### M1 P 點 marker v5 plugin API + Max 10 永久 rule (4.63.0, 大少 2026-09-01 23:46 trigger)
+
+**凡人話解釋**: 大少 23:46 trigger「撅 01888 唔見 P 點 marker」+ confirm「只要顯示P1-P10 就可以了」。4.62.3 commit (`880c8459`) 拎走 v5 plugin API (`createSeriesMarkers`), 改用 v4 `candleSeries.setMarkers()` fallback, 但 Lightweight Charts v5.0+ migration doc 確認 `series.setMarkers` method **已經完全拎走** — 系列 marker 改為獨立 plugin 介面, **冇任何向後兼容**。所以 4.62.3 嘅 fallback 永遠行唔到, HK.01888 嗰 49 個 markers 死火, console 報「❌ 冇 setMarkers API available」。HK.00019 之所以 work 係 4.62.0/4.62.2 嗰陣 work 嘅 cache 殘留。
+
+**4.63.0 永久 rule** (改寫 4.62.0 + 4.62.2 + 4.62.3 嗰個 v4 fallback 嘅 false claim):
+- ✅ **v5 plugin API 唯一**: `LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, markers)` 係 v5 唯一支援嘅 marker API, plugin handle (return value) 自帶 `setMarkers` / `markers` method
+- ❌ **v4 `series.setMarkers` 拎走**: Lightweight Charts v5.0+ 完全拎走, 冇向後兼容, 4.62.3 commit comment 嘅「v5 向後兼容」係 false claim
+- ✅ **Max count = 10** (4.63.0 收緊, 大少 9月1日 23:46 confirm「只要顯示P1-P10 就可以了」, 對齊 4.62.2 嗰陣 30 → 4.63.0 收緊到 10)
+- ✅ **Try/catch fallback chain 10 → 5 → 3** (defensive only, max 10 應該唔 crash, 兜底 cover 極端 v5 plugin internal crash 情況)
+- ✅ **`chartRefs.zigzagSequenceMarkers` 改 `{ handle, markers, setMarkers }` 結構** (4.63.0):
+  - `handle` = v5 plugin handle (LightweightCharts.createSeriesMarkers return value)
+  - `markers` = array of marker objects (for re-set block 用)
+  - `setMarkers` = wrapper function (delegates to `handle.setMarkers`, 4.62.2 re-set block 兼容)
+- ✅ **Re-set markers block** (testing-page.js line 1652-1661): 拎 `handle.setMarkers` 優先 (v5 plugin native), fallback chain 拎 mock `setMarkers` (4.62.2 pattern, 50ms 後 setVisibleLogicalRange persist)
+- ✅ **Defensive 紫色 ZigZag 線 唔受影響**: 用 `chart.addSeries(LightweightCharts.LineSeries)` 唔受 plugin crash 影響, 即使 v5 plugin 對 marker crash, 紫色線仍然 render
+
+**Cache bust** (跟 2026-08-09 13:10 永久 rule):
+- `ALGO_CACHE_BUST` 4.62.3 → 4.63.0
+- `?v=2.3.133` → 2.3.134 (CSS + JS)
+
+**凡人話**: 撅 HK.00019 (12 markers) → P1-P10 出. 撅 HK.01888 (49 markers) → P1-P10 出 (之前 4.62.3 拎錯 v4 fallback 死火, 紫色線出 marker 唔出, 4.63.0 fix 拎返). 撅 HK.00981 (90 markers) / HK.00700 (189 markers) → P1-P10 出. 撅完手動 zoom/pan chart → P1-P10 仍然 persist (re-set block 50ms 後 work).
+
+**對應 commit**: `fix(stockpulse): 拎返 v5 createSeriesMarkers plugin API + max 10 + fallback chain 10→5→3 (4.63.0, P 點 marker 對 49+ markers 唔 render fix)` (047ed1e8)
+

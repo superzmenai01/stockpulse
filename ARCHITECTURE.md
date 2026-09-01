@@ -5149,3 +5149,77 @@ renderMAAlignmentV2ChartOverlay (adapter.mjs)
 ### 對應 commit
 - 即將 push (`feat(adapter): 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 對齊 8月29日 14:32 P1/P2/P3/P4 indexing)`)
 - Spec Sync: ARCHITECTURE.md §15.61 (本段) + AGENTS.md 「M1 P 點 sequence marker 拎返 永久 rule (4.62.0)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
+
+---
+
+## §15.62 — M1 P 點 marker v5 plugin API + Max 10 (4.63.0 fix, 大少 2026-09-01 23:46 trigger「只要顯示P1-P10 就可以了」) [2026-09-01]
+
+### Context (4.62.3 拎錯嘅死火 dead code)
+
+4.62.3 commit `880c8459` (2026-09-01 23:31) 拎走 v5 plugin API (`LightweightCharts.createSeriesMarkers`), 改用 v4 `candleSeries.setMarkers()` fallback。Lightweight Charts v5.0+ migration doc (https://tradingview.github.io/lightweight-charts/docs/migrations/from-v4-to-v5) 確認:
+
+> **Series Markers Overview of Changes**
+> - Markers moved to separate primitive for optimized bundle size
+> - **New `createSeriesMarkers` function required**
+> - Marker management through dedicated primitive instance
+
+即係 v5 完全拎走 `series.setMarkers` method — 系列 marker 改為獨立 plugin 介面 `createSeriesMarkers(series, markers)`, **冇任何向後兼容**。
+
+所以 4.62.3 commit 拎返嘅 v4 fallback (`candleSeries.setMarkers`) 係 dead code, 永遠 work 唔到, 落到 `console.error('❌ 冇 setMarkers API available')` 然後 exit。HK.00019 之所以 work 係 4.62.0/4.62.2 嗰陣 work 嘅 cache 殘留 (4.62.3 commit 嗰陣 browser 未 reload), HK.01888 (49 markers) 因為走 v4 fallback dead code 死火。
+
+4.62.3 commit comment 寫「v4 candleSeries.setMarkers 9月1日 22:47 PPP test 已 verify work (4.10.0 永久 rule v5 向後兼容)」係 false claim — PPP test 應該 verify 失敗咗但 commit 寫住 work。
+
+### 大少 trigger
+
+- 2026-09-01 23:46 trigger「撅 01888 唔見 P 點 marker」
+- 2026-09-01 23:46 confirm「只要顯示P1-P10 就可以了」
+
+### 永久 rule (4.63.0 fix, 改寫 4.62.0 + 4.62.2 + 4.62.3 嗰個 v4 fallback 嘅 false claim)
+
+- ✅ **v5 plugin API 唯一**: `LightweightCharts.createSeriesMarkers(chartRefs.candleSeries, markers)` 係 v5 唯一支援嘅 marker API, plugin handle (return value) 自帶 `setMarkers` / `markers` method
+- ❌ **v4 `series.setMarkers` 拎走**: Lightweight Charts v5.0+ 完全拎走, 冇向後兼容, 4.62.3 commit comment 嘅「v5 向後兼容」係 false claim
+- ✅ **Max count = 10** (4.63.0 收緊, 大少 9月1日 23:46 confirm「只要顯示P1-P10 就可以了」, 對齊 4.62.2 嗰陣 30 → 4.63.0 收緊到 10)
+  - 4.62.3 實測 30 markers 嗰陣 v5 plugin 會 production crash `this.OS.map is not a function` (內部 array.map 拎 undefined)
+  - 收緊到 10 之後 trigger 機會近乎 0 (4.62.0 嗰陣 12 markers 撅 00019 work, 10 < 12 應該 safe)
+- ✅ **Try/catch fallback chain 10 → 5 → 3** (defensive only, max 10 應該唔 crash, 兜底 cover 極端 v5 plugin internal crash 情況)
+- ✅ **`chartRefs.zigzagSequenceMarkers` 改 `{ handle, markers, setMarkers }` 結構** (4.63.0):
+  - `handle` = v5 plugin handle (LightweightCharts.createSeriesMarkers return value)
+  - `markers` = array of marker objects (for re-set block 用)
+  - `setMarkers` = wrapper function (delegates to `handle.setMarkers`, 4.62.2 re-set block 兼容)
+- ✅ **Re-set markers block** (testing-page.js line 1652-1661): 拎 `handle.setMarkers` 優先 (v5 plugin native), fallback chain 拎 mock `setMarkers` (4.62.2 pattern, 50ms 後 setVisibleLogicalRange persist)
+- ✅ **Defensive 紫色 ZigZag 線 唔受影響**: 用 `chart.addSeries(LightweightCharts.LineSeries)` 唔受 plugin crash 影響, 即使 v5 plugin 對 marker crash, 紫色線仍然 render
+
+### Affected files
+
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5148-5204 (P 點 marker block):
+  - 拎返 v5 createSeriesMarkers plugin API, 拎走 v4 setMarkers fallback
+  - Max count 30 → 10
+  - 加 try/catch fallback chain 10 → 5 → 3
+  - chartRefs.zigzagSequenceMarkers 改 `{ handle, markers, setMarkers }` 結構
+- `testing-page/testing-page.js`:
+  - ALGO_CACHE_BUST 4.62.3 → 4.63.0 (line 548)
+  - Re-set markers block (line 1652-1661) 拎返 `handle.setMarkers` 優先, fallback chain 拎 mock setMarkers
+- `testing-page/index.html`:
+  - ?v=2.3.133 → 2.3.134 (CSS line 10 + JS line 184)
+
+### Acceptance tests
+
+- Curl verify: `curl -s "http://127.0.0.1:18792/api/algorithms/run?algo=zigzag&symbol=HK.01888&period=1d&data_window_days=1260&threshold_mode=auto&lookback=20&multiplier=2.5" | python3 -m json.tool | head -40`
+  - 預期: verdict.ok = true, verdict.points 49 個
+- Reload testing page (hard reload `cmd+shift+R`)
+- 撳跑 M1 (AS-03-MA) HK.00019 太古
+  - 預期: 紫色 P1, P2, P3... 圓圈 marker 出 (12 個對 5 年, slice 0-10 出 P1-P10)
+  - 預期: Console log `[M1 v2.0] ✅ ZigZag P 點 sequence marker (v5 createSeriesMarkers plugin API, retry #1): 10 個 (P1 = 最新, P10 = 最舊)`
+- 撳跑 M1 HK.01888 (主要 fix target, 49 markers)
+  - 預期: 紫色 P1-P10 圓圈 marker 出 (slice 0-10, 紫色 ZigZag 線 49 個 points 仍然 render)
+  - 預期: Console log `[M1 v2.0] ✅ ZigZag P 點 sequence marker (v5 createSeriesMarkers plugin API, retry #1): 10 個`
+- 撳跑 M1 HK.00981 (90 markers) / HK.00700 (189 markers)
+  - 預期: 紫色 P1-P10 圓圈 marker 出 (slice 0-10)
+- 手動 zoom/pan chart → P1-P10 仍然 persist (re-set block 50ms 後 work, console log `🛠️ re-set P 點 markers after setVisibleLogicalRange` 印到)
+- DevTools 開 Network tab → 撳跑 HK.01888 → `/api/algorithms/run?algo=zigzag` 拎到 200 OK + 49 個 points response
+- DevTools 開 Application → Cache Storage → 確認 adapter.mjs 嘅 ?v=4.63.0 loaded (唔係 4.62.3 cache)
+
+### 對應 commit
+- `fix(stockpulse): 拎返 v5 createSeriesMarkers plugin API + max 10 + fallback chain 10→5→3 (4.63.0, P 點 marker 對 49+ markers 唔 render fix)` (047ed1e8)
+- Spec Sync: ARCHITECTURE.md §15.62 (本段) + AGENTS.md 「M1 P 點 marker v5 plugin API + Max 10 永久 rule (4.63.0)」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md
+
