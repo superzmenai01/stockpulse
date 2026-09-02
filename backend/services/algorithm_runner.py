@@ -21,6 +21,12 @@ from backend.algorithms.base import Verdict
 
 logger = logging.getLogger(__name__)
 
+# 永久 rule (大少 2026-09-02 21:14 trigger): KlineCache module-level singleton
+# 之前每次 run_algorithm() instantiate KlineCache → spawn 1 個 background thread, leak thread
+# 改 module-level singleton, 對齊 kline.py line 15 pattern
+from backend.services.kline_cache import KlineCache
+_cache = KlineCache()  # module-level singleton, 全 process 共用 1 個 instance
+
 
 def run_algorithm(
     algo_name: str,
@@ -57,8 +63,9 @@ def run_algorithm(
     algo = get_algorithm(algo_name)
 
     # 2. 拎 K 線 (大少 #8602 永久 rule: 1d 用 30*365 wide-fetch, caller max_count 只作 trim)
-    from backend.services.kline_cache import KlineCache
-    cache = KlineCache()
+    # 永久 rule (大少 2026-09-02 21:14 trigger): 拎走 `cache = KlineCache()` 嗰陣 instantiate
+    # 改 module-level singleton `_cache`, 唔 instantiate, 唔 spawn thread
+    cache = _cache
 
     # 永久 rule (大少 2026-08-31 P0-6): 撳跑 algorithm 之前先 check futu OpenD health
     # 之前 OpenD 離線 (macOS 重啟 / FutuOpenD crash) 嗰陣 silent use stale K 線

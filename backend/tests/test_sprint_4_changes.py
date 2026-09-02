@@ -56,34 +56,46 @@ def test_futu_health_state_thread_safe_getter():
 
 
 def test_futu_health_state_lock_exists():
-    """永久 rule §R: KlineCache instance 有 _futu_health_lock (thread-safe)"""
-    cache = KlineCache()
-    assert hasattr(cache, '_futu_health_lock')
-    assert hasattr(cache, '_futu_health')
-    assert 'is_healthy' in cache._futu_health
-    assert 'consecutive_failures' in cache._futu_health
-    assert 'last_check_at' in cache._futu_health
-    assert 'last_error' in cache._futu_health
+    """永久 rule §R: KlineCache module-level _HEALTH_STATE_LOCK (thread-safe)
+
+    大少 2026-09-02 21:14 trigger: KlineCache 拎走 per-instance _futu_health
+    改 module-level _HEALTH_STATE + _HEALTH_STATE_LOCK
+    """
+    # 拎 KlineCache module-level state (永久 rule §R)
+    from backend.services.kline_cache import _HEALTH_STATE, _HEALTH_STATE_LOCK
+    assert isinstance(_HEALTH_STATE_LOCK, type(threading.Lock()))
+    assert isinstance(_HEALTH_STATE, dict)
+    assert 'is_healthy' in _HEALTH_STATE
+    assert 'consecutive_failures' in _HEALTH_STATE
+    assert 'last_check_at' in _HEALTH_STATE
+    assert 'last_error' in _HEALTH_STATE
 
 
 def test_futu_health_check_success_updates_state():
-    """永久 rule §R: successful health check reset consecutive_failures 落 0 + is_healthy 落 True"""
-    cache = KlineCache()
+    """永久 rule §R: successful health check reset consecutive_failures 落 0 + is_healthy 落 True
+
+    大少 2026-09-02 21:14 trigger: KlineCache state 改 module-level
+    """
+    from backend.services.kline_cache import _HEALTH_STATE, _HEALTH_STATE_LOCK
+    KlineCache()  # 確保 KlineCache module-level state 啟動
+
     # 模擬 3 次失敗先
-    cache._futu_health["consecutive_failures"] = 3
-    cache._futu_health["is_healthy"] = False
-    cache._futu_health["last_error"] = "fake error"
+    with _HEALTH_STATE_LOCK:
+        _HEALTH_STATE["consecutive_failures"] = 3
+        _HEALTH_STATE["is_healthy"] = False
+        _HEALTH_STATE["last_error"] = "fake error"
 
     # 模擬 successful health check 入面邏輯
-    with cache._futu_health_lock:
-        cache._futu_health.update({
+    with _HEALTH_STATE_LOCK:
+        _HEALTH_STATE.update({
             "is_healthy": True,
             "last_check_at": time.time(),
             "last_error": None,
             "consecutive_failures": 0,
         })
 
-    health = cache.get_futu_health()
+    from backend.services.kline_cache import get_futu_health
+    health = get_futu_health()
     assert health["is_healthy"] is True
     assert health["consecutive_failures"] == 0
     assert health["last_error"] is None
@@ -91,21 +103,26 @@ def test_futu_health_check_success_updates_state():
 
 
 def test_futu_health_check_consecutive_failures_required():
-    """永久 rule §R: 連續 3 次失敗先轉 unhealthy (避免 network blip 誤報)"""
-    cache = KlineCache()
+    """永久 rule §R: 連續 3 次失敗先轉 unhealthy (避免 network blip 誤報)
+
+    大少 2026-09-02 21:14 trigger: KlineCache state 改 module-level
+    """
+    from backend.services.kline_cache import _HEALTH_STATE, _HEALTH_STATE_LOCK
+    KlineCache()  # 確保 KlineCache module-level state 啟動
 
     # 模擬 health check 入面邏輯 (拎 0 條 K 線)
     for attempt in range(3):
-        with cache._futu_health_lock:
-            cache._futu_health["consecutive_failures"] += 1
-            if cache._futu_health["consecutive_failures"] >= 3:
-                cache._futu_health.update({
+        with _HEALTH_STATE_LOCK:
+            _HEALTH_STATE["consecutive_failures"] += 1
+            if _HEALTH_STATE["consecutive_failures"] >= 3:
+                _HEALTH_STATE.update({
                     "is_healthy": False,
                     "last_check_at": time.time(),
                     "last_error": "OpenD fetch 拎 0 條 K 線 (連續 3 次失敗)",
                 })
 
-    health = cache.get_futu_health()
+    from backend.services.kline_cache import get_futu_health
+    health = get_futu_health()
     # 第 3 次失敗之後先轉 False
     assert health["is_healthy"] is False
     assert health["consecutive_failures"] == 3

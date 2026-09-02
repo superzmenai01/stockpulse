@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/algorithms", tags=["algorithms"])
 
+# 永久 rule (大少 2026-09-02 21:14 trigger): KlineCache module-level singleton
+# 之前每次 request instantiate KlineCache → spawn 1 個 background thread, leak thread
+# 改 module-level singleton, 對齊 kline.py line 15 pattern (`_cache = KlineCache()`)
+from backend.services.kline_cache import KlineCache, get_futu_health
+_cache = KlineCache()  # module-level singleton, 全 process 共用 1 個 instance
+
 
 @router.get("/run")
 async def run_algo(
@@ -160,14 +166,71 @@ async def health_futu():
     """凡人話: 拎 FutuOpenD health status (frontend polling 顯示 🔧 系統警告)
 
     永久 rule (大少 2026-08-31 P0-6):
-    - 拎 KlineCache in-memory futu health state
+    - 拎 KlineCache module-level futu health state (thread-safe)
     - 唔做 ping (algorithm_runner.py 跑 algorithm 嗰陣先 ping)
     - frontend 撳跑任何 algorithm 之前 polling 拎 health
     - 不 healthy 嗰陣 frontend 顯示 🔧 系統警告 banner
+
+    永久 rule (大少 2026-09-02 21:14 trigger): 拎走 KlineCache() 嗰陣 instantiate
+    - 之前每次 request instantiate KlineCache → spawn 1 個 background thread, leak thread
+    - 改 module-level function `get_futu_health()`, 唔 instantiate, 唔 spawn thread
     """
-    from backend.services.kline_cache import KlineCache
-    cache = KlineCache()
-    return cache.get_futu_health()
+    return get_futu_health()
+
+
+@router.get("/health/threads")
+async def health_threads():
+    """凡人話: 拎 backend process 嘅 thread count (大少監察 thread leak 用)
+
+    永久 rule (大少 2026-09-02 21:14 trigger):
+    - Frontend 撳跑 algorithm 之前可以 polling 拎 thread count
+    - thread count > 200 顯示 warning (黃色)
+    - thread count > 500 顯示 critical (紅色, disable 撳跑掣)
+    - thread count > 1000 顯示 emergency (frontend refresh 提示)
+    - thread count > 2048 hit macOS kern.maxthread → 500 Internal Server Error
+    - KlineCache background thread 應該永遠 = 1 (singleton)
+
+    Returns:
+        dict: {
+            "is_healthy": bool,                  # KlineCache background thread == 1
+            "kline_health_check_threads": int,   # 永遠 == 1 (singleton)
+            "threading_enumerate_count": int,    # Python threading.enumerate() count
+            "system_thread_count": int,          # system level (psutil, 比 threading.enumerate 準確)
+            "thread_limit_warning": bool,        # > 200
+            "thread_limit_critical": bool,       # > 500
+            "thread_limit_emergency": bool,      # > 1000
+            "thread_limit_max": int,             # 2048 (macOS kern.maxthread 默認)
+            "kline_cache_state": dict,           # 從 get_futu_health()
+        }
+    """
+    import threading
+    import os
+    # 拎 KlineCache background thread 數量
+    kline_health_threads = sum(
+        1 for t in threading.enumerate() if t.name == "kline-cache-health-check"
+    )
+    # 拎所有 thread 數量
+    total_threads = len(threading.enumerate())
+    # 拎 process thread 數量 (system level, 比 threading.enumerate 準確)
+    system_thread_count = total_threads
+    try:
+        import psutil
+        proc = psutil.Process(os.getpid())
+        system_thread_count = proc.num_threads()
+    except ImportError:
+        # psutil 唔可用, fallback 用 threading.enumerate count
+        pass
+    return {
+        "is_healthy": kline_health_threads <= 1,  # 應該永遠 = 1
+        "kline_health_check_threads": kline_health_threads,
+        "threading_enumerate_count": total_threads,
+        "system_thread_count": system_thread_count,
+        "thread_limit_warning": system_thread_count > 200,
+        "thread_limit_critical": system_thread_count > 500,
+        "thread_limit_emergency": system_thread_count > 1000,
+        "thread_limit_max": 2048,  # macOS kern.maxthread 默認
+        "kline_cache_state": get_futu_health(),
+    }
 
 
 @router.get("/progress/{request_id}")

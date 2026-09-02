@@ -313,7 +313,7 @@ def _compute_fetch_max_count(period):
 - 還原 command: `bash ~/stockpulse/scripts/restore_sprint_4.sh`
 - 大少 trigger: 8月31日 07:52「你先備份, 設位一個還原點, 當然到意外或不想改時, 可以一鍵完全還到回到現在」
 
-### R. KlineCache 30 秒自動 Health Check 永久 rule (8-31 07:56, Sprint 4 Task 3)
+### R. KlineCache 30 秒自動 Health Check 永久 rule (8-31 07:56, Sprint 4 Task 3) + Singleton 延伸 (9-02 21:14, Spec Sync #63)
 
 - KlineCache `__init__` 必開 background thread 30 秒 1 次 health check
 - thread daemon=True, 主 process 死嗰陣一齊死
@@ -323,6 +323,30 @@ def _compute_fetch_max_count(period):
 - 之後改 KlineCache 嗰陣, 必保留 background thread (唔好拎走 _start_health_check_thread call)
 - 詳見 ARCHITECTURE.md §15.46 (Spec Sync #54)
 - 大少 trigger: 8月31日 07:56「你可以 Go 了」Sprint 4 follow-up Task 3
+
+**延伸 (9-02 21:14 Spec Sync #63, 大少 trigger「輸入數個股票後就出現 M1 algorithm 500 Internal Server Error」)**:
+- ✅ KlineCache 拎走 per-instance mutable state (之前 hit macOS kern.maxthread 2048 → RuntimeError → 500)
+- ✅ KlineCache background health check thread 全 process 共用 1 個 (module-level singleton, 用 `_health_check_thread_started` flag + lock 去重)
+- ✅ KlineCache health state (`_HEALTH_STATE`) 必須係 module-level, 唔可以 per-instance (避免 background thread 寫入錯 instance 嘅 state)
+- ✅ KlineCache schema init 必須係 module-level lazy init (1 次, 用 `_schema_initialized` flag + lock 去重)
+- ✅ KlineCache 拎走 `self._start_health_check_thread()` + `self._run_health_check_sync()` + `self._futu_health` + `self._futu_health_lock` (改 module-level)
+- ✅ KlineCache 保留 instance method `get_futu_health()` / `_start_health_check_thread()` / `_run_health_check_sync()` (deprecate wrapper, call module-level function, 對齊 backward compat)
+- ✅ KlineCache 保留 `self.db_path` (immutable config, test 用 db_path override 仍然 work)
+- ✅ KlineCache caller 必須用 module-level singleton pattern (e.g. `from backend.services.kline_cache import KlineCache` + module-level `_cache = KlineCache()`, 對齊 kline.py line 15 pattern)
+- ✅ KlineCache caller 拎 health state 必須用 module-level `get_futu_health()` function
+- ✅ 之後改 KlineCache 嗰陣, 必保留 background thread (唔好拎走 `_ensure_health_check_thread` call)
+- ✅ 之後 caller 改 KlineCache 嗰陣, 必須用 module-level singleton, 唔可以 request handler 入面 instantiate
+
+**順手 fix algorithm_progress.py 死碼 thread leak (9-02 21:14 Spec Sync #63)**:
+- ✅ algorithm_progress.py cleanup thread 全 process 共用 1 個 (module-level singleton)
+- ✅ 拎走 `spawn_m9_with_progress` 嗰個 per-request `threading.Thread(target=_cleanup_expired, daemon=True).start()` 死碼
+- ✅ cleanup 改 background loop (60 秒 1 次清 expired progress), 唔係 per-request trigger
+
+**新增 `/api/algorithms/health/threads` monitoring endpoint (9-02 21:14 Spec Sync #63)**:
+- ✅ Backend 提供 `GET /api/algorithms/health/threads` endpoint, 返 thread count + KlineCache health state
+- ✅ Response shape: `{is_healthy, kline_health_check_threads, threading_enumerate_count, system_thread_count, thread_limit_warning, thread_limit_critical, thread_limit_emergency, thread_limit_max, kline_cache_state}`
+- ✅ Threshold: `thread_limit_warning: > 200`, `thread_limit_critical: > 500`, `thread_limit_emergency: > 1000`, `thread_limit_max: 2048`
+- ✅ Frontend 之後 sprint 拎返 (out of scope 呢個 plan): polling endpoint 5 秒 1 次, banner warning
 
 ### S. Frontend FutuOpenD Banner + M9 Progress Log 永久 rule (8-31 07:56, Sprint 4 Task 1+2)
 

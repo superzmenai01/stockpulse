@@ -38,34 +38,47 @@ async def _get_lock(code: str) -> asyncio.Lock:
     return _locks[code]
 
 
-class KlineCache:
-    """KlineCache service — cache-aside K-line data in SQLite."""
+# ============================================================
+# Module-level singleton state (大少 2026-09-02 21:14 trigger)
+# 永久 rule: KlineCache 拎走 per-instance mutable state, 全部改 module-level
+# 原因: 之前 KlineCache.__init__ 每次 spawn 1 個 background thread, 累積到
+#       macOS kern.maxthread 2048 limit → RuntimeError → 500 Internal Server Error
+# 對齊: HANDOVER.md §R 永久 rule 延伸 + AGENTS.md "KlineCache 全 process singleton"
+# ============================================================
+import threading
 
-    DEFAULT_DB_PATH = Path(__file__).parent.parent / "stockpulse.db"
+# Module-level background thread singleton (全 process 共用 1 個)
+_health_check_thread: Optional[threading.Thread] = None
+_health_check_thread_lock = threading.Lock()
+_health_check_thread_started = False
 
-    def __init__(self, db_path: Optional[str] = None):
-        # 大少 #8505: SQLite path (default backend/stockpulse.db)
-        self.db_path = db_path or str(self.DEFAULT_DB_PATH)
-        self._init_schema()
-        # 永久 rule (大少 2026-08-31 P0-6): in-memory futu OpenD health state
-        # 之前 OpenD 離線 (e.g. macOS 重啟 / FutuOpenD crash) 嗰陣, algorithm silent use stale K 線
-        # 而家 30 秒 1 次 health check, 離線時 emit warning code OPEN_D_UNAVAILABLE
-        import threading
-        self._futu_health_lock = threading.Lock()
-        self._futu_health = {
-            "is_healthy": True,  # 默認 healthy, 第一次 check 失敗先轉 False
-            "last_check_at": None,
-            "last_error": None,
-            "consecutive_failures": 0,
-        }
-        # 永久 rule §Q Sprint 4 follow-up Task 3 (大少 2026-08-31 07:56「GO」trigger):
-        # 30 秒 1 次 background thread 自動 ping OpenD, 拎 status 落 memory
-        # frontend polling /api/algorithms/health/futu 即時拎到
-        self._start_health_check_thread()
+# Module-level health state (background thread 寫入, 全部 caller 讀取, 永遠對齊)
+_HEALTH_STATE = {
+    "is_healthy": True,  # 默認 healthy, 第一次 check 失敗先轉 False
+    "last_check_at": None,
+    "last_error": None,
+    "consecutive_failures": 0,
+}
+_HEALTH_STATE_LOCK = threading.Lock()
 
-    def _init_schema(self):
-        """大少 #7987: CREATE TABLE IF NOT EXISTS — kline_cache + idx."""
-        conn = sqlite3.connect(self.db_path)
+# Module-level schema init (lazy, 1 次)
+_schema_initialized = False
+_schema_init_lock = threading.Lock()
+
+
+def _ensure_schema_initialized(db_path: str) -> None:
+    """凡人話: KlineCache 拎走 __init__ 入面 _init_schema, 改 module-level lazy init
+
+    永久 rule (大少 2026-09-02 21:14 trigger): KlineCache __init__ 拎走 I/O
+    - 之前每次 instantiate 都 CREATE TABLE IF NOT EXISTS (IDEMPOTENT 但浪費 CPU)
+    - 而家: 全 process 只 init 1 次 schema, 用 _schema_initialized flag + lock 去重
+    - 對齊 KlineCache background thread 嘅 singleton 模式
+    """
+    global _schema_initialized
+    with _schema_init_lock:
+        if _schema_initialized:
+            return
+        conn = sqlite3.connect(db_path)
         try:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS kline_cache (
@@ -83,6 +96,169 @@ class KlineCache:
             conn.commit()
         finally:
             conn.close()
+        _schema_initialized = True
+        logger.info(f"[KlineCache] schema initialized (db={db_path})")
+
+
+def _ensure_health_check_thread(interval_seconds: int = 30) -> None:
+    """凡人話: 拎 KlineCache 嘅 background health check thread 變 module-level singleton
+
+    永久 rule (大少 2026-09-02 21:14 trigger): 每次 KlineCache() instantiate 唔可以再 spawn 新 thread
+    - 全 process 共用 1 個 thread, 30 秒 1 次 ping OpenD, 拎 health state 落 module-level memory
+    - 用 `_health_check_thread_started` flag + lock 自動去重, 唔需要 caller 處理
+    - 對齊 kline.py module-level singleton pattern (line 15 _cache = KlineCache())
+    - 解決 thread leak bug: 之前每個 request instantiate KlineCache 都 leak 1 thread, hit 2048 limit
+    """
+    global _health_check_thread, _health_check_thread_started
+    with _health_check_thread_lock:
+        if _health_check_thread_started:
+            return  # 已經 start 過, 唔再 start (singleton)
+        import time as _time
+
+        def _loop():
+            # 永久 rule: 第一次 check delay 5 秒, 避免 KlineCache init 嗰陣撞 futu_conn import
+            _time.sleep(5)
+            while True:
+                try:
+                    from backend.futu_conn import get_quote_ctx
+                    ctx = get_quote_ctx()
+                    # 寫入 module-level _HEALTH_STATE (唔係 per-instance self._futu_health)
+                    _run_health_check_sync_module(ctx)
+                except Exception as e:
+                    logger.warning(
+                        f"[KlineCache] health check thread error: {type(e).__name__}: {e}"
+                    )
+                _time.sleep(interval_seconds)
+
+        _health_check_thread = threading.Thread(target=_loop, daemon=True, name="kline-cache-health-check")
+        _health_check_thread.start()
+        _health_check_thread_started = True
+        logger.info(
+            f"[KlineCache] singleton health check thread 啟動 (interval={interval_seconds}s, 全 process 共用 1 個)"
+        )
+
+
+def get_futu_health() -> dict:
+    """凡人話: 拎 futu OpenD health state (module-level, thread-safe)
+
+    永久 rule (大少 2026-09-02 21:14 trigger): 拎走 KlineCache.get_futu_health instance method
+    - 改 module-level function, 永遠返 module-level _HEALTH_STATE (background thread 寫入嗰個)
+    - KlineCache 拎走 self._futu_health, 全部 caller 用呢個 module-level function
+    - 對齊 kline.py module-level singleton pattern
+    """
+    with _HEALTH_STATE_LOCK:
+        return dict(_HEALTH_STATE)
+
+
+def _run_health_check_sync_module(ctx) -> bool:
+    """凡人話: sync wrapper 包住 async futu_health_check, 寫入 module-level _HEALTH_STATE
+
+    永久 rule §Spec Sync #40 (大少 2026-08-23 13:19): server 內部用真 async I/O
+    - 用 nest_asyncio.apply() patch asyncio, 令 asyncio.run() 喺 running event loop 入面 work
+    - 唔可以用 urllib self-call (撞牆 deadlock)
+    - 改: 寫入 module-level _HEALTH_STATE (唔係 per-instance self._futu_health)
+    """
+    try:
+        import asyncio
+        import nest_asyncio
+        nest_asyncio.apply()
+
+        async def _wrapper():
+            # 用 module-level futu_health_check 寫入 module-level _HEALTH_STATE
+            return await _futu_health_check_module(ctx)
+        return asyncio.run(_wrapper())
+    except Exception as e:
+        logger.warning(
+            f"[KlineCache] _run_health_check_sync_module 失敗: {type(e).__name__}: {e}"
+        )
+        return False
+
+
+async def _futu_health_check_module(ctx) -> bool:
+    """凡人話: ping OpenD 拎 1 條 K 線試吓, 拎到就 healthy (module-level state)
+
+    永久 rule (大少 2026-09-02 21:14 trigger): 拎走 KlineCache.futu_health_check instance method
+    - 改 module-level function, 寫入 module-level _HEALTH_STATE
+    - KlineCache 拎走 self._futu_health + self._futu_health_lock
+    - 對齊 KlineCache background thread 嘅 module-level singleton 模式
+    - 保留: 連續 3 次失敗先轉 False (避免 single network blip 誤報)
+    """
+    import time as _time
+    try:
+        from backend.api.kline import get_kline_type
+        ktype = get_kline_type('1d')
+        # 用 HK.00700 做 sentinel (永遠存在, fetch 快)
+        # 大少 #8602: 拎 K 線用 KlineCache instance method (拎 self._fetch_klines)
+        # 用 lazy KlineCache instance (用 kline.py 嗰個 module-level _cache)
+        from backend.api.kline import _cache as _kline_cache_singleton
+        klines = await _kline_cache_singleton._fetch_klines(
+            ctx, "HK.00700", ktype, "1d",
+            start=(datetime.date.today() - datetime.timedelta(days=7)).isoformat(),
+            end=datetime.date.today().isoformat(),
+            max_count=7,
+        )
+        is_healthy = bool(klines and len(klines) > 0)
+        with _HEALTH_STATE_LOCK:
+            if is_healthy:
+                _HEALTH_STATE.update({
+                    "is_healthy": True,
+                    "last_check_at": _time.time(),
+                    "last_error": None,
+                    "consecutive_failures": 0,
+                })
+            else:
+                _HEALTH_STATE["consecutive_failures"] += 1
+                # 連續 3 次失敗先轉 unhealthy (避免 network blip)
+                if _HEALTH_STATE["consecutive_failures"] >= 3:
+                    _HEALTH_STATE.update({
+                        "is_healthy": False,
+                        "last_check_at": _time.time(),
+                        "last_error": "OpenD fetch 拎 0 條 K 線 (連續 3 次失敗)",
+                    })
+        return is_healthy
+    except Exception as e:
+        with _HEALTH_STATE_LOCK:
+            _HEALTH_STATE["consecutive_failures"] += 1
+            if _HEALTH_STATE["consecutive_failures"] >= 3:
+                _HEALTH_STATE.update({
+                    "is_healthy": False,
+                    "last_check_at": _time.time(),
+                    "last_error": f"{type(e).__name__}: {e}",
+                })
+        return False
+
+
+class KlineCache:
+    """KlineCache service — cache-aside K-line data in SQLite.
+
+    永久 rule (大少 2026-09-02 21:14 trigger): KlineCache 變 lightweight cache accessor
+    - db_path 保留 (immutable config, test 用)
+    - _futu_health + _futu_health_lock 拎走 (改 module-level _HEALTH_STATE)
+    - _start_health_check_thread 拎走 (改 module-level _ensure_health_check_thread)
+    - get_futu_health 拎走 (改 module-level get_futu_health)
+    - KlineCache 仍然可以 instantiate (backward compat), 但係 background thread 永遠只 1 個
+    """
+
+    DEFAULT_DB_PATH = Path(__file__).parent.parent / "stockpulse.db"
+
+    def __init__(self, db_path: Optional[str] = None):
+        # 大少 #8505: SQLite path (default backend/stockpulse.db)
+        self.db_path = db_path or str(self.DEFAULT_DB_PATH)
+        # 永久 rule (大少 2026-09-02 21:14 trigger): 拎走 self._futu_health + self._futu_health_lock
+        # KlineCache __init__ 拎走 I/O (_init_schema) + thread start
+        # - 改 module-level lazy schema init (1 次)
+        # - 改 module-level _ensure_health_check_thread (singleton, 全 process 只 1 個)
+        # KlineCache caller 仍然可以 `cache = KlineCache()` (backward compat)
+        # 但係 KlineCache 唔再係 service object, 變 lightweight cache accessor
+        _ensure_schema_initialized(self.db_path)
+        _ensure_health_check_thread()
+
+    def _init_schema(self):
+        """⚠️ Deprecated (大少 2026-09-02 21:14 trigger): 改用 module-level _ensure_schema_initialized
+        KlineCache __init__ 拎走 _init_schema I/O, 改 module-level lazy init (1 次)
+        保留呢個 method 因為 backward compat, 但實際只 init 1 次 (singleton)
+        """
+        _ensure_schema_initialized(self.db_path)
 
     def get_klines(self, code: str, period: str,
                   start: Optional[str] = None,
@@ -370,9 +546,14 @@ class KlineCache:
 
         永久 rule (大少 2026-08-31 P0-6):
         - 30 秒 1 次 health check (caller 自己 schedule)
-        - 健康 status 落 in-memory self._futu_health (thread-safe)
+        - 健康 status 落 module-level _HEALTH_STATE (thread-safe)
         - 連續 3 次失敗先轉 False (避免 single network blip 誤報)
         - algorithm_runner.py 撳跑 algorithm 之前必先 check, 不 healthy 嗰陣 raise OpenDUnavailableError
+
+        永久 rule (大少 2026-09-02 21:14 trigger): KlineCache 拎走 per-instance _futu_health
+        - 改寫入 module-level _HEALTH_STATE, 確保所有 KlineCache instance 拎嘅 state 永遠對齊
+        - 之前: 每個 KlineCache 自己嘅 _futu_health, background thread 只 update 1 個, 其他拎 stale
+        - 之後: 全 process 1 個 _HEALTH_STATE, background thread 寫入, 全部 caller 讀取
         """
         import time as _time
         try:
@@ -386,29 +567,29 @@ class KlineCache:
                 max_count=7,
             )
             is_healthy = bool(klines and len(klines) > 0)
-            with self._futu_health_lock:
+            with _HEALTH_STATE_LOCK:
                 if is_healthy:
-                    self._futu_health.update({
+                    _HEALTH_STATE.update({
                         "is_healthy": True,
                         "last_check_at": _time.time(),
                         "last_error": None,
                         "consecutive_failures": 0,
                     })
                 else:
-                    self._futu_health["consecutive_failures"] += 1
+                    _HEALTH_STATE["consecutive_failures"] += 1
                     # 連續 3 次失敗先轉 unhealthy (避免 network blip)
-                    if self._futu_health["consecutive_failures"] >= 3:
-                        self._futu_health.update({
+                    if _HEALTH_STATE["consecutive_failures"] >= 3:
+                        _HEALTH_STATE.update({
                             "is_healthy": False,
                             "last_check_at": _time.time(),
                             "last_error": "OpenD fetch 拎 0 條 K 線 (連續 3 次失敗)",
                         })
             return is_healthy
         except Exception as e:
-            with self._futu_health_lock:
-                self._futu_health["consecutive_failures"] += 1
-                if self._futu_health["consecutive_failures"] >= 3:
-                    self._futu_health.update({
+            with _HEALTH_STATE_LOCK:
+                _HEALTH_STATE["consecutive_failures"] += 1
+                if _HEALTH_STATE["consecutive_failures"] >= 3:
+                    _HEALTH_STATE.update({
                         "is_healthy": False,
                         "last_check_at": _time.time(),
                         "last_error": f"{type(e).__name__}: {e}",
@@ -416,72 +597,30 @@ class KlineCache:
             return False
 
     def get_futu_health(self) -> dict:
-        """凡人話: 拎 in-memory futu health state (frontend polling 用)"""
-        with self._futu_health_lock:
-            return dict(self._futu_health)
+        """⚠️ Deprecated (大少 2026-09-02 21:14 trigger): 改用 module-level get_futu_health()
+        KlineCache 拎走 per-instance _futu_health, 改 module-level _HEALTH_STATE
+        保留呢個 method 因為 backward compat, 實際永遠返 module-level state
+        """
+        return get_futu_health()
 
     # ============================================================
     # Background health check thread (大少 2026-08-31 Sprint 4 follow-up Task 3)
     # ============================================================
 
     def _start_health_check_thread(self, interval_seconds: int = 30) -> None:
-        """凡人話: background thread 30 秒 1 次 ping OpenD, 拎 status 落 memory
-
-        永久 rule §Q Sprint 4 follow-up Task 3:
-        - KlineCache __init__ 開 background thread
-        - thread daemon=True, 主 process 死嗰陣一齊死
-        - 30 秒 sleep + 跑 futu_health_check
-        - 拎 ctx failure 嗰陣 continue, 唔 crash thread
-        - 永久 rule §Spec Sync #40 server 內部用 nest_asyncio (sync 包 async)
-
-        Frontend polling /api/algorithms/health/futu 即時拎到 30 秒前嘅 health state
+        """⚠️ Deprecated (大少 2026-09-02 21:14 trigger): 改用 module-level _ensure_health_check_thread
+        KlineCache 拎走 per-instance thread start (會 leak thread, hit macOS kern.maxthread 2048)
+        改 module-level singleton thread, 全 process 只 1 個, 永遠唔再 leak
+        保留呢個 method 因為 backward compat, 但實際只 start 1 次 (singleton)
         """
-        import threading
-        import time as _time
-        import logging
-
-        def _loop():
-            # 永久 rule: 第一次 check delay 5 秒, 避免 KlineCache init 嗰陣撞 futu_conn import
-            _time.sleep(5)
-            while True:
-                try:
-                    from backend.futu_conn import get_quote_ctx
-                    ctx = get_quote_ctx()
-                    self._run_health_check_sync(ctx)
-                except Exception as e:
-                    logging.getLogger(__name__).warning(
-                        f"[KlineCache] health check thread error: {type(e).__name__}: {e}"
-                    )
-                _time.sleep(interval_seconds)
-
-        thread = threading.Thread(target=_loop, daemon=True, name="kline-cache-health-check")
-        thread.start()
-        import logging
-        logging.getLogger(__name__).info(
-            f"[KlineCache] health check thread 啟動 (interval={interval_seconds}s)"
-        )
+        _ensure_health_check_thread(interval_seconds)
 
     def _run_health_check_sync(self, ctx) -> bool:
-        """凡人話: sync wrapper 包住 async futu_health_check, background thread 用
-
-        永久 rule §Spec Sync #40 (大少 2026-08-23 13:19): server 內部用真 async I/O
-        - 用 nest_asyncio.apply() patch asyncio, 令 asyncio.run() 喺 running event loop 入面 work
-        - 唔可以用 urllib self-call (撞牆 deadlock, 5 workers + 細股 OpenD fetch > 3 分鐘)
+        """⚠️ Deprecated (大少 2026-09-02 21:14 trigger): 改用 module-level _run_health_check_sync_module
+        KlineCache 拎走 per-instance _run_health_check_sync, 改 module-level function
+        保留呢個 method 因為 backward compat, 實際 call module-level function
         """
-        try:
-            import asyncio
-            import nest_asyncio
-            nest_asyncio.apply()
-
-            async def _wrapper():
-                return await self.futu_health_check(ctx)
-            return asyncio.run(_wrapper())
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(
-                f"[KlineCache] _run_health_check_sync 失敗: {type(e).__name__}: {e}"
-            )
-            return False
+        return _run_health_check_sync_module(ctx)
 
     @staticmethod
     def _compute_fetch_max_count(period: str) -> int:

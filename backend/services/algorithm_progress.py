@@ -35,6 +35,44 @@ _PROGRESS_STORE: Dict[str, Dict[str, Any]] = {}
 _PROGRESS_LOCK = threading.Lock()
 _TTL_SECONDS = 3600  # 1 小時
 
+# ============================================================
+# Cleanup thread singleton (大少 2026-09-02 21:14 trigger)
+# 永久 rule: 拎走死碼 thread leak
+# 之前每次 spawn_m9_with_progress 都 spawn 1 個 cleanup thread (line 190, 死碼 leak)
+# 改 module-level 1 次 startup, 整個 process 只 1 個 cleanup thread (60 秒 1 次)
+# ============================================================
+_cleanup_thread_started = False
+_cleanup_thread_lock = threading.Lock()
+
+
+def _ensure_cleanup_thread_started() -> None:
+    """凡人話: cleanup thread 全 process 只 start 1 次 (singleton)
+
+    永久 rule (大少 2026-09-02 21:14 trigger):
+    - 之前每次 spawn_m9_with_progress 都 leak 1 個 cleanup thread (死碼)
+    - 改 module-level 1 次 startup, 60 秒 1 次清 expired progress
+    - 對齊 KlineCache background thread 嘅 singleton 模式
+    """
+    global _cleanup_thread_started
+    with _cleanup_thread_lock:
+        if _cleanup_thread_started:
+            return
+        import time as _time
+
+        def _loop():
+            while True:
+                try:
+                    _cleanup_expired()
+                except Exception as e:
+                    logger.warning(
+                        f"[AlgorithmProgress] cleanup thread error: {type(e).__name__}: {e}"
+                    )
+                _time.sleep(60)
+
+        threading.Thread(target=_loop, daemon=True, name="algorithm-progress-cleanup").start()
+        _cleanup_thread_started = True
+        logger.info("[AlgorithmProgress] singleton cleanup thread 啟動 (60 秒 1 次清 expired progress)")
+
 
 def _cleanup_expired():
     """凡人話: 清 1 小時前嘅 request (避免 in-memory store 越嚟越大)"""
@@ -186,7 +224,15 @@ def spawn_m9_with_progress(
     thread.start()
     logger.info(f"[AlgorithmProgress] Spawned thread for {request_id} (algo={algo_name} symbol={symbol})")
 
-    # Trigger cleanup (non-blocking)
-    threading.Thread(target=_cleanup_expired, daemon=True).start()
+    # 永久 rule (大少 2026-09-02 21:14 trigger): 拎走死碼 per-request cleanup thread
+    # 之前每次 spawn_m9_with_progress 都 spawn 1 個 cleanup thread (line 190)
+    # 改: cleanup 改 module-level 1 次 startup (見 _ensure_cleanup_thread_started)
+    _ensure_cleanup_thread_started()  # 拎走 dead code leak
 
     return request_id
+
+
+# 永久 rule (大少 2026-09-02 21:14 trigger): 確保 module load 嗰陣 start cleanup thread 1 次
+# 對齊 KlineCache background thread 嘅 module-level startup pattern
+# 即使冇人 call spawn_m9_with_progress, cleanup thread 都要 ready (防 future use)
+_ensure_cleanup_thread_started()

@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/zigzag-testing", tags=["zigzag-testing"])
 
+# 永久 rule (大少 2026-09-02 21:14 trigger): KlineCache module-level singleton
+# 之前每次 request instantiate KlineCache → spawn 1 個 background thread, leak thread
+# 改 module-level singleton, 對齊 kline.py line 15 pattern
+from backend.services.kline_cache import KlineCache
+_cache = KlineCache()  # module-level singleton, 全 process 共用 1 個 instance
+
 
 @router.get("/run")
 async def run_zigzag_testing_endpoint(
@@ -66,9 +72,9 @@ async def run_zigzag_testing_endpoint(
     """
     try:
         # 1. 拎 K 線 (KlineCache full flow, 對齊 services/algorithm_runner.py pattern)
-        from backend.services.kline_cache import KlineCache
-
-        cache = KlineCache()
+        # 永久 rule (大少 2026-09-02 21:14 trigger): 拎走 `cache = KlineCache()` 嗰陣 instantiate
+        # 改 module-level singleton `_cache`, 唔 instantiate, 唔 spawn thread
+        cache = _cache
 
         end_date = datetime.date.today().isoformat()
         if period == "1d":
