@@ -88,13 +88,13 @@ function setLookback(v) {
   localStorage.setItem(LS_KEY_LOOKBACK, String(v));
 }
 
-// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
+// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫觸發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
 // 4.66.5 fix: 拎走 4.66.0 嗰個 localStorage 自動記住 user choice 嘅 spec
 //   大少 9月2日 07:34 trigger「把紅框這個制預備是 Off 的」, 改為永遠 default false
 //   之前 4.66.0 commit 寫嘅「localStorage 自動記住大少 choice」係 Mavis 推斷, 大少真正意思係永遠 default Off
 //   撳 toggle 即時 render marker (8月19日 13:03 Config UX 模式即時 re-render 嗰個 spirit 保留), 但 reload 永遠返 unchecked
 //   拎走 LS_KEY_SHOW_MARKERS + getShowMarkers + setShowMarkers (冇用,拎走清 clean code)
-//   對齊 4.66.0 原始 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」, 拎走 user choice 自動記住
+//   對齊 4.66.0 原始 trigger「做返一個開關制是控制這個P點和觸發點的 預設是關的」, 拎走 user choice 自動記住
 function getShowMarkersDefault() {
   return false;  // 4.66.5 永久 rule: 永遠 default false
 }
@@ -488,7 +488,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //        → 唔喺今次 fix 範圍, 之後 follow-up sprint 先處理
 //   對應 commit: fix(testing-page): M1 console log P1-P10 排法 (verdict.points 排法搞錯, 4.55.0)
 //
-// 大少 8月31日 17:42 trigger (修改版 20:51 + 20:57) — M1 console log 加 Threshold % + 獨發點 (Trigger 確認點): ALGO_CACHE_BUST = '4.57.0'
+// 大少 8月31日 17:42 trigger (修改版 20:51 + 20:57) — M1 console log 加 Threshold % + 觸發點 (Trigger 確認點): ALGO_CACHE_BUST = '4.57.0'
 // 大少 9月1日 13:39 trigger (4.58.0 cache bust sync) — 4.58.0 backend code (P1/P2 同日 bug fix + 4.57.2 date format 統一重新做返) 已經 push origin main, frontend 仲係 4.57.0, 大少 reload testing page 拎 stale verdict, 必 cache bust 同步: ALGO_CACHE_BUST = '4.58.0' (對齊 §15.46 永久 rule)
 // 大少 9月1日 14:10 trigger (full revert 4.56.0 'today' point + 鮮綠線 + 4.57.x skip_today): ALGO_CACHE_BUST = '4.59.0'
 //   4.59.0 永久 rule (新加, 大少 14:10 trigger full revert 4.56.0):
@@ -521,13 +521,13 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //       - 拎返拎走 #show-sequence toggle handler (~22 行 dead code)
 //       - 拎返拎走 4.61.3 final spec comment block (~15 行 stale 永久 rule reference, 拎返拎走)
 //     ✅ C2: 拎走 testing-page/index.html #zigzag-sequence-controls div block (~11 行 dead UI)
-//     ✅ C3: 拎走 adapter.mjs P 點 arrow + 紅色獨發點 circle marker 整個 block (~66 行 marker build + setMarkers)
+//     ✅ C3: 拎走 adapter.mjs P 點 arrow + 紅色觸發點 circle marker 整個 block (~66 行 marker build + setMarkers)
 //     ✅ C4: 拎返拎走 stale 鮮綠色 / 4.10.0 v4 / 4.33.0 鮮綠色 comment
 //     ✅ C5: Backend triggerDate / triggerPrice / is_ongoing field 全部保留 (大少 trigger「之後想重新再做過」)
 //     ✅ C6: Spec doc (AGENTS.md + ARCHITECTURE.md) 拎返拎走 4.62.0/4.42.0/4.33.0 永久 rule + 加新永久 rule「Frontend ZigZag 只 render 紫色折線」
-//     ✅ 凡人話: 大少 trigger「之前做的 Point, 旗仔, 獨發點等等, 只保留 zigzag 的連線, 其他都不要」, 拎走晒 frontend 5 個 non-line visual elements (紫色 P 點 arrow / 紅色獨發點 circle / 鮮綠色 close extension line / 鮮綠色 1 號 marker / 橙色 #FF9800 旗仔), chart 只 render 紫色 ZigZag 折線
-//     ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 獨發點 / 鮮綠線」先做
-//   對應 commit: refactor(frontend): 拎走 ZigZag non-line visual elements (P 點 / 旗仔 / 獨發點 / 鮮綠線), chart 只 render 紫色折線
+//     ✅ 凡人話: 大少 trigger「之前做的 Point, 旗仔, 觸發點等等, 只保留 zigzag 的連線, 其他都不要」, 拎走晒 frontend 5 個 non-line visual elements (紫色 P 點 arrow / 紅色觸發點 circle / 鮮綠色 close extension line / 鮮綠色 1 號 marker / 橙色 #FF9800 旗仔), chart 只 render 紫色 ZigZag 折線
+//     ✅ 對齊 8月29日 22:44 永久 rule「所有改動要 confirm」:大少明確 trigger「拎走 P 點 / 旗仔 / 觸發點 / 鮮綠線」先做
+//   對應 commit: refactor(frontend): 拎走 ZigZag non-line visual elements (P 點 / 旗仔 / 觸發點 / 鮮綠線), chart 只 render 紫色折線
 // 大少 2026-09-01 22:51 — 拎走 PPP 測試 marker (大少睇完確認 setMarkers work, 之後準備做 zigzag Point): ALGO_CACHE_BUST = '4.61.8'
 //   ✅ testing page renderChart function 拎走 PPP marker block (53 行) + 拎走 PPP comment (8 行)
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.129
@@ -537,7 +537,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ Label 用 backend verdict.points[].sequence field 直接做 "P1", "P2", "P3"... (1=最新, N=最舊, 對齊 8月29日 14:32 永久 rule)
 //   ✅ Position: high→aboveBar, low→belowBar (4.51.0 永久 rule peak/trough 對齊)
 //   ✅ Shape circle, color 紫色 #9C27B0 (4.51.0 永久 rule)
-//   ✅ 唔拎返 4.53.0/4.61.5 拎走嘅其他嘢: 橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色獨發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)
+//   ✅ 唔拎返 4.53.0/4.61.5 拎走嘅其他嘢: 橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / 紅色觸發點 (4.61.5) / P 點 toggle 同 spinbutton (4.53.0)
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.130
 // 大少 2026-09-01 23:11 trigger (Fix 3 debug) — 加 5 個 console.log 查「撅其他股票 P 點 marker 唔出」issue: ALGO_CACHE_BUST = '4.62.1'
 //   ✅ testing-page.js fetchAndInjectBackendZigZag 加入口 + 早 return 原因 + fetch start + fetch success + AbortError debug log (5 個)
@@ -549,12 +549,12 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ testing-page.js renderChart setTimeout 50ms 拎返 re-set markers block (v5 plugin API 拎 set 返 ensure persist)
 //   ✅ 大少 evidence: 撅 00019 (12 markers) → 出, 撅 01888 (49 markers) → 唔出, 撅 0981 (90 markers) → 唔出
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.132
-// 大少 2026-09-02 00:52 trigger (Fix 4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 #show-sequence 拎返, 預設關): ALGO_CACHE_BUST = '4.66.0'
+// 大少 2026-09-02 00:52 trigger (Fix 4.66.0) — 拎返 P 點 + 鮮紫觸發點 marker toggle (4.53.0 拎走嘅 #show-sequence 拎返, 預設關): ALGO_CACHE_BUST = '4.66.0'
 //   ✅ 對齊 4.53.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE 嗰個 spirit 拎返, 4.61.5 commit 拎走嗰個 toggle 拎返
 //   ✅ 對齊 4.51.0 拎走嘅 LS_KEY_SHOW_SEQUENCE naming pattern, 4.66.0 用 LS_KEY_SHOW_MARKERS ('stockpulse.zigzag.showMarkers')
 //   ✅ 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
 //   ✅ 大少 00:52 explicit「預設是關的」— default false, 撳開先見 P1-P10 + 鮮紫 trigger, 撳關拎走 marker
-//   ✅ 對齊 4.65.0 永久 rule: P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和獨發點的」)
+//   ✅ 對齊 4.65.0 永久 rule: P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和觸發點的」)
 //   ✅ 對齊 8月19日 永久 rule chart-control layout: #zigzag-markers-controls div 喺 chart-section 內 ma-toggle-bar 之前
 //   ✅ 撅 HK.01888 撳 toggle 開 → P1-P10 + 鮮紫 trigger 出. 撳 toggle 關 → 只見紫色折線 + 4 條 MA + volume 視覺 clean
 //   ✅ Reload page 預設關 (跟大少 00:52 trigger「預設是關的」), 想每次都見到自己 toggle 開, localStorage 自動記住大少 choice
@@ -568,7 +568,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ 拎走 LS_KEY_SHOW_MARKERS + getShowMarkers + setShowMarkers, 改為永遠 default false (line 95-105 + 1746-1747 + 1756)
 //   ✅ 撳 toggle 仍然即時 render marker (8月19日 13:03 Config UX 模式即時 re-render 嗰個 spirit 保留)
 //   ✅ Reload page 永遠返 unchecked (拎走 4.66.4 寫嘅「localStorage 自動記住大少 choice」)
-//   ✅ 對齊 4.66.0 原始 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」, 拎走 user choice 自動記住
+//   ✅ 對齊 4.66.0 原始 trigger「做返一個開關制是控制這個P點和觸發點的 預設是關的」, 拎走 user choice 自動記住
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.141 → ?v=2.3.142 (Step 5)
 //   ✅ 4.66.6 fix (大少 9月2日 22:40 trigger「預設是 On 的, 即是在圖表裡可以看到 P1, P2, P3...」): 改 default false → true + 加返 LS_KEY_SHOW_MARKERS + getShowMarkers + setShowMarkers (4.66.0 拎返 spec, 4.66.5 拎走, 4.66.6 拎返)
 //   ✅ 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage 自動儲存 + reload 記住 user setting
@@ -719,7 +719,7 @@ let currentAdapter = null;
 let currentOptions = {};
 // 大少 2026-08-19 trigger — ZigZag toggle state
 let zigzagEnabled = true;
-// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle state (4.53.0 拎走嘅 spirit 拎返, 預設關)
+// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫觸發點 marker toggle state (4.53.0 拎走嘅 spirit 拎返, 預設關)
 // 對齊 4.51.0 拎走嘅 showZigzagSequence 嗰個 pattern, 4.61.5 拎走, 4.66.0 拎返用 1 個新 toggle 控制 P 點 + 鮮紫 trigger 一齊顯示/隱藏
 // 大少 9月2日 22:40 trigger (4.66.6) — 改 default true + 加返 localStorage 自動記住 (4.66.5 拎走嘅 spec 拎返)
 //   對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」
@@ -1429,7 +1429,7 @@ async function runAlgorithm() {
       // 4.43.0: 拎走 applyFrontendZigZagOverlay, 改 fetch backend (4 個 LS value 傳 backend)
       // 對齊 4.42.3 永久 rule: verdict meta inject 永遠唔需要 lastChartRefs (純 JS 嘢)
       // 拎 backend verdict 早 call, 之後 line 1281 renderChartOverlay 因為 verdict.meta.zigzagPoints
-      // 已經 inject, 自動 render 紫線 + P 點 arrow marker + 紅色獨發點 circle (4.62.0 永久 rule)
+      // 已經 inject, 自動 render 紫線 + P 點 arrow marker + 紅色觸發點 circle (4.62.0 永久 rule)
       const thresholdMode = getThresholdMode();
       const manualThreshold = getManualThreshold();
       const lookback = getLookback();
@@ -1741,10 +1741,10 @@ if (zigzagEnabledEl) {
   });
 }
 
-// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫獨發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
+// 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫觸發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
 // 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
 // 對齊 4.51.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE + handler pattern, 4.61.5 commit 拎走嗰個 toggle block 拎返
-// 對齊 4.65.0 永久 rule: P 點 + 鮮紫 trigger 一齊 toggle (大少 00:52 trigger「控制這個P點和獨發點的」)
+// 對齊 4.65.0 永久 rule: P 點 + 鮮紫 trigger 一齊 toggle (大少 00:52 trigger「控制這個P點和觸發點的」)
 // 大少 9月2日 22:40 trigger (4.66.6) — 改 default true + 加返 localStorage 自動記住 (4.66.5 拎走嘅 spec 拎返)
 //   對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」
 //   預設 On (大少 explicit「預設是 On 的, 即是在圖表裡可以看到 P1, P2, P3...」)
@@ -2107,11 +2107,11 @@ if (zigzagThresholdEl) {
 // 對齊 4.15.0 永久 rule「之字拎 point 用 high/low」 (type 'high' = peak, type 'low' = trough)
 //
 // 大少 8月31日 17:42 trigger (修改版 20:51 + 20:57) 4.57.0 — 改 signature 加 threshold + thresholdMode 2 個參數
-//   ✅ Mini-table 由 4 欄變 6 欄: 加「獨發點日期」+ 「獨發點股價」2 個 column
+//   ✅ Mini-table 由 4 欄變 6 欄: 加「觸發點日期」+ 「觸發點股價」2 個 column
 //   ✅ 標題上邊加 1 行: 「🔧 Threshold: X.XX% (mode: auto|manual)」
-//   ✅ 獨發點: 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, Trough trigger 拎嗰日 K 線 high, Peak trigger 拎嗰日 K 線 low
+//   ✅ 觸發點: 對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, Trough trigger 拎嗰日 K 線 high, Peak trigger 拎嗰日 K 線 low
 //   ✅ 對齊 4.56.0 精神: 最後 ongoing point 拎 K 線最後 close 做 trigger 價
-//   ✅ 凡人話: 大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 獨發點日期 + 獨發點股價
+//   ✅ 凡人話: 大少撳跑 M1 即時喺黑色 console log 底部見到 P1-P10 日子 + 點數 + 觸發點日期 + 觸發點股價
 function _formatZigZagLatestPointsForDebug(zigzagPoints, threshold, thresholdMode) {
   // 大少 4.57.0 trigger 1 — 標題上邊加 1 行顯示 Threshold % + mode (大少要睇清楚用咗咩 % 數值計 ZigZag)
   const thresholdLine = (threshold !== undefined && threshold !== null)
@@ -2130,14 +2130,14 @@ function _formatZigZagLatestPointsForDebug(zigzagPoints, threshold, thresholdMod
   // 對齊 8月29日 14:32 永久 rule「P1 = 最新」
   // 對齊 4.43.0 永久 rule「ZigZag 全部 backend 計」(frontend 拎 backend 注入嘅 verdict.meta.zigzagPoints, 唔重計)
   const last10 = zigzagPoints.slice(0, 10);
-  // 大少 4.57.0 trigger 2 — Mini-table header 加 2 個 column: 獨發點日期 + 獨發點股價
+  // 大少 4.57.0 trigger 2 — Mini-table header 加 2 個 column: 觸發點日期 + 觸發點股價
   const headerRow = '<tr style="color:#9cdcfe;text-align:left;">' +
     '<th style="padding-right:12px;">序號</th>' +
     '<th style="padding-right:12px;">日子</th>' +
     '<th style="padding-right:12px;">點數</th>' +
     '<th style="padding-right:12px;">類型</th>' +
-    '<th style="padding-right:12px;">獨發點<br>日期<br><em style="color:#888;font-size:10px;">(trigger 到)</em></th>' +
-    '<th style="padding-right:12px;">獨發點<br>股價<br><em style="color:#888;font-size:10px;">(確認價)</em></th>' +
+    '<th style="padding-right:12px;">觸發點<br>日期<br><em style="color:#888;font-size:10px;">(trigger 到)</em></th>' +
+    '<th style="padding-right:12px;">觸發點<br>股價<br><em style="color:#888;font-size:10px;">(確認價)</em></th>' +
     '</tr>';
   const bodyRows = last10.map((p, idx) => {
     const seq = idx + 1;  // P1 = 最新

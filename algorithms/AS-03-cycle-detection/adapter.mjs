@@ -5102,13 +5102,13 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             chartRefs.maV2LineSeries.zigzag = null;
           }
 
-          // 大少 9月2日 00:52 trigger (4.66.0 fix) — 拎返 P 點 + 鮮紫獨發點 marker toggle (預設關, 大少 explicit)
+          // 大少 9月2日 00:52 trigger (4.66.0 fix) — 拎返 P 點 + 鮮紫觸發點 marker toggle (預設關, 大少 explicit)
           //   對齊 4.53.0 拎走嘅 #show-sequence + LS_KEY_SHOW_SEQUENCE 嗰個 spirit 拎返, 4.61.5 commit 拎走嗰個 toggle 拎返
           //   對齊 8月19日 13:03 Config UX 模式永久 rule: 即時 localStorage + 即時 re-render (唔需要撅跑 algorithm)
           //   凡人話: 撳開見 P1-P10 紫色圓圈 + 鮮紫 arrow trigger, 撳關只見紫色折線 + 4 條 MA + volume 視覺 clean
           //   大少 00:52 explicit「預設是關的」— 撳 page default 唔見任何 marker, 撳開 toggle 即時 re-render 拎返
           //   拎走 #show-sequence 嗰個 toggle (4.51.0 加 → 4.53.0 拎走 → 4.61.5 拎走 toggle + state 拎走晒 → 4.66.0 拎返 spirit)
-          //   用 #zigzag-markers-enabled 1 個 checkbox 控制 P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和獨發點的」)
+          //   用 #zigzag-markers-enabled 1 個 checkbox 控制 P 點 + 鮮紫 trigger 一齊 toggle (大少 trigger「控制這個P點和觸發點的」)
           // 4.66.2 fix: 拎返 check 移到 P 點 + trigger 入口之前
           //   4.66.0 嗰陣 check 喺 P 點 marker render 完成之後 (line 5214, 喺 P 點 block 入面), return 拎走嘅係鮮紫 trigger block 而唔係 P 點 marker
           //   凡人話「check 位置錯咗, P 點已經 render 咗先 return 拎走 trigger, 所以 P 點一直出」.
@@ -5145,7 +5145,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
           // 對齊 4.41.2 永久 rule: P 點 marker time field 用 business day object {year, month, day} 對齊紫色 ZigZag line setData 格式
           // 對齊 4.43.0 永久 rule: P 點 data 來源 verdict.meta.zigzagPoints (4.43.0 拎返後由 backend 注入, frontend 唔重計)
           // 唔拎返: 4.53.0 拎走嘅橙旗 (4.42.2) / 鮮綠 close extension 線 (4.8.3) / P 點 toggle 同 spinbutton (4.53.0)
-          // 4.64.0 拎返: 紅色獨發點 (Trigger 確認點) marker (Option D arrow shape + #FF5252 紅色 + inBar + size 1, 見 P 點 marker block 之後)
+          // 4.64.0 拎返: 紅色觸發點 (Trigger 確認點) marker (Option D arrow shape + #FF5252 紅色 + inBar + size 1, 見 P 點 marker block 之後)
           // 大少 9月1日 23:11 trigger (Fix 3 debug) — 加入口 log 查「P 點 marker 唔出」issue
           console.log(`[M1 v2.0 P-Debug] P 點 marker 入口: verdict.meta.zigzagPoints length=${verdict.meta?.zigzagPoints?.length}, zigzagSeries length=${zigzagSeries.length}, chartRefs.candleSeries=${chartRefs.candleSeries ? '✅ 存在' : '❌ 唔存在'}`);
           const reversedZigzagPoints = [...verdict.meta.zigzagPoints];  // 已經係 (新 → 舊) 排, sequence 1 = 最新
@@ -5237,7 +5237,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             }
           }
 
-          // ============ 大少 9月2日 00:23 trigger (4.64.0 fix) — 拎返紅色獨發點 (Trigger 確認點) marker ============
+          // ============ 大少 9月2日 00:23 trigger (4.64.0 fix) — 拎返紅色觸發點 (Trigger 確認點) marker ============
           //   凡人話: 每一個 P 點 (peak 山頂 / trough 山谷) 都有一個 trigger date — 即係「呢個 P 點係由邊日 K 線確認」
           //   對齊 4.57.0 backend 永久 rule: Peak trigger 拎嗰日 K 線 low, Trough trigger 拎嗰日 K 線 high
           //   對齊 4.15.0 永久 rule: 之字拎 point 同 trigger 都用 high/low (wick extreme)
@@ -5304,7 +5304,7 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
                 ];
                 chartRefs.zigzagSequenceMarkers.handle.setMarkers(_combinedMarkers);
                 chartRefs.zigzagSequenceMarkers.markers = _combinedMarkers;  // update for re-set block
-                console.log('[M1 v2.0] ✅ 紅色獨發點 (Trigger 確認點) marker (4.64.0 拎返 4.61.0 design, Option D arrow):',
+                console.log('[M1 v2.0] ✅ 紅色觸發點 (Trigger 確認點) marker (4.64.0 拎返 4.61.0 design, Option D arrow):',
                   _visibleTriggers.length, '個 (對齊 P 點 max=10)');
               } catch (e) {
                 console.warn('[M1 v2.0] ⚠️ v5 plugin 合併 P + Trigger markers crash:', e.message);

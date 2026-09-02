@@ -322,10 +322,10 @@
 
 ### 🔼 Priority 1 - 警號 (transition, 最重要)
 
-| # | 狀態 | 凡人話 | v2.1.0 簡單算法 (現有) | 已知問題 | 大少提議 |
+| # | 狀態 | 凡人話 | v2.2.0 簡單算法 (現有) | 已知問題 | 大少提議 |
 |---|------|--------|----------------|---------|---------|
-| 1 | **到頂** | 升到頂, 準備跌 | MA5 斜率 < -3% + MA60 斜率 > 0 + 連跌 ≥ 4 日 | ⚠️ 連跌 4 日太脆弱, 1 日微升打斷 | 改用 MA5 跌穿 MA60 (1 日 event) |
-| 2 | **到底** | 跌到底, 準備升 | MA5 斜率 > +3% + MA60 斜率 < 0 + 連升 ≥ 4 日 | ⚠️ 連升 4 日太脆弱 | 改用 MA5 升穿 MA60 (1 日 event) |
+| 1 | **到頂** | 升到頂, 準備跌 | MA60 斜率 > 0 + close < MA5 < MA20 + close < P2 + P2 > P4 + P3 > P5 + MA5 斜率 < -1% | ✅ 已 fix (2026-09-02 trigger) | ✅ 大少 trigger 落地, 拎走舊「連跌 4 日 + MA5 -3%」 |
+| 2 | **到底** | 跌到底, 準備升 | MA60 斜率 < 0 + close > MA5 > MA20 + close > P2 + P2 < P4 + P3 < P5 + MA5 斜率 > +1% | ✅ 已 fix (2026-09-02 trigger) | ✅ 大少 trigger 落地, 拎走舊「連升 4 日 + MA5 +3%」 |
 
 ### 🔼 Priority 2 - 強趨勢 (排列全 + 全部斜率 + 量能)
 
@@ -360,8 +360,8 @@
 
 | # | sub-scenario | 問題 | 大少提議 |
 |---|---|---|---|
-| 1 | **到頂** (Priority 1) | 連跌 4 日太脆弱, 1 日微升打斷 | 改用 MA5 跌穿 MA60 (1 日 event) |
-| 2 | **到底** (Priority 1) | 連升 4 日太脆弱 | 改用 MA5 升穿 MA60 (1 日 event) |
+| 1 | ~~**到頂** (Priority 1)~~ | ~~連跌 4 日太脆弱, 1 日微升打斷~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 |
+| 2 | ~~**到底** (Priority 1)~~ | ~~連升 4 日太脆弱~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 |
 | 3 | **強升** (Priority 2) | 太古 25% 升幅可能 algorithm 太鬆 (70% 日穿底) | ❓ 等 review |
 | 4 | **橫行** (Default) | 16 隻中 13 隻 MA5 斜率 > 2% (根本唔平) | 改用 `MA5>MA60 + close<MA5 ≥ 50%` + sub-condition |
 
@@ -374,11 +374,20 @@
 - ✅ **全部確認完一次過改 code, 之後做 Spec Sync + commit + push**
 - ✅ **改完即時 update v2.1.0 簡單算法表 (呢個 section) 嘅算法條件 column**
 
+### ⚠️ Z 點 caller 順序約定 (大少 2026-09-02 12:24 永久 rule)
+
+Caller 傳入 `options['zigzagPoints']` 必須用 **舊→新** 順序 (對齊 ZigZag algorithm `calculate_zigzag()` output):
+- `list[0]` = 最舊 Z 點
+- `list[-1]` = 最新 Z 點 (P1)
+- `list[-n]` = 第 n 新 (Pn)
+
+如果 caller 反轉傳入 (新→舊), trigger 條件會用錯 peak/trough, 結果亂晒。Frontend testing page / M7 Synthesizer 必須用 **舊→新** 順序 inject。
+
 ---
 
-**Maintainer**: 大少 + Mavis  
-**Created**: 2026-08-16 19:25  
-**Last Updated**: 2026-08-20 12:30 (大少 trigger #12: ZigZag direction flag refactor)  
+**Maintainer**: 大少 + Mavis
+**Created**: 2026-08-16 19:25
+**Last Updated**: 2026-09-02 12:24 (大少 trigger #13: 改到頂/到底 trigger 用 Z 點形態 + MA 條件組合)
 **Status**: 🚧 Research doc, 等大少逐條 review 指示
 
 
@@ -1330,7 +1339,7 @@ D 方向: KNOWN ISSUE - uvicorn subprocess 拎空 stdout (workaround: 大少手�
 ## 🟢 大少 trigger #N+8 — 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 2026-09-01 22:58)
 
 ### 凡人話解釋
-大少 9月1日 22:58 trigger「現在把在Backend已計好的P1，P2, P3,.....的點放到圖表裡，要寫上P1，P2， P3...」— 拎返 4.51.0 拎返嘅紫色 ZigZag P 點 sequence marker，但**唔拎返** 4.53.0/4.61.5 拎走嘅其他嘢 (橙旗 / 鮮綠 close extension 線 / 紅色獨發點 / P 點 toggle 同 spinbutton)。只係拎返 P 點視覺化, 拎走嗰陣拎走嘅其他嘢保留拎走。
+大少 9月1日 22:58 trigger「現在把在Backend已計好的P1，P2, P3,.....的點放到圖表裡，要寫上P1，P2， P3...」— 拎返 4.51.0 拎返嘅紫色 ZigZag P 點 sequence marker，但**唔拎返** 4.53.0/4.61.5 拎走嘅其他嘢 (橙旗 / 鮮綠 close extension 線 / 紅色觸發點 / P 點 toggle 同 spinbutton)。只係拎返 P 點視覺化, 拎走嗰陣拎走嘅其他嘢保留拎走。
 
 ### 改動清單
 - `algorithms/AS-03-cycle-detection/adapter.mjs` `renderMAAlignmentV2ChartOverlay` (line 5103 之後) 拎返 P 點 marker block (約 65 行)
@@ -1365,7 +1374,7 @@ D 方向: KNOWN ISSUE - uvicorn subprocess 拎空 stdout (workaround: 大少手�
 - ❌ P 點 toggle (checkbox) + max count spinbutton (4.53.0)
 - ❌ 橙旗決定點 marker (4.42.2)
 - ❌ 鮮綠 close extension 線 (4.8.3 / 4.51.0)
-- ❌ 紅色獨發點 marker (4.61.5)
+- ❌ 紅色觸發點 marker (4.61.5)
 
 ### 對應 commit
 - 即將 push (`feat(adapter): 拎返 M1 紫色 ZigZag P 點 sequence marker (4.62.0, 對齊 8月29日 14:32 P1/P2/P3/P4 indexing)`)

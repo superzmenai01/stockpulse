@@ -160,8 +160,8 @@ def calculate_zigzag(
     Returns:
         list of {date, value, type: 'high' | 'low', index, triggerIndex, triggerDate, triggerPrice}
         - value: point 嘅價 (高點拎 high, 低點拎 low)
-        - triggerIndex: 獨發點 K 線 index (對齊 4.15.0 規則, 「之後反方向走勢去到 threshold % 確認前一個 point 嗰個 K 線」)
-        - triggerDate: 獨發點 K 線日期
+        - triggerIndex: 觸發點 K 線 index (對齊 4.15.0 規則, 「之後反方向走勢去到 threshold % 確認前一個 point 嗰個 K 線」)
+        - triggerDate: 觸發點 K 線日期
         - triggerPrice: 對齊 4.15.0 規則拎嗰個 K 線 high (trough) / low (peak)
     """
     if not klines or len(klines) < 2:
@@ -202,7 +202,7 @@ def calculate_zigzag(
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_high <= -threshold:
-                # 大少 8月31日 17:42 trigger (4.57.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Peak 嘅觸發點 = 之後跌到 -threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Peak trigger 拎嗰日 K 線 low (跌到 low 先 confirm)
                 # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX: 拎 P point K 線 candidate (last_swing_idx 喺跌 -threshold 嗰個 moment 嘅 snapshot)
                 # 對齊凡人話: trigger 一定要係 P point 之後嘅 K 線, intra-bar 同一個 K 線跌夠 -threshold 唔算 confirm P point
@@ -229,7 +229,7 @@ def calculate_zigzag(
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_low >= threshold:
-                # 大少 8月31日 17:42 trigger (4.57.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Trough 嘅觸發點 = 之後升到 +threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Trough trigger 拎嗰日 K 線 high (升到 high 先 confirm)
                 # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX
                 trough_idx_candidate = last_swing_idx  # ← snapshot P point K 線 (升 +threshold 嗰個 moment)
@@ -260,7 +260,7 @@ def calculate_zigzag(
                 last_swing_high = klines[i]['high']
                 last_swing_idx = i
             if change_from_high <= -threshold:
-                # 大少 8月31日 17:42 trigger (4.57.0) — Peak 嘅獨發點 = 之後跌到 -threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Peak 嘅觸發點 = 之後跌到 -threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Peak trigger 拎嗰日 K 線 low (跌到 low 先 confirm)
                 # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX: 拎 P point K 線 candidate (last_swing_idx 喺跌 -threshold 嗰個 moment 嘅 snapshot)
                 # 對齊凡人話: trigger 一定要係 P point 之後嘅 K 線, intra-bar 同一個 K 線跌夠 -threshold 唔算 confirm P point
@@ -284,7 +284,7 @@ def calculate_zigzag(
                 last_swing_low = klines[i]['low']
                 last_swing_idx = i
             if change_from_low >= threshold:
-                # 大少 8月31日 17:42 trigger (4.57.0) — Trough 嘅獨發點 = 之後升到 +threshold 嗰個 K 線
+                # 大少 8月31日 17:42 trigger (4.57.0) — Trough 嘅觸發點 = 之後升到 +threshold 嗰個 K 線
                 # 對齊 4.15.0 永久 rule: Trough trigger 拎嗰日 K 線 high (升到 high 先 confirm)
                 # 大少 8月31日 21:29 trigger (4.57.1) — BUG FIX
                 trough_idx_candidate = last_swing_idx  # ← snapshot P point K 線 (升 +threshold 嗰個 moment)
@@ -326,8 +326,8 @@ def calculate_zigzag(
             "is_ongoing": True,      # 4.60.0 新加, frontend 拎呢個 flag 顯示「(待觸發)」
         })
 
-    # 大少 8月31日 17:42 trigger (4.57.0) — 加獨發點 3 個 field (triggerIndex / triggerDate / triggerPrice)
-    #   凡人話: 大少想知每個 ZigZag point 係「邊一日 trigger 到 threshold % 先 confirm 嘅」(獨發點)
+    # 大少 8月31日 17:42 trigger (4.57.0) — 加觸發點 3 個 field (triggerIndex / triggerDate / triggerPrice)
+    #   凡人話: 大少想知每個 ZigZag point 係「邊一日 trigger 到 threshold % 先 confirm 嘅」(觸發點)
     #   對齊 4.15.0 永久 rule「之字拎 point 同 trigger 都用 high/low」, trigger 拎嗰個 K 線 high (trough) / low (peak)
     #   永久 rule: 之後 ZigZag 拎新 point / 改 algorithm 嗰陣必加呢 3 個 field
 
