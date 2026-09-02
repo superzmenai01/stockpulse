@@ -629,6 +629,37 @@ def _compute_fetch_max_count(period):
 
 **對應 commit**: `fix(stockpulse): 拎返 P 點 + 鮮紫獨發點 marker toggle (4.66.0, 預設關, 大少 9月2日 00:52 trigger「做返一個開關制是控制這個P點和獨發點的 預設是關的」)` (6d3fae89)
 
+### M1 「啟用 P 點 + 鮮紫獨發點」toggle 改 default On + 加返 localStorage 自動記住 永久 rule (4.66.6, 大少 2026-09-02 22:40 trigger「預設是 On 的, 即是在圖表裡可以看到 P1, P2, P3...」) — **反轉 4.66.5 拎走嘅 spec, 拎返 4.66.0 嗰個 localStorage 自動記住 spirit**
+
+**凡人話解釋**: 4.66.5 拎走咗 4.66.0 嗰個 localStorage 自動記住 spec + 改永遠 default false, 大少 9月2日 22:40 trigger 反轉: 「預設是 On 的, 即是在圖表裡可以看到 P1, P2, P3...」。即係大少而家 reload page 預設見到 P1-P10 紫色圓圈 + 鮮紫 trigger arrow (唔使再撳 toggle), 同時保留 4.66.0 嗰個 localStorage 自動記住 user setting 嘅 spirit (撳 toggle 改 setting 之後 reload 仲係記住, 唔似 4.66.5 永遠返 default)。
+
+**4.66.6 永久 rule**:
+- ✅ **Default**: `true` (大少 9月2日 22:40 trigger「預設是 On 的」, 反轉 4.66.5 嗰個 `false` default, 對齊大少 trigger「即是在圖表裡可以看到 P1, P2, P3...」)
+- ✅ **State variable**: `let zigzagMarkersEnabled = true;` (testing-page.js, default on, 4.66.6 反轉 4.66.5 拎走嘅 `false`)
+- ✅ **localStorage key (4.66.6 拎返)**: `stockpulse.zigzag.markersEnabled` (JSON 格式, 取代 4.66.0 嗰個 `LS_KEY_SHOW_MARKERS = 'stockpulse.zigzag.showMarkers'` string, 4.66.6 用 JSON 對齊其他 toggle LS key pattern)
+- ✅ **Helper (4.66.6 拎返)**: `setShowMarkers(enabled)` 同步 set state + checkbox + localStorage (3 個 action 一齊, 對齊 8月19日 13:03 Config UX 模式 spirit)
+- ✅ **Init 同步 (4.66.6 改寫)**: page load 嗰陣 `_stored = localStorage.getItem('stockpulse.zigzag.markersEnabled')` → 有 record 用 user setting, 冇 record (第一次 reload) fallback default `true`
+- ✅ **Change handler (4.66.6 改寫)**: 撳 checkbox 即時 `setShowMarkers(e.target.checked)` (即時 localStorage 自動儲存) + `lastChartRefs.zigzagMarkersEnabled = ...` + re-call `currentAdapter.renderChartOverlay()` 即時 re-render
+- ✅ **大少 explicit 預設 On (4.66.6 改寫)**: 撅完 reload page → 讀 localStorage (有 record → user setting, 冇 record → default `true`), 反轉 4.66.5 嗰個「永遠 default false」
+
+**對齊永久 rule** (3 條):
+- 8月19日 13:03 Config UX 模式: 即時 localStorage 自動儲存 + 即時 re-render (唔需要撅跑 algorithm) — 4.66.6 拎返 4.66.0 拎走嘅 spirit
+- 4.66.0 (00:52) toggle 結構: `<input id="zigzag-markers-enabled">` + `zigzagMarkersEnabled` state + handler 即時 re-render — 4.66.6 保留
+- 4.66.4 (01:31) 對稱拎走 marker: 撳關 toggle 嗰陣 marker 拎走邏輯喺 adapter.mjs:5125-5134 處理 — 4.66.6 保留
+
+**對應 commit**: `fix(testing-page): M1 「啟用P點 + 鮮紫獨發點」toggle 改 default On + 加返 localStorage 自動記住 (4.66.6)` (f509c0b2) — Spec Sync #66
+
+**4.66.0-4.66.6 演進 timeline**:
+- 4.66.0 (00:52): 拎返 toggle 本身 (4.53.0 拎走嘅 spirit 拎返), default false + localStorage 自動記住
+- 4.66.1 (01:05): hotfix debug toggle + bump cache bust
+- 4.66.2 (01:11): 拎返 check 移到 P 點 + trigger 入口之前
+- 4.66.3 (01:21): 加 console.log debug toggle
+- 4.66.4 (01:31): 撳關 toggle 嗰陣拎走殘留 P 點 + 鮮紫 trigger marker
+- 4.66.5 (07:34): 拎走 localStorage 自動記住, 永遠 default false
+- 4.66.6 (22:40, 今次): 反轉 4.66.5 → 改 default true + 加返 localStorage 自動記住 ✅
+
+**凡人話總結**: 4.66.6 完美對齊大少 workflow — Reload page 預設見 P1-P10 (唔使再撳 toggle), 但撳 toggle 改 setting 之後 reload 仲係記住 (Config UX 模式 spirit)。對齊之前 Spec Sync 4.66.0 拎返 4.53.0 拎走嘅 spirit 嗰個對稱 pattern。
+
 ### M1 「啟用 P 點」toggle 對稱拎走 marker 永久 rule (4.66.4, 大少 2026-09-02 01:31 trigger「在M1 裡有個制是啟用P點的，但有問題」) — **補返 4.66.0 漏咗嘅對稱拎走動作**
 
 **凡人話解釋**: 大少 4.66.0 拎返 P 點 + 鮮紫獨發點 marker toggle 嗰陣, 撳關 toggle 之後**之前 render 嘅 P 點 P1-P10 紫色圓圈 + 鮮紫 trigger arrow 仲殘留喺 chart 上面, 冇拎走**。4.66.0 + 4.66.2 嘅 `if (chartRefs.zigzagMarkersEnabled !== true) return;` 攔截 render, 但**冇對稱拎走**之前已經 render 落 chart 嘅 marker。Lightweight Charts v5 `createSeriesMarkers` 拎 plugin handle, handle 仲喺 chart 上面 render 緊舊 markers。撳 toggle cycle 開/關/開/關 嗰陣, P 點 + 鮮紫 trigger 從來冇真正消失過。
