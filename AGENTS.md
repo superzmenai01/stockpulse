@@ -1988,3 +1988,37 @@ After fix:  0 WARNING, 拎到正確 reason
 
 **對應 commit**: `fix(stockpulse): 拎返 v5 createSeriesMarkers plugin API + max 10 + fallback chain 10→5→3 (4.63.0, P 點 marker 對 49+ markers 唔 render fix)` (047ed1e8)
 
+
+
+### Dead Code Cleanup 永久 rule (大少 2026-09-02 trigger「帮我清理项目里的冗余代码」, Spec Sync #62)
+
+**凡人話解釋**: 4 个月研发期后, `/Users/zmenai/stockpulse` 仓库累积咗 19 个冇用 file (4-5 月旧 debug script + 0 字节死 DB + 一次性 test + 死 folder) 同 1 个重复实现 (`populate_plates_v2.py`)。大少 2026-09-02 trigger 触发本次 Spec Sync #62 一次性大清理。
+
+**拎走项目 (19 个 + 1 个 modified)**:
+
+| 类别 | 数量 | 内容 |
+|------|------|------|
+| A 类 — 4-5 月旧 debug script | 7 | `cdp_screenshot.py` / `download_stocks.py` / `test_subscribe.py` / `test_ws_client.py` / `test_ws_debug.py` / `restart_trigger.sh` / `start_trigger.sh` |
+| A 类 — 死 DB / 0 字节 | 5 | `stockpulse.db` (根) / `plate_leaders_options` (根) / `backend/stocks.db` / `backend/data/stockpulse.db` / `backend/data/cache.db` |
+| A 类 — 一次性 test / HTML | 2 | `test-m9-fix.mjs` / `tmp-zigzag-flag-test.html` |
+| A 类 — 0 字节 log | 2 | `trigger.log` / `trigger.log.20260809_193222` |
+| A 类 — 死 folder | 2 | `web/src/pages/KlineDebugPage/` / `web/test-results/` |
+| C 类 — 重复实现 | 1 | `backend/scripts/populate_plates_v2.py` |
+| E 类 — `.gitignore` 优化 | 1 modified | 加 4 条 rule: `miniapp/.env` / `web/test-results/` / `/stockpulse.db` / `/plate_leaders_options` |
+
+**永久 rule**:
+- ✅ 4-5 月旧 debug script 永远唔入 git (7 个, 冇任何 .py / .sh / .md / 永久 rule 引用)
+- ✅ 0 字节死 DB 永远唔入 disk (5 个, 真正 DB 喺 `backend/stockpulse.db` 73MB + `backend/data/stocks.db` 3MB)
+- ✅ 死 folder 永远拎走 (2 个: KlineDebugPage + web/test-results)
+- ✅ `.gitignore` 加 4 条 rule 防后加 (含 `miniapp/.env` 防 Telegram token 意外 commit)
+- ✅ 重复实现永远拎走 (populate_plates_v2.py — v1 311 行已覆盖全部功能 + 更完整 filter)
+
+**保留嘅嘢** (大少 2026-09-02 confirm):
+- 临时一次性 script (B 类 5 个): `tmp_research_v23_subscenarios_v4.py` / `tmp_research_v25_v21subscenarios.py` / `tmp_refresh_178_stocks.py` / `tmp_refresh_55_missing.py` / `tmp_trace_opend_errors.py` — AGENTS.md §「數據處理 Server 內部做 永久 rule」永久 rule 引用咗 v4 + v25 做 evidence
+- 4-5 月 backend file (F 类 9 个): `futu_conn/subscription.py` / `services/event_bus.py` / `services/encryption.py` / `services/web_search.py` / `models/stock.py` / `models/group.py` / `models/group_stock.py` / `models/settings.py` / `api/settings.py` — 全部仍用紧
+- 死代码注释 (D 类): `backend/api/kline.py:148-149` 嘅 "刪走 dead code" 注释 — 保留作 "凡改必留注" 嘅正面示范
+- G 类 6 件 (大少保留): `web/dist/` / `M1-sub-scenario-print-v2.1.0.docx` / `paper-trading-sim.html` / `docs/演算法概念SPECS/*.docx` / `data/transcripts/clean/phase_*.py` / `miniapp/.env`
+
+**凡人話**: 拎走 19 个死 file + 改 `.gitignore` 加 4 条 rule, 根目录少 10 个 file, 0 字节死 DB 由 3 → 0, 死 folder 由 2 → 0, 重复 populate_plates 由 2 → 1。**冇任何 active code 改动**。
+
+**对應 doc**: ARCHITECTURE.md §15.68 (Spec Sync #62)

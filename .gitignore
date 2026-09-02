@@ -65,3 +65,12 @@ scripts/stage1p_tuning_results.json
 docs/演算法概念SPECS/
 .gitignore.test
 tmp-zigzag-flag-test.html
+
+# 大少 2026-09-02 cleanup (Spec Sync #62)
+# miniapp/.env 內含真實 Telegram bot token, 必須 ignore 防後加時意外 commit
+miniapp/.env
+# Playwright test 殘留 (4月研發期 debug)
+web/test-results/
+# 0 字節死 DB 同死 file, 拎走後防止再被加返
+/stockpulse.db
+/plate_leaders_options

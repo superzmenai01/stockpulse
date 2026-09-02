@@ -5575,3 +5575,90 @@ Lightweight Charts v5 `createSeriesMarkers` 拎 plugin handle, handle 仲喺 cha
 
 
 
+
+
+## §15.68 — Dead Code Cleanup (大少 2026-09-02 trigger「帮我清理项目里的冗余代码」, Spec Sync #62) [2026-09-02]
+
+### Context (4 个月研发期累积嘅死代码 + 0 字节 DB + 重复实现)
+
+`/Users/zmenai/stockpulse` 仓库 4-9 月期间累积咗一批 **根目录 4 月旧 debug script**、**0 字节空文件 / 死 DB**、**一次性临时研究 script**、**空 folder** 同 **git tracked 但应 ignore 嘅残留**。大少 2026-09-02 trigger「帮我清理项目里的冗余代码」, 触发本次 Spec Sync #62 一次性大清理。
+
+### 大少 trigger
+
+- 2026-09-02 trigger「帮我清理项目里的冗余代码：无用文件与依赖、重复实现、废弃注释与开关、死代码分支都找出来, 删之前列一份清单让我确认」
+
+### 拎走项目 (19 个 + 1 个 modified)
+
+| 类别 | 数量 | 拎走内容 |
+|------|------|----------|
+| **A 类 — 4-5 月旧 debug script** | 7 个 | `cdp_screenshot.py` (4月30日) / `download_stocks.py` (4月28日) / `test_subscribe.py` (4月26日) / `test_ws_client.py` (4月26日) / `test_ws_debug.py` (4月27日) / `restart_trigger.sh` (5月7日) / `start_trigger.sh` (5月7日) |
+| **A 类 — 死 DB / 0 字节** | 5 个 | `stockpulse.db` (根 0字节) / `plate_leaders_options` (根 0字节) / `backend/stocks.db` (0字节) / `backend/data/stockpulse.db` (0字节) / `backend/data/cache.db` (0字节) |
+| **A 类 — 一次性 test / 临时 HTML** | 2 个 | `test-m9-fix.mjs` (8月10日 M9 debug) / `tmp-zigzag-flag-test.html` (8月30日 临时 ZigZag flag) |
+| **A 类 — 0 字节 log** | 2 个 | `trigger.log` (0字节) / `trigger.log.20260809_193222` (0字节) |
+| **A 类 — 死 folder** | 2 个 | `web/src/pages/KlineDebugPage/` (只剩 .DS_Store) / `web/test-results/` (4月30日 Playwright 残留) |
+| **C 类 — 重复实现** | 1 个 | `backend/scripts/populate_plates_v2.py` (v1 已覆盖全部功能, 且 PLATES_PIPELINE_DISABLED=True 早期 exit) |
+| **E 类 — .gitignore 优化** | 1 个 modified | 加 4 条 rule: `miniapp/.env` / `web/test-results/` / `/stockpulse.db` (path 限定根) / `/plate_leaders_options` (path 限定根) |
+
+**Total**: 19 个拎走 + 1 个 modified (.gitignore)
+
+### 永久 rule (2026-09-02 Spec Sync #62 大清理)
+
+- ✅ **4-5 月旧 debug script 永远唔入 git**: 拎走 `cdp_screenshot.py` / `download_stocks.py` / `test_subscribe.py` / `test_ws_client.py` / `test_ws_debug.py` / `restart_trigger.sh` / `start_trigger.sh`, 冇任何 .py / .sh / .md / 永久 rule 引用, 拎走冇副作用
+- ✅ **0 字节死 DB 永远唔入 disk**: 拎走 `stockpulse.db` (根) / `plate_leaders_options` (根) / `backend/stocks.db` / `backend/data/stockpulse.db` / `backend/data/cache.db`, 真正 DB 喺 `backend/stockpulse.db` (73MB) 同 `backend/data/stocks.db` (3MB)
+- ✅ **死 folder 永远拎走**: `web/src/pages/KlineDebugPage/` (8月9日后只剩 .DS_Store) / `web/test-results/` (4月30日后无更新), 拎走 + 加 `.gitignore` rule 防后加
+- ✅ **`.gitignore` 加 4 条 rule 防后加**:
+  - `miniapp/.env` (含真實 Telegram bot token, 拎走 .env rule 配 root 已 ignore, 但加 explicit `miniapp/.env` 防后加)
+  - `web/test-results/` (Playwright artifact)
+  - `/stockpulse.db` (path 限定根, 0 字节死 DB 不会再生)
+  - `/plate_leaders_options` (path 限定根, 0 字节死 file 不会再生)
+- ✅ **重复实现永远拎走**: `backend/scripts/populate_plates_v2.py` 系大少 7月25日 reset 后重写嘅简化版, 但 v1 (311 行) 已覆盖全部功能 + 更完整 filter, v2 (162 行) 永远系 dead code
+- ⚠️ **保留嘅嘢**:
+  - 临时一次性 script (B 类): `tmp_research_v23_subscenarios_v4.py` / `tmp_research_v25_v21subscenarios.py` / `tmp_refresh_178_stocks.py` / `tmp_refresh_55_missing.py` / `tmp_trace_opend_errors.py` — AGENTS.md §「數據處理 Server 內部做 永久 rule」永久 rule 入面引用咗 v4 + v25 做 evidence, 拎走会破永久 rule reference
+  - 4-5 月 backend file (F 类): `futu_conn/subscription.py` / `services/event_bus.py` / `services/encryption.py` / `services/web_search.py` / `models/stock.py` / `models/group.py` / `models/group_stock.py` / `models/settings.py` / `api/settings.py` — 睇落旧但全部仍用紧
+  - 死代码注释 (D 类): `backend/api/kline.py:148-149` 嘅 "刪走 dead code" 注释保留作 "凡改必留注" 嘅正面示范
+  - `web/dist/` (G1) / `M1-sub-scenario-print-v2.1.0.docx` (G2) / `paper-trading-sim.html` (G3) / `docs/演算法概念SPECS/*.docx` (G4) / `data/transcripts/clean/phase_*.py` (G5) / `miniapp/.env` (G6) — 大少 2026-09-02 confirm 全部保留
+
+### Failure mode coverage
+
+- 拎走 A1-A7 后 `git log` 会显示 7 个 file removal commit, commit message 加 `chore(cleanup): 拎走 4-5 月研发期 dead files` 标明
+- 拎走 C2 后 `models/plate.py:60` 嘅 `classify_plate_type` import 仍然有效 (v1 仲在用), 唔会破
+- 拎走 A17 `KlineDebugPage/` 后 web App.tsx 冇 import 引用, 拎走冇副作用
+- 拎走 A18 `web/test-results/` 后 Playwright config 冇引用, 拎走冇副作用
+- 加 `.gitignore` 4 条 rule 后, 未来再 `git add` 同名 file 自动被 ignore, 不会污染 git history
+
+### Affected files
+
+- 19 个 file deletion: `cdp_screenshot.py` / `download_stocks.py` / `test_subscribe.py` / `test_ws_client.py` / `test_ws_debug.py` / `restart_trigger.sh` / `start_trigger.sh` / `plate_leaders_options` / `test-m9-fix.mjs` / `tmp-zigzag-flag-test.html` / `trigger.log` / `trigger.log.20260809_193222` / `stockpulse.db` (根) / `backend/stocks.db` / `backend/data/stockpulse.db` / `backend/data/cache.db` / `web/src/pages/KlineDebugPage/` (folder) / `web/test-results/` (folder) / `backend/scripts/populate_plates_v2.py`
+- 1 个 file modified: `.gitignore` (加 4 条 rule)
+- `AGENTS.md` 「Dead Code Cleanup 永久 rule (2026-09-02 Spec Sync #62)」section (本段, Spec Sync 永久 rule)
+- `ARCHITECTURE.md` §15.68 (本段, Spec Sync 永久 rule)
+
+### 凡人話解釋
+
+4 个月研发期之后, 仓库累积咗 19 个冇用嘅 file (4-5 月旧 debug script + 0 字节死 DB + 一次性 test + 死 folder) 同 1 个重复实现 (populate_plates_v2.py)。拎走之后, 根目录少 10 个 file, 0 字节死 DB 由 3 → 0, 死 folder 由 2 → 0, 重复 populate_plates 由 2 → 1, `.gitignore` 加 4 条 rule 防后加。**冇任何 active code 改动** (F 类 9 个旧 backend file 全部仍用紧, B 类 5 个临时 script 全部保留作 audit trail)。
+
+### Acceptance tests
+
+- `git log --stat` 显示 9 个 file removal commit (8 个 A 类 git tracked + 1 个 C2)
+- `git status` 显示 .gitignore modified + 8 个 D (deleted from index) + 1 个 ` D` (untracked deleted)
+- `git check-ignore -v miniapp/.env` 返 `.gitignore:71:miniapp/.env	miniapp/.env`
+- `git check-ignore -v /stockpulse.db` 返 `.gitignore:75:/stockpulse.db	stockpulse.db`
+- `ls -la web/src/pages/KlineDebugPage/` 返 `No such file or directory`
+- `ls -la web/test-results/` 返 `No such file or directory`
+- `python3 -c "import sys; sys.path.insert(0, 'backend'); from models.plate import classify_plate_type; print('OK')"` 仍能 import (v1 populate_plates.py 仲在用, 拎走 v2 冇副作用)
+
+### 對齊永久 rule (5 條)
+
+- 8月29日 22:44 改寫 workflow rule: 改動要 confirm — 拎走前 plan 已 confirm (本 Spec Sync #62)
+- 8月22日 23:20 Algorithm Backend-only + 模組化: 拎走重复 populate_plates_v2.py 之后, backend 仍用 populate_plates.py (v1) 单一 source of truth
+- 8月22日 23:20 K-line 讀取一定要用 KlineCache full flow: 拎走重复 populate_plates_v2.py 同 `backend/data/stockpulse.db` (0字节死 DB) 之后, 真正 K-line cache 喺 `backend/stockpulse.db` (73MB)
+- 8月22日 23:20 數據處理 Server 內部做: 拎走 4-5 月旧 startup script (`start_trigger.sh` / `restart_trigger.sh`) 之后, backend startup 改用 `start.sh` 永久 rule v2 (7月23日)
+- 7月25日 龍頭板塊 reset: 拎走重复 populate_plates_v2.py 之后, populate_plates 单一 source 喺 `backend/scripts/populate_plates.py` (v1), PLATES_PIPELINE_DISABLED=True 时 early exit
+
+### 對應 commit (將來 push)
+
+- `chore(cleanup): 拎走 4-5 月研发期 dead files (cdp_screenshot / download_stocks / test_subscribe / test_ws_client / test_ws_debug / restart_trigger / start_trigger) + 0 字节死 DB (5 个) + 一次性 test (test-m9-fix.mjs / tmp-zigzag-flag-test.html) + 死 folder (KlineDebugPage / web/test-results)`
+- `chore(scripts): 拎走 populate_plates_v2.py (重复实现, v1 已覆盖, Spec Sync #62)`
+- `chore(gitignore): 加 4 条 rule 防后加 (miniapp/.env / web/test-results/ / 根 stockpulse.db / 根 plate_leaders_options, Spec Sync #62)`
+- Spec Sync: ARCHITECTURE.md §15.68 (本段) + AGENTS.md 「Dead Code Cleanup 永久 rule (2026-09-02 Spec Sync #62)」section
+
