@@ -170,6 +170,100 @@ def _round(value: float, decimals: int) -> float:
     return round(value * factor) / factor
 
 
+def _get_recent_zigzag_points(klines: List[Dict[str, Any]], options: Dict[str, Any], n: int = 5) -> List[Dict[str, Any]]:
+    """凡人話: 拎最近 n 個 ZigZag P 點, 保證返**新→舊** list 俾 caller
+
+    大少 2026-09-02 12:24 trigger: M1 trigger 用 Z 點形態 (P2/P3/P4/P5 比較)
+    大少 2026-09-03 07:35 trigger: 所有 sub-scenario trigger 嘅 P1/P2/P3 都要用 P 點來源
+    大少 2026-09-03 07:05 P 點 vocabulary: P1=最新, list[0]=P1, list[-1]=P_n=最舊
+    大少 2026-09-03 11:00 trigger: P 點必須有 `type` field (Peak / Trough), 唔直接用 Z 點 high/low
+
+    ⚠️ **重要: 順序約定 (大少 9月3日 07:05 + 07:35 trigger 修正)**
+    Helper 永遠返**新→舊** list, 對齊 ZigZagAlgorithm.run().points output:
+    - list[0] = P1 = 最新 Z 點
+    - list[1] = P2 = 第二新
+    - list[n-1] = P_n = 第 n 新
+    - list[-1] = P_n = 最舊 (如果 list 內有 n 個)
+
+    Caller (algorithm.py 到頂/到底 trigger) 用:
+    - p1 = recent_zz[0]  ← 最新
+    - p2 = recent_zz[1]  ← 第二新
+    - p3 = recent_zz[2]
+    - p4 = recent_zz[3]
+    - p5 = recent_zz[4]  ← 第五新
+    - p6 = recent_zz[5]  ← 第六新
+    - p7 = recent_zz[6]  ← 第七新
+
+    ⚠️ **P 點 type 永久 rule (大少 2026-09-03 11:00 trigger)**
+    Helper 內部統一 Z 點 type "high"/"low" → P 點 type "Peak"/"Trough":
+    - Z 點 type="high" → P 點 type="Peak"  (峰頂)
+    - Z 點 type="low"  → P 點 type="Trough" (谷底)
+    Caller 永遠用 P 點 type (Peak / Trough), 唔直接寫 Z 點 high/low。
+    套用: M1 / M7 / 其他 algorithm 之後嘅 P 點 trigger 全部跟呢個 pattern。
+
+    Z 點取法 (混合方案, 大少 9月2日 plan 確認):
+    1. 優先取 caller 傳入 options['zigzagPoints'] (對齊 Spec Sync #46 精神, frontend inject)
+       - Caller 必須傳**新→舊**順序 (對齊 ZigZagAlgorithm.run().points output)
+       - list[0] = P1 = 最新
+    2. Fallback: 內部 call calculate_zigzag() (用現有 backend/algorithms/zigzag/algorithm.py 算法,
+       1-to-1 port testing page 4.15.0 + 4.16.0 + 4.56.0/4.57.x)
+       - calculate_zigzag() raw output 係**舊→新** (list[0] = 最舊, list[-1] = 最新)
+       - Helper 內部 reverse 變新→舊, 對齊 caller inject 嘅順序
+
+    Returns:
+        list of {date, value, type, index, triggerIndex, triggerDate, triggerPrice}
+        **新→舊** 順序, 頭 n 個 (P1 = list[0] = 最新)
+        `type` 永遠係 "Peak" 或 "Trough" (大少 9月3日 11:00 永久 rule)
+    """
+
+    def _normalize_type(point: Dict[str, Any]) -> Dict[str, Any]:
+        """凡人話: Z 點 type "high"/"low" 轉 P 點 type "Peak"/"Trough"
+        (大少 2026-09-03 11:00 永久 rule, P 點抽象層唔直接用 Z 點 type)"""
+        if not point:
+            return point
+        z_type = point.get("type")
+        if z_type == "high":
+            return {**point, "type": "Peak"}
+        if z_type == "low":
+            return {**point, "type": "Trough"}
+        # 已經係 Peak/Trough (caller inject 過) 或 None, 保留
+        return point
+
+    caller_points = options.get("zigzagPoints")
+    if caller_points and len(caller_points) >= n:
+        # Caller 傳新→舊, 頭 n 個 = 最新 n 個 (對齊 ZigZagAlgorithm.run().points output)
+        return [_normalize_type(p) for p in caller_points[:n]]
+
+    # Fallback: instantiate ZigZagAlgorithm class 拎 Z 點 (大少 2026-09-03 14:37 trigger 方案 B)
+    # 對齊 backend endpoint `/api/algorithms/run?algo=zigzag` + frontend testing page 拎法
+    # 拎走舊版 calculate_zigzag function (拎出嚟 Z 點 trigger date 拎早 6 日, 唔係完整 1-to-1 port frontend)
+    from ..zigzag.algorithm import ZigZagAlgorithm
+    threshold_mode = options.get("threshold_mode", "auto")
+    manual_threshold = options.get("manual_threshold")
+    lookback = int(options.get("lookback", 20))
+    multiplier = float(options.get("multiplier", 2.5))
+    # 對齊 run_zigzag / ZigZagAlgorithm 拎法 (auto threshold 用 K 線波動率計, 唔寫死 5%)
+    if threshold_mode == "manual" and manual_threshold is not None:
+        threshold = float(manual_threshold)
+    else:
+        threshold = options.get("threshold", options.get("zigzagThresholdPercent", 5.0))
+    zz_algo = ZigZagAlgorithm()
+    zz_verdict = zz_algo.run(klines, {
+        "threshold": float(threshold),
+        "threshold_mode": threshold_mode,
+        "manual_threshold": manual_threshold,
+        "lookback": lookback,
+        "multiplier": multiplier,
+    })
+    if not zz_verdict.ok:
+        # ZigZag 拎失敗 (數據太少), return empty list 俾 caller fall through
+        return []
+    # ZigZagAlgorithm.run().points 已經係**新→舊**排序 (sequence 1=最新), 直接 [:n] 拎頭 n 個
+    points = zz_verdict.points or []
+    selected = points[:n]  # 拎頭 n 個 (已經係新→舊, list[0]=P1=最新)
+    return [_normalize_type(p) for p in selected]
+
+
 class MAAlignmentV2Algorithm(Algorithm):
     """M1 MA Alignment v2.2.0 algorithm (凡人話 contract) - Adaptive ThresholdPct (大少 2026-08-21 18:37)"""
     name = "ma_alignment"
@@ -274,19 +368,9 @@ class MAAlignmentV2Algorithm(Algorithm):
         is_bullish = rank_periods == sorted_periods_asc
         is_bearish = rank_periods == sorted_periods_desc
 
-        # 計最近連續跌日數 + 連續升日數
-        consecutive_down_days = 0
-        for i in range(len(klines) - 1, 0, -1):
-            if klines[i]["close"] < klines[i-1]["close"]:
-                consecutive_down_days += 1
-            else:
-                break
-        consecutive_up_days = 0
-        for i in range(len(klines) - 1, 0, -1):
-            if klines[i]["close"] > klines[i-1]["close"]:
-                consecutive_up_days += 1
-            else:
-                break
+        # 大少 2026-09-02 12:24 trigger: 拎走連跌/連升日數計算
+        # 原因: 舊 trigger 嘅「連跌/連升 4 日」條件太脆弱 (1 日微升打斷), 新 trigger 改用 Z 點形態 + MA 條件 + 斜率組合, 唔再用連跌日數
+        # Spec Sync (即將 push) 永久 rule: 到頂/到底 trigger 拎走 consecutiveDays field
 
         # 拎短期 / 長期 MA 嘅 slope
         def calc_slope(period: int) -> float:
@@ -308,19 +392,88 @@ class MAAlignmentV2Algorithm(Algorithm):
         sub_scenario = None
         cycle_position = None
 
-        # Priority 1: 到頂轉勢
-        if slope_ma5 < -0.03 and long_slope_positive and consecutive_down_days >= 4:
+        # Priority 1: 到頂轉勢 (大少 2026-09-03 11:00 trigger, 取代 9月2日 12:24 舊 trigger)
+        # 新 trigger: 3 個留低 + 5 個新加 (拎走舊 C: close<P2 + D: P2>P4 AND P3>P5)
+        # 留低:
+        #   A: MA60 斜率 > 0          (長期仲升)
+        #   B: close < MA5 < MA20     (close 跌穿晒短中線)
+        #   E: MA5 斜率 < -1%         (短期急跌)
+        # 新加 (P 點 Peak/Trough 形態確認, 對齊 9月3日 11:00 P 點 type 永久 rule):
+        #   C': P1 < P3              (跌穿前低)
+        #   D': P2 < P4              (峰頂降底, 最後峰頂唔再係新高)
+        #   E': P2.type == "Peak"    (確認 P2 係峰頂, 唔係谷底)
+        #   F': P4 > P6              (再之前峰頂抬高, 之前真係上升趨勢)
+        #   G': P5 > P7              (再之前谷底抬高, 之前真係上升趨勢)
+        # 凡人話: 之前真係上升趨勢 (再之前峰頂抬高 + 谷底抬高), 最後峰頂已經唔係新高
+        #         (峰頂降底), 而家跌穿埋前低 → 可能到頂轉勢
+        last_close = klines[-1]["close"]
+        ma5_value = ma_values["MA5"]
+        ma20_value = ma_values["MA20"]
+
+        # 拎 Z 點 P1/P2/P3/P4/P5/P6/P7 (P1=最新, P2=第二新, ..., 對齊 9月3日 07:05 P 點 vocabulary 永久 rule)
+        # 對齊 9月3日 07:35 大少 trigger: sub-scenario trigger 嘅 P1/P2/P3 都用 P 點來源
+        # 大少 2026-09-03 11:00 trigger: P 點 type 統一用 "Peak"/"Trough" (helper 內部已做 Z 點 high/low → P 點 Peak/Trough 轉換)
+        # recent_zz 已經係新→舊 list (helper 保證返), list[0]=P1=最新
+        # Fallback 設計: 拎唔夠 7 個 Z 點時 (新股 / Z 點太短), condition 自動 skip, fall through 去 P2 強升/強跌
+        recent_zz = _get_recent_zigzag_points(klines, options, n=7)
+        p1_value = recent_zz[0]["value"] if len(recent_zz) >= 1 else None  # 最新
+        p2_value = recent_zz[1]["value"] if len(recent_zz) >= 2 else None  # 第二新
+        p3_value = recent_zz[2]["value"] if len(recent_zz) >= 3 else None
+        p4_value = recent_zz[3]["value"] if len(recent_zz) >= 4 else None
+        p5_value = recent_zz[4]["value"] if len(recent_zz) >= 5 else None  # 第五新
+        p6_value = recent_zz[5]["value"] if len(recent_zz) >= 6 else None  # 第六新
+        p7_value = recent_zz[6]["value"] if len(recent_zz) >= 7 else None  # 第七新
+        # P 點 type 統一係 "Peak" / "Trough" (大少 9月3日 11:00 永久 rule, helper 已 normalize)
+        p2_type = recent_zz[1].get("type") if len(recent_zz) >= 2 else None
+
+        zz_ok = all(v is not None for v in [p1_value, p2_value, p3_value, p4_value, p5_value, p6_value, p7_value])
+
+        if (
+            slope_ma60 > 0
+            and last_close < ma5_value < ma20_value
+            and zz_ok
+            # 新 5 個條件 (大少 9月3日 11:00 trigger, 拎走舊 C/D, 加 P 點形態確認)
+            and p1_value < p3_value          # 跌穿前低
+            and p2_value < p4_value          # 峰頂降底
+            and p2_type == "Peak"            # 確認 P2 係峰頂
+            and p4_value > p6_value          # 再之前峰頂抬高
+            and p5_value > p7_value          # 再之前谷底抬高
+            and slope_ma5 < -0.01
+        ):
             sub_scenario = "decelerating_up"
             cycle_position = "late_stage_topping"
             adjustment_log.append(
-                f"到頂轉勢跡象: 短期急跌 {slope_ma5*100:.2f}% + 長期均線仲升 + 連跌 {consecutive_down_days} 日"
+                f"到頂轉勢跡象 (大少 2026-09-03 11:00 trigger): 之前真係上升趨勢 (再之前峰頂抬高 P4={p4_value:.2f}>P6={p6_value:.2f} + 谷底抬高 P5={p5_value:.2f}>P7={p7_value:.2f}), 最後峰頂已經唔係新高 (峰頂降底 P2={p2_value:.2f}<P4={p4_value:.2f} + P2.type=Peak), 跌穿前低 (P1={p1_value:.2f}<P3={p3_value:.2f}), close 急跌穿短中線 (close={last_close:.2f}<MA5={ma5_value:.2f}<MA20={ma20_value:.2f}) + 短期急跌 {slope_ma5*100:.2f}% + 長期均線仲升 → 上升趨勢可能到頂"
             )
-        # Priority 1: 到底轉勢
-        elif slope_ma5 > 0.03 and long_slope_negative and consecutive_up_days >= 4:
+        # Priority 1: 到底轉勢 (大少 2026-09-03 11:00 trigger, 對稱, 取代 9月2日 12:24 舊 trigger)
+        # 留低:
+        #   A: MA60 斜率 < 0          (長期仲跌)
+        #   B: close > MA5 > MA20     (close 升穿晒短中線)
+        #   E: MA5 斜率 > +1%         (短期急升)
+        # 新加 (對稱):
+        #   C': P1 > P3              (升穿前高)
+        #   D': P2 > P4              (谷底抬高, 最後谷底唔再係新低)
+        #   E': P2.type == "Trough"  (確認 P2 係谷底, 唔係峰頂)
+        #   F': P4 < P6              (再之前峰頂降底, 之前真係下跌趨勢)
+        #   G': P5 < P7              (再之前谷底降底, 之前真係下跌趨勢)
+        # 凡人話: 之前真係下跌趨勢 (再之前峰頂降底 + 谷底降底), 最後谷底已經唔係新低
+        #         (谷底抬高), 而家升穿埋前高 → 可能到底轉勢
+        elif (
+            slope_ma60 < 0
+            and last_close > ma5_value > ma20_value
+            and zz_ok
+            # 新 5 個條件 (對稱, 大少 9月3日 11:00 trigger)
+            and p1_value > p3_value          # 升穿前高
+            and p2_value > p4_value          # 谷底抬高
+            and p2_type == "Trough"          # 確認 P2 係谷底
+            and p4_value < p6_value          # 再之前峰頂降底
+            and p5_value < p7_value          # 再之前谷底降底
+            and slope_ma5 > 0.01
+        ):
             sub_scenario = "decelerating_down"
             cycle_position = "late_stage_bottoming"
             adjustment_log.append(
-                f"到底轉勢跡象: 短期急升 {slope_ma5*100:.2f}% + 長期均線仲跌 + 連升 {consecutive_up_days} 日"
+                f"到底轉勢跡象 (大少 2026-09-03 11:00 trigger): 之前真係下跌趨勢 (再之前峰頂降底 P4={p4_value:.2f}<P6={p6_value:.2f} + 谷底降底 P5={p5_value:.2f}<P7={p7_value:.2f}), 最後谷底已經唔係新低 (谷底抬高 P2={p2_value:.2f}>P4={p4_value:.2f} + P2.type=Trough), 升穿前高 (P1={p1_value:.2f}>P3={p3_value:.2f}), close 急升穿短中線 (close={last_close:.2f}>MA5={ma5_value:.2f}>MA20={ma20_value:.2f}) + 短期急升 {slope_ma5*100:.2f}% + 長期均線仲跌 → 下跌趨勢可能到底"
             )
         # Priority 2: 強上升 / 弱上升
         elif is_bullish:
@@ -485,10 +638,9 @@ class MAAlignmentV2Algorithm(Algorithm):
             "volumeSignal": volume_signal,
             "volumeSignalLabel": VOLUME_SIGNAL_LABELS[volume_signal],
             "maxSpreadPct": _round(max_spread_pct, 6),
-            "consecutiveDays": (
-                consecutive_down_days if candidate == "decelerating_up"
-                else (consecutive_up_days if candidate == "decelerating_down" else 0)
-            ),
+            # 大少 2026-09-02 12:24 trigger: 拎走 consecutiveDays field
+            # 原因: 舊 trigger 嘅「連跌/連升 4 日」條件拎走, 改用 Z 點形態 + MA 條件 + 斜率組合
+            # Spec Sync (即將 push) 永久 rule: consecutiveDays 永久拎走, frontend 拎走對應 field reference
             "adjustmentLog": adjustment_log,
             "reason": (
                 f"【週期】{CYCLE_LABELS[candidate]} ({POSITION_LABELS[cycle_position]})"

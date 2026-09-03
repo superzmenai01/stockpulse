@@ -27,11 +27,17 @@ Algorithm flow (1-to-1 對齊 frontend):
 - 4.56.0 ongoing point 嘅 triggerPrice = K線最後 close (改返用 last_swing_idx K線 high/low)
 """
 
+# 大少 2026-09-03 14:37 trigger (方案 B 簡化): 拎走舊版 calculate_zigzag function 嘅 public exposure
+# 原因: calculate_zigzag 拎出嚟 Z 點 trigger date 拎早 (拎「跌穿 5% 嗰支 K 線」做 trigger date),
+#       唔對齊 frontend testing page algorithm 拎 trigger date 邏輯 (拎「跌穿 5% 嗰支 K 線之後嘅 K 線 high/low」做 trigger date)
+# 之後所有 sub-scenario caller 改用 ZigZagAlgorithm class (framework) 拎 Z 點
+# calculate_zigzag function 本身保留 (private 形式 _calculate_zigzag 喺 algorithm.py 入面) 畀 run_zigzag helper 用
+# TODO: 拎走 run_zigzag helper 拎走 _calculate_zigzag function, 拎走抽象層 (大工程, 之後 sprint 處理)
 from .algorithm import (
     ZigZagAlgorithm,
     extract_hlc,
     auto_threshold_volatility,
-    calculate_zigzag,
+    # calculate_zigzag,  # 拎走 public exposure (大少 2026-09-03 14:37)
     assign_sequence_numbers,
     point_marker_position,
     ZIGZAG_LINE_COLOR,
@@ -39,12 +45,12 @@ from .algorithm import (
 )
 
 __all__ = [
-    "ZigZagAlgorithm",
-    "extract_hlc",
-    "auto_threshold_volatility",
-    "calculate_zigzag",
-    "assign_sequence_numbers",
-    "point_marker_position",
-    "ZIGZAG_LINE_COLOR",
-    "DECISION_FLAG_COLOR",
+    "ZigZagAlgorithm",  # 拎 Z 點 entry point (替代舊版 calculate_zigzag)
+    "extract_hlc",  # helper (run_zigzag 入面用)
+    "auto_threshold_volatility",  # helper (run_zigzag 入面用)
+    # "calculate_zigzag",  # 拎走 (大少 2026-09-03 14:37)
+    "assign_sequence_numbers",  # helper (run_zigzag 入面用)
+    "point_marker_position",  # helper (frontend marker position)
+    "ZIGZAG_LINE_COLOR",  # chart 紫色
+    "DECISION_FLAG_COLOR",  # chart 橙色旗仔
 ]

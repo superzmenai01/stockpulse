@@ -324,8 +324,8 @@
 
 | # | 狀態 | 凡人話 | v2.2.0 簡單算法 (現有) | 已知問題 | 大少提議 |
 |---|------|--------|----------------|---------|---------|
-| 1 | **到頂** | 升到頂, 準備跌 | MA60 斜率 > 0 + close < MA5 < MA20 + close < P2 + P2 > P4 + P3 > P5 + MA5 斜率 < -1% | ✅ 已 fix (2026-09-02 trigger) | ✅ 大少 trigger 落地, 拎走舊「連跌 4 日 + MA5 -3%」 |
-| 2 | **到底** | 跌到底, 準備升 | MA60 斜率 < 0 + close > MA5 > MA20 + close > P2 + P2 < P4 + P3 < P5 + MA5 斜率 > +1% | ✅ 已 fix (2026-09-02 trigger) | ✅ 大少 trigger 落地, 拎走舊「連升 4 日 + MA5 +3%」 |
+| 1 | **到頂** (decelerating_up) | 升到頂, 準備跌 | MA60 斜率 > 0 + close < MA5 < MA20 + P1 < P3 + P2 < P4 + P2.type=Peak + P4 > P6 + P5 > P7 + MA5 斜率 < -1% | ✅ 已 fix (2026-09-03 11:00 trigger) | ✅ 拎走舊 9月2日 嘅 close<P2 + P2>P4 AND P3>P5, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
+| 2 | **到底** (decelerating_down) | 跌到底, 準備升 | MA60 斜率 < 0 + close > MA5 > MA20 + P1 > P3 + P2 > P4 + P2.type=Trough + P4 < P6 + P5 < P7 + MA5 斜率 > +1% | ✅ 已 fix (2026-09-03 11:00 trigger) | ✅ 對稱改, 拎走舊 9月2日 條件, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
 
 ### 🔼 Priority 2 - 強趨勢 (排列全 + 全部斜率 + 量能)
 
@@ -360,8 +360,8 @@
 
 | # | sub-scenario | 問題 | 大少提議 |
 |---|---|---|---|
-| 1 | ~~**到頂** (Priority 1)~~ | ~~連跌 4 日太脆弱, 1 日微升打斷~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 |
-| 2 | ~~**到底** (Priority 1)~~ | ~~連升 4 日太脆弱~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 |
+| 1 | ~~**到頂** (Priority 1)~~ | ~~連跌 4 日太脆弱, 1 日微升打斷~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 → ✅ **2026-09-03 11:00 再 fix**: 拎走 close<P2 + P2>P4 AND P3>P5, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
+| 2 | ~~**到底** (Priority 1)~~ | ~~連升 4 日太脆弱~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 → ✅ **2026-09-03 11:00 再 fix**: 對稱改, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
 | 3 | **強升** (Priority 2) | 太古 25% 升幅可能 algorithm 太鬆 (70% 日穿底) | ❓ 等 review |
 | 4 | **橫行** (Default) | 16 隻中 13 隻 MA5 斜率 > 2% (根本唔平) | 改用 `MA5>MA60 + close<MA5 ≥ 50%` + sub-condition |
 
@@ -374,20 +374,80 @@
 - ✅ **全部確認完一次過改 code, 之後做 Spec Sync + commit + push**
 - ✅ **改完即時 update v2.1.0 簡單算法表 (呢個 section) 嘅算法條件 column**
 
-### ⚠️ Z 點 caller 順序約定 (大少 2026-09-02 12:24 永久 rule)
+### ⚠️ Z 點 caller 順序約定 (大少 2026-09-03 07:35 trigger 修正, 原 9月2日 12:24 永久 rule 寫錯方向)
 
-Caller 傳入 `options['zigzagPoints']` 必須用 **舊→新** 順序 (對齊 ZigZag algorithm `calculate_zigzag()` output):
-- `list[0]` = 最舊 Z 點
-- `list[-1]` = 最新 Z 點 (P1)
-- `list[-n]` = 第 n 新 (Pn)
+Caller 傳入 `options['zigzagPoints']` 必須用 **新→舊** 順序 (對齊 `ZigZagAlgorithm().run().points` output, 因為 backend `assign_sequence_numbers()` 已經將 list 處理成新→舊):
+- `list[0]` = P1 = 最新 Z 點
+- `list[1]` = P2 = 第二新
+- `list[n-1]` = P_n = 第 n 新
+- `list[-1]` = P_n = 最舊 (如果 list 內有 n 個)
 
-如果 caller 反轉傳入 (新→舊), trigger 條件會用錯 peak/trough, 結果亂晒。Frontend testing page / M7 Synthesizer 必須用 **舊→新** 順序 inject。
+M1 `_get_recent_zigzag_points` helper **保證返新→舊** list 俾 algorithm.py:
+- 拎 caller_points[:n] (caller 傳新→舊, 頭 n 個 = 最新 n 個)
+- Fallback `calculate_zigzag()` raw 拎舊→新, 內部 `points[-n:][::-1]` reverse 變新→舊
+
+⚠️ 凡人話: 之前 9月2日 plan 寫「Caller 必須用舊→新」係錯, 9月3日大少發現後修正為新→舊。Frontend testing page / M7 Synthesizer / batch run caller 必須用 **新→舊** 順序 inject (`ZigZagAlgorithm().run().points` 已經係呢個順序, 直接 inject 即可)。
+
+### Sub-scenario 流程永久 rule (大少 2026-09-03 07:23 trigger)
+
+對齊 P 點 vocabulary (9月3日 07:05 rule), M1 / zmen / 其他 algorithm sub-scenario trigger 嘅 P1/P2/P3... / Peak / Through / 觸發點都必須由 ZigZag P 點來源拎:
+1. 先用讀取數據機制, 從 DB 取數據 (KlineCache full flow)
+2. 檢查和補上缺失嘅數據 (K 線 < 30 條 warning)
+3. 制作 P 點 (`ZigZagAlgorithm().run().points`, 新→舊, list[0]=P1=最新)
+4. 之後所說嘅 P1, P2..., Peak, Through, 觸發點都係從 P 點 element 取出 (唔可以由 raw K 線拎)
+
+套用: 之後所有 StockPulse sub-scenario 對話, trigger 講「P1 / Peak / Through / 觸發點」即指 P 點 element。
+
+### P 點 type 統一永久 rule (大少 2026-09-03 11:00 trigger)
+
+凡人話: 之前 sub-scenario trigger 寫 `P2.type == "high"` / `P2.type == "low"` 直接用 Z 點 type, 但大少要 P 點有自己嘅「類型」field, 命名用 "Peak" / "Trough", 唔直接用 Z 點 high/low。
+
+- ✅ **P 點 (sub-scenario 流程用嘅 P1/P2/P3...) 每個 element 必須有 `type` field**
+- ✅ **命名 "Peak" / "Trough"** (峰頂 / 谷底, 大寫頭字, 唔用 "high"/"low")
+- ✅ **Helper 自動加 type field**: M1 `_get_recent_zigzag_points` 內部統一 Z 點 type "high"/"low" → P 點 type "Peak"/"Trough":
+  - Z 點 type="high" → P 點 type="Peak"  (峰頂)
+  - Z 點 type="low"  → P 點 type="Trough" (谷底)
+- ✅ **Sub-scenario trigger 永遠用 P 點 type**: `p.type == "Peak"` / `p.type == "Trough"`, 唔直接寫 Z 點 high/low
+- ✅ **套用**: M1 / M7 / 其他 algorithm 之後嘅 P 點 trigger 全部跟呢個 pattern
+- ✅ **M1 trigger 落地實例 (2026-09-03 11:00)**:
+  - 到頂轉勢: `P2.type == "Peak"` (確認 P2 係峰頂)
+  - 到底轉勢: `P2.type == "Trough"` (確認 P2 係谷底)
+- ✅ **凡人話解釋**: 拎 Z 點 (raw, type="high"/"low") → 經 helper → P 點 (抽象層, type="Peak"/"Trough"), caller 用抽象層
+
+對應 commit: 將會跟 Spec Sync #20+2 push
+
+### Sub-scenario caller 拎 Z 點 source 永久 rule (大少 2026-09-03 14:37 trigger)
+
+凡人話: 之前 sub-scenario caller (M1 helper) 拎 Z 點用 `calculate_zigzag` function (backend/algorithms/zigzag/algorithm.py 入面), 但呢個 function 拎出嚟 Z 點 list 同 frontend testing page 拎出嚟 list 唔 match (trigger date 拎早 1 個 K 線), 導致 M1 trigger 結論 false positive (HK.00512 + HK.00669 假 trigger 到頂轉勢)。
+
+**Root cause**:
+- `calculate_zigzag` 拎 trigger date = 跌穿 5% 嗰支 K 線 (8月12日)
+- `ZigZagAlgorithm` / `run_zigzag` 拎 trigger date = 跌穿 5% 嗰支 K 線之後拎 K 線 high/low (8月18日) — 對齊 frontend 1-to-1 port
+- backend 拎 trigger date 早 1 個 K 線, 唔係完整 1-to-1 port frontend
+
+**永久 rule**:
+- ✅ **所有 sub-scenario caller (M1 / M7 / 其他 algorithm) 拎 Z 點必須用 `ZigZagAlgorithm` class** (`backend/algorithms/zigzag/algorithm.py` 嘅 framework class)
+- ❌ **唔可以直接 call `calculate_zigzag` function** (拎 trigger date 早 1 個 K 線, 唔對齊 frontend)
+- ✅ **拎走 `calculate_zigzag` function 嘅 public exposure** (`backend/algorithms/zigzag/__init__.py` 拎走 import + `__all__` entry)
+- ✅ **M1 helper fallback 改 instantiate `ZigZagAlgorithm` 拎 Z 點** (對齊 backend endpoint `/api/algorithms/run?algo=zigzag` + frontend testing page 拎法)
+- ✅ **function 本身保留** (private 形式 `_calculate_zigzag` 喺 algorithm.py 入面) 畀 `run_zigzag` helper 用, 拎走抽象層 (拎走 helper + function) 係大工程, 之後 sprint 處理
+- ✅ **TODO 之後拎走 `run_zigzag` helper + `_calculate_zigzag` function, 拎走抽象層** (大少 trigger 標記, 短期保留 function 畀 helper 用)
+
+**M1 trigger 落地實例 (2026-09-03 14:37)**:
+- M1 `_get_recent_zigzag_points` helper fallback 段改 instantiate `ZigZagAlgorithm().run(klines, options)` 拎 Z 點
+- 拎 `ZigZagAlgorithm.run().points` (新→舊, list[0]=P1=最新) 直接 `[:n]` 拎頭 n 個, 對齊 caller inject 嘅順序
+- threshold_mode / manual_threshold / lookback / multiplier options 對齊 frontend testing page 預設值 (auto + lookback 20 + multiplier 2.5)
+- 之前 false positive (HK.00512, HK.00669) 修正, true positive (HK.02688) 保留, 仲有 HK.02382 新 trigger 到底轉勢
+
+**凡人話解釋**: Z 點算法有 1 個 single source of truth (`ZigZagAlgorithm` class), 拎 trigger date 拎「跌穿 5% 嗰支 K 線之後嘅 K 線 high/low」對齊 frontend, 拎 Z 點 list 拎 macro Z 點 (auto threshold 拎 179 個) 而非 micro Z 點 (manual 5% threshold 拎 307 個)。
+
+對應 commit: 將會跟 Spec Sync #20+2 push
 
 ---
 
 **Maintainer**: 大少 + Mavis
 **Created**: 2026-08-16 19:25
-**Last Updated**: 2026-09-02 12:24 (大少 trigger #13: 改到頂/到底 trigger 用 Z 點形態 + MA 條件組合)
+**Last Updated**: 2026-09-03 14:37 (大少 trigger #15: 拎走 calculate_zigzag 公開暴露 + M1 helper 改用 ZigZagAlgorithm, 修正到頂轉勢 false positive)
 **Status**: 🚧 Research doc, 等大少逐條 review 指示
 
 
