@@ -191,8 +191,13 @@ def calculate_zigzag(
     in_uptrend = klines[1]['close'] > klines[0]['close'] if len(klines) >= 2 else False
 
     # 第一個 loop: 找第一個顯著高/低點 (frontend algorithm.mjs:1523-1568)
+    # 大少 9月3日 09:57 trigger (Option B fix): defensive guard 對 high=0 / low=0 嘅 bad data K 線
+    # Frontend K 線永遠有 high/low > 0 (UI 取數有 validation), 所以呢個 guard 唔影響 1-to-1 port,
+    # 只係防 bad data K 線 (新股 / corrupted / 退市) ZeroDivisionError crash。
     for i in range(1, len(klines)):
         # 大少 4.15.0 fix: 用 high/low 拎 point 同 trigger (唔好用 close)
+        if last_swing_high <= 0 or last_swing_low <= 0:
+            break  # bad data, return partial result
         change_from_high = (klines[i]['low'] - last_swing_high) / last_swing_high   # 用 low 對 high
         change_from_low = (klines[i]['high'] - last_swing_low) / last_swing_low     # 用 high 對 low
 
@@ -252,6 +257,9 @@ def calculate_zigzag(
 
     # 第二個 loop: 繼續追蹤轉向點 (frontend algorithm.mjs:1572-1609)
     for i in range(last_swing_idx + 1, len(klines)):
+        # 大少 9月3日 09:57 trigger (Option B fix): 同第一個 loop 一樣 defensive guard
+        if last_swing_high <= 0 or last_swing_low <= 0:
+            break
         change_from_high = (klines[i]['low'] - last_swing_high) / last_swing_high
         change_from_low = (klines[i]['high'] - last_swing_low) / last_swing_low
 

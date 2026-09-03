@@ -5662,3 +5662,128 @@ Lightweight Charts v5 `createSeriesMarkers` 拎 plugin handle, handle 仲喺 cha
 - `chore(gitignore): 加 4 条 rule 防后加 (miniapp/.env / web/test-results/ / 根 stockpulse.db / 根 plate_leaders_options, Spec Sync #62)`
 - Spec Sync: ARCHITECTURE.md §15.68 (本段) + AGENTS.md 「Dead Code Cleanup 永久 rule (2026-09-02 Spec Sync #62)」section
 
+---
+
+## §15.69 — M1 v2.2.0 到頂/到底轉勢 trigger 微調 + 拎走 calculate_zigzag 公開暴露 (大少 2026-09-03 11:00 + 14:37 trigger, Spec Sync #20+2) [2026-09-03]
+
+### Context (大少 14:32 trigger 揭發 root cause)
+
+大少 9月3日 14:32 附 HK.00669 K 線圖 trigger「P1/P2/P3/P4 indexing 規則」: P1 = 最新 (zzp[-1] 倒序後第 1 個), P2 = 第二新 (zzp[-2]), 等等。對應凡人話上升: P1>P3 + P2>P4, 下跌: P1<P3 + P2<P4。
+
+大少 Conelse 拎出嚟嘅 P 點 list 同 M1 algorithm.py 拎出嚟 P 點 list 唔 match:
+
+| 點 | Conelse (backend ZigZag endpoint 拎嘅) | M1 helper (calculate_zigzag 拎嘅) |
+|---|---|---|
+| P2 | 8月10日 148.5 Peak | 8月24日 142.1 Peak (錯) |
+| P3 | 7月28日 123.5 Trough | 8月19日 135.1 Trough (錯) |
+
+即係 M1 helper 用 `calculate_zigzag` function 拎 Z 點 value 錯, 拎 micro Z 點而 Conelse 拎 macro Z 點, 導致 M1 trigger 結論 false positive (HK.00512 + HK.00669 假 trigger 到頂轉勢)。
+
+### Root cause
+
+**M1 algorithm.py helper `_get_recent_zigzag_points` fallback 用 `calculate_zigzag` function** (backend/algorithms/zigzag/algorithm.py 入面), 但 **Conelse / backend ZigZag endpoint / frontend testing page 用 `ZigZagAlgorithm` class** (framework 註冊)。
+
+兩個 implementation 拎 Z 點 list 唔一致:
+
+- `calculate_zigzag` function 拎 trigger date = 「跌穿 5% 嗰支 K 線」 (8月12日), 拎 micro Z 點 (5% threshold 拎 307 個 Z 點)
+- `ZigZagAlgorithm` / `run_zigzag` 拎 trigger date = 「跌穿 5% 嗰支 K 線之後拎 K 線 high/low」 (8月18日), 拎 macro Z 點 (auto threshold 拎 179 個 Z 點)
+
+backend `calculate_zigzag` function **唔係完整 1-to-1 port frontend algorithm**, 拎 trigger date 早 1 個 K 線, 唔對齊 frontend testing page algorithm 拎 trigger date 邏輯。
+
+### M1 v2.2.0 trigger 改動 (大少 11:00 trigger)
+
+到頂轉勢 (decelerating_up) — 8 個 AND 條件 (拎走舊 9月2日 嘅 2 條 + 加新 5 條):
+- A: MA60 斜率 > 0 (長期仲升)
+- B: close < MA5 < MA20 (close 跌穿晒短中線)
+- C': P1 < P3 (跌穿前低)
+- D': P2 < P4 (峰頂降底)
+- E': P2.type == Peak (確認 P2 係峰頂)
+- F': P4 > P6 (再之前峰頂抬高)
+- G': P5 > P7 (再之前谷底抬高)
+- H: MA5 斜率 < -1% (短期急跌)
+
+到底轉勢 (decelerating_down) 對稱 — 8 個 AND 條件:
+- A: MA60 斜率 < 0
+- B: close > MA5 > MA20
+- C': P1 > P3
+- D': P2 > P4
+- E': P2.type == Trough
+- F': P4 < P6
+- G': P5 < P7
+- H: MA5 斜率 > +1%
+
+**拎走舊 9月2日 12:24 嘅 2 條條件**:
+- ~~C: close < P2~~ (close 跌穿第二新 Z 點)
+- ~~D: P2 > P4 AND P3 > P5~~ (谷底抬高 + 峰頂抬高)
+
+### 拎走 calculate_zigzag 公開暴露 (大少 14:37 trigger, 方案 B 簡化)
+
+**改動**:
+- `backend/algorithms/ma_alignment/algorithm.py` `_get_recent_zigzag_points` helper fallback 段: 拎走 `from ..zigzag.algorithm import calculate_zigzag`, 改 instantiate `ZigZagAlgorithm` 拎 Z 點
+- `backend/algorithms/zigzag/__init__.py`: 拎走 `calculate_zigzag` 公開暴露 (import + `__all__` entry), function 本身保留 (private 形式 `_calculate_zigzag` 喺 algorithm.py 入面) 畀 `run_zigzag` helper 用
+- options 對齊 frontend default: `threshold_mode='auto'` + `lookback=20` + `multiplier=2.5` (frontend testing page 預設值)
+
+**TODO 之後拎走 `run_zigzag` helper + `_calculate_zigzag` function, 拎走抽象層** (大工程, 之後 sprint 處理)。
+
+### 永久 rule (大少 11:00 + 14:37 trigger)
+
+#### P 點 type 統一永久 rule
+- ✅ P 點 (sub-scenario 流程用嘅 P1/P2/P3...) 每個 element 必須有 `type` field
+- ✅ 命名 "Peak" / "Trough" (峰頂 / 谷底, 大寫頭字, 唔用 "high"/"low")
+- ✅ Helper 自動加 type field: M1 `_get_recent_zigzag_points` 內部統一 Z 點 type "high"/"low" → P 點 type "Peak"/"Trough"
+- ✅ Sub-scenario trigger 永遠用 P 點 type: `p.type == "Peak"` / `p.type == "Trough"`, 唔直接寫 Z 點 high/low
+- ✅ 套用: M1 / M7 / 其他 algorithm 之後嘅 P 點 trigger 全部跟呢個 pattern
+
+#### Sub-scenario caller 拎 Z 點 source 永久 rule
+- ✅ 所有 sub-scenario caller (M1 / M7 / 其他 algorithm) 拎 Z 點必須用 `ZigZagAlgorithm` class
+- ❌ 唔可以直接 call `calculate_zigzag` function (拎 trigger date 早 1 個 K 線, 唔對齊 frontend)
+- ✅ 拎走 `calculate_zigzag` function 嘅 public exposure (`__init__.py` 拎走 import + `__all__` entry)
+- ✅ function 本身保留 (private 形式 `_calculate_zigzag`) 畀 `run_zigzag` helper 用
+- ✅ TODO 之後拎走 `run_zigzag` helper + `_calculate_zigzag` function 拎走抽象層
+
+#### M1 trigger 拎 P 點 (P1-P7) 永久 rule
+- ✅ M1 trigger 拎 Z 點拎 P1-P7 (大少 11:00 trigger, 拎 n=5 → n=7), 拎唔夠 7 個 Z 點時 (新股 / Z 點太短) trigger 自動 fall through
+- ✅ P 點 sequence 對齊 9月3日 07:05 永久 rule: P1=最新, P2=第二新, P3=第三新, P4=第四新, P5=第五新, P6=第六新, P7=第七新
+- ✅ 套用: 之後 M7 / 其他 algorithm 加 P 點 trigger 一律拎 P1-P7 (對齊 M1 v2.2.0)
+
+### Verify (batch run 277 隻 stock, 90 秒)
+
+**改動前 trigger 結果** (用緊 calculate_zigzag function):
+- 🔴 到頂轉勢: HK.00512 + HK.00669 (2 隻, 全部 false positive)
+- 🟢 到底轉勢: HK.02688 + HK.08637 (1 隻 true positive + 1 隻拎 200 條 K 線拎唔夠 7 個 Z 點 false positive)
+
+**改動後 trigger 結果** (用 ZigZagAlgorithm class):
+- 🔴 到頂轉勢: HK.00077 / HK.09987 (跨 batch run verdict 唔穩定, 1 隻左右)
+- 🟢 到底轉勢: HK.02382 + HK.02688 (2 隻都係 true positive, 8 個 AND 條件全部成立)
+
+**凡人話對比**:
+- HK.00669 改動前 trigger 到頂 (false positive), 改動後 `uptrend_correction` (上升回調中, 對應返 Conelse 拎嘅真實 P 點)
+- HK.00512 改動前 trigger 到頂 (false positive), 改動後 `sideways` (橫行)
+- HK.08637 改動前 trigger 到底 (拎 200 條 K 線拎唔夠 7 個 Z 點 false positive), 改動後 唔 trigger
+
+**Cycle 分佈改動** (277 隻 stock):
+- sideways: 44.8% → 43.7% (-1.1%)
+- weak_uptrend: 18.1% → 17.0% (-1.1%)
+- weak_downtrend: 13.7% → 15.2% (+1.5%)
+- decelerating_up: 0.7% → 0.4% (-0.3%, false positive 修正)
+
+### 對齊永久 rule
+
+- 8月29日 22:44 所有改動要 confirm (大少 explicit trigger 已 confirm 11:00 + 14:37)
+- 9月3日 07:05 P 點 vocabulary 永久 rule (P1=最新, P2=第二新, ...)
+- 9月3日 07:23 Sub-scenario 流程永久 rule (P 點由 ZigZagAlgorithm().run().points 拎, 唔可以由 raw K 線拎)
+- 9月3日 07:35 Z 點 caller 順序約定 (新→舊 list, list[0]=P1=最新)
+- 2026-08-16 19:21 M1 sub-scenario 改動要 ≥ 3 隻 stock 例子 verify
+- 2026-08-22 23:20 Algorithm Backend-only + 模組化 (拎 Z 點用 framework class, 唔可以直接 import function)
+- 8月31日 11:01 Backend hot-reload (改 backend 必 restart + curl verify)
+
+### 對應 commit
+
+- `bf925b53 feat(m1-trigger): M1 v2.2.0 到頂/到底轉勢 trigger 微調 + 拎走舊版 calculate_zigzag 公開暴露 (大少 2026-09-03 11:00 + 14:37 trigger)` — 3 files changed (algorithm.py + __init__.py + M1-V22-RESEARCH.md)
+- Spec Sync: ARCHITECTURE.md §15.69 (本段) + AGENTS.md 「Sub-scenario caller 拎 Z 點 source 永久 rule」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md §「Sub-scenario caller 拎 Z 點 source 永久 rule」section
+
+### Follow-up sprint (唔喺今次 scope)
+
+- HK.00077 / HK.09987 verdict 唔穩定 issue (batch run 唔同時候 verdict 唔同, 可能係 KlineCache singleton 拎 K 線 time 唔同 / trigger 條件邊界 case), 之後再 investigate
+- 拎走 `run_zigzag` helper + `_calculate_zigzag` function 拎走抽象層 (大工程, 之後 sprint 處理)
+

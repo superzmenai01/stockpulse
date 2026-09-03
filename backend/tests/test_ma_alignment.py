@@ -107,7 +107,7 @@ def test_ma_alignment_sideways():
 # ============================================================================
 
 def test_ma_alignment_decelerating_up_priority_1():
-    """凡人話: 短期急跌 + 長期仲升 + 連跌 4+ 日 = 到頂轉勢"""
+    """凡人話: 短期急跌 + 長期仲升 + Z 點形態 = 到頂轉勢 (大少 2026-09-02 trigger)"""
     # 80 日: 60 日上升, 最後 20 日急速下跌
     prices = [100 + i * 1.0 for i in range(60)]  # 60 日上升
     prices += [160 - i * 0.8 for i in range(20)]  # 20 日下跌 (-0.8%/日, 累積 -16% < -3%)
@@ -117,11 +117,12 @@ def test_ma_alignment_decelerating_up_priority_1():
     verdict = algo.run(klines, {"config": DEFAULT_MA_ALIGNMENT_V2_CONFIG, "symbol": "TEST"})
 
     assert verdict.ok
-    # Priority 1 觸發: decelerating_up
+    # 大少 2026-09-02 trigger 改用 Z 點形態 + MA 條件 + 斜率組合, 拎走 consecutiveDays field
+    # Priority 1 觸發: decelerating_up (if Z 點條件成立)
     if verdict.meta["cycle"] == "decelerating_up":
         assert verdict.meta["cyclePosition"] == "late_stage_topping"
-        assert verdict.meta["consecutiveDays"] >= 4
-    # 可能因為跌幅唔夠 < -3% 條件而 fallback 其他 sub-scenario, 唔 fail test (priority 1 比較 strict)
+        # 拎走 consecutiveDays assertion (新 trigger 唔再用連跌日數)
+    # 可能因為 Z 點條件唔成立 / MA60 斜率唔夠 / MA5 斜率唔夠而 fallback 其他 sub-scenario, 唔 fail test (priority 1 比較 strict)
 
 
 def test_ma_alignment_all_sub_scenarios_in_meta():
