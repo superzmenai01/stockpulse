@@ -34,4 +34,10 @@ DEFAULT_MA_ALIGNMENT_V2_CONFIG: dict = {
     "thresholdAtrLookback": 20,  # ATR 計算回看天數
     "spreadConfidenceScale": 0.10,
     "sidewaysBaseConfidence": 0.3,
+
+    # 強升中整固 sub-scenario 參數 (大少 2026-09-05 trigger, C 方案)
+    # 凡人話: 補返「強升 + 短期整固 + vol 唔夠 expanding」嘅 boundary case
+    # 例如 00019 太古 過去 6 個月升 34.6% + 最近 5 日整固 3.68% + vol 1.2285 (差 0.0215 唔夠 expanding)
+    "consolidationLookback": 5,              # 整固判定回看天數 (預設 5 日 = 1 週)
+    "consolidationRangeThresholdPct": 0.05,  # 整固判定 high-low range 閾值 (預設 5%, 強升股自然整固範圍)
 }
