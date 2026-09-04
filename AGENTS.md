@@ -461,7 +461,7 @@ def _compute_fetch_max_count(period):
 **大少 trigger 23:20**: 「記住以後讀取數據一定要用這方法」
 - 大少 19:44 發現 1385 強下跌 trigger 嘅 MA 數值錯, root cause 係 `tmp_research_v23_subscenarios.py` 用咗 `mock_ctx` 拎空 OpenD, fall back to DB cache 拎 stale K 線
 - Stale K 線 → MA 計錯 → sub-scenario trigger 結論 false positive (1385/384/INTC 假強下跌, 00992 假創新高)
-- 真實數據用 HTTP call backend 拎到 T-1 8月21日 fresh K 線, 60 隻 v2.1 真實結果: 強升 5 隻, 強跌 1 隻, 弱升 6 隻, 弱跌 7 隻, 上升回調 4 隻, 下跌反彈 4 隻, 到底轉勢 3 隻, 到頂轉勢 0 隻, 橫行 30 隻
+- 真實數據用 HTTP call backend 拎到 T-1 8月21日 fresh K 線, 60 隻 v2.1 真實結果: 強升 5 隻, 強跌 1 隻, 初升 6 隻, 初跌 7 隻, 上升回調 4 隻, 下跌反彈 4 隻, 到底轉勢 3 隻, 到頂轉勢 0 隻, 橫行 30 隻
 
 **永久 rule**:
 - ✅ Research / debug / ad-hoc script 拎 K 線: **永遠用 HTTP call backend `/api/kline?code=...&period=...&count=...`**
@@ -659,6 +659,45 @@ def _compute_fetch_max_count(period):
 - 4.66.6 (22:40, 今次): 反轉 4.66.5 → 改 default true + 加返 localStorage 自動記住 ✅
 
 **凡人話總結**: 4.66.6 完美對齊大少 workflow — Reload page 預設見 P1-P10 (唔使再撳 toggle), 但撳 toggle 改 setting 之後 reload 仲係記住 (Config UX 模式 spirit)。對齊之前 Spec Sync 4.66.0 拎返 4.53.0 拎走嘅 spirit 嗰個對稱 pattern。
+
+### M1 「啟用 P 點」toggle 每次出圖同步狀態 永久 rule (4.66.7, 大少 2026-09-03 17:48 trigger「每一次輸入股票出圖時要睇紅框有無 take, 如果有就要顯示, 如果無就不顯示」) — **補返 4.66.0 + 4.66.6 漏咗嘅「跑算法」出圖同步動作**
+
+**凡人話解釋**: 4.66.0 拎返 P 點 + 鮮紫觸發點 marker toggle 之後, 撳 toggle 即時 re-render work, 但**撳「跑算法」換股票出圖嗰陣 toggle 嘅 effect 被洗走**。`renderChart()` 每次出圖拎新 `chartRefs`, 之後 line 1496 `lastChartRefs = chartRefs;` 但**冇 sync** 任何 toggle flag, adapter.mjs:5125 入口 check `chartRefs.zigzagMarkersEnabled !== true` 見到 `undefined !== true` 直接 return, P 點 + 鮮紫 trigger 唔 render。即係大少撳關紅框 → 換股票撳跑 → 出圖仲係見到 P 點 + 鮮紫 trigger (4.66.6 拎返 default on 嘅情況, 反過嚟都一樣錯)。
+
+**4.66.7 fix 永久 rule**:
+- ✅ **撳「跑算法」同步 toggle flag** (`testing-page/testing-page.js` line 1506-1512): 新加 sync block 喺 4.66.4 fix reset `lastChartRefs.zigzagSequenceMarkers = null` 嗰個 if block 之後, set `lastChartRefs.zigzagMarkersEnabled = zigzagMarkersEnabled;` 跟 `lastChartRefs.zigzagEnabled = zigzagEnabled;` (跟 global state)
+- ✅ **撳「跑算法」之前 reset stale handle** (4.66.4 fix 保留): `lastChartRefs.zigzagSequenceMarkers = null` 保留, 避免舊 handle 殘留, 對齊 4.63.0 永久 rule「P 點 + 鮮紫 trigger 共用 handle」
+- ✅ **撳 toggle 即時 re-render 仍然 work** (line 1793 保留): 撳 toggle 嗰陣即時 set `lastChartRefs.zigzagMarkersEnabled = zigzagMarkersEnabled;` 同步, 唔重複 set
+- ✅ **Adapter.mjs 入口 check 唔改** (`algorithms/AS-03-cycle-detection/adapter.mjs:5125`): `if (chartRefs.zigzagMarkersEnabled !== true)` 仍然用緊同一個 contract, 4.66.7 補返 caller sync flag, 唔改 contract
+- ✅ **對齊 4.66.6 永久 rule**: localStorage `stockpulse.zigzag.markersEnabled` persist user choice, 出圖嗰陣用返 user setting (default on 撳關 → 出圖唔見; default on 撳開 → 出圖見)
+- ✅ **順手補返 zigzagEnabled** (同 bug class, 4.66.0 之後 `#zigzag-enabled` toggle handler 都有 set `lastChartRefs.zigzagEnabled`, 但「跑算法」嗰陣漏咗, 避免紫色折線 toggle 換股票之後失靈, 跟 Config UX 模式 spirit)
+- ✅ **改 testing-page.js 必 sync bump** `ALGO_CACHE_BUST = '4.66.6' → '4.66.7'` + `?v=2.3.143 → ?v=2.3.144` (cache bust self-check 永久 rule 21:24)
+
+**對齊永久 rule** (5 條):
+- 8月19日 13:03 Config UX 模式: 即時 localStorage 自動儲存 + 即時 re-render + **出圖同步 toggle 狀態** (4.66.7 補返第三個 spirit)
+- 4.66.4 (01:31) 對稱拎走 marker: `lastChartRefs.zigzagSequenceMarkers = null` 保留, 4.66.7 喺佢之後加 sync block, 唔重置
+- 4.66.6 (22:40) default On + localStorage: 出圖嗰陣用返 user 之前 set 過嘅 state, reload 跟 user setting
+- 4.63.0 P 點 + 鮮紫 trigger 共用 handle: 4.66.7 reset `zigzagSequenceMarkers = null` 保留呢個 invariant
+- cache bust self-check 永久 rule 21:24: testing-page.js 改動必 sync bump `ALGO_CACHE_BUST` + `?v=` 2 個地方
+
+**套用情境**:
+- 之後加新 toggle flag (e.g. MA toggle, volume toggle) 都要喺「跑算法」嗰陣 sync 入 chartRefs
+- 對齊 Config UX 模式 永久 rule (2026-08-19 13:03) 第三個 spirit: 出圖同步 toggle 狀態 (4.66.7 拎返)
+- 之後唔可以只 set toggle handler 即時 re-render, 要記得 set 「跑算法」出圖嗰條 path
+
+**凡人話總結**: 4.66.7 補返 4.66.0 + 4.66.6 嗰個「換股票出圖」嘅 hidden path, 撳完 toggle 換股票出圖都跟返 user 設定。對齊之前 4.66.4 對稱拎走 + 4.66.6 default on + localStorage 嗰兩個 fix 嘅 spirit, 4.66.7 係 sync 嗰條 path 嘅最後一塊拼圖。
+
+**對應 commit**: `fix(testing-page): 每次出圖同步紅框 toggle 狀態 (4.66.7)` — Spec Sync #67
+
+**4.66.0-4.66.7 演進 timeline** (4.66.6 嗰段更新):
+- 4.66.0 (00:52): 拎返 toggle 本身 (4.53.0 拎走嘅 spirit 拎返), default false + localStorage 自動記住
+- 4.66.1 (01:05): hotfix debug toggle + bump cache bust
+- 4.66.2 (01:11): 拎返 check 移到 P 點 + trigger 入口之前
+- 4.66.3 (01:21): 加 console.log debug toggle
+- 4.66.4 (01:31): 撳關 toggle 嗰陣拎走殘留 P 點 + 鮮紫 trigger marker
+- 4.66.5 (07:34): 拎走 localStorage 自動記住, 永遠 default false
+- 4.66.6 (22:40): 反轉 4.66.5 → 改 default true + 加返 localStorage 自動記住
+- **4.66.7 (今次)**: 補返「跑算法」出圖嗰條 path 嘅 sync, 換股票出圖都跟返 toggle state ✅
 
 ### M1 「啟用 P 點」toggle 對稱拎走 marker 永久 rule (4.66.4, 大少 2026-09-02 01:31 trigger「在M1 裡有個制是啟用P點的，但有問題」) — **補返 4.66.0 漏咗嘅對稱拎走動作**
 
@@ -921,6 +960,42 @@ git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
 - 撳跑 zmen / M9 等其他 module → 因為 `verdict.meta.zigzagPoints` undefined, mini-table 顯示「(冇 points, 可能未跑算法 / threshold 太高)」, 唔 crash
 
 對應 doc: ARCHITECTURE.md §15.55, M1-V22-RESEARCH.md 「🟢 大少 trigger 8月31日 12:50」section
+
+
+### Stock 名 evidence 永久 rule (大少 2026-09-05 07:27 trigger)
+
+**凡人話解釋**: 之後 StockPulse 任何對話講 stock 名, 必須用 backend `/api/stocks/{code}` 拎真實名, 唔可以用 mental model 估。
+
+**大少 trigger**: 「HK.02611 國泰海通, 但你的是 02611 國泰君安, 又例如 HK.01088 中國神華 但你的是 01088 中海油」— 發現 Mavis C 方案 evidence (commit `b8bdf981`) 3 隻 stock 揀錯, 仲有 15 隻 stock alias 簡寫唔齊全 (e.g. 「中石化」vs「中國石油化工股份」)。
+
+**永久 rule**:
+- ✅ 所有 stock 名必須用 backend evidence `/api/stocks/{code}` 拎真實全名, 唔可以用 mental model 估
+- ✅ Spec doc 同 commit message 用 stock 全名 (e.g. 中國石油化工股份), alias 簡寫 (e.g. 中石化) 只係凡人話 alias 唔可以當 stock 名 evidence
+- ✅ 對齊 4.55.0 lesson learned「改 array sort/iterate 邏輯之前, 必先用 curl / test script 拎 evidence 確認 array 排法, 唔可以靠注釋 / mental model 估」(2026-08-31 13:14)
+- ✅ 對齊 8月29日 14:32 永久 rule P1/P2/P3/P4 indexing 精神 (P 點要用 evidence 拎, 唔可以靠 mental model)
+- ✅ Evidence 流程: `curl /api/stocks/{code}` → 拎 `name` field 真實全名 → 用全名寫 spec doc / commit message
+- ✅ Spec doc 提 stock 例子時: 用「HK.XXXXX 全名」格式 (e.g. 「HK.00386 中國石油化工股份」)
+- ✅ 凡人話解釋可以用 alias 簡寫 (e.g. 「中石化」), 但 commit/spec doc 必須用真實全名
+
+**套用**:
+- 之後 StockPulse 任何 stock 對話 (spec doc / commit / debug / 凡 人話) 都跟呢個 pattern
+- 改 spec doc / commit message 嗰陣, 必先用 curl `/api/stocks/{code}` 拎真實全名
+- Commit message 改 stock 名 evidence 嗰陣, 用 `git commit --amend` + `git push --force-with-lease` 修正 (改 commit content + message)
+- Debug script 同 research script 拎 stock 名都跟呢個 pattern, 唔可以靠 mental model 估
+
+**Evidence cross-check tool** (helper script):
+```python
+import urllib.request, json
+def get_name(sym):
+    url = f"http://127.0.0.1:18792/api/stocks/{sym}"
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return json.loads(resp.read()).get("name", "?")
+```
+
+**對應 commit**: `570ad7a9` (amend `b8bdf981`, 大少 7:27 trigger 後即時修正)
+**對應 spec doc**: M1-V22-RESEARCH.md trigger #10 + #4.5 強升中整固 嘅 stock 例子 + 永久 rule section 嘅 evidence
+**對應 doc**: ARCHITECTURE.md §15.XX (待大少 trigger 加 §15.XX 號碼)
+**教訓**: 跟 4.55.0 lesson learned 同源, 係「evidence 必先確認」原則嘅 stock 名延伸
 
 
 ### ZigZag 拎走 4.56.0 'today' point + 鮮綠線 + 4.57.x skip_today 永久 rule (大少 2026-09-01 14:10 trigger, 4.59.0, Full Revert 4.56.0)
@@ -1714,7 +1789,7 @@ After fix:  0 WARNING, 拎到正確 reason
 **9 個 sub-scenario** (跟 CSV spec, 5 個判定優先級):
 - **Priority 1 轉勢** (最重要, transition 訊號): 到頂轉勢 (decelerating_up) / 到底轉勢 (decelerating_down)
 - **Priority 2 強趨勢** (排列 + 斜率 + 放量全部配合): 強上升 (strong_uptrend) / 強下跌 (strong_downtrend)
-- **Priority 3 弱趨勢** (排列對但部分唔配合): 弱上升 (weak_uptrend) / 弱下跌 (weak_downtrend)
+- **Priority 3 初升趨勢** (排列對但部分唔配合): 初上升 (weak_uptrend) / 初下跌 (weak_downtrend)
 - **Priority 4 過渡形態** (短長期分裂): 上升回調 (uptrend_correction) / 下跌反彈 (downtrend_bounce)
 - **Default 橫行** (排列亂): sideways
 
@@ -1787,7 +1862,7 @@ After fix:  0 WARNING, 拎到正確 reason
 - Backward compat 100% — M7 / M8 chain 拎 zmen state 唔受影響
 
 **Layer 2 (新加 M1 v2.1.0 enrich)**:
-- **9 個 sub-scenario** (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢), 跟 M1 對齊
+- **9 個 sub-scenario** (強升 / 初升 / 上升回調 / 橫行 / 下跌反彈 / 初跌 / 強跌 / 到頂轉勢 / 到底轉勢), 跟 M1 對齊
 - **5 個判定優先級** (跟 M1 Priority 1-5): 到頂/到底轉勢 (短期 MA 急變 3%+ + 連續 4+ 日) → 強趨勢 (全部 MA 同方向) → 弱趨勢 (排列對但部分唔配合) → 上升回調/下跌反彈 (短長期分裂) → 橫行 (排列亂)
 - **14 個 output field** (對齊 M1 v2.1.0): cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog
 - **凡人話 warning 注入** (跟 Spec Sync #18 CATEGORY_DISPLAY template): THRESHOLD_BREACH (信心 < 0.4) / CONFLICT_STATE (到頂/到底轉勢, stock_state category)
@@ -2103,3 +2178,238 @@ After fix:  0 WARNING, 拎到正確 reason
 
 **對應 commit**: 即將 push (跟 Spec Sync #62 之後 #63)
 **對應 doc**: AGENTS.md "/api/algorithms/health/threads monitoring endpoint" section
+
+### M1 強升/強跌 trigger v2.2.0 永久 rule (大少 2026-09-04 10:34 trigger)
+
+**凡人話解釋**: 強升 / 強跌 sub-scenario trigger 加 P 點趨勢確認, 確保「排列有 + 放量」嘅 case 真係趨勢延續緊, 而唔係「排列對但峰頂已經唔再抬高」嘅假強趨勢。拎唔夠 4 個 P 點 (新股 / Z 點太短) → fall through 去初升 / 初跌。
+
+**強升 trigger (v2.2.0 新, 6 條件)**:
+- ✅ 排列 bull (MA5>MA10>MA20>MA60)
+- ✅ 全部 MA 斜率正
+- ✅ 放量 (volume_signal=expanding)
+- ✅ `zz_ok_4` (拎夠 4 個 P 點 + 4 個 type)
+- ✅ **P1/P3.type=Peak** (峰頂確認) + **P2/P4.type=Trough** (谷底確認) (大少 9月4日 10:34 trigger: P3=Peak)
+- ✅ **P1>P3** (峰頂抬高) + **P2>P4** (谷底抬高)
+
+**強跌 trigger (v2.2.0 新, 6 條件, 對稱)**:
+- ✅ 排列 bear
+- ✅ 全部 MA 斜率負
+- ✅ 放量
+- ✅ `zz_ok_4`
+- ✅ **P1/P3.type=Trough** + **P2/P4.type=Peak** (大少 9月4日 10:34 trigger: P3=Trough)
+- ✅ **P1<P3** (谷底降底) + **P2<P4** (峰頂降底)
+
+**永久 rule**:
+- ✅ 強升 / 強跌 trigger 必須加 P 點形態確認 (P1/P2/P3/P4 + Peak/Trough type), 唔可以只靠「排列 + 斜率 + 放量」
+- ✅ 強升加 `P1/P3.type=Peak` + `P2/P4.type=Trough` (P1/P3 同 type, P2/P4 同 type, alternating sequence)
+- ✅ 強跌加 `P1/P3.type=Trough` + `P2/P4.type=Peak` (對稱)
+- ✅ 拎唔夠 4 個 P 點 → fall through 去初升 / 初跌, 唔好 trigger 強趨勢
+- ✅ 之後加 P 點 type check 必須跟 9月3日 11:00 永久 rule (P 點 type 命名 Peak/Trough, 唔用 high/low)
+- ✅ 之後加 P 點 trigger 必須附 ≥ 3 隻真實 stock 例子 verify (8月16日 19:21 永久 rule)
+
+**凡人話**: 改動前「排列 bull + 放量」即 trigger 強升 (e.g. 太古 25% 升幅但峰頂唔再抬高), 改動後要峰頂抬高 (P1>P3) + 谷底抬高 (P2>P4) 先 trigger, false positive 減少。
+
+**290 隻 stock 跑出嚟分佈 (9月4日 14:04 batch run)**:
+- 強升 12 隻 (4%) — HK.00005 匯豐 / HK.00939 建行 / HK.01398 工行 / HK.02388 中銀香港 / HK.03328 交通銀行 / HK.03968 招行 / HK.03988 中行 / 等等
+- 強跌 7 隻 (2%) — HK.00010 恒隆 / HK.00034 九龍建業 / HK.00101 恒隆地產 / 等等 (地產股為主)
+- 觀察: 銀行股多 trigger 強升, 地產股多 trigger 強跌
+
+**對應 commit**: 即將 push (大少 verify 完 stock 例子先 commit + push, Spec Sync #64+)
+**對應 doc**: `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` (9 個 sub-scenario 簡單算法表 已 update 強升/強跌 row v2.2.0)
+
+### M1 全面 Adaptive 願景 v2.3.0 (大少 2026-09-04 15:03 trigger, ⏸️ 暫停)
+
+**凡人話解釋**: 大少問「既然每隻股票用唔同自適應門檻, 可唔可以做到全面自動調整去適應每隻股票?」答案: **部分已經 adaptive, 仲有 8 個維度係寫死嘅**。v2.2.0 adaptive thresholdPct 只係第一步, 全面 adaptive 嘅願景係「**每隻股票用自己嘅算法**」(細股 vs 大股, 高波動 vs 低波動股 自動用唔同參數)。
+
+**大少 9月4日 15:03 trigger**: 「先記低呢個公式同功能, 我想再詳細了解佢之後先用, 暫時我哋先唔用但你要記住佢我之後問你你要睇返我」
+
+**🚨 暫停狀態**: 唔郁 code, 唔 commit, 唔 push, 等大少詳細了解後先決定
+
+**Tier 1 — 已做 ✅ (1 個維度, v2.2.0 9月21日 18:37 永久 rule)**
+- ✅ `thresholdPct` (自適應門檻) — `clamp(20日 ATR% × 1.5, 0.5%, 5%)`, 每隻股用自己波幅
+
+**Tier 2 — 簡單可做 (4 個維度, 1-2 sprint)**
+- ⏸️ `volumeLookback` — 高波動股用長 lookback, 低波動股用短, formula: `clamp(ATR% × 100, 3, 10)` 日
+- ⏸️ `slopeLookback` — 同上
+- ⏸️ `volumeBoostThreshold` — formula: `1.0 + ATR% × 5` (高波動 boost 門檻高)
+- ⏸️ `maPeriods` — 按股價分組 (< $10 用 [3,7,14,30], $10-100 用 [5,10,20,60], > $100 用 [10,20,40,120])
+
+**Tier 3 — 中等 (3 個維度, 2-4 sprint)**
+- ⏸️ P 點 window — 按 K 線歷史長度分組 (< 1 年用 4 個, 1-3 年用 7 個, > 3 年用 10 個)
+- ⏸️ `spreadConfidenceScale` — 按股價 adapt ($5 用 0.15, $50 用 0.10, $500 用 0.05)
+- ⏸️ Cycle threshold (短期/長期) — 按波幅 adapt
+
+**Tier 4 — 進階 (3 個維度, 4-6 sprint, 跨 module)**
+- ⏸️ M8 Decision engine 9 個 module → 最終判定權重, 每隻股用唔同權重
+- ⏸️ M9 walk-forward folds — 高波動股 5 折, 低波動股 2 折
+- ⏸️ M7 Synthesizer 信心闊值 — 每隻股用唔同信心門檻
+
+**永久 rule (大少 9月4日 15:03 trigger)**:
+- ✅ **呢個全面 Adaptive 願景 v2.3.0 暫停, 唔郁 code**
+- ✅ 大少日後 trigger「用返 v2.3.0 adaptive」/「M1 全面 adaptive」/「Tier 2 開始做」等 keyword, 我要 recall 返呢個 section, present 畀大少 confirm 先郁
+- ✅ 改動仍要跟返 8月29日 22:44 永久 rule「所有改動要 confirm」+ 8月16日 19:21 永久 rule「改 algorithm 附 ≥ 3 隻 stock 例子 verify」
+- ✅ 每個 Tier 開始前必須拎 ≥ 1 隻 stock 跑 baseline (現有 verdict) + 改動後 verdict 對比, 證明真係改善
+- ✅ Tier 1 已做 (9月21日 永久 rule), Tier 2-4 全部暫停, 大少詳細了解後先揀邊個 Tier 先做
+
+**Trade-off (大少日後揀方向時要考慮)**:
+- ✅ 好處: 細股 vs 大股 verdict 自動適合, 唔使手動 override, 跨股票比較更公平 (自己跟自己比)
+- ❌ 壞處: 複雜性高, 難 debug (每隻股參數唔同), Spec doc 維護成本高, A/B test 較難做
+
+**凡人話總結**: 「**均線散度對自適應門檻**」只係 v2.2.0 第一步, 全面 adaptive 願景係「**每隻股票用自己嘅算法**」(v2.3.0 願景), 大少話暫停等詳細了解。
+
+**大少日後 trigger 例子**:
+- 「用返 v2.3.0 adaptive」→ recall 呢個 section, 確認做邊個 Tier
+- 「Tier 2 開始做」→ 做 volumeLookback / slopeLookback / volumeBoostThreshold / maPeriods 4 個維度
+- 「Tier 3 開始做」→ 做 P 點 window / spreadConfidenceScale / cycle threshold
+- 「Tier 4 開始做」→ 做 M8 / M9 / M7 跨 module adaptive
+
+**對應 doc**: AGENTS.md 「M1 全面 Adaptive 願景 v2.3.0 (大少 9月4日 15:03 trigger, 暫停)」section
+**對應 commit**: 暫時無 (大少話暫停, 等詳細了解)
+
+### M1 上升回調 / 下跌回調 v2.3.0 C 方案 trigger 永久 rule (大少 2026-09-04 15:22 trigger)
+
+**凡人話解釋**: 上升回調 / 下跌回調 (downtrend_bounce) sub-scenario trigger 改成 6 個條件, 用 P 點形態確認趨勢仲在 + MA5/MA60 斜率 + spread 過濾。拎走舊 MA10 條件 (A/B test 證明拎走拎到 15 隻新信號) + 加 P 點 + MA5/MA60 斜率 + spread 過濾 (C 方案, 拎返 spread 過濾防 MA 線 noise)。對齊強升/強跌 v2.2.0 P 點 trigger pattern, 9 個 sub-scenario 入面 4 個 (強升/強跌/上升回調/下跌回調) 用同一個 P 點 logic。
+
+**上升回調 trigger (v2.3.0 新, 6 條件, C 方案)**:
+- ✅ `zz_ok_4` (拎夠 4 個 P 點 + 4 個 type)
+- ✅ `P2.type == "Peak"` (確認 P2 係峰頂, alternating sequence)
+- ✅ `P1 > P3` (谷底抬高, P1/P3 同 Trough, higher low — 上升趨勢確認)
+- ✅ `P2 > P4` (峰頂抬高, P2/P4 同 Peak, higher high — 上升趨勢確認)
+- ✅ `slope_ma60 > 0` (長期仲升, 趨勢未變)
+- ✅ `slope_ma5 < 0` (短期急跌, 真係回調緊)
+- ✅ `max_spread_pct >= cfg["thresholdPct"]` (C 方案: spread 過濾防 MA 線 noise)
+
+**下跌回調 (downtrend_bounce) trigger (v2.3.0 新, 6 條件, 對稱, C 方案)**:
+- ✅ `zz_ok_4`
+- ✅ `P2.type == "Trough"` (確認 P2 係谷底)
+- ✅ `P1 < P3` (峰頂降底, P1/P3 同 Peak, lower high)
+- ✅ `P2 < P4` (谷底降底, P2/P4 同 Trough, lower low)
+- ✅ `slope_ma60 < 0` (長期仲跌)
+- ✅ `slope_ma5 > 0` (短期急升, 真係反彈緊)
+- ✅ `max_spread_pct >= cfg["thresholdPct"]` (C 方案)
+
+**拎走咗嘅條件** (vs 舊 trigger):
+- ❌ `all_short_slope_negative` (MA5+MA10 兩條線, A/B test 證明拎走拎到 15 隻新信號)
+- ❌ 拎走 MA10 條件簡化 trigger
+
+**永久 rule**:
+- ✅ 上升回調 / 下跌回調 trigger 必須加 P 點形態確認 (P2.type + P1>P3 + P2>P4), 唔可以只靠 MA + spread
+- ✅ 強升 / 強跌 / 上升回調 / 下跌回調 4 個 sub-scenario 用同一個 P 點 pattern, 唔可以分別用唔同 logic
+- ✅ C 方案 spread 過濾永久保留 (max_spread_pct >= thresholdPct), 拎走 spread 嘅 trigger 會有 MA 線 noise 風險
+- ✅ 拎唔夠 4 個 P 點 → fall through 去橫行, 唔好 trigger 上升回調 / 下跌回調
+- ✅ 之後加 P 點 type check 必須跟 9月3日 11:00 永久 rule (P 點 type 命名 Peak/Trough, 唔用 high/low)
+- ✅ 之後加 P 點 trigger 必須附 ≥ 3 隻真實 stock 例子 verify (8月16日 19:21 永久 rule)
+- ✅ P 點 alternating 假設要驗證: P1/P3 同 type, P2/P4 同 type (Z 點 well-defined mathematical property)
+
+**A/B Test 290 隻 stock 結果 (大少 9月4日 15:18 batch run)**:
+- 舊 trigger fire: 32 隻 (上升回調 18 + 下跌反彈 14)
+- 新 trigger (C 方案) fire: 預計 18-22 隻 (整體嚴 28%, 加 spread 過濾會比 B 方案多 1-2 隻)
+- 新 trigger 揀走舊 trigger 嘅疑似 false positive: 24 隻 (P 點形態唔似真回調, 舊 trigger 揀錯)
+- 新 trigger 拎到舊 trigger 漏嘅新信號: 15 隻 (拎走 MA10 之後 catch)
+- 兩個都 fire (agree): 8 隻 (典型 case, 兩個都 catch)
+
+**3 個 detail case** (大少可以拎嚟 verify):
+- ✅ HK.00002 (both fire) — 典型上升回調, P1=75.85>P3=74.77 + P2=79.17>P4=77.82 + P2.type=Peak + MA5=-1.35% + MA60=+0.51% + spread 2.43% >= 1.81%
+- 🆕 HK.00003 (new only) — 拎走 MA10 catch 到, P1=7.04>P3=6.60 + P2=7.47>P4=7.06 + MA5=-2.12% + MA60=+0.52% + spread 6.34% >= 2.93%
+- ⚠️ HK.00022 (old only) — P2=Peak 唔似下跌回調, 舊 trigger 揀錯, 新 trigger 揀走
+
+**對應 commit**: 即將 push (大少 verify 完 stock 例子先 commit + push, Spec Sync #65+)
+**對應 doc**: `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` (9 個 sub-scenario 簡單算法表 已 update 上升回調 / 下跌反彈 row v2.3.0)
+
+### M1 「均線散度對自適應門檻」中文名永久 rule (大少 2026-09-04 14:59 trigger)
+
+**凡人話解釋**: 大少問 max_spread_pct 同 thresholdPct 嘅公式有冇中文名, 等日後可以容易 reference。我整理兩個 spec doc 已經用緊嘅名, 畀大少揀, 大少確認用呢個命名 convention。
+
+**中文名 (跟 spec doc 官方用字, `docs/research/AS-03-cycle-detection/MODULE-01-MA-ALIGNMENT.md`)**:
+- **max_spread_pct** → **「均線散度」** (MA Spread, 凡人話: 4 條均線散開嘅程度)
+- **thresholdPct** → **「波幅自適應門檻」** (簡稱 **「自適應門檻」** / **「ATR 門檻」** / **「波幅門檻」**)
+
+**短 reference (大少 9月4日 14:59 trigger, 之後 trigger 我會自動 recall)**:
+- 講 max_spread_pct: 「**均線散度**」(e.g. 「均線散度 3.5%」)
+- 講 thresholdPct: 「**自適應門檻**」/「**ATR 門檻**」/「**波幅門檻**」(e.g. 「自適應門檻 2.4%」)
+- 講 trigger 條件: 「**均線散度對自適應門檻**」(e.g. 「均線散度 ≥ 自適應門檻」)
+
+**核心精神**: 「**自己跟自己比**」— 每隻股用自己嘅 20 日波幅定門檻, 高波動股門檻大, 低波動股門檻細, 跨股票比較更公平。
+
+**永久 rule**:
+- ✅ 之後大少 trigger 「均線散度」/「自適應門檻」/「ATR 門檻」/「波幅門檻」, 我自動 recall 呢個 section
+- ✅ 之後寫 M1 spec doc 用呢個中文名 (統一)
+- ✅ 之後 M1 verdict meta 嘅 UI display 跟呢個命名 (e.g. `thresholdPctUsed` UI 顯示為「自適應門檻」)
+
+**Spec doc 公式 reference**:
+- 均線散度 = `(max(MA5/10/20/60) - min(MA5/10/20/60)) / min(MA5/10/20/60)` — 4 條 MA 各自唔同窗口 (5/10/20/60 日平均)
+- 自適應門檻 = `clamp(20日平均 TR / 最新 close × 1.5, 0.5%, 5%)` — adaptive ATR% × 1.5
+
+**對應 doc**: AGENTS.md 「M1 『均線散度對自適應門檻』中文名永久 rule」section
+
+---
+
+### M1 拎走 fall through placeholder + 初升 / 初跌獨立 trigger (2026-09-04 17:22 + 21:48 trigger)
+
+**凡人話解釋**: 拎走 M1 嘅「fall through placeholder」邏輯 (即係強升 / 強跌 唔成立就跌入初升 / 初跌), 改用獨立 trigger 條件 (P 點剛起步 + MA60+MA5 雙斜率), 凡人話改名「初升 / 初跌」。
+
+**背景**:
+- 之前 weak_uptrend 係 fall through placeholder, 強升 6 條件「任何一個」唔成立就跌入嚟
+- 呢個邏輯造成: 「排列對但 P 點唔配合」都會 trigger 初升, 凡人話 label 寫「初上升」但 trigger 條件好雜
+- 大少 9月4日 17:12 trigger: 用 P 點剛起步 (谷底抬高 + 峰頂未突破) + MA60+MA5 雙斜率做獨立 trigger
+- 大少 9月4日 21:48 trigger 確認命名: 叫「初升」, 唔叫「新初升」, 強升完全唔郁
+
+**Trigger 條件**:
+- **初升** (weak_uptrend, 凡人話「初升週期」):
+  - `slope_ma60 > 0` (長期趨勢向上)
+  - `slope_ma5 > 0` (短期仲有動能)
+  - `zz_ok_4` (拎到 4 個 P 點)
+  - `P2=Trough` (alternating 確認)
+  - `P1 <= P3` (峰頂未突破 — Lower High)
+  - `P2 > P4` (谷底抬高 — Higher Low)
+  - Fallback: 拎唔夠 4 個 P 點 → fall through 去下一個 elif
+- **初跌** (weak_downtrend, 凡人話「初跌週期」): 對稱
+  - `slope_ma60 < 0` + `slope_ma5 < 0` + `zz_ok_4` + `P2=Peak` + `P1 >= P3` + `P2 < P4`
+
+**凡人話核心**:
+> 谷底抬高 + 峰頂未突破 = 上升趨勢剛起步, 仲喺整固階段
+> 峰頂降底 + 谷底未跌穿 = 下跌趨勢剛起步, 仲喺整固階段
+
+對比強升: 強升要 P1>P3 (峰頂抬高, 真突破); 初升要 P1<=P3 (峰頂未突破, 整固中)。
+
+**Key 保留 + 凡人話改名 (方案 B)**:
+- `weak_uptrend` / `weak_downtrend` Python key 唔改 (frontend / backend 唔 break)
+- CYCLE_LABELS dict 入面凡人話由「初上升週期」→「初升週期」
+- frontend `adapter.mjs` ZMEN_SUB_SCENARIO_LABELS / MA_V2_CYCLE_LABELS 凡人話 label 同樣改
+- frontend M1_TOOLTIPS / STRATEGY_RECOMMENDATIONS / 教學卡 / verdict render 凡人話內容重寫 (因為意義由 fall through 改做 P 點剛起步)
+- Zmen 凡人話保留「部分升 rule (F) 觸發」描述 (Zmen 邏輯唔變), M1 凡人話改寫
+
+**影響範圍** (8月16日 19:21 永久 rule verify 範圍):
+- ✅ M2-M9 backend algorithm: 0 直接影響 (M2-M9 唔識分 sub_scenario, 只睇 UP/DOWN/SIDEWAYS 3 個 high-level state)
+- ⚠️ M1 backend 內部: 拎 STATE_MAP / CYCLE_LABELS 0 個 entry (因為 key 唔改), 拎走 line 509/536 拎 2 個 else 邏輯, 加新 trigger 2 個 elif
+- ⚠️ Frontend `adapter.mjs`: 改 16 個 reference (凡人話 label 4 + M1_TOOLTIPS 2 + STRATEGY_RECOMMENDATIONS 2 + 教學卡 4 + verdict render 2 + 顏色 0 + key reference 0)
+- ⚠️ Tests: test_ma_alignment.py 拎 9 個 sub-scenario label test
+- ⚠️ AGENTS.md / ARCHITECTURE.md / M1-V22-RESEARCH.md 文件 reference
+
+**永久 rule**:
+- ✅ M1 拎走 fall through placeholder 邏輯, 改用獨立 trigger (P 點剛起步 + MA60+MA5 雙斜率)
+- ✅ 凡人話 label 「初上升週期」→「初升週期」(key `weak_uptrend` 保留)
+- ✅ 凡人話 label 「初下跌週期」→「初跌週期」(key `weak_downtrend` 保留)
+- ✅ 強升 trigger 完全唔郁 (拎走 MA10+MA20 強升 trigger 部分 cancel)
+- ✅ 改呢個 trigger 必須附 ≥ 3 隻真實 stock 例子 verify (8月16日 19:21 rule)
+- ✅ 改 sub-scenario trigger 要即刻 update M1-V22-RESEARCH.md 簡單算法表 (9月3日 12:10 rule)
+- ✅ 改 frontend 凡人話要做 2 個獨立版本: Zmen 保持 (Layer 1 邏輯唔變) + M1 重寫 (意義由 fall through 改做 P 點剛起步) (9月4日 21:03 trigger)
+- ✅ 之後大少 trigger 「初升」/「初跌」/「弱趨勢」/「Priority 3 弱趨勢」即指呢個獨立 trigger
+- ✅ 之後 M1 frontend tooltip 寫「P 點剛起步」/「谷底抬高 + 峰頂未突破」/「MA60+MA5 雙斜率」即指呢個 trigger pattern
+- ✅ 之後 spec doc / research script / AGENTS.md reference 用「初升」/「初跌」呢個命名, 唔再用「初上升」/「初下跌」(舊 fall through 邏輯)
+- ✅ 之後 backend algorithm trigger 加新 sub-scenario 都要有獨立 trigger 條件, 唔可以再用 fall through 邏輯 (拎走 fall through 永久 rule)
+
+**Priority 結構** (拎走 fall through 後):
+1. Priority 1: 到頂 (decelerating_up) / 到底 (decelerating_down)
+2. Priority 2: 強升 (strong_uptrend) — 全斜率 + 放量 + P 點
+3. Priority 2.5: **初升 (weak_uptrend) — MA60+MA5 雙斜率 + P 點剛起步** [新]
+4. Priority 3: 強跌 (strong_downtrend) — 對稱強升
+5. Priority 3.5: **初跌 (weak_downtrend) — MA60+MA5 雙斜率 + P 點剛起步** [新]
+6. Priority 4: 上升回調 (uptrend_correction) v2.3.0 C 方案
+7. Priority 5: 下跌回彈 (downtrend_bounce) v2.3.0 C 方案
+8. Default: 橫行 (sideways)
+
+**對應 commit**: 即將 push (Spec Sync #65+: 強升 v2.2.0 + 上升回調 v2.3.0 C 方案 + 拎走 fall through placeholder + 初升/初跌 trigger + frontend 凡人話 update)
+**對應 doc**: M1-V22-RESEARCH.md 「🔼 Priority 3 - 初升 / 初跌」section
+**對應凡人話 trigger**: 大少 9月4日 17:12 + 21:48 trigger
+**對應 commit**: 暫時無 (純 spec 命名, 唔改 code)
