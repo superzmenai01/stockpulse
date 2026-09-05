@@ -573,7 +573,12 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ 4.66.6 fix (大少 9月2日 22:40 trigger「預設是 On 的, 即是在圖表裡可以看到 P1, P2, P3...」): 改 default false → true + 加返 LS_KEY_SHOW_MARKERS + getShowMarkers + setShowMarkers (4.66.0 拎返 spec, 4.66.5 拎走, 4.66.6 拎返)
 //   ✅ 對齊 8月19日 13:03 Config UX 模式永久 rule「自動+手動+自動儲存更新圖表」: 即時 localStorage 自動儲存 + reload 記住 user setting
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.142 → ?v=2.3.143 (Step 5)
-const ALGO_CACHE_BUST = '4.66.6';
+//   ✅ 4.66.7 fix (大少 2026-09-03 17:48 trigger「每一次輸入股票出圖時要睇紅框有無 take, 如果有就要顯示, 如果無就不顯示」): 「跑算法」換股票出圖嗰陣, 新 chartRefs 拎返之後 sync 返 zigzagMarkersEnabled + zigzagEnabled 2 個 toggle flag 入 lastChartRefs, 對齊 4.66.6 永久 rule「default On + localStorage 自動記住」+ 對齊 8月19日 13:03 Config UX 模式「出圖同步 toggle 狀態」spirit
+//   ✅ 順手補返 zigzagEnabled (同 bug class, 4.66.0 之後 toggle handler 都有 set, 但「跑算法」嗰陣漏咗, 避免紫色折線 toggle 換股票之後失靈)
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.143 → ?v=2.3.144 (Step 5)
+// 大少 2026-09-05 — Fix C + A+B: hl_structure 加 state field (Fix A) + backend M7 NaN guard (Fix B) + frontend confidence NaN-safe clamp (Fix C): ALGO_CACHE_BUST = '4.66.7' → '4.66.8' (adapter.mjs 1 處改: decisionEngineToStandardVerdict confidence clamp 改 Number.isFinite check, NaN/Infinity → fallback 0, 避免污染 ssi_score 變 NaN)
+//   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.144 → ?v=2.3.145
+const ALGO_CACHE_BUST = '4.66.8';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -1502,6 +1507,16 @@ async function runAlgorithm() {
     //   凡人話: 撳「跑算法」乾淨咗, 之後撳 toggle 唔會有殘留
     if (lastChartRefs) {
       lastChartRefs.zigzagSequenceMarkers = null;
+    }
+    // 大少 2026-09-03 17:48 trigger (4.66.7) — 每次出圖同步紅框 toggle 狀態
+    //   撳「跑算法」換股票出圖嗰陣, 新 chartRefs 拎返之後要 sync 返 #zigzag-markers-enabled toggle 狀態
+    //   對齊 4.66.6 永久 rule「default On + localStorage 自動記住」: 出圖嗰陣用返 user 之前 set 過嘅 toggle state
+    //   撳 toggle 即時 re-render (line 1793) 仍然 work, 呢度係補返「跑算法」嗰條 path
+    //   順手補返 zigzagEnabled (同 bug class, 4.66.0 之後 toggle handler 都有 set, 但「跑算法」嗰陣漏咗)
+    //   凡人話: 換股票撳跑, 紅框 take 過 → 出圖即見 P 點 + 鮮紫 trigger; 紅框冇 take → 出圖即拎走
+    if (lastChartRefs) {
+      lastChartRefs.zigzagMarkersEnabled = zigzagMarkersEnabled;
+      lastChartRefs.zigzagEnabled = zigzagEnabled;
     }
     // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 ZigZag sequence state pass 畀 renderChartOverlay
     // 大少 2026-08-19 08:45 — 拎 verdict/chartRefs 放 window, 大少可以喺 console 拎

@@ -2413,3 +2413,43 @@ After fix:  0 WARNING, 拎到正確 reason
 **對應 doc**: M1-V22-RESEARCH.md 「🔼 Priority 3 - 初升 / 初跌」section
 **對應凡人話 trigger**: 大少 9月4日 17:12 + 21:48 trigger
 **對應 commit**: 暫時無 (純 spec 命名, 唔改 code)
+
+### M7 NAN_RESULT 永久 fix — A+B+C 3 個 fix 永久 rule (大少 2026-09-05 22:42 trigger)
+
+**凡人話解釋**: 大少 跑 M7 算法 (Synthesizer) 嗰陣, verdict 嘅 ssi_score / grade_score 會偶然出 NaN, frontend 即刻 inject 🔴 NAN_RESULT warning。Root cause 係 upstream module verdict 嘅 `confidence` 係 NaN, 污染 ssi 計算。
+
+**🐛 Root cause 3 個問題**:
+
+1. **hl_structure algorithm meta 冇 `state` field** (Fix A) — hl_structure 內部 cycle 係 "uptrend" / "downtrend" / "sideways" (lowercase), 但 meta 唔 expose `state` 落 contract 標準 field, 其他 5 個 module (ma_alignment / trendline / indicators / volume_price / volatility) 全部 meta 有 `"state": "UP"|"DOWN"|"SIDEWAYS"` (uppercase)。`algorithm_runner.py:273` 做 `state: upstream_meta.get("state")` 拎到 None, `contract.py:53-58` Literal validation 失敗 (None 唔喺 list), silent drop, M7 只拎到 5/6 module, 出 MODULE_PARTIAL warning (5/6)。Frontend `decisionEngineToStandardVerdict` 嗰度 defensive default `state: 'SIDEWAYS'`, 所以 frontend 拎齊 6 個 (但全部默認 SIDEWAYS, alignment=1, NaN 容易 trigger)。
+
+2. **Backend M7 algorithm `_compute_ssi` 冇 NaN guard** (Fix B) — `_compute_ssi` 嗰度 conf_avg = `sum(conf * weight) / total_weight`, 如果 conf 係 NaN, conf_avg = NaN, ssi_score = NaN, grade_score = NaN (因為 grade_score = ssi * 0.6 + alignment * 100 * 0.4)。之前 backend 唔 inject NAN_RESULT warning, 只有 frontend `adapter.mjs:5928` inject, 對齊永久 rule §Module Warning v1.1.0 propagation chain (M1-M6 → M7 → M8 → M9)。
+
+3. **Frontend `decisionEngineToStandardVerdict` confidence clamp 唔識處理 NaN** (Fix C) — `Math.max(0, Math.min(1, NaN)) = NaN` (NaN 任何 math 運算都係 NaN), frontend 救唔到 NaN confidence。
+
+**🔧 Fix 永久 rule** (3 個 fix, 全部 done):
+
+**Fix A — hl_structure 加 state field 永久 rule**:
+- ✅ `hl_structure/algorithm.py` 加 `HL_STRUCTURE_STATE_MAP = {"uptrend":"UP", "downtrend":"DOWN", "sideways":"SIDEWAYS"}` dict
+- ✅ 3 個出口位 (empty case / 唔夠 case / main case) 全部加 `"state": ...` field, 對齊 `contract.py ModuleVerdictMeta` Literal
+- ✅ 對齊 `ma_alignment STATE_MAP` pattern, candidate 1-to-1 map 返 uppercase
+- ✅ 之後任何新 M1-M12 module algorithm 寫 meta 必須有 `state` field, 唔可以得 `cycle` (lowercase 內部 string), 防止 contract validation silent drop
+- ✅ 之後 contract.py 加新 state literal 嗰陣, 所有 algorithm 一齊 update, 唔好漏
+
+**Fix B — Backend M7 NaN guard + NAN_RESULT warning 永久 rule**:
+- ✅ `synthesizer/algorithm.py` 加 `import math`
+- ✅ `_compute_ssi` 後加 `math.isfinite(ssi_score)` check, 唔係 finite → fallback 0 + nan_fields.append("ssi_score")
+- ✅ `alignment_score_after_penalty` 一樣 check
+- ✅ `grade_score` 後加 check, 唔係 finite → fallback 0 + grade 落 F + nan_fields.append("grade_score")
+- ✅ `_aggregate_warnings(verdicts, nan_fields=nan_fields)` 接受 nan_fields 參數, 任何 nan → inject 🔴 NAN_RESULT warning
+- ✅ 對齊 frontend `adapter.mjs:5927` 永久 rule, backend / script 跑 M7 都會見到 warning
+- ✅ 之後任何 backend algorithm 計 final score (ssi_score / grade_score / alignment_score) 都要 `math.isfinite` check, 唔可以讓 NaN 流出 verdict
+
+**Fix C — Frontend confidence NaN-safe clamp 永久 rule**:
+- ✅ `adapter.mjs:5607` confidence clamp 改 `Number.isFinite(verdict.confidence) ? Math.max(0, Math.min(1, verdict.confidence)) : 0`
+- ✅ 先 check finite (NaN / Infinity 都唔 isFinite), 唔係 → fallback 0
+- ✅ 之後任何 frontend `Math.max(0, Math.min(1, x))` pattern 都要加 `Number.isFinite(x)` check, 唔可以靠 math 救 NaN
+- ✅ 對齊 backend M7 fix, frontend / backend 兩邊都 NaN-safe
+
+**對應 commit**: 即將 push (Spec Sync: M7 NAN_RESULT 永久 fix — A+B+C 3 個 fix)
+**對應 doc**: docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md (state field contract) + MODULE-07-SYNTHESIZER.md (NaN guard 永久 rule) + MODULE-WARNING-SYSTEM.md NAN_RESULT backend injection
+**對應凡人話 trigger**: 大少 2026-09-05 22:42 報 bug「M7 算法跑 00981 出 Error: NAN_RESULT」+ 確認要做 A+B+C 3 個 fix

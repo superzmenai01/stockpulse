@@ -23,13 +23,16 @@ Algorithm: 18 步 (跟 hl-structure.ts 嘅 detect() method 1:1 port 去 Python)
 - Step 11: 基礎信心指數
 - Step 12: 箱體邊界 (只 sideways)
 - Step 13: 形態預警檢查
-- Step 14: 當前價格位置驗證
-- Step 15: 極值點新鮮度檢查
-- Step 16: 成交量趨勢信心調整
-- Step 17: 綜合信心指數
-- Step 18: 組裝輸出
 
-凡人話: 睇山頂山谷排列, 判斷升勢/跌勢/橫行
+STATE_MAP (大少 2026-09-05 trigger — Fix A):
+- hl_structure candidate 原本係 "uptrend" / "downtrend" / "sideways" (lowercase, 內部 cycle string)
+- 其他 5 個 module (ma_alignment / trendline / volatility / indicators / volume_price) meta.state 全部係 "UP" / "DOWN" / "SIDEWAYS" (uppercase)
+- algorithm_runner.py M7 inject 嗰段做 `state: upstream_meta.get("state")`, 拎到 None (因為 hl_structure meta 冇 state field)
+- contract.py Literal validation fail, hl_structure silent drop, M7 只剩 5/6 module
+- Fix: hl_structure meta 全部 3 個出口位 (空 case / 唔夠 case / main case) 加 state field,
+      由 candidate 1-to-1 derive (uptrend→UP / downtrend→DOWN / sideways→SIDEWAYS)
+- 對齊 contract.py ModuleVerdictMeta state Literal, backend 拎到 state, M7 拎齊 6 個 module
+- 對應 spec: MODULE-02-HL-STRUCTURE.md + backend/algorithms/contract.py ModuleVerdictMeta
 """
 
 import math
@@ -38,6 +41,15 @@ from typing import List, Dict, Any
 from ..base import Algorithm, Verdict
 from ..registry import register
 from .config import DEFAULT_HL_STRUCTURE_CONFIG
+
+
+# 凡人話: 對齊 ma_alignment STATE_MAP pattern, candidate 1-to-1 map 返 uppercase
+# 對應 contract.py ModuleVerdictMeta state Literal
+HL_STRUCTURE_STATE_MAP: Dict[str, str] = {
+    "uptrend":   "UP",
+    "downtrend": "DOWN",
+    "sideways":  "SIDEWAYS",
+}
 
 
 # ============================================================
@@ -228,6 +240,7 @@ class HLStructureAlgorithm(Algorithm):
                 meta={
                     "symbol": options.get("code", "TEST"),
                     "cycle": "sideways",
+                    "state": "SIDEWAYS",  # 大少 2026-09-05 Fix A: 對齊 contract ModuleVerdictMeta Literal
                     "cycle_label": "橫行週期",
                     "confidence": 0.3,
                     "base_confidence": 0.3,
@@ -286,6 +299,7 @@ class HLStructureAlgorithm(Algorithm):
                 meta={
                     "symbol": options.get("code", "TEST"),
                     "cycle": "sideways",
+                    "state": "SIDEWAYS",  # 大少 2026-09-05 Fix A: 對齊 contract ModuleVerdictMeta Literal
                     "cycle_label": "橫行週期",
                     "confidence": 0.5,
                     "base_confidence": 0.5,
@@ -492,6 +506,7 @@ class HLStructureAlgorithm(Algorithm):
         meta = {
             "symbol": options.get("code", "TEST"),
             "cycle": candidate,
+            "state": HL_STRUCTURE_STATE_MAP.get(candidate, "SIDEWAYS"),  # 大少 2026-09-05 Fix A
             "cycle_label": cycle_label,
             "confidence": _round(confidence, 4),
             "base_confidence": _round(base_confidence, 4),

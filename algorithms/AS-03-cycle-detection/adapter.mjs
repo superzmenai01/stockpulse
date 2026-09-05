@@ -1329,9 +1329,9 @@ function avgClose(klines, endIdx, period) {
 // 用 zmen 自己 3 條 MA (MA5/MA10/MA60) 嘅數據 enrich, 唔覆蓋 Layer 1 嘅 4 個 state
 const ZMEN_SUB_SCENARIO_LABELS = {
   strong_uptrend: '強上升趨勢',
-  weak_uptrend: '弱上升趨勢',
+  weak_uptrend: '初升趨勢',
   sideways: '橫行',
-  weak_downtrend: '弱下跌趨勢',
+  weak_downtrend: '初跌趨勢',
   strong_downtrend: '強下跌趨勢',
   uptrend_correction: '上升回調中',
   downtrend_bounce: '下跌反彈中',
@@ -1355,7 +1355,7 @@ const ZMEN_POSITION_LABELS = {
 // 5 個判定優先級 (跟 M1 Priority 1-5):
 //   Priority 1: 到頂/到底轉勢 (短期 MA 急變 + 長期 MA 同方向 + 連續 4+ 日)
 //   Priority 2: 強升/強跌 (全部 MA 同方向 + 量能配合)
-//   Priority 3: 弱升/弱跌 (排列對但部分唔配合)
+//   Priority 3: 初升/初跌 (排列對但部分唔配合)
 //   Priority 4: 上升回調/下跌反彈 (短長期分裂)
 //   Default: 橫行
 function deriveZmenSubScenario(ma5History, ma10History, ma60History, klines) {
@@ -1418,11 +1418,11 @@ function deriveZmenSubScenario(ma5History, ma10History, ma60History, klines) {
   if (allMASameDirection && slopeMA5 < 0 && !shortAboveLong && !shortAboveMid) {
     return { subScenario: 'strong_downtrend', cyclePosition: 'mid_stage', consecutiveDays: 0 };
   }
-  // Priority 3: 弱上升 (短期上穿長期但部分 MA 唔配合)
+  // Priority 3: 初上升 (短期上穿長期但部分 MA 唔配合)
   if (shortAboveLong && slopeMA5 > 0) {
     return { subScenario: 'weak_uptrend', cyclePosition: 'tentative_rise', consecutiveDays: 0 };
   }
-  // Priority 3: 弱下跌 (短期下穿長期但部分 MA 唔配合)
+  // Priority 3: 初下跌 (短期下穿長期但部分 MA 唔配合)
   if (!shortAboveLong && slopeMA5 < 0) {
     return { subScenario: 'weak_downtrend', cyclePosition: 'tentative_fall', consecutiveDays: 0 };
   }
@@ -1637,9 +1637,9 @@ function renderMAResult(verdict) {
 
     // 9 個 sub-scenario 凡人話解釋
     zmen_strong_uptrend: '強上升: Zmen 10 條 rule 中觸發強升 rule (A 連續 5 日 MA5 > MA60 等), 配合 Layer 2 全部 MA 同方向, 典型多頭排列確認',
-    zmen_weak_uptrend: '弱上升: Zmen 觸發部分升 rule (F 升勢調整等), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折',
+    zmen_weak_uptrend: '初上升: Zmen 觸發部分升 rule (F 升勢調整等), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折',
     zmen_sideways: '橫行: Zmen 觸發 C/D rule (橫行向下 / 向上), Layer 2 MA 排列亂, 短中期 MA 交叉, 冇明確方向',
-    zmen_weak_downtrend: '弱下跌: Zmen 觸發部分跌 rule (G 跌勢調整等), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折',
+    zmen_weak_downtrend: '初下跌: Zmen 觸發部分跌 rule (G 跌勢調整等), Layer 2 短中期 MA 同方向但長期仲未確認, 信心打折',
     zmen_strong_downtrend: '強下跌: Zmen 觸發強跌 rule (B 連續 5 日 MA5 < MA60 等), 配合 Layer 2 全部 MA 同方向, 典型空頭排列確認',
     zmen_uptrend_correction: '上升回調: Zmen 觸發 F rule (升勢調整向下) + Layer 2 短期 MA 急跌但長期仲升, 屬於上升趨勢中嘅正常回調',
     zmen_downtrend_bounce: '下跌反彈: Zmen 觸發 G rule (跌勢調整向上) + Layer 2 短期 MA 急升但長期仲跌, 屬於下跌趨勢中嘅短暫反彈',
@@ -1648,8 +1648,8 @@ function renderMAResult(verdict) {
 
     // 8 個 cyclePosition 凡人話解釋
     zmen_mid_stage: '趨勢中期: 強趨勢 (強升 / 強跌) 嘅中段, 動能最猛, 通常持續 1-3 個月',
-    zmen_tentative_rise: '剛起勢: 弱上升嘅起步, 信號未完全確認, 觀察多幾日',
-    zmen_tentative_fall: '剛起勢: 弱下跌嘅起步, 信號未完全確認, 觀察多幾日',
+    zmen_tentative_rise: '剛起勢: 初上升嘅起步, 信號未完全確認, 觀察多幾日',
+    zmen_tentative_fall: '剛起勢: 初下跌嘅起步, 信號未完全確認, 觀察多幾日',
     zmen_range_bound: '橫行整理: 4 條 MA 糾纏, 等突破方向',
     zmen_correction_at_ma20: '回調中: 上升趨勢中嘅正常調整, 短期均線急跌但長期仲升',
     zmen_bounce_in_progress: '反彈進行中: 下跌趨勢中嘅短暫回升, 留意長期均線仲跌緊',
@@ -1914,11 +1914,11 @@ function renderDetailedExplanationMA(verdict) {
       <h4 style="margin-top:12px;">9 個 sub-scenario 速查 (Layer 2)</h4>
       <ul>
         <li><strong>強上升</strong> (strong_uptrend) — 強升 rule (A) + 全部 MA 同方向 → mid_stage</li>
-        <li><strong>弱上升</strong> (weak_uptrend) — 部分升 rule (F) + 短中期 MA 同方向 → tentative_rise</li>
+        <li><strong>初升</strong> (weak_uptrend) — 部分升 rule (F) + 短中期 MA 同方向 → tentative_rise</li>
         <li><strong>上升回調</strong> (uptrend_correction) — F rule + 短期急跌但長期仲升 → correction_at_ma20</li>
         <li><strong>橫行</strong> (sideways) — C/D rule + 排列亂 → range_bound</li>
         <li><strong>下跌反彈</strong> (downtrend_bounce) — G rule + 短期急升但長期仲跌 → bounce_in_progress</li>
-        <li><strong>弱下跌</strong> (weak_downtrend) — 部分跌 rule (G) + 短中期 MA 同方向 → tentative_fall</li>
+        <li><strong>初跌</strong> (weak_downtrend) — 部分跌 rule (G) + 短中期 MA 同方向 → tentative_fall</li>
         <li><strong>強下跌</strong> (strong_downtrend) — 強跌 rule (B) + 全部 MA 同方向 → mid_stage</li>
         <li><strong>到頂轉勢</strong> (decelerating_up) — H-reverse-down + 短期急跌 3%+ + 連跌 4+ 日 → late_stage_topping</li>
         <li><strong>到底轉勢</strong> (decelerating_down) — H-reverse-up + 短期急升 3%+ + 連升 4+ 日 → late_stage_bottoming</li>
@@ -1940,11 +1940,11 @@ function renderStrategyAdviceMA(verdict) {
   const layer2ConsecutiveDays = verdict.meta?.consecutiveDays || 0;
   const ZMEN_V10_STRATEGY_ADVICE = {
     strong_uptrend: `<div class="strategy-strong-up"><h4>🟢 強上升 (Layer 1 強升 rule + Layer 2 全部 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>順勢持倉, 可考慮持有 / 逢回調加倉</p><p><strong>訊號確認:</strong>A rule (連續 5 日 MA5 > MA60) + Layer 2 全部 MA 同方向, 典型多頭排列確認</p><p><strong>風險管理:</strong>留意 H-reverse-down (7 日內由升轉跌), 呢個係見頂警號</p><p><strong>止損位:</strong>最近 5 日 low 跌穿 MA5 × 0.98 (I rule 失效)</p><p><strong>進場策略:</strong>等回調到 MA5/MA10 附近再反彈, 低吸</p></div>`,
-    weak_uptrend: `<div class="strategy-weak-up"><h4>🟡 弱上升 (Layer 1 部分升 rule + Layer 2 短中期 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等放量確認再入場</p><p><strong>訊號確認:</strong>部分升 rule 觸發 (F 升勢調整), 上升動能偏弱</p><p><strong>風險管理:</strong>留意 MA5 斜率轉負 = 升勢見頂警號</p><p><strong>止損位:</strong>MA5 跌穿 MA10 + 連續 2 日 (Layer 2 弱上升失效)</p><p><strong>進場策略:</strong>等放量確認先入場, 唔好強行加倉</p></div>`,
+    weak_uptrend: `<div class="strategy-weak-up"><h4>🟡 初升 (Layer 1 部分升 rule + Layer 2 P 點剛起步) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等峰頂突破前高再入場</p><p><strong>訊號確認:</strong>部分升 rule 觸發 (F 升勢調整) + M1 P 點形態 (谷底抬高 + 峰頂未突破), 上升趨勢剛起步</p><p><strong>風險管理:</strong>留意 P 點峰頂跌穿前低 (P1<P3) = 升勢見頂警號</p><p><strong>止損位:</strong>MA5 跌穿 MA60 + 連續 2 日 (Layer 2 初升失效)</p><p><strong>進場策略:</strong>等峰頂突破前高 (P1>P3) + 放量確認先入場, 唔好強行加倉</p></div>`,
     uptrend_correction: `<div class="strategy-correction"><h4>🟢 上升回調中 (Layer 1 F rule + Layer 2 短期急跌但長期仲升) · 策略建議</h4><p><strong>基本動作:</strong>如已持有可續持, 等 MA5 跌到 MA20 附近見支持再考慮加倉</p><p><strong>訊號確認:</strong>F rule (升勢調整向下) + 短期 MA 急跌但長期仲升, 屬於上升趨勢中嘅正常回調</p><p><strong>風險管理:</strong>確認 M2 HL Structure 有冇破壞 HH / HL 結構, 破壞就唔再係上升回調</p><p><strong>止損位:</strong>MA5 跌穿 MA60 + 連續 3 日 (Layer 2 回調失效)</p><p><strong>進場策略:</strong>等 MA5 跌到 MA20 附近見支持再加倉, 唔好見急跌就沽</p></div>`,
     sideways: `<div class="strategy-sideways"><h4>🟡 橫行 (Layer 1 C/D rule + Layer 2 排列亂) · 策略建議</h4><p><strong>基本動作:</strong>等待突破方向, 唔好喺橫行期間強行入市</p><p><strong>訊號確認:</strong>C/D rule 觸發, Layer 2 MA 排列亂, 短中期 MA 交叉, 冇明確方向</p><p><strong>風險管理:</strong>配合 M6 Volatility Squeeze 訊號可以捕捉突破時機</p><p><strong>進場策略:</strong>等 MA5 突破 MA60 先做 (向上 = 升 / 向下 = 跌)</p><p><strong>觀察重點:</strong>留意 H-reverse rule, 出現就係轉勢先兆</p></div>`,
     downtrend_bounce: `<div class="strategy-bounce"><h4>🔴 下跌反彈中 (Layer 1 G rule + Layer 2 短期急升但長期仲跌) · 策略建議</h4><p><strong>基本動作:</strong>如已持貨可考慮喺反彈高位減倉</p><p><strong>訊號確認:</strong>G rule (跌勢調整向上) + 短期 MA 急升但長期仲跌, 屬於下跌趨勢中嘅短暫反彈</p><p><strong>風險管理:</strong>確認 M2 HL Structure 有冇破壞 LL / LH 結構, 唔好因為短暫反彈就以為見底</p><p><strong>止損位:</strong>MA5 升穿 MA60 + 連續 3 日 (Layer 2 反彈失效)</p><p><strong>進場策略:</strong>等長期均線 (MA60) 斜率轉正先信, 唔好撈底</p></div>`,
-    weak_downtrend: `<div class="strategy-weak-down"><h4>🟡 弱下跌 (Layer 1 部分跌 rule + Layer 2 短中期 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等放量確認再行動, 唔好急住撈底</p><p><strong>訊號確認:</strong>部分跌 rule 觸發 (G 跌勢調整), 下跌動能偏弱</p><p><strong>風險管理:</strong>留意 MA5 斜率轉正 = 跌勢見底警號</p><p><strong>止損位:</strong>MA5 升穿 MA10 + 連續 2 日 (Layer 2 弱下跌失效)</p><p><strong>進場策略:</strong>等放量確認先行動, 唔好撈底</p></div>`,
+    weak_downtrend: `<div class="strategy-weak-down"><h4>🟡 初跌 (Layer 1 部分跌 rule + Layer 2 P 點剛起步) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等谷底跌穿前低再行動, 唔好急住撈底</p><p><strong>訊號確認:</strong>部分跌 rule 觸發 (G 跌勢調整) + M1 P 點形態 (峰頂降底 + 谷底未跌穿), 下跌趨勢剛起步</p><p><strong>風險管理:</strong>留意 P 點谷底升穿前高 (P1>P3) = 跌勢見底警號</p><p><strong>止損位:</strong>MA5 升穿 MA60 + 連續 2 日 (Layer 2 初跌失效)</p><p><strong>進場策略:</strong>等谷底跌穿前低 (P1<P3) + 放量確認先行動, 唔好撈底</p></div>`,
     strong_downtrend: `<div class="strategy-strong-down"><h4>🔴 強下跌 (Layer 1 強跌 rule + Layer 2 全部 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀</p><p><strong>訊號確認:</strong>B rule (連續 5 日 MA5 < MA60) + Layer 2 全部 MA 同方向, 典型空頭排列確認</p><p><strong>風險管理:</strong>留意 H-reverse-up (7 日內由跌轉升), 呢個係見底警號</p><p><strong>止損位:</strong>最近 5 日 high 升穿 MA5 × 1.02 (J rule 失效)</p><p><strong>進場策略:</strong>反彈到 MA5/MA10 附近再回落, 做空</p></div>`,
     decelerating_up: `<div class="strategy-dec-up"><h4>🟣 到頂轉勢中 (Layer 1 H-reverse-down + Layer 2 連跌 ${layer2ConsecutiveDays} 日) · 策略建議</h4><p><strong>基本動作:</strong>如已持貨應考慮喺反彈時減倉 / 止賺, 唔好博佢返上去</p><p><strong>訊號確認:</strong>H-reverse-down rule (升勢轉跌勢) + 短期 MA 急跌 3%+ + 連跌 ${layer2ConsecutiveDays} 日, 見頂跡象明顯</p><p><strong>風險管理:</strong>確認 M2 HL Structure (LH = 見頂確認) + M4 Indicators RSI 背馳</p><p><strong>止損位:</strong>短期 MA5 升穿 MA10 + 連續 2 日 (Layer 2 到頂失效)</p><p><strong>進場策略:</strong>等確認見頂後先做空, 唔好搶跑</p></div>`,
     decelerating_down: `<div class="strategy-dec-down"><h4>🔵 到底轉勢中 (Layer 1 H-reverse-up + Layer 2 連升 ${layer2ConsecutiveDays} 日) · 策略建議</h4><p><strong>基本動作:</strong>如想撈底要等確認: M2 HL Structure 出現 HH (見底確認) + M4 Indicators RSI 唔再背馳</p><p><strong>訊號確認:</strong>H-reverse-up rule (跌勢轉升勢) + 短期 MA 急升 3%+ + 連升 ${layer2ConsecutiveDays} 日, 見底跡象明顯</p><p><strong>風險管理:</strong>先小注試單, 唔好一次過 all-in</p><p><strong>止損位:</strong>短期 MA5 跌穿 MA10 + 連續 2 日 (Layer 2 到底失效)</p><p><strong>進場策略:</strong>等確認見底後先撈底, 唔好搶跑</p></div>`,
@@ -1992,7 +1992,7 @@ function renderUsageGuideMA(verdict) {
         <li>睇 <code>maSlopes[MA60]</code> 嘅正負 — 長期 MA 斜率係大方向指標</li>
         <li>睇 <code>momentumScore</code> — 加權動能分數, 短期 MA 權重高</li>
         <li>睇 <code>調整記錄</code> 知 Layer 2 做咗咩 sub-scenario 細分 (e.g. 短期急跌 + 連跌 4 日 → 到頂轉勢)</li>
-        <li><strong>9 個 sub-scenario 解讀</strong>: 強升 / 弱升 / 上升回調 = UP; 強跌 / 弱跌 / 下跌反彈 = DOWN; 橫行 / 到頂 / 到底 = SIDEWAYS (transition)</li>
+        <li><strong>9 個 sub-scenario 解讀</strong>: 強升 / 初升 / 上升回調 = UP; 強跌 / 初跌 / 下跌反彈 = DOWN; 橫行 / 到頂 / 到底 = SIDEWAYS (transition)</li>
         <li>對比 M1 (M1 同 zmen 拎 9 個 sub-scenario 對比, 睇 cycle 風格 vs spec 風格 一致性)</li>
         <li>結合多個 module 結果 (M3 Trendline + M4 Indicators + M5 量价 + M6 波動率) 做最終決策</li>
       </ol>
@@ -2436,7 +2436,7 @@ function renderStrategyAdviceVolume(verdict) {
     } else {
       cycleAdvice = `
         <div class="strategy-up">
-          <h4>🟢 弱上升 · 策略建議</h4>
+          <h4>🟢 初上升 · 策略建議</h4>
           <p><strong>基本動作:</strong> 上升但 buyScore 較低 (0.55-0.7), 信心一般</p>
           <p><strong>進場策略:</strong> 等 buyScore 升到 0.7+ 先考慮入場</p>
         </div>
@@ -4400,9 +4400,9 @@ const MA_ALIGNMENT_V2_DEFAULTS = {
 const MA_V2_CYCLE_LABELS = {
   // 9 個 sub-scenario (大少 2026-08-15 M1 v2.1.0 — 跟 CSV spec)
   strong_uptrend: '強上升週期',
-  weak_uptrend: '弱上升週期',
+  weak_uptrend: '初升週期',
   sideways: '橫行週期',
-  weak_downtrend: '弱下跌週期',
+  weak_downtrend: '初跌週期',
   strong_downtrend: '強下跌週期',
   uptrend_correction: '上升回調中',
   downtrend_bounce: '下跌反彈中',
@@ -4510,9 +4510,9 @@ function renderMAAlignmentV2Result(verdict) {
 
     // 9 個 sub-scenario 凡人話解釋
     m1_strong_uptrend: '強上升: 4 條均線完美由細到大排列 (MA5 < MA10 < MA20 < MA60), 全部均線斜率向上, 配合放量確認。趨勢中期, 上升動能強',
-    m1_weak_uptrend: '弱上升: 4 條均線由細到大排列, 但部分斜率唔配合 / 量能唔夠。剛開始升 / 起勢, 信心打折',
+    m1_weak_uptrend: '初升: 上升趨勢中, 谷底抬高 (P2>P4) + 峰頂未突破 (P1<=P3), MA60+MA5 雙斜率正。整固中 / 剛起步, 信心中等',
     m1_sideways: '橫行: 均線排列亂, 短期同長期均線距離近 (少過 2%), 冇明確方向。橫行整理中, 等突破',
-    m1_weak_downtrend: '弱下跌: 4 條均線由大到細排列, 但部分斜率唔配合 / 量能唔夠。剛開始跌 / 起勢, 信心打折',
+    m1_weak_downtrend: '初跌: 下跌趨勢中, 峰頂降底 (P2<P4) + 谷底未跌穿 (P1>=P3), MA60+MA5 雙斜率負。整固中 / 剛起步, 信心中等',
     m1_strong_downtrend: '強下跌: 4 條均線完美由大到細排列, 全部均線斜率向下, 配合放量確認。趨勢中期, 下跌動能強',
     m1_uptrend_correction: '上升回調: 之前上升趨勢, 而家短期均線 (MA5/MA10) 急跌但長期均線 (MA60) 仲升緊。回調到 20 日均線附近, 仍屬上升趨勢中的修正',
     m1_downtrend_bounce: '下跌反彈: 之前下跌趨勢, 而家短期均線 (MA5/MA10) 急升但長期均線 (MA60) 仲跌緊。反彈進行中, 仍屬下跌趨勢中的反彈',
@@ -4521,8 +4521,8 @@ function renderMAAlignmentV2Result(verdict) {
 
     // 8 個 cyclePosition 凡人話解釋
     m1_mid_stage: '趨勢中期: 強趨勢 (強上升 / 強下跌) 嘅中段, 動能最猛, 通常持續 1-3 個月',
-    m1_tentative_rise: '剛起勢: 弱上升嘅起步, 信號未完全確認, 觀察多幾日',
-    m1_tentative_fall: '剛起勢: 弱下跌嘅起步, 信號未完全確認, 觀察多幾日',
+    m1_tentative_rise: '剛起勢: 初上升嘅起步, 信號未完全確認, 觀察多幾日',
+    m1_tentative_fall: '剛起勢: 初下跌嘅起步, 信號未完全確認, 觀察多幾日',
     m1_range_bound: '橫行整理: 4 條均線糾纏, 等突破方向',
     m1_correction_at_ma20: '回調到 20 日均線: 上升趨勢中嘅正常調整, 20 日均線係關鍵支持位',
     m1_bounce_in_progress: '反彈進行中: 下跌趨勢中嘅短暫回升, 留意長期均線仲跌緊',
@@ -4570,11 +4570,11 @@ function renderMAAlignmentV2Result(verdict) {
   // 9 個 sub-scenario 對應顏色 (大少 2026-08-15 M1 v2.1.0)
   const CYCLE_COLOR_MAP = {
     strong_uptrend: '#1FA960',       // 深綠 (強上升)
-    weak_uptrend: '#7DD89F',          // 淺綠 (弱上升)
+    weak_uptrend: '#7DD89F',          // 淺綠 (初上升)
     uptrend_correction: '#A8D5BA',    // 淡綠 (上升回調)
     sideways: '#F39C12',              // 黃 (橫行)
     downtrend_bounce: '#F5B7B1',      // 淡紅 (下跌反彈)
-    weak_downtrend: '#F1948A',        // 淺紅 (弱下跌)
+    weak_downtrend: '#F1948A',        // 淺紅 (初下跌)
     strong_downtrend: '#C0392B',      // 深紅 (強下跌)
     decelerating_up: '#8E44AD',       // 紫 (到頂轉勢)
     decelerating_down: '#2980B9',     // 藍 (到底轉勢)
@@ -4756,7 +4756,7 @@ function renderMAAlignmentV2DetailedExplanation(verdict) {
   return `
     <div class="result-section">
       <h3>📖 詳細解讀 (M1 v2.1.0 — 9 個 sub-scenario)</h3>
-      <p>呢個 module 用 4 維度判斷股票所處嘅周期 (強升 / 弱升 / 橫行 / 弱跌 / 強跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢), 同時用 3 個維度調整信心 (成交量 + 斜率 + 走勢強度)。</p>
+      <p>呢個 module 用 4 維度判斷股票所處嘅周期 (強升 / 初升 / 橫行 / 初跌 / 強跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢), 同時用 3 個維度調整信心 (成交量 + 斜率 + 走勢強度)。</p>
       <ul>
         <li><strong>cycle</strong> (9 個 sub-scenario): ${meta.cycle} (${meta.cycleLabel}) — 而家股票所處嘅周期</li>
         <li><strong>cyclePosition</strong> (8 個位置): ${meta.cyclePosition || '—'} (${meta.cyclePositionLabel || '—'}) — 周期嘅邊個階段</li>
@@ -4790,11 +4790,11 @@ function renderMAAlignmentV2DetailedExplanation(verdict) {
       <h4 style="margin-top:12px;">9 個 sub-scenario 速查</h4>
       <ul>
         <li><strong>強上升</strong> (strong_uptrend): MA 完美多頭排列 + 全部斜率正 + 放量 → mid_stage</li>
-        <li><strong>弱上升</strong> (weak_uptrend): MA 多頭排列但部分斜率 / 量能唔配合 → tentative_rise</li>
+        <li><strong>初升</strong> (weak_uptrend): MA60+MA5 雙斜率正 + P 點剛起步 (谷底抬高 + 峰頂未突破) → tentative_rise</li>
         <li><strong>上升回調</strong> (uptrend_correction): 短期急跌但長期仲升 → correction_at_ma20</li>
         <li><strong>橫行</strong> (sideways): 排列亂 + spread &lt; 2% → range_bound</li>
         <li><strong>下跌反彈</strong> (downtrend_bounce): 短期急升但長期仲跌 → bounce_in_progress</li>
-        <li><strong>弱下跌</strong> (weak_downtrend): MA 空頭排列但部分斜率 / 量能唔配合 → tentative_fall</li>
+        <li><strong>初跌</strong> (weak_downtrend): MA60+MA5 雙斜率負 + P 點剛起步 (峰頂降底 + 谷底未跌穿) → tentative_fall</li>
         <li><strong>強下跌</strong> (strong_downtrend): MA 完美空頭排列 + 全部斜率負 + 放量 → mid_stage</li>
         <li><strong>到頂轉勢</strong> (decelerating_up): MA5 急跌 3%+ + 長期仲升 + 連跌 4+ 日 → late_stage_topping</li>
         <li><strong>到底轉勢</strong> (decelerating_down): MA5 急升 3%+ + 長期仲跌 + 連升 4+ 日 → late_stage_bottoming</li>
@@ -4811,7 +4811,7 @@ function renderMAAlignmentV2StrategyAdvice(verdict) {
   if (meta.cycle === 'strong_uptrend') {
     advice = '<p>🟢 <strong>強上升趨勢確認</strong> — 可考慮持有 / 逢回調加倉, 留意 <code>maSlopes[MA5]</code> 唔好轉負, 確認放量跟進。</p>';
   } else if (meta.cycle === 'weak_uptrend') {
-    advice = '<p>🟡 <strong>弱上升動能</strong> — 觀察多幾日, 等放量確認再入場。留意 MA5 斜率轉負 = 升勢見頂警號。</p>';
+    advice = '<p>🟡 <strong>初升動能 (P 點剛起步)</strong> — 觀察多幾日, 等峰頂突破前高 (P1>P3) + 放量確認再入場。留意 P 點峰頂跌穿前低 (P1<P3) = 升勢見頂警號。</p>';
   } else if (meta.cycle === 'uptrend_correction') {
     advice = '<p>🟢 <strong>上升回調中</strong> — 如已持有可續持, 等 MA5 跌到 MA20 附近見支持再考慮加倉。留意 M2 HL Structure 確認有冇破壞 HH / HL 結構。</p>';
   } else if (meta.cycle === 'sideways') {
@@ -4819,7 +4819,7 @@ function renderMAAlignmentV2StrategyAdvice(verdict) {
   } else if (meta.cycle === 'downtrend_bounce') {
     advice = '<p>🔴 <strong>下跌反彈中</strong> — 如已持貨可考慮喺反彈高位減倉, 唔好因為短暫反彈就以為見底。確認 M2 HL Structure 有冇破壞 LL / LH 結構。</p>';
   } else if (meta.cycle === 'weak_downtrend') {
-    advice = '<p>🟡 <strong>弱下跌動能</strong> — 觀察多幾日, 等放量確認再行動, 唔好急住撈底。留意 MA5 斜率轉正 = 跌勢見底警號。</p>';
+    advice = '<p>🟡 <strong>初跌動能 (P 點剛起步)</strong> — 觀察多幾日, 等谷底跌穿前低 (P1<P3) + 放量確認再行動, 唔好急住撈底。留意 P 點谷底升穿前高 (P1>P3) = 跌勢見底警號。</p>';
   } else if (meta.cycle === 'strong_downtrend') {
     advice = '<p>🔴 <strong>強下跌趨勢確認</strong> — 觀望 / 減倉, 等 <code>maSlopes[MA60]</code> 轉正先考慮撈底, 唔好接刀。</p>';
   } else if (meta.cycle === 'decelerating_up') {
@@ -4855,7 +4855,7 @@ function renderMAAlignmentV2UsageGuide(verdict) {
         <li>睇 <code>maSlopes[MA60]</code> 嘅正負 — 長期 MA 斜率係大方向指標</li>
         <li>睇 <code>成交量分析</code> — 近期/前期比 + 訊號 (放量跟 = 真升, 縮量升 = 假升)</li>
         <li>睇 <code>調整記錄</code> 知做咗咩 discount / boost (放量/縮量/斜率)</li>
-        <li><strong>9 個 sub-scenario 解讀</strong>: 強升 / 弱升 / 上升回調 = UP; 強跌 / 弱跌 / 下跌反彈 = DOWN; 橫行 / 到頂 / 到底 = SIDEWAYS (transition)</li>
+        <li><strong>9 個 sub-scenario 解讀</strong>: 強升 / 初升 / 上升回調 = UP; 強跌 / 初跌 / 下跌反彈 = DOWN; 橫行 / 到頂 / 到底 = SIDEWAYS (transition)</li>
         <li>對比 M2 HL Structure — 確認峰谷結構 (HH/HL = 上升, LH/LL = 下跌), 上升回調 / 下跌反彈 / 到頂 / 到底 尤其重要</li>
         <li>結合多個 module 結果 (M3 Trendline + M4 Indicators + M5 量价 + M6 波動率) 做最終決策</li>
       </ol>
@@ -4870,11 +4870,11 @@ function getMAAlignmentV2Help() {
     <h4>9 個 sub-scenario</h4>
     <ul>
       <li><strong>強上升</strong> (strong_uptrend) — MA 完美多頭排列 + 全部斜率正 + 放量 → mid_stage</li>
-      <li><strong>弱上升</strong> (weak_uptrend) — MA 多頭排列但部分斜率 / 量能唔配合 → tentative_rise</li>
+      <li><strong>初上升</strong> (weak_uptrend) — MA 多頭排列但部分斜率 / 量能唔配合 → tentative_rise</li>
       <li><strong>上升回調</strong> (uptrend_correction) — 短期急跌但長期仲升 → correction_at_ma20</li>
       <li><strong>橫行</strong> (sideways) — 排列亂 + spread &lt; 2% → range_bound</li>
       <li><strong>下跌反彈</strong> (downtrend_bounce) — 短期急升但長期仲跌 → bounce_in_progress</li>
-      <li><strong>弱下跌</strong> (weak_downtrend) — MA 空頭排列但部分斜率 / 量能唔配合 → tentative_fall</li>
+      <li><strong>初下跌</strong> (weak_downtrend) — MA 空頭排列但部分斜率 / 量能唔配合 → tentative_fall</li>
       <li><strong>強下跌</strong> (strong_downtrend) — MA 完美空頭排列 + 全部斜率負 + 放量 → mid_stage</li>
       <li><strong>到頂轉勢</strong> (decelerating_up) — MA5 急跌 3%+ + 長期仲升 + 連跌 4+ 日 → late_stage_topping</li>
       <li><strong>到底轉勢</strong> (decelerating_down) — MA5 急升 3%+ + 長期仲跌 + 連升 4+ 日 → late_stage_bottoming</li>
@@ -4883,7 +4883,7 @@ function getMAAlignmentV2Help() {
     <ol>
       <li>到頂 / 到底轉勢 (Priority 1, 最重要, transition 訊號)</li>
       <li>強上升 / 強下跌 (Priority 2, 排列 + 斜率 + 放量全部配合)</li>
-      <li>弱上升 / 弱下跌 (Priority 3, 排列對但部分唔配合)</li>
+      <li>初上升 / 初下跌 (Priority 3, 排列對但部分唔配合)</li>
       <li>上升回調 / 下跌反彈 (Priority 4, 短長期分裂)</li>
       <li>橫行 (Default, 排列亂)</li>
     </ol>
@@ -5337,7 +5337,7 @@ export const maAlignmentV2Adapter = {
   id: 'AS-03-MA',
   name: '均線系統週期判斷法 (9 個 sub-scenario + 成交量 + 斜率)',
   version: '2.1.0',
-  description: '睇均線嘅排列加埋成交量同斜率, 判斷股票而家係咩週期 — 共 9 個 sub-scenario (強升 / 弱升 / 橫行 / 弱跌 / 強跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢)',
+  description: '睇均線嘅排列加埋成交量同斜率, 判斷股票而家係咩週期 — 共 9 個 sub-scenario (強升 / 初升 / 橫行 / 初跌 / 強跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢)',
   inputs: [
     // 股票代碼 (大少 #10400 — testing page 統一 auto-complete, 跟首頁 StockSearch UX)
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
@@ -5369,11 +5369,11 @@ function getZmenV10Help() {
     <h4>9 個 sub-scenario (Layer 2)</h4>
     <ul>
       <li><strong>強上升</strong> (strong_uptrend) — 強升 rule (A) + 全部 MA 同方向 → mid_stage</li>
-      <li><strong>弱上升</strong> (weak_uptrend) — 部分升 rule (F) + 短中期 MA 同方向 → tentative_rise</li>
+      <li><strong>初上升</strong> (weak_uptrend) — 部分升 rule (F) + 短中期 MA 同方向 → tentative_rise</li>
       <li><strong>上升回調</strong> (uptrend_correction) — F rule + 短期急跌但長期仲升 → correction_at_ma20</li>
       <li><strong>橫行</strong> (sideways) — C/D rule + 排列亂 → range_bound</li>
       <li><strong>下跌反彈</strong> (downtrend_bounce) — G rule + 短期急升但長期仲跌 → bounce_in_progress</li>
-      <li><strong>弱下跌</strong> (weak_downtrend) — 部分跌 rule (G) + 短中期 MA 同方向 → tentative_fall</li>
+      <li><strong>初下跌</strong> (weak_downtrend) — 部分跌 rule (G) + 短中期 MA 同方向 → tentative_fall</li>
       <li><strong>強下跌</strong> (strong_downtrend) — 強跌 rule (B) + 全部 MA 同方向 → mid_stage</li>
       <li><strong>到頂轉勢</strong> (decelerating_up) — H-reverse-down + 短期急跌 3%+ + 連跌 4+ 日 → late_stage_topping</li>
       <li><strong>到底轉勢</strong> (decelerating_down) — H-reverse-up + 短期急升 3%+ + 連升 4+ 日 → late_stage_bottoming</li>
@@ -5382,7 +5382,7 @@ function getZmenV10Help() {
     <ol>
       <li>到頂 / 到底轉勢 (Priority 1, 最重要, transition 訊號)</li>
       <li>強上升 / 強下跌 (Priority 2, 排列 + 斜率全部配合)</li>
-      <li>弱上升 / 弱下跌 (Priority 3, 排列對但部分唔配合)</li>
+      <li>初上升 / 初下跌 (Priority 3, 排列對但部分唔配合)</li>
       <li>上升回調 / 下跌反彈 (Priority 4, 短長期分裂)</li>
       <li>橫行 (Default, 排列亂)</li>
     </ol>
@@ -5604,7 +5604,11 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
     state: (verdict.state && ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION', 'TRAP'].includes(verdict.state))
       ? verdict.state
       : 'SIDEWAYS',
-    confidence: Math.max(0, Math.min(1, verdict.confidence)),
+    // 大少 2026-09-05 Fix C: NaN-safe confidence clamp
+    // 凡人話: 之前 Math.max(0, Math.min(1, NaN)) = NaN (NaN 任何 math 運算都係 NaN),
+    //         污染 ssi_score 變 NaN, frontend 嗰度 trigger NAN_RESULT warning (但 backend runner 拎唔到 warning)
+    // Fix: 先用 Number.isFinite check, 唔係 finite → fallback 0
+    confidence: Number.isFinite(verdict.confidence) ? Math.max(0, Math.min(1, verdict.confidence)) : 0,
     base_weight,
     expected_return,
     max_drawdown_estimate,

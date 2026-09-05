@@ -1542,7 +1542,7 @@ if (currentAdapter.renderChartOverlay) {
 
 | 編號 | Module | 檔案 | Version | 3 Sections | Status |
 |------|--------|------|---------|-----------|--------|
-| 01 | **均線系統週期判斷法 v2.1.0** (with Volume & Slope + 9 個 sub-scenario) | `modules/ma-alignment.ts` | **v2.1.0 (Spec Sync #19, 2026-08-15)** | ✅ | ✅ Production — **v2.1.0 升級** (大少 2026-08-15 06:20 trigger 揀項甲): v2.0 3 個 cycle state + 9 個 sub-scenario 細分 (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 弱升/弱跌 → Priority 4 上升回調/下跌反彈 → Default 橫行) + 14 個 output field (cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog) + 29 個凡人話 popup 註解 (跟 M7/M8/M9 一致 inline style) + 凡人話 12 步 step-by-step guide + Warning 注入 3 個 code (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state]). v2.0.0 3 cycles + 13 fields + 三階段信心調整 + 4 條 MA overlay (5/10/20/60, 大少 2026-08-08 09:50) + 凡人話 UX (大少 2026-08-08 10:28). **v2.2 待大少逐條 review 9 個 sub-scenario trigger 條件** (大少 2026-08-16 19:21 永久 rule, spec doc M1-V22-RESEARCH.md). |
+| 01 | **均線系統週期判斷法 v2.1.0** (with Volume & Slope + 9 個 sub-scenario) | `modules/ma-alignment.ts` | **v2.1.0 (Spec Sync #19, 2026-08-15)** | ✅ | ✅ Production — **v2.1.0 升級** (大少 2026-08-15 06:20 trigger 揀項甲): v2.0 3 個 cycle state + 9 個 sub-scenario 細分 (強升 / 初升 / 上升回調 / 橫行 / 下跌反彈 / 初跌 / 強跌 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 初升/初跌 → Priority 4 上升回調/下跌反彈 → Default 橫行) + 14 個 output field (cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog) + 29 個凡人話 popup 註解 (跟 M7/M8/M9 一致 inline style) + 凡人話 12 步 step-by-step guide + Warning 注入 3 個 code (FALLBACK_USED [system] / THRESHOLD_BREACH [stock_state] / CONFLICT_STATE [stock_state]). v2.0.0 3 cycles + 13 fields + 三階段信心調整 + 4 條 MA overlay (5/10/20/60, 大少 2026-08-08 09:50) + 凡人話 UX (大少 2026-08-08 10:28). **v2.2 待大少逐條 review 9 個 sub-scenario trigger 條件** (大少 2026-08-16 19:21 永久 rule, spec doc M1-V22-RESEARCH.md). |
 | 02 | HL Structure 高低點結構 | `modules/hl-structure.ts` | v0.1.0 | ✅ | ✅ Production |
 | 03 | Trendline 趨勢線法 | `modules/trendline.ts` + `backend/algorithms/trendline/` | v0.1.0 (frontend) + **v0.1.0 (Phase 4 backend Python, Spec Sync #23, 2026-08-20)** | ✅ | ✅ Production — **v0.1.0 backend Python port** (大少 2026-08-20 20:50 trigger「搬M3加測試」): backend `trendline/algorithm.py` 27.3KB port frontend algorithm + 7 個 helper, 10 pytest pass, frontend `adapter.mjs` 拎走 506 行 `analyzeTrendline` + 7 個 helper, 換 fetch backend stub (34 行), 4 個 render function (`renderTrendlineResult` / `renderTrendlineRuleExplain` / `renderTrendlineChartOverlay` / `getTrendlineHelp`) 拎 `verdict.X` → `verdict.meta.X`, 5 隻 stock verify (HK.00700 騰訊 SIDEWAYS 0.65 / HK.00005 匯豐 UP 0.90 / US.AAPL SIDEWAYS 0.70 / US.MSFT UP 0.90 / US.GOOGL SIDEWAYS 0.65). Algorithm ABC contract 對 M3 應用 (Phase 1 永久 rule), caller inject pattern 唔需要 (M3 同 M2 一樣 standalone, framework 保留), frontend render 拎 `verdict.meta.*` (Phase 2 永久 rule). |
 | 04 | Indicators 動能背馳與衰竭 | `modules/indicators.ts` + `backend/algorithms/indicators/` | v1.0.0 (frontend) + **v1.0.0 (Phase 5 backend Python, Spec Sync #24, 2026-08-20)** | ✅ | ✅ Production — **v1.0.0 backend Python port** (大少 2026-08-20 21:10 trigger「Phase 5+6 連做」): backend `indicators/algorithm.py` 27.9KB port frontend 9 步算法 + 9 個 helper, 10 pytest pass, frontend `adapter.mjs` 拎走 566 行 `analyzeIndicators` + 9 個 helper, 換 fetch backend stub (34 行), 4 個 render function (`renderIndicatorsResult` / `renderIndicatorsChartOverlay` / `getIndicatorsHelp` / `indicatorsAdapter`) 拎 `verdict.X` → `verdict.meta.X`, 5 隻 stock verify (HK.00700 騰訊 SIDEWAYS 0.00 hold / HK.00005 匯豐 SIDEWAYS 0.00 hold / US.AAPL SIDEWAYS 0.30 hold / US.MSFT SIDEWAYS 0.00 hold / US.GOOGL SIDEWAYS 0.00 hold). Algorithm ABC contract 對 M4 應用 (Phase 1 永久 rule), caller inject pattern 唔需要 (M4 同 M2+M3 一樣 standalone, framework 保留), frontend render 拎 `verdict.meta.*` (Phase 2 永久 rule). |
@@ -2513,8 +2513,8 @@ return = (actual_exit_price - entry_price) / entry_price
 
 ### 大少 2026-08-15 06:20 trigger: M1 v2.1.0 — 加 9 個 sub-scenario + Volume + Slope 完整凡人話 UX
 
-- 9 個 sub-scenario 細分 (強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌 / 到頂轉勢 / 到底轉勢)
-- 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 弱升/弱跌 → Priority 4 上升回調/下跌反彈 → Default 橫行)
+- 9 個 sub-scenario 細分 (強升 / 初升 / 上升回調 / 橫行 / 下跌反彈 / 初跌 / 強跌 / 到頂轉勢 / 到底轉勢)
+- 5 個判定優先級 (Priority 1 到頂/到底 → Priority 2 強升/強跌 → Priority 3 初升/初跌 → Priority 4 上升回調/下跌反彈 → Default 橫行)
 - 14 個 output field: cycle / cycleLabel / cyclePosition / cyclePositionLabel / consecutiveDays / maValues / maRanks / maSlopes / momentumScore / maxSpreadPct / volumeTrendRatio / volumeSignal / volumeSignalLabel / adjustmentLog
 - 29 個凡人話 popup 註解 (M1 専用, 凡人話 plain language, 跟 M7/M8/M9 一致 inline style)
 - 凡人話 12 步 step-by-step guide (包含 9 個 sub-scenario 解讀 step)
@@ -5763,8 +5763,8 @@ backend `calculate_zigzag` function **唔係完整 1-to-1 port frontend algorith
 
 **Cycle 分佈改動** (277 隻 stock):
 - sideways: 44.8% → 43.7% (-1.1%)
-- weak_uptrend: 18.1% → 17.0% (-1.1%)
-- weak_downtrend: 13.7% → 15.2% (+1.5%)
+- 初升 (weak_uptrend): 18.1% → 17.0% (-1.1%)
+- 初跌 (weak_downtrend): 13.7% → 15.2% (+1.5%)
 - decelerating_up: 0.7% → 0.4% (-0.3%, false positive 修正)
 
 ### 對齊永久 rule
@@ -5781,6 +5781,41 @@ backend `calculate_zigzag` function **唔係完整 1-to-1 port frontend algorith
 
 - `bf925b53 feat(m1-trigger): M1 v2.2.0 到頂/到底轉勢 trigger 微調 + 拎走舊版 calculate_zigzag 公開暴露 (大少 2026-09-03 11:00 + 14:37 trigger)` — 3 files changed (algorithm.py + __init__.py + M1-V22-RESEARCH.md)
 - Spec Sync: ARCHITECTURE.md §15.69 (本段) + AGENTS.md 「Sub-scenario caller 拎 Z 點 source 永久 rule」section + docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md §「Sub-scenario caller 拎 Z 點 source 永久 rule」section
+
+## §15.70 — M7 NAN_RESULT 永久 fix (大少 2026-09-05 22:42 trigger「M7 算法跑 00981 出 Error: NAN_RESULT」) [2026-09-05]
+
+### 凡人話
+
+M7 Synthesizer 跑 00981 嗰陣, frontend 嗰度 inject 🔴 NAN_RESULT warning (ssi_score / grade_score 係 NaN, alignment_score 1)。Root cause 係 upstream module verdict 嘅 `confidence` 偶然係 NaN, 污染 SSI 計算。3 個 fix 永久改:
+
+1. **Fix A — hl_structure 加 state field**: hl_structure 內部 cycle 係 "uptrend" / "downtrend" / "sideways" (lowercase), 但 meta 唔 expose `state` 落 contract 標準 field。Runner 做 `upstream_meta.get("state")` 拎到 None, `contract.py` Literal validation fail, hl_structure silent drop, M7 只拎到 5/6 module, frontend 出 MODULE_PARTIAL warning (5/6)。Fix: hl_structure meta 全部 3 個出口位加 `"state": "UP"|"DOWN"|"SIDEWAYS"` field, 對齊 contract ModuleVerdictMeta Literal。
+
+2. **Fix B — Backend M7 NaN guard + NAN_RESULT warning injection**: `_compute_ssi` 嗰度 `conf_avg = sum(conf * weight) / total_weight`, conf 係 NaN 嗰陣 ssi_score 變 NaN。Backend 之前唔 inject NAN_RESULT warning, 只有 frontend `adapter.mjs:5928` inject, 對齊 Module Warning v1.1.0 propagation chain (M1-M6 → M7 → M8 → M9)。Fix: backend `synthesizer/algorithm.py` 加 `math.isfinite` check + `_aggregate_warnings(verdicts, nan_fields=...)` 接受 nan_fields 參數, inject 🔴 NAN_RESULT warning。
+
+3. **Fix C — Frontend confidence NaN-safe clamp**: `adapter.mjs:5607` `Math.max(0, Math.min(1, NaN)) = NaN` (NaN 任何 math 運算都係 NaN), 救唔到。Fix: 先 `Number.isFinite(verdict.confidence)` check, 唔係 finite → fallback 0, 再 `Math.max(0, Math.min(1, x))` clamp。
+
+### 影響範圍
+
+- ✅ `hl_structure/algorithm.py` +1 dict + 3 個出口位 (Fix A)
+- ✅ `synthesizer/algorithm.py` +1 import (math) + 1 nan guard block + 1 個 signature change + 1 warning injection (Fix B)
+- ✅ `adapter.mjs:5607` confidence clamp NaN-safe (Fix C)
+- ⚠️ M7 backend verdict shape 改: 任何 nan field 嗰陣 `ssi_score` / `alignment_score_after_penalty` / `grade_score` 會 fallback 0, 但 `warnings` 會多 🔴 NAN_RESULT entry
+- ✅ 0 直接 frontend render 影響 (frontend warning banner / module verdict card 已經 handle 🔴 Critical 永久 rule)
+- ✅ 0 對 contract validation 影響 (反而加強, hl_structure 終於通過)
+- ⚠️ 對齊永久 rule: Module Warning v1.1.0 propagation chain (M1-M6 → M7 → M8 → M9)
+
+### 永久 rule
+
+- ✅ hl_structure meta 3 個出口位全部加 `state` field (對齊 contract.py ModuleVerdictMeta Literal)
+- ✅ 任何 M1-M12 module algorithm 寫 meta 必須有 `state` field, 唔可以得 `cycle` (lowercase 內部 string)
+- ✅ Backend M7 `_compute_ssi` / `_compute_grade` 加 `math.isfinite` check + NaN → 0 fallback + nan_fields tracking
+- ✅ `_aggregate_warnings` 接受 `nan_fields` 參數, inject 🔴 NAN_RESULT warning
+- ✅ Frontend `Math.max(0, Math.min(1, x))` pattern 一律加 `Number.isFinite(x)` check, NaN → 0 fallback
+- ✅ 之後 contract.py 加新 state literal 嗰陣, 所有 algorithm 一齊 update, 唔好漏
+
+### 對應 commit
+
+- Spec Sync: ARCHITECTURE.md §15.70 (本段) + AGENTS.md 「M7 NAN_RESULT 永久 fix — A+B+C 3 個 fix 永久 rule」section
 
 ### Follow-up sprint (唔喺今次 scope)
 

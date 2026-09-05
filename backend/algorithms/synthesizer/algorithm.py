@@ -30,6 +30,7 @@ Caller inject pattern (Phase 8 permanent rule):
 """
 
 from typing import List, Dict, Any, Optional, Tuple
+import math
 
 from ..base import Algorithm, Verdict
 from ..registry import register
@@ -311,7 +312,7 @@ def _compute_kelly(verdicts: List[Dict[str, Any]]) -> Dict[str, Any]:
 # Fix (大少 2026-08-31): runner 已經加 _warnings field, 呢度統一 aggregate
 # ============================================================
 
-def _aggregate_warnings(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _aggregate_warnings(verdicts: List[Dict[str, Any]], nan_fields: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """凡人話: 拎 6 個 module verdict 嘅 warnings 統一 dedupe + sort 落 M7 verdict.warnings
 
     永久 rule v1.1.0:
@@ -320,6 +321,7 @@ def _aggregate_warnings(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     - 統一用 ModuleWarning object (禁止 string array)
 
     Batch 2 (大少 2026-08-31): 改 `_warnings` → `warnings` 對齊 frontend verdict.warnings naming
+    大少 2026-09-05 Fix B: 加 nan_fields 參數, inject NAN_RESULT warning
     """
     collector = WarningCollector()
     for v in verdicts:
@@ -337,6 +339,20 @@ def _aggregate_warnings(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             issue=f"runner 拎唔到 {6 - len(verdicts)} 個 module verdict, synth verdict 會少訊息",
             impact="Verdict 唔可信, 唔好落單",
             fix="Re-run / 檢查 algorithm_runner log 揾邊個 module 拎失敗",
+        ))
+
+    # 大少 2026-09-05 Fix B: NaN guard warning (對齊 frontend adapter.mjs:5927 永久 rule)
+    # 凡人話: 如果 ssi_score / alignment_score / grade_score 唔係 finite (NaN / Infinity),
+    #         inject 🔴 NAN_RESULT warning, 大少睇到即知 verdict 唔可信
+    if nan_fields:
+        collector.push(make_warning(
+            level="critical",
+            module_id="M7",
+            code="NAN_RESULT",
+            message="M7 綜合判定計算結果 NaN",
+            issue=f"{', '.join(nan_fields)} 結果係 NaN 或 Infinity (上游 module verdict 數值唔啱)",
+            impact="Verdict 唔可信, 唔好落單",
+            fix="Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc",
         ))
 
     return collector.to_list()
@@ -434,8 +450,33 @@ class SynthesizerAlgorithm(Algorithm):
         # alignment_score 扣 penalty (cap 0)
         alignment_score_after_penalty = max(0.0, alignment_score - zigzag_alignment_penalty)
 
+        # Step 3.7: NaN guard (大少 2026-09-05 Fix B)
+        # 凡人話: 如果任何 upstream module verdict 嘅 confidence 係 NaN/Infinity,
+        #         conf_avg 會變 NaN, ssi_score / grade_score 全部污染。
+        #         Backend 都要 detect 同 inject NAN_RESULT warning (對齊 frontend adapter.mjs:5891)
+        nan_fields: list = []
+        if not math.isfinite(ssi_score):
+            nan_fields.append("ssi_score")
+            ssi_score = 0.0
+            ssi_breakdown = {"consistency": 0, "confidence_avg": 0, "rules_coverage": 0}
+        if not math.isfinite(alignment_score_after_penalty):
+            nan_fields.append("alignment_score")
+            alignment_score_after_penalty = 0.0
+
         # Step 4: Grade (用 penalty 後嘅 alignment_score)
         grade, grade_score, grade_reason = _compute_grade(ssi_score, alignment_score_after_penalty)
+
+        # Step 4.5: Grade NaN guard
+        if not math.isfinite(grade_score):
+            nan_fields.append("grade_score")
+            grade_score = 0.0
+            # grade 落 F, grade_reason 解釋
+            grade = "F"
+            grade_reason = f"分數 0 (因 NaN fallback, 凡人話: 上游 module verdict 數值唔啱) → F"
+
+        # Step 4.6: Inject NAN_RESULT warning if any field is NaN
+        # 對齊 frontend adapter.mjs:5927 永久 rule, backend 一致 inject
+        # 對應 spec: MODULE-07-SYNTHESIZER.md + MODULE-WARNING-SYSTEM.md NAN_RESULT
 
         # Step 5: Kelly
         kelly = _compute_kelly(verdicts)
@@ -513,7 +554,7 @@ class SynthesizerAlgorithm(Algorithm):
         }
 
         # Step 6: Aggregate upstream warnings (永久 rule v1.1.0 propagation chain)
-        aggregated_warnings = _aggregate_warnings(verdicts)
+        aggregated_warnings = _aggregate_warnings(verdicts, nan_fields=nan_fields)
 
         return Verdict(ok=True, points=[], meta=meta, warnings=aggregated_warnings)
 
