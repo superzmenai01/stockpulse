@@ -750,6 +750,8 @@ Spec Sync #15 同時補 Phase 4 partial 漏咗嘅 6 個 adapter entry header 註
 - pytest 183/183 PASS (M3 10 + existing 173)
 - 5 隻 stock verify: HK.00700 騰訊 SIDEWAYS 0.65 / HK.00005 匯豐 UP 0.90 / US.AAPL SIDEWAYS 0.70 / US.MSFT UP 0.90 / US.GOOGL SIDEWAYS 0.65
 - 凡人話: M3 拎 frontend 506 行 (analyzeTrendline + 7 個 helper) 換 1 個 backend fetch stub, frontend 4 個 render function 拎 `verdict.X` → `verdict.meta.X` 對齊 backend shape
+- **v0.1.1 chart overlay 修復 (2026-09-06 16:47, Spec Sync #38)**: `adapter.mjs` `renderTrendlineChartOverlay` line 3812 guard 拎 `verdict.meta.meta` 永遠 true → 永遠 early return, silent fail 因為 function 內 `console.warn + return` 唔 throw, testing page 嗰個 try/catch (line 1528-1534) catch 唔到, 撳 M3 (AS-03-TL) 跑算法之後圖表永遠冇綠色支撐線 + 紅色壓力線. Fix: guard 拎 `verdict.meta` + 修正 3 處 stale comment/console.warn. 凡人話: root cause 確認 — curl backend `/api/algorithms/run?algo=trendline&symbol=HK.00700` 拎 evidence, `meta.supportLine` / `meta.resistanceLine` 直接喺 meta 下面, 冇 `meta.meta` wrapper
+- **M3 趨勢線 toggle 控制 (2026-09-06 16:47)**: testing page chart-section 加 `#trendline-toggle-bar` (跟 MA toggle 永久 rule pattern), 入面 2 個 checkbox (🟢 支撐線 + 🔴 壓力線) + `lineSeries.applyOptions({ visible })` 即時切換 + `localStorage` 自動記住 (跟 8月19日 13:03 Config UX 模式永久 rule) + 出圖 sync (跟 4.66.7 ZigZag pattern). 永久 rule: M3 trendline toggle 跟 MA toggle 同樣 pattern (lineSeries.applyOptions + localStorage + 出圖 sync), 之後 M4/M5/M6 等加 chart overlay 嘅 module 都跟呢個 pattern. 對應 commit `d663ef01` (fix) + `09ea4c21` (feat)
 
 **Phase 5+6 done (2026-08-20, 大少 21:10 trigger「連做」)**:
 - **Phase 5** (M4 Indicators 動能背馳與衰竭) v1.0.0: `backend/algorithms/indicators/`

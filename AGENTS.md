@@ -107,6 +107,31 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: 7ba21cc7 (Phase 1-3 infrastructure) + 即將 push 嘅 Phase 4 (統一 28 個注入點 template)
 
+### M3 trendline chart overlay 修復 永久 rule (大少 2026-09-06 16:47 confirm)
+
+**凡人話**: M3 (趨勢線法) 撳「跑算法」之後, 圖表永遠冇綠色支撐線 + 紅色壓力線, 因為 `adapter.mjs` `renderTrendlineChartOverlay` line 3812 個 guard 拎 `verdict.meta.meta` 永遠 true → 永遠 early return, silent fail 因為 function 內 `console.warn + return` 唔 throw, testing page 嗰個 try/catch (line 1528-1534) catch 唔到, 大少肉眼睇唔到線, 但 console 冇 error 提示。
+
+**Root cause 確認 (curl evidence)**:
+- `curl /api/algorithms/run?algo=trendline&symbol=HK.00700` 拎 verdict
+- Backend Phase 4 (2026-08-20) 拎走 frontend 改 fetch backend 之後, verdict shape 已經係 `verdict.meta.supportLine` / `verdict.meta.resistanceLine` (直接喺 meta 下面)
+- **冇** `verdict.meta.meta` 個 wrapper
+- Frontend `renderTrendlineChartOverlay` 拎 `verdict.meta.meta` 永遠 `undefined` → guard 永遠 true → 永遠 early return
+
+**永久 rule checklist**:
+- ✅ `renderTrendlineChartOverlay` 嘅 guard 永遠拎 `verdict.meta` (唔好再拎 `verdict.meta.meta`, 永久 rule §Module Warning v1.0.0 沿用 verdict shape pattern)
+- ✅ Frontend render function 拎 path 永遠 `verdict.meta.X`, 唔好再寫 `verdict.meta.meta.X` (Phase 4 拎走 frontend 之前嘅舊 shape)
+- ✅ 改 array/object access 之前必先 curl backend 拎 evidence 確認 (對齊 4.55.0 array evidence 永久 rule)
+- ✅ 改 `adapter.mjs` 之後必同步 bump `testing-page.js` 嘅 `ALGO_CACHE_BUST` + `testing-page/index.html` 嘅 `?v=2.3.X` (cache bust self-check 永久 rule 21:24)
+- ✅ Testing page chart overlay 嘅 silent return (`console.warn + return` 唔 throw) testing page 嗰個 try/catch catch 唔到 → 撳跑算法之後必肉眼 verify chart overlay 有冇 render (**唔可以** 淨靠 console log 確認)
+- ✅ M3 trendline toggle 跟 MA toggle 同樣 pattern (lineSeries.applyOptions + localStorage 自動記住 + 出圖 sync), 之後 M4/M5/M6 等加 chart overlay 嘅 module 都跟呢個 pattern
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 3775-3876 嘅 `renderTrendlineChartOverlay`
+- `testing-page/index.html` line 168-181 嘅 `#trendline-toggle-bar`
+- `testing-page/testing-page.js` line 91-105 嘅 localStorage helpers + line 2333-2360 嘅 toggle handler + line 1543-1556 嘅出圖 sync
+
+對應 commit: d663ef01 (fix) + 09ea4c21 (feat)
+
 ### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
 
 完整 chain: **M7(綜合) → M9(回測拎最佳設定) → M8(用最佳設定做最終判斷)**
