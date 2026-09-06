@@ -58,6 +58,12 @@ async def run_algo(
         2.5,
         description="1-5, only used if threshold_mode=auto (永久 2.5)"
     ),
+    # 大少 2026-09-06 08:00 confirm: 永久拎走 disable_volume 參數
+    # 改動歷史:
+    #   07:30 暫時加 disable_volume=true 做 A/B test (對比 232 隻 stock)
+    #   08:00 大少 confirm 拎走放量 trigger, 放量變 confidence indicator
+    #   08:00 拎走 disable_volume param (永久), meta.volumeConfirmed field 取代 (frontend 紅字提示)
+    # 永久 rule (大少 2026-09-06 08:00): M1 強升/強跌 trigger 純睇技術面 (排列+斜率+P點), 唔 require 放量
 ):
     """凡人話: 跑 algorithm (4.43.0 加 4 個 ZigZag 新 params + validation)
 

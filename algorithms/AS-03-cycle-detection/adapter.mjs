@@ -4680,6 +4680,14 @@ function renderMAAlignmentV2Result(verdict) {
           <div class="summary-row"><span>Spread:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_max_spread}">${(meta.maxSpreadPct * 100).toFixed(2)}%</span></strong></div>
           ${meta.thresholdPctUsedPctDisplay ? `<div class="summary-row"><span>Threshold (v2.2.0):</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_threshold_pct}">${meta.thresholdPctUsedPctDisplay} (${meta.thresholdPctSource === 'adaptive' ? 'adaptive, ATR=' + (meta.adaptiveAtrPctDisplay || '?') : meta.thresholdPctSource === 'fixed' ? 'fixed override' : meta.thresholdPctSource || '—'})</span></strong></div>` : ''}
           <div class="summary-row"><span>基礎信心:</span> <strong><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_base_confidence}">${meta.baseConfidence}</span></strong></div>
+          ${meta.cycle === 'strong_uptrend' || meta.cycle === 'strong_downtrend' ? (
+            meta.volumeConfirmed
+              ? `<div class="summary-row volume-confirmed-row"><span>量能確認:</span> <strong style="color: #1E88E5; font-weight: 700;">🔵 放量確認</strong></div>`
+              : `<div class="summary-row volume-unconfirmed-row"><span>量能狀況:</span> <strong style="color: #C0392B; font-weight: 700;">🔴 量能未確認</strong></div>
+                 <div class="summary-row volume-unconfirmed-detail" style="color: #C0392B; font-size: 12px; line-height: 1.5; padding-top: 2px;">
+                   <span>影響解讀:</span> 技術面 (排列+斜率+P點) 對齊強趨勢, 但成交量 ${meta.volumeSignal === 'shrinking' ? '縮量' : '持平'} (${meta.volumeSignal === 'shrinking' ? '錢退緊' : '錢跟唔足'}), 量能未確認趨勢真實性。可能係 (1) 假突破 / (2) 蓄勢待發 / (3) 早期階段。留意後續 1-2 週成交量變化, 放量就確認, 持續縮量就要小心
+                 </div>`
+          ) : ''}
         </div>
       </div>
 

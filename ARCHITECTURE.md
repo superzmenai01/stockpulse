@@ -5822,3 +5822,68 @@ M7 Synthesizer 跑 00981 嗰陣, frontend 嗰度 inject 🔴 NAN_RESULT warning 
 - HK.00077 / HK.09987 verdict 唔穩定 issue (batch run 唔同時候 verdict 唔同, 可能係 KlineCache singleton 拎 K 線 time 唔同 / trigger 條件邊界 case), 之後再 investigate
 - 拎走 `run_zigzag` helper + `_calculate_zigzag` function 拎走抽象層 (大工程, 之後 sprint 處理)
 
+## §15.71 — M1 強升/強跌 trigger 拎走放量, 放量變 confidence indicator (大少 2026-09-06 07:30 + 08:00 trigger) [2026-09-06]
+
+### 觸發原因
+
+- 大少 2026-09-06 07:30 trigger「先做個測試對比, 如果把強升和強跌的放量拿走, 用 Db 裡的 Kline 股票去跑我想對比前後兩者的分別」
+- 232 隻 stock (>= 1000 條 1d K 線) A/B test 結果: 拎走放量 trigger 後 14 隻 stock verdict 變咗 (6.0%), 13/14 原本 volume=neutral, 1/14 volume=shrinking
+- 大少 2026-09-06 08:00 confirm: 拎走放量 trigger (永久), 但保留「放量」做 confidence indicator — 強升/強跌 + 有放量 → frontend verdict card 紅字「🔴 放量確認」
+- 大少 2026-09-06 08:10 改寫: 「我弄錯了, 如果是放量的, 用藍色字, 如果沒有達到放量的, 用紅色字寫明狀況和有什麼影響解讀」 → 藍字「🔵 放量確認」+ 紅字「🔴 量能未確認」+ 紅字影響解讀文字
+
+### 改動內容 (5 個 file + 1 個 spec doc)
+
+**Backend**:
+- `backend/algorithms/ma_alignment/algorithm.py`:
+  - Line 525-528 強升 trigger 拎走 `volume_signal == "expanding"` 條件
+  - Line 604-608 強跌 trigger 拎走 `volume_signal == "expanding"` 條件 (對稱)
+  - Line 807-810 meta dict 加新 field `volumeConfirmed: bool` — 強升/強跌 + expanding → True
+- `backend/api/algorithms.py`:
+  - Line 58-66 拎走 `disable_volume` query param (永久, 唔再需要, 因為已經拎走 trigger)
+
+**Frontend**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs`:
+  - Line 4683 `renderMAAlignmentV2Result` data-summary 加 conditional 兩種 case (只 render 強升/強跌):
+    - 藍字「🔵 放量確認」 (color #1E88E5, font-weight 700) — `meta.volumeConfirmed = True` (放量確認, 高信心)
+    - 紅字「🔴 量能未確認」 (color #C0392B, font-weight 700) + 紅字「影響解讀」+ 解讀文字 (color #C0392B, font-size 12px, line-height 1.5) — `meta.volumeConfirmed = False` (量能未確認, 假突破風險)
+- `testing-page/testing-page.js`:
+  - Line 581 `ALGO_CACHE_BUST` 4.66.8 → 4.67.0
+- `testing-page/index.html`:
+  - Line 10, 192 `?v=2.3.145` → `?v=2.3.146` (CSS 同 JS cache bust 同步)
+
+**Spec Doc**:
+- `AGENTS.md` append 永久 rule 段: 「M1 強升/強跌 trigger 拎走放量, 放量變 confidence indicator」
+
+### 影響範圍
+
+- ✅ M1 強升/強跌 trigger 拎走放量, 14 隻 stock 拎走 trigger 後 verdict 由 sideways 升/跌落強趨勢
+- ✅ Verdict meta 加 `volumeConfirmed` field, frontend 紅字提示
+- ✅ `/api/algorithms/run?disable_volume=true` 永久拎走, 向後兼容 (frontend pass 都係 ignore)
+- ⚠️ Trigger 拎走條件後 14 隻 stock verdict 改變, 大少人手 check 確認「真係強趨勢只係量能未確認」定「假突破」, 之後 modify M1 cyclePosition 標示「量能未確認」都可能
+- ✅ 對齊永久 rule: M1 sub-scenario 流程永久 rule (大少 2026-09-03 07:23) P 點全部由 recent_zz 拎
+
+### 永久 rule
+
+- ✅ M1 強升/強跌 trigger **永久拎走** `volume_signal == "expanding"` 條件
+- ✅ Verdict meta 必須有 `volumeConfirmed: bool` field — 強升/強跌 + `volume_signal == "expanding"` → True, 否則 False
+- ✅ Frontend `renderMAAlignmentV2Result` data-summary conditional 兩種 case (只 render 強升/強跌):
+  - `True` → 藍字「🔵 放量確認」(#1E88E5, font-weight 700, 高信心)
+  - `False` → 紅字「🔴 量能未確認」(#C0392B, font-weight 700) + 紅字影響解讀文字 (font-size 12px, line-height 1.5)
+- ✅ 影響解讀文字 (凡人話): 「技術面 (排列+斜率+P點) 對齊強趨勢, 但成交量 {shrinking/持平} ({錢退緊/錢跟唔足}), 量能未確認趨勢真實性。可能係 (1) 假突破 / (2) 蓄勢待發 / (3) 早期階段。留意後續 1-2 週成交量變化, 放量就確認, 持續縮量就要小心」
+- ✅ 之後任何 sub-scenario trigger 拎走/加條件必須: (1) 先 A/B test 對比 ≥30 隻 stock 拎 evidence (2) 拎走嘅條件如果有保留 value, 變 confidence indicator 唔好直接刪 (3) frontend 顯示規則跟 §15.71 永久 rule 模式 (藍字/紅字二選一 + 影響解讀)
+- ✅ 之後 backend 加新 sub-scenario trigger, 必須跟 §15.71 pattern: trigger 拎走任何條件如果保留 value, 對應 meta field expose 畀 frontend conditional render
+
+### 對應 commit
+
+- 即將 push (Spec Sync: M1 強升/強跌 trigger 拎走放量 + 紅字 confidence indicator — backend 3 處改 + frontend 2 處改 + spec doc 2 處改)
+- 對應: AGENTS.md 「M1 強升/強跌 trigger 拎走放量, 放量變 confidence indicator (大少 2026-09-06 08:00)」section
+- 對應: MODULE-01-MA-ALIGNMENT.md (改 trigger 描述, 拎走「放量」, 加 volumeConfirmed field)
+- 對應 A/B test evidence: `/tmp/volume_ablation_compare.csv` + `/tmp/volume_ablation_summary.txt` + `/tmp/tmp_research_volume_ablation.py`
+
+### Follow-up sprint (唔喺今次 scope)
+
+- 大少人手 check 14 隻拎走 trigger 後 verdict 變 strong 嘅 stock (5 強升 + 1 強升中整固 + 8 強跌), confirm 拎走對唔對, 之後再微調
+- 拎走 `run_zigzag` helper + `_calculate_zigzag` function 拎走抽象層 (大工程, 之後 sprint 處理, 跟 §15.70 follow-up)
+- 之後 M1 cyclePosition 加「量能未確認」標示 (大少 trigger 後可選)
+
+

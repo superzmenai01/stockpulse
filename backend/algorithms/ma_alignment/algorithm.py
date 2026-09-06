@@ -525,7 +525,10 @@ class MAAlignmentV2Algorithm(Algorithm):
         elif (
             is_bullish
             and all(calc_slope(p) > 0 for p in cfg["maPeriods"])
-            and volume_signal == "expanding"
+            # 大少 2026-09-06 07:50 trigger: 拎走強升 trigger 嘅「放量」要求
+            # 永久 rule (大少 2026-09-06 08:00 confirm): 強升 trigger 純睇技術面 (排列 + 斜率 + P 點), 放量變 confidence indicator
+            # 拎走原因: 14 隻 stock A/B test 證明放量條件 skip 緊 6% boundary case, 拎走令 verdict 更貼近技術面
+            # 紅字提示: trigger 強升/強跌 + 有放量 → meta.volumeConfirmed=True + 紅字 VOLUME_CONFIRMED warning (testing page render)
             and zz_ok_4
             # P 點 type 確認 (alternating sequence: P1/P3 同 type, P2/P4 同 type)
             and p1_type == "Peak" and p3_type == "Peak"
@@ -601,7 +604,8 @@ class MAAlignmentV2Algorithm(Algorithm):
         elif (
             is_bearish
             and all(calc_slope(p) < 0 for p in cfg["maPeriods"])
-            and volume_signal == "expanding"
+            # 大少 2026-09-06 07:50 trigger: 拎走強跌 trigger 嘅「放量」要求 (對稱強升)
+            # 永久 rule (大少 2026-09-06 08:00 confirm): 強跌 trigger 純睇技術面, 放量變 confidence indicator
             and zz_ok_4
             # P 點 type 確認 (alternating sequence: P1/P3 同 type, P2/P4 同 type)
             and p1_type == "Trough" and p3_type == "Trough"
@@ -800,6 +804,10 @@ class MAAlignmentV2Algorithm(Algorithm):
             "volumeTrendRatio": _round(volume_trend_ratio, 4),
             "volumeSignal": volume_signal,
             "volumeSignalLabel": VOLUME_SIGNAL_LABELS[volume_signal],
+            # 大少 2026-09-06 07:50 trigger: 強升/強跌 trigger 拎走放量, 放量變 confidence indicator
+            # 永久 rule: meta.volumeConfirmed = True 表示強升/強跌 verdict 同時有放量確認 (frontend 紅字提示)
+            # volume_confirmed = False: 強升/強跌 verdict 但冇放量 (靜默, 大少自己 judge)
+            "volumeConfirmed": sub_scenario in ("strong_uptrend", "strong_downtrend") and volume_signal == "expanding",
             "maxSpreadPct": _round(max_spread_pct, 6),
             # 大少 2026-09-02 12:24 trigger: 拎走 consecutiveDays field
             # 原因: 舊 trigger 嘅「連跌/連升 4 日」條件拎走, 改用 Z 點形態 + MA 條件 + 斜率組合

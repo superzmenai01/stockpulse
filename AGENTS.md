@@ -2453,3 +2453,31 @@ After fix:  0 WARNING, 拎到正確 reason
 **對應 commit**: 即將 push (Spec Sync: M7 NAN_RESULT 永久 fix — A+B+C 3 個 fix)
 **對應 doc**: docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md (state field contract) + MODULE-07-SYNTHESIZER.md (NaN guard 永久 rule) + MODULE-WARNING-SYSTEM.md NAN_RESULT backend injection
 **對應凡人話 trigger**: 大少 2026-09-05 22:42 報 bug「M7 算法跑 00981 出 Error: NAN_RESULT」+ 確認要做 A+B+C 3 個 fix
+
+### M1 強升/強跌 trigger 拎走放量, 放量變 confidence indicator (大少 2026-09-06 08:00, 改寫 08:10)
+
+**凡人話解釋**: 之前 M1 強上升/強下跌 trigger 要求「排列 + 斜率 + 放量」三個條件同時成立, 拎走後 trigger 純睇技術面 (排列 + 斜率 + P 點), 放量由 trigger 條件變成 confidence indicator — frontend verdict card 顯示**藍字「🔵 放量確認」(高信心)** 或 **紅字「🔴 量能未確認」+ 影響解讀 (低信心/假突破風險)** 畀大少留意。
+
+**永久 rule**:
+- ✅ M1 v2.3.0 強升/強跌 trigger **永久拎走** `volume_signal == "expanding"` 條件
+  - 強升 trigger: `is_bullish + all(calc_slope > 0) + zz_ok_4 + P 點交替 + 峰頂抬高 + 谷底抬高`
+  - 強跌 trigger (對稱): `is_bearish + all(calc_slope < 0) + zz_ok_4 + P 點交替 + 谷底降底 + 峰頂降底`
+- ✅ Verdict meta 加新 field `volumeConfirmed: bool` — 強升/強跌 + `volume_signal == "expanding"` → `True`, 否則 `False`
+  - Backend 公式: `"volumeConfirmed": sub_scenario in ("strong_uptrend", "strong_downtrend") and volume_signal == "expanding"`
+- ✅ Frontend testing page `renderMAAlignmentV2Result` data-summary 加 conditional 兩種 case (只 render 強升/強跌):
+  - **藍字**「🔵 放量確認」 (color #1E88E5, font-weight 700) — `meta.volumeConfirmed = True`, 代表技術面 + 量能齊確認 (高信心)
+  - **紅字**「🔴 量能未確認」 (color #C0392B, font-weight 700) + 紅字「影響解讀」+ 解讀文字 (color #C0392B, font-size 12px, line-height 1.5) — `meta.volumeConfirmed = False`, 代表技術面對齊但量能唔配合 (低信心/假突破風險)
+- ✅ 影響解讀文字 (凡人話): 「技術面 (排列+斜率+P點) 對齊強趨勢, 但成交量 {shrinking/持平} ({錢退緊/錢跟唔足}), 量能未確認趨勢真實性。可能係 (1) 假突破 / (2) 蓄勢待發 / (3) 早期階段。留意後續 1-2 週成交量變化, 放量就確認, 持續縮量就要小心」
+- ✅ 紅藍位置: verdict card data-summary 內, 喺「基礎信心」row 下面
+- ✅ 拎走原因 (大少 A/B test evidence): 232 隻 stock 對比, 拎走放量 trigger 後 14 隻 stock verdict 由 sideways 升/跌落強趨勢 (6.0%), 13/14 原本就 volume=neutral, 1/14 volume=shrinking — 即係原本 trigger 條件 skip 緊「技術面對齊但量能未確認」嘅 boundary case, 拎走令 verdict 更貼近技術面, 量能用 color 提示區分高/低信心
+
+**對應 commit**: 即將 push (Spec Sync: M1 強升/強跌 trigger 拎走放量 + 紅字 confidence indicator)
+**對應 code 改動 (5 個 file)**:
+- `backend/algorithms/ma_alignment/algorithm.py` line 525-528, 604-608, 807-810: 拎走 2 處 trigger 放量 + 加 meta.volumeConfirmed
+- `backend/api/algorithms.py` line 58-66: 拎走 disable_volume query param (永久)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 4683: renderMAAlignmentV2Result 加 conditional volumeConfirmed row
+- `testing-page/testing-page.js` line 581: ALGO_CACHE_BUST 4.66.8 → 4.67.0
+- `testing-page/index.html` line 10, 192: ?v=2.3.145 → ?v=2.3.146
+**對應 doc**: ARCHITECTURE.md §15.55 + MODULE-01-MA-ALIGNMENT.md (改 trigger 描述, 拎走「放量」, 加 volumeConfirmed field)
+**對應凡人話 trigger**: 大少 2026-09-06 07:30 trigger「先做個測試對比, 如果把強升和強跌的放量拿走」+ 232 隻 stock 對比 evidence + 08:00 confirm「放量不要放到強升和強跌裡, 但我想要有放量的提示, 例如該股的強升強跌如果Trigger到放量, 你要在結果裡用紅色字給我提示」+ 08:10 改寫「我弄錯了, 如果是放量的, 用藍色字, 如果沒有達到放量的, 用紅色字寫明狀況和有什麼影響解讀」
+**套用情境**: 之後任何 sub-scenario trigger 拎走/加條件必須: (1) 先用 A/B test 對比 ≥30 隻 stock 拎 evidence (2) 拎走嘅條件如果有保留 value, 變 confidence indicator 唔好直接刪 (3) frontend 顯示規則跟 v2.3.0 永久 rule 嘅 volumeConfirmed 模式 (backend meta field + testing page conditional row + 藍字/紅字二選一 + 影響解讀)

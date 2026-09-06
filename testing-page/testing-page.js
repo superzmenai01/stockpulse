@@ -578,7 +578,8 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.143 → ?v=2.3.144 (Step 5)
 // 大少 2026-09-05 — Fix C + A+B: hl_structure 加 state field (Fix A) + backend M7 NaN guard (Fix B) + frontend confidence NaN-safe clamp (Fix C): ALGO_CACHE_BUST = '4.66.7' → '4.66.8' (adapter.mjs 1 處改: decisionEngineToStandardVerdict confidence clamp 改 Number.isFinite check, NaN/Infinity → fallback 0, 避免污染 ssi_score 變 NaN)
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.144 → ?v=2.3.145
-const ALGO_CACHE_BUST = '4.66.8';
+// 大少 2026-09-06 08:00 — M1 強升/強跌 trigger 拎走放量, 加紅字「🔴 放量確認」: ALGO_CACHE_BUST = '4.66.8' → '4.67.0' (adapter.mjs renderMAAlignmentV2Result 1 處改: data-summary 加 conditional volumeConfirmed row, 強升/強跌 + meta.volumeConfirmed=True → 紅字 "🔴 放量確認", 凡人話: trigger 強升/強跌嗰陣如果有放量, 大少睇 verdict card 即刻知量能確認, 大少 232 隻 A/B test 拎走放量 trigger 永久 rule, 對應 backend algorithm.py 同步拎走放量 trigger + 加 meta.volumeConfirmed field)
+const ALGO_CACHE_BUST = '4.67.0';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
