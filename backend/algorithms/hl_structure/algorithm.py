@@ -1,5 +1,5 @@
 """
-backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.2.0 (大少 2026-09-06 11:34 Phase 4)
+backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.2.1 (大少 2026-09-06 11:48 Phase 4 fix)
 
 凡人話: 拎 K 線 → 識別峰谷 (peaks + troughs) → 趨勢分析 → 結構分數 → 箱體邊界 → 形態預警 → 價格位置 → 信心指數
          → [v0.2.0 新加] 短線 mode 確認 (60 日) → 突破 override (升穿最近 peak) → 綜合信心指數
@@ -188,14 +188,17 @@ def _analyze_trend(values: List[float], tolerance: float) -> Dict[str, Any]:
 # ============================================================
 
 class HLStructureAlgorithm(Algorithm):
-    """凡人話: 高低點結構法 (M2 v0.2.0)
+    """凡人話: 高低點結構法 (M2 v0.2.1)
 
     19 步算法詳細見 `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md`
     v0.2.0 加 Step 16 短線 mode + Step 17 突破 override (跟 2026-09-06 大少 trigger)
+    v0.2.1 fix (大少 11:45 trigger): override 嗰陣同步 update 5 年 metrics
+        (peaks/troughs/structure_score/base_confidence/peak_trend/trough_trend/reason_base)
+        避免 cycle 寫 UP 但 score 仲係 0.5 嘅自相矛盾
     """
 
     name = "hl_structure"
-    version = "0.2.0"
+    version = "0.2.1"
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -445,6 +448,11 @@ class HLStructureAlgorithm(Algorithm):
         latest_extreme = alternated[-1]
         days_ago = last_idx - latest_extreme["idx"]
 
+        # v0.2.1 fix: 儲低原本 5 年 peaks/troughs 數量, 畀 Step 19 FALLBACK_USED warning check 用
+        # 因為 Step 16/17 override 嗰陣會 replace peak_exts/trough_exts 變 short_term 嘅 (數量會跌)
+        original_peak_count = len(peak_exts)
+        original_trough_count = len(trough_exts)
+
         if latest_price > latest_peak["k"]["close"] * (1 + effective_tolerance):
             price_position = "above_peak"
         elif latest_price < latest_trough["k"]["close"] * (1 - effective_tolerance):
@@ -492,6 +500,8 @@ class HLStructureAlgorithm(Algorithm):
         # 凡人話: 用最近 60 日 K 線 + 對齊 M2 adaptive window + weighted price,
         #         揾峰谷, 計 trend. 如果短期 trend 雙重 rising, override 5 年 SIDEWAYS
         # 大少 2026-09-06 11:34 trigger, 對齊 conflict prototype v3 結果
+        # v0.2.1 fix (大少 11:45 trigger): override 嗰陣同步 update peaks/troughs/structure_score/base_confidence
+        #         避免 cycle 寫 UP 但 score 仲係 0.5 嘅自相矛盾
         short_term_result = {
             "enabled": False,
             "window_days": cfg.get("shortTermWindowDays", 60),
@@ -499,7 +509,15 @@ class HLStructureAlgorithm(Algorithm):
             "peak_trend": "unknown",
             "trough_trend": "unknown",
             "triggered": False,
+            "peak_count": 0,
+            "trough_count": 0,
         }
+
+        # 拎 short_term peaks/troughs 畀 Step 17 突破 override 用 (即使 short_term 唔 trigger 都拎)
+        short_peak_exts: list = []
+        short_trough_exts: list = []
+        short_peak_trend: dict = {"trend": "unknown", "consistency": 0.0}
+        short_trough_trend: dict = {"trend": "unknown", "consistency": 0.0}
 
         if cfg.get("enableShortTermMode", True) and len(recent) >= cfg.get("shortTermWindowDays", 60) + 30:
             short_window = cfg.get("shortTermWindowDays", 60)
@@ -524,14 +542,29 @@ class HLStructureAlgorithm(Algorithm):
                     "candidate": "uptrend" if (short_peak_trend["trend"] == "rising" and short_trough_trend["trend"] == "rising") else "sideways",
                     "peak_trend": short_peak_trend["trend"],
                     "trough_trend": short_trough_trend["trend"],
+                    "peak_count": len(short_peak_exts),
+                    "trough_count": len(short_trough_exts),
                 })
 
                 if short_term_result["candidate"] == "uptrend" and candidate == "sideways":
                     candidate = "uptrend"
                     short_term_result["triggered"] = True
+                    # v0.2.1 Option A fix: 同步 update 5 年 metrics 用 short_term, 避免自相矛盾
+                    peak_exts = short_peak_exts
+                    trough_exts = short_trough_exts
+                    peak_trend = short_peak_trend
+                    trough_trend = short_trough_trend
+                    short_consistency = (short_peak_trend["consistency"] + short_trough_trend["consistency"]) / 2
+                    structure_score = short_consistency
+                    weighted_structure_score = short_consistency
+                    short_pair_bonus = min(1.0, (len(short_peak_exts) - 2) / 3)
+                    base_confidence = (short_consistency + 1) / 2
+                    base_confidence = max(0.0, min(1.0, base_confidence))
+                    base_confidence = base_confidence * 0.7 + short_pair_bonus * 0.3
                     confidence_multiplier *= 0.8  # 短線 override 信心略降 (跟原本 cycle 反轉一樣)
                     adjustment_log.append(f"短線 mode ({short_window} 日) 確認 uptrend, override SIDEWAYS")
                     adjustment_log.append(f"短線 peak_trend={short_peak_trend['trend']}, trough_trend={short_trough_trend['trend']}")
+                    reason_base = f"判定: 上升 (短線 mode {short_window} 日確認)"  # 同步重組 reason_base
 
         # ============ Step 17: 突破 override (v0.2.0 新加) ============
         # 凡人話: 對齊 M2 algorithm above_peak 邏輯, 拎走「連續 2 日」條件
@@ -617,6 +650,34 @@ class HLStructureAlgorithm(Algorithm):
                     )
                 confidence_multiplier *= 0.85  # 突破 override 信心略降 (因為原本係 SIDEWAYS)
 
+                # v0.2.1 Option A fix: 同步 update 5 年 metrics, 避免 cycle 寫 UP 但 score 仲係 0.5
+                if len(short_peak_exts) >= 2 and len(short_trough_exts) >= 2:
+                    # 用 short_term peaks/troughs 替換 5 年嘅, re-compute 對齊 uptrend
+                    peak_exts = short_peak_exts
+                    trough_exts = short_trough_exts
+                    peak_trend = short_peak_trend
+                    trough_trend = short_trough_trend
+                    bo_consistency = (short_peak_trend["consistency"] + short_trough_trend["consistency"]) / 2
+                    structure_score = bo_consistency
+                    weighted_structure_score = bo_consistency
+                    bo_pair_bonus = min(1.0, (len(short_peak_exts) - 2) / 3)
+                    base_confidence = (bo_consistency + 1) / 2
+                    base_confidence = max(0.0, min(1.0, base_confidence))
+                    base_confidence = base_confidence * 0.7 + bo_pair_bonus * 0.3
+                    if consolidation_ok:
+                        reason_base = f"判定: 上升 (盤整突破確認, 收縮 {cfg.get('consolidationMaxGapPct', 0.05)*100:.0f}%)"
+                    else:
+                        reason_base = f"判定: 上升 (突破 override 確認, 量能 {vol_ratio:.2f}x)"
+                else:
+                    # short_term 冇 data, 用 5 年 peaks/troughs 但設 fixed structure_score / base_confidence
+                    structure_score = 0.6
+                    weighted_structure_score = 0.6
+                    base_confidence = 0.6
+                    if consolidation_ok:
+                        reason_base = f"判定: 上升 (盤整突破確認, 收縮 {cfg.get('consolidationMaxGapPct', 0.05)*100:.0f}%)"
+                    else:
+                        reason_base = f"判定: 上升 (突破 override 確認, 量能 {vol_ratio:.2f}x)"
+
         # ============ Step 18: 綜合信心指數 ============
         confidence = max(0.0, min(1.0, base_confidence * confidence_multiplier))
 
@@ -637,17 +698,17 @@ class HLStructureAlgorithm(Algorithm):
                 "fix": "增加 dataWindowDays 設定, 確認 data 有高低點變化",
                 "context": {"peak_count": 0, "trough_count": 0, "period": options.get("period")},
             })
-        if len(peak_exts) + len(trough_exts) < cfg["minPairs"] * 2:
+        if original_peak_count + original_trough_count < cfg["minPairs"] * 2:
             m2_warnings.append({
                 "level": "warning",
                 "category": "system",
                 "module_id": "hl_structure",
                 "code": "FALLBACK_USED",
-                "message": f"峰谷總數 {len(peak_exts) + len(trough_exts)} < {cfg['minPairs'] * 2}",
-                "issue": f"峰谷總數 {len(peak_exts) + len(trough_exts)} < {cfg['minPairs'] * 2} required",
+                "message": f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2}",
+                "issue": f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2} required",
                 "impact": "Verdict 唔可信, 唔好落單",
                 "fix": "Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc",
-                "context": {"peak_count": len(peak_exts), "trough_count": len(trough_exts), "min_pairs": cfg["minPairs"]},
+                "context": {"peak_count": original_peak_count, "trough_count": original_trough_count, "min_pairs": cfg["minPairs"]},
             })
 
         meta = {
@@ -706,7 +767,7 @@ class HLStructureAlgorithm(Algorithm):
             # === v0.2.0 新加 (大少 2026-09-06 11:34 trigger) ===
             "short_term": short_term_result,          # Step 16 短線 mode 結果
             "breakout_override": breakout_result,    # Step 17 突破 override 結果
-            "version": "0.2.0",                       # version 寫入 meta 等 frontend 對齊
+            "version": "0.2.1",                       # version 寫入 meta 等 frontend 對齊
             "_warnings": m2_warnings,
         }
 
