@@ -132,6 +132,43 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: d663ef01 (fix) + 09ea4c21 (feat)
 
+### M3 A+B special rule + dataWindowDays backend 對齊 永久 rule (大少 2026-09-07 00:02 confirm)
+
+**凡人話**: M3 (趨勢線法) algorithm `_derive_trendline_state` 之前直接 `A in ids → return UP`, 冇處理 spec doc §5 line 109-111 嘅特殊規則「A + B 同時 fire (支撐升 + 壓力降) → 收斂三角形 = SIDEWAYS」, 影響 HK.00700 ['A','B','D','I','J'] 同 US.GOOGL ['A','B','C','D','I','J'] 返 UP 0.9 (錯, 應該 SIDEWAYS). 之前 frontend 舊版 (backups/zigzag-frontend-2026-08-20/adapter.mjs line 5386) 同 backend Python port (algorithm.py line 196-216) 都冇, 從來冇人 implement 落 code. 大少 9月7日 00:02 trigger「撳 M3 跑 00700 結果是上升加信心 90% 肯定有問題」揭發.
+
+**Root cause 確認 (curl evidence)**:
+- 5 隻 stock 重新跑 verdict (Spec Sync #39, dataWindowDays=1260):
+  - HK.00700 騰訊: SIDEWAYS 0.90 (rules A,B,D,I,J) — fix 前 UP 0.9
+  - HK.00005 匯豐: UP 0.90 (rules A,I,J) — 唔受 A+B fix 影響
+  - US.AAPL: UP 0.90 (rules A,I,J) — 之前 README 5 隻 stock verify 嗰陣 wishful 寫 SIDEWAYS, 唔係真實 algorithm output
+  - US.MSFT: UP 0.90 (rules A,I,J) — 同 README
+  - US.GOOGL: SIDEWAYS 0.90 (rules A,B,C,D,I,J) — fix 前 UP 0.9
+
+**A + B special rule priority 擺位** (engineering 判斷):
+- 喺 H 真突破壓力之後 (H 蓋過 A + B, 因為 H 係短期真突破重要過 long-term 收斂三角)
+- 喺 A 單獨 fire 之前 (special rule override A 單獨拎 UP 嘅 default 行為)
+- H + A + B 嗰陣 H 拎 UP (短期真突破蓋過 long-term 收斂三角)
+- H + G + A + B 嗰陣 TRANSITION (short-term reversal 高過 long-term pattern, 跟 spec §5 priority H 排第一)
+
+**永久 rule checklist**:
+- ✅ M3 algorithm `_derive_trendline_state` 永遠處理 spec doc §5 line 109-111 A+B special rule (唔可以直接 A in ids → return UP)
+- ✅ Spec doc §5 嘅所有特殊規則必須 implement 落 algorithm code, 唔可以只寫 spec doc 但 code 唔跟
+- ✅ 改 algorithm / spec doc / config 前必先 curl backend `/api/algorithms/run?algo=...&symbol=...&data_window_days=1260` 拎真實 evidence 確認 (對齊 4.55.0 array evidence 永久 rule + Stock 名 evidence 永久 rule)
+- ✅ 5 隻 stock verify 結果必須由真實 algorithm output 拎, 唔可以手動估/wishful thinking 寫入 README/PROJECT_SPEC/ARCHITECTURE
+- ✅ Backend API handler (`/api/algorithms/run`) 將 query param `data_window_days` 同時放落 `options["dataWindowDays"]` 對齊 algorithm 入面 options.get("dataWindowDays") 拎法 (camelCase) — 之前 options dict 冇呢個 key, 雖然效果係用 trimmed size (run_algorithm line 204-205 已 trim 過) 但 misleading code
+- ✅ Frontend M3 stub (`adapter.mjs` `analyzeTrendline` line 3466) 默認 100 改 1260 對齊 testing page 永久 rule 2026-08-14 23:15 (dataWindowDays 永遠用 5 年, 唔再用 100 日默認)
+- ✅ 改 backend code 之後必 restart backend (`./start.sh`), 唔可以假設 hot-reload (對齊 Backend hot-reload 永久 rule 2026-08-31 11:01)
+- ✅ 改 adapter.mjs / testing-page.js 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (cache bust self-check 永久 rule 21:24)
+- ✅ 改 algorithm 之後必 restart backend + curl 拎 evidence 確認 fix work (對齊 array evidence 永久 rule)
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` line 196-224 嘅 `_derive_trendline_state`
+- `backend/api/algorithms.py` line 112-119 嘅 options dict
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 3466 嘅 M3 stub default
+- `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §5 line 109-111 嘅特殊規則
+
+對應 commit: b259d1db (fix A+B) + febabd99 (fix dataWindowDays) + Spec Sync #39 即將 push
+
 ### M2 HL Structure self-check warning 永久 rule (大少 2026-09-06 15:08 confirm)
 
 **凡人話**: M2 (高低點結構法) 算法跑完之後,自己診斷個 verdict 係咪可信 / 有冇失效。如果發現有問題 (e.g. 5 年尺度判 SIDEWAYS 但短線救返、極值點太舊、結構信號老化),emit 一個系統警告 (🔧 system category),等 M7 / M8 / M9 見到就**唔好用 M2 嘅 verdict** 做綜合判斷,UI 同步顯示 banner 提示大少「呢個 M2 verdict 唔可信,小心落單」。
