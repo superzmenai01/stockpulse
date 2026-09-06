@@ -3774,8 +3774,11 @@ function renderUsageGuideTrendline(verdict) {
 
 // ===== Trendline chart overlay (testing page contract) =====
 // 喺 chart 上面加 support line + resistance line (2 條 trend line)
-// 從 verdict.meta.supportLine / resistanceLine 嘅 intercept + slope 計算每個 bar 嘅 value
+// 從 verdict.meta.supportLine / verdict.meta.resistanceLine 嘅 intercept + slope 計算每個 bar 嘅 value
 // 跟 stockpulse testing page 嘅 renderChartOverlay contract 一致
+// 大少 2026-09-06 16:47 fix (M3 trendline chart overlay 永久 rule) — guard 拎 verdict.meta
+//   (唔再拎 verdict.meta.meta, Phase 4 拎走 frontend 改 fetch backend 之後 verdict shape 已經係 verdict.meta.X,
+//    frontend render function 拎 path 永遠 verdict.meta.X, 對齊 AGENTS.md 4.55.0 array evidence 永久 rule)
 function _trendlineNormalizeTime(t) {
   if (typeof t === 'number') return t > 1e12 ? Math.floor(t / 1000) : t;
   if (typeof t === 'string') return Math.floor(new Date(t).getTime() / 1000);
@@ -3783,13 +3786,12 @@ function _trendlineNormalizeTime(t) {
 }
 
 function _computeTrendlineSeries(klines, line) {
-  // line = { slope, intercept, numPoints }  ← 從 verdict.meta.meta 取
+  // line = { slope, intercept, numPoints, ... }  ← 從 verdict.meta 取
   if (!line || typeof line.slope !== 'number' || typeof line.intercept !== 'number') {
     return [];
   }
   const out = [];
-  // 線只覆蓋 line.usedPoints 範圍, 但我哋 fit 嘅 usedPoints 唔喺 verdict meta 內
-  // 所以用支持/壓力線 喺每個 bar 嘅 value 算
+  // 線覆蓋成個 klines 範圍 (用 support_value = intercept + slope * index 計每個 bar value)
   for (let i = 0; i < klines.length; i++) {
     const time = _trendlineNormalizeTime(klines[i].time ?? klines[i].timestamp ?? klines[i].date);
     if (time == null) continue;
@@ -3809,8 +3811,8 @@ function renderTrendlineChartOverlay(verdict, klines, chartRefs) {
     console.warn('[renderTrendlineChartOverlay] chartRefs.chart 缺失');
     return;
   }
-  if (!verdict || !verdict.meta.meta) {
-    console.warn('[renderTrendlineChartOverlay] verdict 缺失');
+  if (!verdict || !verdict.meta) {
+    console.warn('[renderTrendlineChartOverlay] verdict 或 verdict.meta 缺失');
     return;
   }
   if (!Array.isArray(klines) || klines.length === 0) {
@@ -3820,7 +3822,7 @@ function renderTrendlineChartOverlay(verdict, klines, chartRefs) {
   const support = verdict.meta.supportLine;
   const resistance = verdict.meta.resistanceLine;
   if (!support || !resistance) {
-    console.warn('[renderTrendlineChartOverlay] verdict.meta.meta 冇 supportLine/resistanceLine (可能係 fallback SIDEWAYS)');
+    console.warn('[renderTrendlineChartOverlay] verdict.meta 冇 supportLine/resistanceLine (可能係 fallback SIDEWAYS)');
     return;
   }
 
