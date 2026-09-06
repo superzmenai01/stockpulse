@@ -193,8 +193,8 @@ def _detect_breakout(fit: Dict[str, Any], line_type: str, recent: List[Dict[str,
     return {"isBreakout": is_breakout, "direction": direction, "type": breakout_type, "daysSince": days_since, "breakoutIdx": breakout_idx}
 
 
-def _derive_trendline_state(rules: List[Dict[str, str]]) -> str:
-    """凡人話: 10 條 rule 拎 state — H+G → TRANSITION · H → A+B(SIDEWAYS 收斂三角) → A → B → F → G → C/D → 默認 SIDEWAYS
+def _derive_trendline_state(rules: List[Dict[str, str]], support_fit: Dict[str, Any] = None) -> str:
+    """凡人話: 10 條 rule 拎 state — H(support_slope<=0 強制 SIDEWAYS) → H+G(TRANSITION) → H(UP) → A+B(SIDEWAYS 收斂三角) → A → B → F → G → C/D → 默認 SIDEWAYS
 
     對應 frontend deriveTrendlineState (adapter.mjs line 4744-4754 拎走, Phase 4 backend Python 拎走 frontend)
     對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md §5 State derivation priority + 特殊規則
@@ -203,10 +203,29 @@ def _derive_trendline_state(rules: List[Dict[str, str]]) -> str:
     之前 algorithm.py 直接 A in ids → return UP, 冇處理 A + B special case (從來冇人 implement 落 code, frontend 舊版 backups/zigzag-frontend-2026-08-20/adapter.mjs line 5386 都冇)
     影響 HK.00700 ['A','B','D','I','J'] 返 UP 0.9, US.GOOGL ['A','B','C','D','I','J'] 返 UP 0.9 — 應該 SIDEWAYS
 
-    A + B special rule priority 擺喺 H 真突破壓力之後 (H 蓋過 A + B, 因為 H 係短期真突破重要過 long-term 收斂三角),
-    但 A 單獨 fire 之前 (special rule override A 單獨拎 UP 嘅 default 行為)
+    大少 2026-09-07 00:14 fix: 補 H 真突破 guard — H fire + support_slope <= 0 → SIDEWAYS
+    HK.01347 個 case: support slope = -1.07, resistance slope = -2.29, H fire (4 日前突破 pressure) 但 long-term 兩個 line 都 downtrend
+    短線「真突破」H fire 蓋過 long-term context → over-confident UP 0.9, 但 M1 + M2 都係 SIDEWAYS
+    Fix: H fire + support_slope <= 0 (long-term support 下降) → 改判 SIDEWAYS 對齊 M1+M2 verdict
+    對齊 M2 self-check warning 永久 rule 嘅 spirit (algorithm self-check verdict 可信度, 對齊 M2 step 16/17 short-term override pattern)
+
+    Priority 擺位:
+    - H(support_slope<=0 SIDEWAYS) 第一 (新加, 對齊 M2 self-check spirit)
+    - H + G → TRANSITION 第二
+    - H 單獨 → UP 第三 (對齊 spec doc §5 priority H 排第一)
+    - A + B → SIDEWAYS 第四 (新加, spec §5 line 109-111 特殊規則)
+    - A → UP 第五
+    - B → DOWN 第六
+    - F → DOWN 第七
+    - G → DOWN 第八
+    - C / D → SIDEWAYS 第九
+    - default SIDEWAYS 第十
     """
     ids = {r["id"] for r in rules}
+    # 大少 2026-09-07 00:14 fix: H 真突破 guard — H fire + support_slope <= 0 → SIDEWAYS
+    # 短線突破但 long-term 兩個 support/resistance 都 downtrend → over-confident 改判 SIDEWAYS
+    if support_fit is not None and "H" in ids and support_fit["slope"] <= 0:
+        return "SIDEWAYS"
     if "H" in ids and "G" in ids:
         return "TRANSITION"
     if "H" in ids:
@@ -460,7 +479,7 @@ class TrendlineAlgorithm(Algorithm):
             matched_rules.append({"id": "J", "label": "壓力有效", "strength": "weak"})
 
         # ============ Step 8: State derivation ============
-        state = _derive_trendline_state(matched_rules)
+        state = _derive_trendline_state(matched_rules, support_fit)
 
         # ============ Step 9: Confidence derivation ============
         conf = _derive_trendline_confidence(
@@ -539,6 +558,50 @@ class TrendlineAlgorithm(Algorithm):
 
         # Warnings (跟 Module Warning System v1.1.0)
         m3_warnings = []
+        # 大少 2026-09-07 00:14 fix: M3 self-check warning system (對齊 M2 self-check warning 永久 rule 嘅 spirit)
+        # 凡人話: M3 algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system warning
+        # 跟 M2 self-check warning 永久 rule 嘅 pattern (M2 emit 5 個 self-check conditions, M7 Synthesizer 拎 M2 warning 自動降 weight)
+        # 對齊 spec doc §4 (要更新): M3 self-check 3 個 conditions
+        # 1. **趨勢線太脆弱** (support_line numPoints < 4 OR R² < 0.6) → CONFLICT_STATE
+        # 2. **Resistance 線太脆弱** (resistance_line numPoints < 4 OR R² < 0.6) → CONFLICT_STATE
+        # 3. **Channel 太寬** (channel.widthPct > 0.15) → CONFLICT_STATE
+        # 影響 HK.01347 個 case: support numPoints = 3 < 4 → emit CONFLICT_STATE warning (M7/M8 見到自動降 M3 weight)
+        if support_fit["numPoints"] < 4 or support_fit["r2"] < 0.6:
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "CONFLICT_STATE",
+                "message": "支撐線太脆弱 (numPoints/R² 唔合格)",
+                "issue": f"support numPoints={support_fit['numPoints']} (< 4) OR R²={support_fit['r2']:.3f} (< 0.6)",
+                "impact": "Verdict 唔可信 (支撐線 fit 唔穩, 可能誤判趨勢)",
+                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term fit",
+                "context": {"support_num_points": support_fit["numPoints"], "support_r2": _round(support_fit["r2"], 4)},
+            })
+        if resistance_fit["numPoints"] < 4 or resistance_fit["r2"] < 0.6:
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "CONFLICT_STATE",
+                "message": "阻力線太脆弱 (numPoints/R² 唔合格)",
+                "issue": f"resistance numPoints={resistance_fit['numPoints']} (< 4) OR R²={resistance_fit['r2']:.3f} (< 0.6)",
+                "impact": "Verdict 唔可信 (阻力線 fit 唔穩, 可能誤判突破信號)",
+                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term fit",
+                "context": {"resistance_num_points": resistance_fit["numPoints"], "resistance_r2": _round(resistance_fit["r2"], 4)},
+            })
+        if channel_width_pct > 0.15:
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "CONFLICT_STATE",
+                "message": f"通道太闊 ({channel_width_pct*100:.2f}% > 15%)",
+                "issue": f"channel.widthPct={channel_width_pct:.4f} (> 0.15 闊通道閾值)",
+                "impact": "Verdict 唔可信 (通道闊, support/resistance 唔 solid, 趨勢唔清晰)",
+                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term 短通道",
+                "context": {"channel_width_pct": _round(channel_width_pct, 4)},
+            })
         if len(matched_rules) == 0:
             m3_warnings.append({
                 "level": "warning",
