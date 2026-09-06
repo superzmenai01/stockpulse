@@ -132,6 +132,49 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: d663ef01 (fix) + 09ea4c21 (feat)
 
+### M2 HL Structure self-check warning 永久 rule (大少 2026-09-06 15:08 confirm)
+
+**凡人話**: M2 (高低點結構法) 算法跑完之後,自己診斷個 verdict 係咪可信 / 有冇失效。如果發現有問題 (e.g. 5 年尺度判 SIDEWAYS 但短線救返、極值點太舊、結構信號老化),emit 一個系統警告 (🔧 system category),等 M7 / M8 / M9 見到就**唔好用 M2 嘅 verdict** 做綜合判斷,UI 同步顯示 banner 提示大少「呢個 M2 verdict 唔可信,小心落單」。
+
+**5 個 self-check 條件** (凡人話):
+1. **形態見頂 / 見底預警** (Step 13) — 最近 3 個峰排成「中間高兩邊低」(頭肩頂),或 2 個峰差唔多高度 (雙頂),代表股價見頂信號強,M2 判嘅「上升」可能快反轉 → `CONFLICT_STATE`
+2. **峰谷太舊** (Step 15) — 最近一個峰 / 谷已經超過 20 日前,代表個結構信號開始過時,新嘅價已經行咗好遠 → `DATA_AGE` (info)
+3. **5 年尺度 vs 短線矛盾** (Step 16/17 核心) — 原本 5 年 K 線睇係「橫行」,但靠 60 日短線 + 突破救返判「上升」,即係 verdict 唔係真實 5 年結構 (9月6日 11:34 trigger 00019 太古 + 00013 和黃醫藥就係呢個 case) → `FALLBACK_USED`
+4. **信心指數太弱** (Step 18) — M2 自己算嘅 confidence < 0.3,代表算法自己都唔太信個判定 → `THRESHOLD_BREACH`
+5. **結構已經破壞** (Step 14) — 當前股價已經離開最近峰 / 谷範圍,峰谷結構信號失效,等新峰谷形成先有意義 → `CONFLICT_STATE`
+
+**Skip 邏輯 (做法 A + C 混合, 大少 15:08 confirm)**:
+- **A 行為層**: M7 Synthesizer 拎到 M2 warning → 自動將 M2 嘅 `base_weight` 由 0.15 → 0.05
+- 5 個其他 module (M1/M3/M4/M5/M6) 等比例 normalize 補返 0.10, sum 仍 = 1.0
+- 凡人話: M2 仲有 vote 但 weight 大減,大少唔好太信
+- **C 顯示層**: 頂部 banner 顯示 🔧 系統警告 (M2 self-check 觸發嗰陣)
+- M2 verdict card 內 WarningCard inline 顯示 critical + warning level warning
+- Copy button 一鍵 copy Markdown 4 樣格式
+- 凡人話: 大少睇 banner 即知「呢個 M2 verdict 唔可信」
+
+**M7_SKIPPED warning emit**:
+- M7 emit 1 個 stock_state `MODULE_PARTIAL` warning 通知 banner「M2 self-check 觸發, 自動降 weight 0.15 → 0.05」
+- 沿用 `MODULE_PARTIAL` 唔加新 code (對齊 15 個 warning code 永久 rule)
+- M7 meta 加 `m2_discounted: bool` + `m2_original_weight: 0.15` + `m2_discounted_weight: 0.05` 3 個 field
+
+**永久 rule checklist**:
+- ✅ M2 algorithm 永遠 emit 5 個 self-check warning (統一用 `make_warning()` / `makeWarning()` ModuleWarning object, 永久 rule §Module Warning v1.1.0)
+- ✅ 唔用 string array warnings (永久 rule 沿用, 違規 case 已修)
+- ✅ Backend `hl_structure/algorithm.py` v0.3.0 + Frontend `modules/hl-structure.ts` v0.2.0 1:1 port 同步 (frontend skip #3 override-specific 因爲 v0.1.0 仲未 port Step 16/17)
+- ✅ M7 Synthesizer `synthesizer/algorithm.py` v1.1.0 自動 weight 折扣 + emit M2_SKIPPED warning
+- ✅ Frontend `adapter.mjs` synthesize() line 5893-5900 已經自動 propagate M1-M6 warnings 落 M7 verdict._warnings, frontend testing page 用 `renderWarningBanners()` 自動 render banner (frontend 唔需要額外改 cycle-synthesizer.ts 因爲佇係兩線策略 frontend, 唔做 SSI 計算)
+- ✅ 永遠 emit `_warnings` 落 verdict (永久 rule §Module Warning v1.0.0: 唔入 DB table)
+- ✅ Warning 走完整 propagation chain: M2 → M7 → M8 → M9 → frontend banner
+
+**對應文件**:
+- `backend/algorithms/hl_structure/algorithm.py` v0.3.0
+- `algorithms/AS-03-cycle-detection/modules/hl-structure.ts` v0.2.0
+- `backend/algorithms/synthesizer/algorithm.py` v1.1.0
+- `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md` v0.3.0
+- `docs/research/AS-03-cycle-detection/MODULE-WARNING-SYSTEM.md` v1.2.0
+
+對應 commit: <即將 push>
+
 ### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
 
 完整 chain: **M7(綜合) → M9(回測拎最佳設定) → M8(用最佳設定做最終判斷)**
