@@ -89,6 +89,33 @@
 - Rule G 嘅「跌破」意思係 `close < support_value`，`support_value` 係用最新一天嘅 index 計出嚟
 - 數據不足 (< `minLinePoints` 個 extreme point) → fallback SIDEWAYS, 0 confidence
 
+### 4.1 Self-check warning (大少 2026-09-07 00:14 永久 rule, 對齊 M2 self-check warning pattern)
+
+Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system warning (🔧 system category) 落 `verdict._warnings`, 等 M7 / M8 / M9 見到就**唔好用 M3 嘅 verdict** 做綜合判斷, UI 同步顯示 banner 提示大少「呢個 M3 verdict 唔可信, 小心落單」。
+
+**3 個 self-check 條件** (凡人話):
+
+1. **支撐線太脆弱** — `support numPoints < 4` OR `support R² < 0.6` → `CONFLICT_STATE` (system)
+   - 凡人話: 3 個 troughs 已經算少, R² < 0.6 fit 唔穩, verdict 唔可信
+   - 影響: HK.01347 個 case 觸發 (numPoints=3, R²=1.0 但 numPoints 太細)
+2. **阻力線太脆弱** — `resistance numPoints < 4` OR `resistance R² < 0.6` → `CONFLICT_STATE` (system)
+   - 凡人話: 阻力線 fit 唔穩, 突破信號可能係假突破
+   - 影響: US.AAPL 個 case 觸發 (R²=0.584 < 0.6)
+3. **通道太闊** — `channel.widthPct > 0.15` (15%) → `CONFLICT_STATE` (system)
+   - 凡人話: 通道闊過 15%, 個 trend 唔清晰, verdict 唔可信
+   - 影響: HK.00700 個 case 觸發 (widthPct 0.1376 接近 0.15, 未來更大 channel 會觸發)
+
+**對齊 M2 self-check warning 永久 rule 嘅 spirit**:
+- ✅ Algorithm 永遠 emit self-check warning 用 ModuleWarning object (level / category / module_id / code / message / issue / impact / fix / context 9 個 field)
+- ✅ Warning 走完整 propagation chain: M3 → M7 → M8 → M9 → frontend banner
+- ✅ 永遠 emit `_warnings` 落 verdict (永久 rule §Module Warning v1.0.0: 唔入 DB table)
+- ✅ 對齊 Module Warning v1.1.0 — `category: "system"` 因為 verdict 可能唔可信
+- ⚠️ **將來 follow-up**: M7 Synthesizer 拎 M3 warning 自動降 M3 weight (對齊 M2_SKIPPED 永久 rule pattern, 跟 M2 weight 0.15 → 0.05 spirit)
+- ⚠️ **將來 follow-up**: 擴展 self-check conditions (e.g. 峰谷太舊 DATA_AGE, 信心太高但 base 弱)
+
+**對應 trigger**: 大少 2026-09-07 00:14「HK.01347 撳 M3 結果是上升這個有問題嗎」
+**對應 commit**: `7865544f` (fix H guard + self-check warning)
+
 ---
 
 ## 5. State derivation priority
@@ -96,17 +123,20 @@
 跟 ma-alignment.ts 一致嘅 priority scheme:
 
 ```
-H (真突破壓力)
-> A (支撐上升)
-> B (壓力下降)
-> F (下降楔形)
-> G (真跌破支撐)
-> C (通道窄 + 中位)
-> D (收斂三角形)
+H 真突破 + support_slope <= 0 (long-term downtrend guard) → SIDEWAYS
+> H+G (真突破壓力 + 真跌破支撐) → TRANSITION
+> H 單獨 → UP
+> A+B (支撐上升 + 壓力下降) → SIDEWAYS (收斂三角形, 特殊規則)
+> A 單獨 → UP
+> B → DOWN
+> F → DOWN
+> G → DOWN
+> C / D → SIDEWAYS
 > default SIDEWAYS
 ```
 
 **特殊規則:**
+- **大少 2026-09-07 00:14 fix**: 如果 rule H 真突破壓力 + `support_slope <= 0` (支撐線下降, long-term downtrend context) → 改判 **SIDEWAYS** (priority 第一)。對齊 M2 self-check warning 永久 rule 嘅 spirit (algorithm self-check verdict 可信度) + M2 step 16/17 short-term override pattern。HK.01347 個 case 觸發: support slope = -1.07, resistance slope = -2.29, 兩個都係 downtrend, 短線「真突破」H fire 蓋過 long-term context → over-confident UP 0.9, 但 M1 + M2 都係 SIDEWAYS, fix 後 verdict 變 SIDEWAYS 0.9 對齊 M1+M2。
 - 如果 rule H 同 G 同時 fire (突破壓力線 + 跌破支撐線同時發生) → **TRANSITION**
 - 如果 rule A 同 B 同時 fire (支撐上升 + 壓力下降) → 收斂三角形 = SIDEWAYS
 - 如果 rule E 同 F 同時 fire (上升楔形 + 下降楔形) → impossible, skip

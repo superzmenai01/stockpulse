@@ -169,6 +169,30 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: b259d1db (fix A+B) + febabd99 (fix dataWindowDays) + Spec Sync #39 即將 push
 
+### M3 self-check warning 永久 rule (大少 2026-09-07 00:14 confirm)
+
+**凡人話**: M3 (趨勢線法) algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system warning (🔧 system category), 等 M7 / M8 / M9 見到就**唔好用 M3 嘅 verdict** 做綜合判斷, UI 同步顯示 banner 提示大少「呢個 M3 verdict 唔可信, 小心落單」。
+
+**3 個 self-check 條件** (凡人話):
+1. **支撐線太脆弱** — `support numPoints < 4` OR `support R² < 0.6` → `CONFLICT_STATE` (system)
+2. **阻力線太脆弱** — `resistance numPoints < 4` OR `resistance R² < 0.6` → `CONFLICT_STATE` (system)
+3. **通道太闊** — `channel.widthPct > 0.15` (15%) → `CONFLICT_STATE` (system)
+
+**對齊 M2 self-check warning 永久 rule 嘅 spirit**:
+- ✅ M3 algorithm 永遠 emit self-check warning 用 ModuleWarning object (跟 M2 永久 rule pattern)
+- ✅ Warning 走完整 propagation chain: M3 → M7 → M8 → M9 → frontend banner
+- ✅ 永遠 emit `_warnings` 落 verdict (永久 rule §Module Warning v1.0.0: 唔入 DB table)
+- ✅ 對齊 Module Warning v1.1.0 — `category: "system"` 因為 verdict 可能唔可信
+- ⚠️ **將來 follow-up**: M7 Synthesizer 拎 M3 warning 自動降 M3 weight (對齊 M2_SKIPPED 永久 rule pattern, 跟 M2 weight 0.15 → 0.05 spirit)
+- ⚠️ **將來 follow-up**: 擴展 self-check conditions (e.g. 峰谷太舊 DATA_AGE, 信心太高但 base 弱, short-term 突破但 long-term downtrend)
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` run() 入面 3 個 self-check conditions (line 559-619)
+- `_derive_trendline_state()` H 真突破 guard (line 196-244, H fire + support_slope <= 0 → SIDEWAYS)
+- `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §4 + §5 (要 update)
+
+對應 commit: 7865544f (fix H guard + self-check warning) + Spec Sync #40 即將 push
+
 ### M2 HL Structure self-check warning 永久 rule (大少 2026-09-06 15:08 confirm)
 
 **凡人話**: M2 (高低點結構法) 算法跑完之後,自己診斷個 verdict 係咪可信 / 有冇失效。如果發現有問題 (e.g. 5 年尺度判 SIDEWAYS 但短線救返、極值點太舊、結構信號老化),emit 一個系統警告 (🔧 system category),等 M7 / M8 / M9 見到就**唔好用 M2 嘅 verdict** 做綜合判斷,UI 同步顯示 banner 提示大少「呢個 M2 verdict 唔可信,小心落單」。
