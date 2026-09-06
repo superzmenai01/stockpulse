@@ -194,15 +194,26 @@ def _detect_breakout(fit: Dict[str, Any], line_type: str, recent: List[Dict[str,
 
 
 def _derive_trendline_state(rules: List[Dict[str, str]]) -> str:
-    """凡人話: 10 條 rule 拎 state — H+G → TRANSITION · H → A → B → F → G → C/D → 默認 SIDEWAYS
+    """凡人話: 10 條 rule 拎 state — H+G → TRANSITION · H → A+B(SIDEWAYS 收斂三角) → A → B → F → G → C/D → 默認 SIDEWAYS
 
-    對應 frontend deriveTrendlineState (adapter.mjs line 4744-4754)
+    對應 frontend deriveTrendlineState (adapter.mjs line 4744-4754 拎走, Phase 4 backend Python 拎走 frontend)
+    對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md §5 State derivation priority + 特殊規則
+
+    大少 2026-09-06 23:17 fix: 補 spec doc §5 line 109-111 嘅特殊規則「A + B 同時 fire (支撐升 + 壓力降) → 收斂三角形 = SIDEWAYS」
+    之前 algorithm.py 直接 A in ids → return UP, 冇處理 A + B special case (從來冇人 implement 落 code, frontend 舊版 backups/zigzag-frontend-2026-08-20/adapter.mjs line 5386 都冇)
+    影響 HK.00700 ['A','B','D','I','J'] 返 UP 0.9, US.GOOGL ['A','B','C','D','I','J'] 返 UP 0.9 — 應該 SIDEWAYS
+
+    A + B special rule priority 擺喺 H 真突破壓力之後 (H 蓋過 A + B, 因為 H 係短期真突破重要過 long-term 收斂三角),
+    但 A 單獨 fire 之前 (special rule override A 單獨拎 UP 嘅 default 行為)
     """
     ids = {r["id"] for r in rules}
     if "H" in ids and "G" in ids:
         return "TRANSITION"
     if "H" in ids:
         return "UP"
+    # Spec doc §5 line 109-111 特殊規則: A + B 同時 fire → 收斂三角形 = SIDEWAYS (override A 單獨拎 UP)
+    if "A" in ids and "B" in ids:
+        return "SIDEWAYS"
     if "A" in ids:
         return "UP"
     if "B" in ids:
