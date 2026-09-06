@@ -115,6 +115,11 @@ async def run_algo(
         "lookback": lookback,
         "multiplier": multiplier,
     }
+    # 大少 2026-09-06 23:17 — backend 對齊 algorithm options 拎法
+    # algorithm 入面用 options.get(\"dataWindowDays\", n) (camelCase), 而 backend 個 query param 叫 data_window_days (snake_case)
+    # 之前 options dict 冇呢個 key, algorithm 永遠 default n (trimmed size), 雖然實際效果係用 trimmed size (run_algorithm line 204-205 已 trim 過)
+    # 但係 misleading — 改呢度直接 pass 落 options dict 拎 algorithm 拎到實際 value
+    options["dataWindowDays"] = data_window_days
     # 兼容: manual mode 用 manual_threshold, 否則 fallback legacy threshold (ChartContainer.tsx 用緊)
     if manual_threshold is not None and threshold_mode == "manual":
         options["threshold"] = float(manual_threshold)

@@ -3463,7 +3463,9 @@ async function analyzeTrendline(klines, options = {}) {
   const BACKEND_URL = (typeof window !== "undefined" && window.BACKEND_URL) || "http://localhost:18792";
   const symbol = options.code || options.symbol || "UNKNOWN";
   const period = options.period || "1d";
-  const dataWindowDays = options.dataWindowDays || 100;  // M3 frontend 默認 100 日 (2026-08-07)
+  // 大少 2026-09-06 23:17 — frontend M3 stub default 100 改 1260 (對齊 testing page 永久 rule 2026-08-14 23:15)
+  // 之後 user 撳跑 M3 默認拎 5 年 K 線, 同 M9 + testing page dropdown 一致
+  const dataWindowDays = options.dataWindowDays || 1260;  // M3 frontend 默認 1260 日 (5 年, 對齊 testing page 永久 rule 2026-08-14 23:15)
 
   const url = `${BACKEND_URL}/api/algorithms/run?algo=trendline&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&data_window_days=${dataWindowDays}`;
 
