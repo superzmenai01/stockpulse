@@ -1,5 +1,5 @@
 """
-backend/algorithms/hl-structure/config.py — M2 HL Structure v0.2.0 (大少 2026-09-06 Phase 4)
+backend/algorithms/hl-structure/config.py — M2 HL Structure v0.2.2 (大少 2026-09-06 12:00 Phase 4)
 
 凡人話: M2 algorithm 嘅 default 參數, 大少可經 options 覆寫
 對應 source: algorithms/AS-03-cycle-detection/modules/hl-structure.ts 嘅 HLStructureConfig
@@ -10,6 +10,12 @@ v0.2.0 改動 (大少 2026-09-06 11:34 trigger, 對齊 9月5日 22 隻 conflict 
 - 加 enableBreakoutOverride + breakoutVolMult: 升穿最近 peak override SIDEWAYS
 - 加 enableConsolidationBreakout + consolidationMaxGapPct: 峰谷收縮 (差距 < 5%) 突破確認
 - 對齊 AGENTS.md §"M2 false SIDEWAYS 改良 v0.2.0"
+
+v0.2.2 改動 (大少 2026-09-06 12:02 trigger, HK.01888 揾到 issue):
+- 改 breakoutVolMult 1.3 → 0.85 (放寬量能門檻, 對齊 M2 volumeConfirmRatio 0.7 同 volumeBoostRatio 1.3 中間值)
+- 原因: v0.2.0 用 1.3x (強化突破要求) 太嚴, 01888 historical high 升穿 0.876x 唔夠 1.3x
+- 0.85x 對齊「確認 + 少量強化」要求, 對一般升穿都接受, 但仍然排除萎縮突破
+- 同步影響: 22 隻 conflict 重新跑, 預期多 1-2 隻 B override 觸發
 """
 
 # 凡人話: M2 algorithm 19 步對應嘅 default config (v0.2.0 加 Step 16+17)
@@ -38,7 +44,7 @@ DEFAULT_HL_STRUCTURE_CONFIG: dict = {
     "shortTermWindowDays": 60,            # 大少長期投資, 用 60 日 window
     "shortTermMinPairs": 2,               # 短線 minPairs 細啲 (2 對 4 個交替夠用)
     "enableBreakoutOverride": True,       # 開住突破 override SIDEWAYS
-    "breakoutVolMult": 1.3,               # 對齊 M2 volumeBoostRatio
+    "breakoutVolMult": 0.85,              # v0.2.2 改: 1.3 → 0.85, 對齊 M2 volumeConfirmRatio + volumeBoostRatio 中間值 (大少 12:02 trigger 揀 D 方案)
     "breakoutLookbackDays": 5,            # 突破日查最近 5 日
     "enableConsolidationBreakout": True,  # 開住收縮突破確認 (大少 00019 case)
     "consolidationMaxGapPct": 0.05,       # 最後一對峰谷差距 < 5% = 收縮

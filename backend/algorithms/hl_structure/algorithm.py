@@ -1,5 +1,5 @@
 """
-backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.2.1 (大少 2026-09-06 11:48 Phase 4 fix)
+backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.2.2 (大少 2026-09-06 12:02 Phase 4 fix)
 
 凡人話: 拎 K 線 → 識別峰谷 (peaks + troughs) → 趨勢分析 → 結構分數 → 箱體邊界 → 形態預警 → 價格位置 → 信心指數
          → [v0.2.0 新加] 短線 mode 確認 (60 日) → 突破 override (升穿最近 peak) → 綜合信心指數
@@ -188,17 +188,20 @@ def _analyze_trend(values: List[float], tolerance: float) -> Dict[str, Any]:
 # ============================================================
 
 class HLStructureAlgorithm(Algorithm):
-    """凡人話: 高低點結構法 (M2 v0.2.1)
+    """凡人話: 高低點結構法 (M2 v0.2.2)
 
     19 步算法詳細見 `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md`
     v0.2.0 加 Step 16 短線 mode + Step 17 突破 override (跟 2026-09-06 大少 trigger)
     v0.2.1 fix (大少 11:45 trigger): override 嗰陣同步 update 5 年 metrics
         (peaks/troughs/structure_score/base_confidence/peak_trend/trough_trend/reason_base)
         避免 cycle 寫 UP 但 score 仲係 0.5 嘅自相矛盾
+    v0.2.2 fix (大少 12:02 trigger): 放寬 breakoutVolMult 1.3 → 0.85
+        對齊 M2 volumeConfirmRatio 0.7 + volumeBoostRatio 1.3 中間值
+        解決 01888 historical high 升穿 0.876x 量能唔夠嘅 false negative
     """
 
     name = "hl_structure"
-    version = "0.2.1"
+    version = "0.2.2"
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -767,7 +770,7 @@ class HLStructureAlgorithm(Algorithm):
             # === v0.2.0 新加 (大少 2026-09-06 11:34 trigger) ===
             "short_term": short_term_result,          # Step 16 短線 mode 結果
             "breakout_override": breakout_result,    # Step 17 突破 override 結果
-            "version": "0.2.1",                       # version 寫入 meta 等 frontend 對齊
+            "version": "0.2.2",                       # version 寫入 meta 等 frontend 對齊
             "_warnings": m2_warnings,
         }
 
