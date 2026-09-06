@@ -1,14 +1,15 @@
 """
-backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.1.0 (大少 2026-08-20 20:35 Phase 3)
+backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.2.0 (大少 2026-09-06 11:34 Phase 4)
 
 凡人話: 拎 K 線 → 識別峰谷 (peaks + troughs) → 趨勢分析 → 結構分數 → 箱體邊界 → 形態預警 → 價格位置 → 信心指數
+         → [v0.2.0 新加] 短線 mode 確認 (60 日) → 突破 override (升穿最近 peak) → 綜合信心指數
 
-對應 source: algorithms/AS-03-cycle-detection/modules/hl-structure.ts v0.1.0 (656 行, 18 步算法)
+對應 source: algorithms/AS-03-cycle-detection/modules/hl-structure.ts v0.2.0 (對齊 v0.2.0 Python port)
 對應 backup: backups/zigzag-frontend-2026-08-20/adapter.mjs (line 3932-4269 frontend analyzeHLStructure 337 行)
 對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md
 對應 framework: backend/algorithms/base.py Verdict contract
 
-Algorithm: 18 步 (跟 hl-structure.ts 嘅 detect() method 1:1 port 去 Python)
+Algorithm: 19 步 (v0.2.0 比 v0.1.0 多 2 步, 跟 hl-structure.ts 嘅 detect() method 1:1 port 去 Python)
 - Step 0:  輸入驗證
 - Step 1:  ATR + 自適應 Window
 - Step 2:  加權價格 + 動態 Tolerance
@@ -23,6 +24,22 @@ Algorithm: 18 步 (跟 hl-structure.ts 嘅 detect() method 1:1 port 去 Python)
 - Step 11: 基礎信心指數
 - Step 12: 箱體邊界 (只 sideways)
 - Step 13: 形態預警檢查
+- Step 14: 當前價格位置驗證
+- Step 15: 極值點新鮮度檢查
+- Step 16: 短線 mode 確認 (v0.2.0 新加) — 用最近 60 日 K 線 + adaptive window 揾峰谷, 雙重確認 uptrend
+- Step 17: 突破 override (v0.2.0 新加) — 升穿最近 peak + 量能確認 + [可選] 峰谷收縮確認, override SIDEWAYS → uptrend
+- Step 18: 綜合信心指數 (原本 Step 17)
+- Step 19: 組裝輸出 (原本 Step 18, frontend 兼容 shape)
+
+v0.2.0 改動 (大少 2026-09-06 11:34 trigger):
+- 9月6日 08:48 揾到 M2 hl_structure 對 00013 和黃醫藥 判 SIDEWAYS 但實際係 V 型反轉 +27% 強升
+- 跟 sub-scenario 永久 rule 流程: 掃 500 隻 HK 股 → 揾 22 隻 M1 UP + M2 SIDEWAYS conflict
+- Prototype v3 (60 日 + Fix 5 個 bug) 救得返 10/22 隻 (45%)
+- 大少 11:34 trigger 收縮突破邏輯: 00019 太古最後一對峰谷差距 2.4% < 5% (收縮確認) + 升穿 104.5 peak = 盤整突破 = uptrend
+- 落 M2 v0.2.0:
+  Step 16 短線 mode: 用最近 60 日 K 線 (對齊 M2 adaptive window + weighted price), peak_trend + trough_trend 都係 rising → 確認 uptrend (override 5 年尺度 sideways)
+  Step 17 突破 override: close > 最近 peak × (1 + tolerance) + 量能 (5 日內 vol 最大嗰日 > 20 日均量 × 1.3) → 確認 uptrend
+  Step 17 sub-trigger 收縮確認: 最後一對峰谷差距 < 5% → 收縮突破 + pattern_alert = "consolidation_breakout"
 
 STATE_MAP (大少 2026-09-05 trigger — Fix A):
 - hl_structure candidate 原本係 "uptrend" / "downtrend" / "sideways" (lowercase, 內部 cycle string)
@@ -171,13 +188,14 @@ def _analyze_trend(values: List[float], tolerance: float) -> Dict[str, Any]:
 # ============================================================
 
 class HLStructureAlgorithm(Algorithm):
-    """凡人話: 高低點結構法 (M2 v0.1.0)
+    """凡人話: 高低點結構法 (M2 v0.2.0)
 
-    18 步算法詳細見 `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md`
+    19 步算法詳細見 `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md`
+    v0.2.0 加 Step 16 短線 mode + Step 17 突破 override (跟 2026-09-06 大少 trigger)
     """
 
     name = "hl_structure"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -470,13 +488,142 @@ class HLStructureAlgorithm(Algorithm):
             confidence_multiplier *= freshness
             adjustment_log.append(f"最新極值點距今 {days_ago} 天,結構信號老化")
 
-        # ============ Step 17: 綜合信心指數 ============
+        # ============ Step 16: 短線 mode 確認 (v0.2.0 新加) ============
+        # 凡人話: 用最近 60 日 K 線 + 對齊 M2 adaptive window + weighted price,
+        #         揾峰谷, 計 trend. 如果短期 trend 雙重 rising, override 5 年 SIDEWAYS
+        # 大少 2026-09-06 11:34 trigger, 對齊 conflict prototype v3 結果
+        short_term_result = {
+            "enabled": False,
+            "window_days": cfg.get("shortTermWindowDays", 60),
+            "candidate": "unknown",
+            "peak_trend": "unknown",
+            "trough_trend": "unknown",
+            "triggered": False,
+        }
+
+        if cfg.get("enableShortTermMode", True) and len(recent) >= cfg.get("shortTermWindowDays", 60) + 30:
+            short_window = cfg.get("shortTermWindowDays", 60)
+            short_recent = recent[-short_window:]
+            short_weighted = [{**k, "weightedPrice": (k["high"] + k["low"] + k["close"] * 2) / 4} for k in short_recent]
+            short_aw = max(2, min(15, round(cfg["baseWindow"] * (1 + volatility_ratio * 20)))) if cfg["enableAtrWindow"] else cfg["baseWindow"]
+            short_extremes = _detect_extremes(short_weighted, short_aw)
+            short_peak_idxs = short_extremes["peaks"]
+            short_trough_idxs = short_extremes["troughs"]
+            short_alternated = _alternate_extremes(short_weighted, short_peak_idxs, short_trough_idxs)
+
+            short_min_pairs = cfg.get("shortTermMinPairs", 2)
+            short_peak_exts = [e for e in short_alternated if e["type"] == "peak"][-short_min_pairs:]
+            short_trough_exts = [e for e in short_alternated if e["type"] == "trough"][-short_min_pairs:]
+
+            if len(short_peak_exts) >= 2 and len(short_trough_exts) >= 2:
+                short_peak_trend = _analyze_trend([e["k"]["close"] for e in short_peak_exts], effective_tolerance)
+                short_trough_trend = _analyze_trend([e["k"]["close"] for e in short_trough_exts], effective_tolerance)
+
+                short_term_result.update({
+                    "enabled": True,
+                    "candidate": "uptrend" if (short_peak_trend["trend"] == "rising" and short_trough_trend["trend"] == "rising") else "sideways",
+                    "peak_trend": short_peak_trend["trend"],
+                    "trough_trend": short_trough_trend["trend"],
+                })
+
+                if short_term_result["candidate"] == "uptrend" and candidate == "sideways":
+                    candidate = "uptrend"
+                    short_term_result["triggered"] = True
+                    confidence_multiplier *= 0.8  # 短線 override 信心略降 (跟原本 cycle 反轉一樣)
+                    adjustment_log.append(f"短線 mode ({short_window} 日) 確認 uptrend, override SIDEWAYS")
+                    adjustment_log.append(f"短線 peak_trend={short_peak_trend['trend']}, trough_trend={short_trough_trend['trend']}")
+
+        # ============ Step 17: 突破 override (v0.2.0 新加) ============
+        # 凡人話: 對齊 M2 algorithm above_peak 邏輯, 拎走「連續 2 日」條件
+        # 條件 (AND): candidate == sideways + latest close > 最近 peak × (1+tolerance) + 量能 OK
+        # sub-condition: 最後一對峰谷差距 < 5% = 收縮突破 (大少 00019 太古 case)
+        breakout_result = {
+            "enabled": False,
+            "triggered": False,
+            "above_peak": False,
+            "vol_ok": False,
+            "consolidation_ok": False,
+            "breakout_level": None,
+            "vol_ratio": 0,
+            "trigger_type": None,  # "breakout" / "consolidation_breakout"
+        }
+
+        if cfg.get("enableBreakoutOverride", True) and candidate == "sideways" and len(peak_exts) > 0:
+            latest_peak_close = peak_exts[-1]["k"]["close"]
+            multiplier = 1 + effective_tolerance
+            breakout_level = latest_peak_close * multiplier
+            latest_kline = recent[-1]
+
+            above_peak = latest_kline["close"] > breakout_level
+
+            # 量能確認: 最近 5 日內 close > breakout level 嘅 vol 最大嗰日
+            lookback_days = cfg.get("breakoutLookbackDays", 5)
+            vol_mult = cfg.get("breakoutVolMult", 1.3)
+            vol_lookback = cfg.get("volumeLookback", 20)
+            recent_n = recent[-lookback_days:]
+            breakout_days = [k for k in recent_n if k["close"] > breakout_level]
+
+            if breakout_days:
+                breakout_day = max(breakout_days, key=lambda k: k["volume"])
+                breakout_idx = recent.index(breakout_day)
+                if breakout_idx >= vol_lookback:
+                    lookback_vols = [k["volume"] for k in recent[breakout_idx - vol_lookback:breakout_idx]]
+                else:
+                    lookback_vols = [k["volume"] for k in recent[:breakout_idx]]
+                avg_vol = sum(lookback_vols) / len(lookback_vols) if lookback_vols else 0
+                vol_ratio = breakout_day["volume"] / avg_vol if avg_vol > 0 else 0
+                vol_ok = vol_ratio >= vol_mult
+            else:
+                vol_ratio = 0
+                vol_ok = False
+
+            # 收縮確認: 最後一對峰谷差距 < 5%
+            consolidation_ok = False
+            if cfg.get("enableConsolidationBreakout", True) and len(peak_exts) >= 1 and len(trough_exts) >= 1:
+                last_peak = peak_exts[-1]["k"]
+                last_trough = trough_exts[-1]["k"]
+                consolidation_lookback = cfg.get("consolidationLookbackDays", 20)
+                if (last_idx - peak_exts[-1]["idx"] <= consolidation_lookback
+                    and last_idx - trough_exts[-1]["idx"] <= consolidation_lookback):
+                    max_p = max(last_peak["high"], last_peak["close"])
+                    min_t = min(last_trough["low"], last_trough["close"])
+                    mid = (max_p + min_t) / 2 if (max_p + min_t) > 0 else 1
+                    gap_pct = (max_p - min_t) / mid
+                    consolidation_ok = gap_pct < cfg.get("consolidationMaxGapPct", 0.05)
+
+            breakout_result.update({
+                "enabled": True,
+                "above_peak": above_peak,
+                "vol_ok": vol_ok,
+                "consolidation_ok": consolidation_ok,
+                "breakout_level": _round(breakout_level, 4),
+                "vol_ratio": _round(vol_ratio, 3),
+            })
+
+            if above_peak and vol_ok:
+                candidate = "uptrend"
+                breakout_result["triggered"] = True
+                if consolidation_ok:
+                    breakout_result["trigger_type"] = "consolidation_breakout"
+                    pattern_alert = "consolidation_breakout"
+                    adjustment_log.append(
+                        f"盤整突破確認: 收縮 {cfg.get('consolidationMaxGapPct', 0.05)*100:.0f}% + 升穿 peak × {multiplier:.3f} + 量能 {vol_ratio:.2f}x"
+                    )
+                else:
+                    breakout_result["trigger_type"] = "breakout"
+                    pattern_alert = "breakout"
+                    adjustment_log.append(
+                        f"突破確認: 升穿 peak × {multiplier:.3f} + 量能 {vol_ratio:.2f}x 均量"
+                    )
+                confidence_multiplier *= 0.85  # 突破 override 信心略降 (因為原本係 SIDEWAYS)
+
+        # ============ Step 18: 綜合信心指數 ============
         confidence = max(0.0, min(1.0, base_confidence * confidence_multiplier))
 
         cycle_label = "上升週期" if candidate == "uptrend" else "下跌週期" if candidate == "downtrend" else "橫行週期"
         final_reason = f"{reason_base}；{'；'.join(adjustment_log)}" if adjustment_log else reason_base
 
-        # ============ Step 18: 組裝輸出 (frontend 兼容 shape) ============
+        # ============ Step 19: 組裝輸出 (frontend 兼容 shape) ============
         m2_warnings = []
         if len(peak_exts) == 0 and len(trough_exts) == 0:
             m2_warnings.append({
@@ -556,6 +703,10 @@ class HLStructureAlgorithm(Algorithm):
             "adjustment_log": adjustment_log,
             "reason": final_reason,
             "last_date": str(recent[-1].get("time") or recent[-1].get("date") or recent[-1].get("timestamp") or ""),
+            # === v0.2.0 新加 (大少 2026-09-06 11:34 trigger) ===
+            "short_term": short_term_result,          # Step 16 短線 mode 結果
+            "breakout_override": breakout_result,    # Step 17 突破 override 結果
+            "version": "0.2.0",                       # version 寫入 meta 等 frontend 對齊
             "_warnings": m2_warnings,
         }
 

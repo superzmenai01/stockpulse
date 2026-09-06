@@ -1,8 +1,24 @@
 # MODULE-02-HL-STRUCTURE — 高低點結構法 (Peak-Trough Structure Cycle Detector)
 
 > **Module ID**: `hl-structure`
-> **v0.1.0** (2026-08-07, 大少 + MiniMax Code)
+> **v0.2.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 19 步算法 (加 Step 16 短線 mode + Step 17 突破 override + consolidation_breakout)
+> **v0.1.0** (2026-08-07, 大少 + MiniMax Code) — 初版 18 步算法
 > **Spec source**: `docs/演算法概念SPECS/高低點結構法.docx` (v2.0)
+
+> ## 🔥 v0.2.0 改動摘要 (2026-09-06)
+>
+> **觸發原因**: 大少用 HK.00013 和黃醫藥 發現 M2 判 SIDEWAYS 但實際係 V 型反轉 +27% 強升, 掃 500 隻 HK 股揾到 22 隻 M1 UP + M2 SIDEWAYS conflict stock
+>
+> **3 個核心補丁**:
+> 1. **Step 16 短線 mode** (60 日 window): 用最近 60 日 K 線 + 對齊 M2 adaptive window + weighted price 揾峰谷, peak_trend + trough_trend 雙重 rising → override 5 年尺度 SIDEWAYS → uptrend
+> 2. **Step 17 突破 override** (對齊 M2 above_peak): candidate = sideways + close > 最近 peak × (1 + effective_tolerance) + 量能 (5 日內 vol 最大嗰日 > 20 日均量 × 1.3) → override SIDEWAYS → uptrend
+> 3. **Step 17 sub-trigger consolidation_breakout** (大少 00019 太古 case): 最後一對峰谷差距 < 5% (configurable) + 升穿 peak → pattern_alert = "consolidation_breakout" (盤整突破確認)
+>
+> **新 config** (4 個): `enableShortTermMode: True` / `shortTermWindowDays: 60` / `enableBreakoutOverride: True` / `enableConsolidationBreakout: True` + `consolidationMaxGapPct: 0.05` + `consolidationLookbackDays: 20` + `breakoutVolMult: 1.3` + `breakoutLookbackDays: 5` + `shortTermMinPairs: 2`
+>
+> **驗證結果** (22 隻 M1 UP + M2 SIDEWAYS conflict stock): v0.1.0 全部 SIDEWAYS → v0.2.0 救得返 10 隻 (45%): 7 隻 B 突破 (00013 / 00019 / 00023 / 00038 / 00070 / 00178 / 00506) + 3 隻 A 短線 (00003 / 00027 / 00316) + 1 隻 consolidation_breakout (00019 太古)
+>
+> **永久 rule**: M2 改動跟 sub-scenario 永久 rule (大少 2026-08-16) — ≥ 3 隻 stock 例子 review 落 code
 
 ---
 
