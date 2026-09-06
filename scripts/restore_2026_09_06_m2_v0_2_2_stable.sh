@@ -19,8 +19,8 @@
 #
 set -e
 
-# EXPECTED_HEAD 對齊 v0.2.2 stable state commit (revert v0.2.3 = commit 2dc1683b)
-EXPECTED_HEAD="2dc1683b56b8f95a2f0c8a6e6b3d61f3d2f2c8a1"
+# EXPECTED_HEAD 對齊 v0.2.2 stable state commit (revert v0.2.3 = tag 指向 commit 2dc1683bd5e98cf065f6b7ee51548072be8f1824)
+EXPECTED_HEAD="2dc1683bd5e98cf065f6b7ee51548072be8f1824"
 
 echo "⚠️  WARNING: 拎走 v0.2.3 (c29d6008) 之後嘅改動, 還原到 M2 v0.2.2 stable state (revert commit 2dc1683b)"
 echo ""
