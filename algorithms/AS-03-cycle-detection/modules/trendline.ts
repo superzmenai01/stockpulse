@@ -1,4 +1,4 @@
-// modules/trendline.ts — AS-03 · 點 3: 趨勢線法 v0.1.0 (Trendline Cycle Detector)
+// modules/trendline.ts — AS-03 · 點 3: 趨勢線法 v0.1.4 (Trendline Cycle Detector + Hurst+ADX gate)
 //
 // 對應 spec: `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md`
 //
@@ -73,11 +73,176 @@ function round(n: number, decimals: number = 4): number {
   return Math.round(n * factor) / factor;
 }
 
+// ============ Hurst+ADX helpers (Phase 1 (B3), 1:1 port backend algorithm.py) ============
+
+/**
+ * Hurst 指數 (DFA - Detrended Fluctuation Analysis)
+ * 量度股價係咪有「持續方向」(trending) 定「均值回歸」(mean-reverting) 定「隨機遊走」(random walk)。
+ * - H > 0.5 = trending (有方向, 持續)
+ * - H ≈ 0.5 = random walk (冇方向, 行嚟行去)
+ * - H < 0.5 = mean-reverting (會返去平均)
+ *
+ * 對應 backend _compute_hurst (backend/algorithms/trendline/algorithm.py)
+ * 對應 spec doc: MODULE-03-TRENDLINE.md §4.2 Hurst+ADX gate
+ */
+function computeHurst(closes: number[], window: number = 100): number {
+  if (closes.length < window + 10) {
+    return 0.5; // 數據太少, 返 0.5 (random walk default)
+  }
+  const recent = closes.slice(-window);
+  const n = recent.length;
+  // 1. log return 序列
+  const logReturns: number[] = [];
+  for (let i = 1; i < n; i++) {
+    if (recent[i] > 0 && recent[i - 1] > 0) {
+      logReturns.push(Math.log(recent[i] / recent[i - 1]));
+    }
+  }
+  if (logReturns.length < 20) return 0.5;
+  // 2. 累積去均值序列
+  const meanR = logReturns.reduce((a, b) => a + b, 0) / logReturns.length;
+  const cumDev: number[] = [];
+  let cum = 0;
+  for (const r of logReturns) {
+    cum += r - meanR;
+    cumDev.push(cum);
+  }
+  // 3. 14 個 log-spaced scale points 計 F(n)
+  const nPoints = cumDev.length;
+  const scales: number[] = [];
+  for (let k = 1; k <= 14; k++) {
+    let s = Math.floor(8 * Math.pow(nPoints / 8, k / 14));
+    if (s < 8) s = 8;
+    if (s > Math.floor(nPoints / 2)) s = Math.floor(nPoints / 2);
+    if (!scales.includes(s)) scales.push(s);
+  }
+  const logScales: number[] = [];
+  const logFluctuations: number[] = [];
+  for (const scale of scales) {
+    if (scale < 4) continue;
+    const nSegments = Math.floor(nPoints / scale);
+    if (nSegments < 1) continue;
+    let total = 0;
+    let count = 0;
+    for (let seg = 0; seg < nSegments; seg++) {
+      const start = seg * scale;
+      const end = start + scale;
+      const segment = cumDev.slice(start, end);
+      if (segment.length < 4) continue;
+      // Linear detrend
+      const xs = segment.map((_, i) => i);
+      const xMean = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const yMean = segment.reduce((a, b) => a + b, 0) / segment.length;
+      let num = 0, denom = 0;
+      for (let i = 0; i < segment.length; i++) {
+        num += (xs[i] - xMean) * (segment[i] - yMean);
+        denom += (xs[i] - xMean) ** 2;
+      }
+      if (denom === 0) continue;
+      const slope = num / denom;
+      const intercept = yMean - slope * xMean;
+      let varSum = 0;
+      for (let i = 0; i < segment.length; i++) {
+        varSum += (segment[i] - (slope * xs[i] + intercept)) ** 2;
+      }
+      const variance = varSum / segment.length;
+      total += Math.sqrt(variance);
+      count++;
+    }
+    if (count === 0) continue;
+    const avgF = total / count;
+    if (avgF > 0) {
+      logScales.push(Math.log(scale));
+      logFluctuations.push(Math.log(avgF));
+    }
+  }
+  // 4. log(F) vs log(n) 嘅 slope = Hurst
+  if (logScales.length < 3) return 0.5;
+  const xM = logScales.reduce((a, b) => a + b, 0) / logScales.length;
+  const yM = logFluctuations.reduce((a, b) => a + b, 0) / logFluctuations.length;
+  let num = 0, denom = 0;
+  for (let i = 0; i < logScales.length; i++) {
+    num += (logScales[i] - xM) * (logFluctuations[i] - yM);
+    denom += (logScales[i] - xM) ** 2;
+  }
+  if (denom === 0) return 0.5;
+  const hurst = num / denom;
+  return Math.max(0, Math.min(1, hurst));
+}
+
+/**
+ * ADX (Average Directional Index) — 量度股價趨勢強度 (Wilder 14 日 standard)
+ * - ADX > 25 = 強趨勢
+ * - ADX 20-25 = 發展中
+ * - ADX < 20 = 弱 / 橫行
+ *
+ * 對應 backend _compute_adx (backend/algorithms/trendline/algorithm.py)
+ * 對應 spec doc: MODULE-03-TRENDLINE.md §4.2 Hurst+ADX gate
+ */
+function computeAdx(klines: KLine[], period: number = 14): number {
+  if (klines.length < period * 2 + 1) return 0;
+  const n = klines.length;
+  const trList: number[] = [];
+  const plusDmList: number[] = [];
+  const minusDmList: number[] = [];
+  for (let i = 1; i < n; i++) {
+    const high = klines[i].high;
+    const low = klines[i].low;
+    const prevClose = klines[i - 1].close;
+    const prevHigh = klines[i - 1].high;
+    const prevLow = klines[i - 1].low;
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+    trList.push(tr);
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+    if (upMove > downMove && upMove > 0) plusDmList.push(upMove);
+    else plusDmList.push(0);
+    if (downMove > upMove && downMove > 0) minusDmList.push(downMove);
+    else minusDmList.push(0);
+  }
+  if (trList.length < period) return 0;
+  // Wilder's smoothing
+  function wilderSmooth(values: number[], period: number): number[] {
+    if (values.length < period) return [];
+    const out: number[] = [values.slice(0, period).reduce((a, b) => a + b, 0)];
+    for (let i = period; i < values.length; i++) {
+      out.push(out[out.length - 1] - out[out.length - 1] / period + values[i]);
+    }
+    return out;
+  }
+  const trSmooth = wilderSmooth(trList, period);
+  const plusDmSmooth = wilderSmooth(plusDmList, period);
+  const minusDmSmooth = wilderSmooth(minusDmList, period);
+  if (trSmooth.length === 0 || trSmooth[0] === 0) return 0;
+  // +DI / -DI
+  const plusDi: number[] = [];
+  const minusDi: number[] = [];
+  for (let i = 0; i < trSmooth.length; i++) {
+    if (trSmooth[i] === 0) {
+      plusDi.push(0);
+      minusDi.push(0);
+    } else {
+      plusDi.push(100 * plusDmSmooth[i] / trSmooth[i]);
+      minusDi.push(100 * minusDmSmooth[i] / trSmooth[i]);
+    }
+  }
+  // DX
+  const dxList: number[] = [];
+  for (let i = 0; i < plusDi.length; i++) {
+    const sum = plusDi[i] + minusDi[i];
+    dxList.push(sum === 0 ? 0 : 100 * Math.abs(plusDi[i] - minusDi[i]) / sum);
+  }
+  if (dxList.length < period) return 0;
+  const adxSmoothed = wilderSmooth(dxList, period);
+  if (adxSmoothed.length === 0) return 0;
+  return adxSmoothed[adxSmoothed.length - 1] / period;
+}
+
 // ============ Main module ============
 
 export class TrendlineModule implements CycleModule<KLine[]> {
   readonly id = 'trendline' as const;
-  readonly version = '0.1.0';
+  readonly version = '0.1.4';
 
   private readonly cfg: TrendlineConfig;
 
@@ -102,6 +267,39 @@ export class TrendlineModule implements CycleModule<KLine[]> {
     const dataWindowDays = (ctx.config as any)?.dataWindowDays ?? n;
     const recent = klines.slice(-Math.min(dataWindowDays, n));
     const recentN = recent.length;
+
+    // ============ Step 0.5: Hurst+ADX gate (Phase 1 (B3), 大少 2026-09-07 01:08 trigger) ============
+    // 凡人話: 確認個股價真係有「方向」先用 trend line, 唔係 random walk / mean-reverting
+    // 解決 audit 揭發嘅 M3 結構性問題 (一致率 28%, self-check 84%, over-confident 46%)
+    // Gate: H < 0.45 OR ADX < 20 → FAIL → SIDEWAYS + 1 個 CONFLICT_STATE warning
+    const closes = recent.map(b => b.close);
+    const hurstValue = computeHurst(closes, 100);
+    const adxValue = computeAdx(recent, 14);
+    if (hurstValue < 0.45 || adxValue < 20) {
+      const reason = `Hurst+ADX gate fail (H=${hurstValue.toFixed(3)}, ADX=${adxValue.toFixed(1)})`;
+      return {
+        moduleId: this.id,
+        timeframe: ctx.ltf,
+        state: 'SIDEWAYS',
+        confidence: 0.3,
+        interpretation: `${reason}, 股價 random walk / 弱趨勢, 強制 SIDEWAYS`,
+        evidence: [
+          { type: 'hurst', label: `Hurst 指數 (DFA): ${hurstValue.toFixed(3)}`, value: hurstValue, threshold: 0.45, passed: hurstValue >= 0.45 },
+          { type: 'adx', label: `ADX (14 日): ${adxValue.toFixed(1)}`, value: adxValue, threshold: 20, passed: adxValue >= 20 },
+        ],
+        warnings: [`CONFLICT_STATE: ${reason}`],
+        meta: {
+          matchedRules: [],
+          ruleLabels: [],
+          baseConfidence: 0.3,
+          dataDays: recentN,
+          configUsed: this.cfg,
+          hurst: round(hurstValue),
+          adx: round(adxValue),
+        },
+        timestamp: Date.now(),
+      };
+    }
 
     // ============ Step 1: 識別極值點 (peaks + troughs) ============
     const peaks: ExtremePoint[] = [];
@@ -363,6 +561,8 @@ export class TrendlineModule implements CycleModule<KLine[]> {
         adjustmentLog,
         dataDays: recentN,
         configUsed: cfg,
+        hurst: round(hurstValue),
+        adx: round(adxValue),
       },
       timestamp: Date.now(),
     };

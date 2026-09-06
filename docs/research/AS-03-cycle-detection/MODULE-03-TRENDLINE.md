@@ -116,6 +116,60 @@ Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system 
 **對應 trigger**: 大少 2026-09-07 00:14「HK.01347 撳 M3 結果是上升這個有問題嗎」
 **對應 commit**: `7865544f` (fix H guard + self-check warning)
 
+### 4.2 Hurst+ADX gate (大少 2026-09-07 01:08 永久 rule, Phase 1 (B3))
+
+**凡人話解釋**：確認個股價真係有「方向」先用得 trend line，唔係 random walk / mean-reverting / 弱趨勢。
+
+**審計揭發嘅問題**（404 隻 stock, Spec Sync #40 baseline）：
+- 一致率 28%（M3 同 M1+M2 對唔足）
+- self-check 84% 觸發（M3 結構脆弱）
+- over-confident 46%（信心過高但 verdict 唔對）
+
+**兩招確認**：
+
+1. **Hurst 指數 (DFA - Detrended Fluctuation Analysis)**
+   - 量度股價係咪有「持續方向」
+   - 計法：log return 序列 → 累積去均值 → 14 個 log-spaced scale 計 F(n) → log(F) vs log(n) 嘅 slope
+   - 窗口：100 日
+   - 解讀：
+     - H > 0.55 = 有方向（trending）
+     - H ≈ 0.50 = random walk
+     - H < 0.45 = mean-reverting（會返去平均）
+
+2. **ADX (Average Directional Index) — Wilder 14 日 standard**
+   - 量度趨勢嘅「強度」
+   - 計法：TR / +DM / -DM → Wilder's smoothing → +DI / -DI → DX → ADX
+   - 週期：14 日
+   - 解讀：
+     - ADX > 25 = 強趨勢
+     - ADX 20-25 = 發展中
+     - ADX < 20 = 弱趨勢 / 橫行
+
+**Gate 規則**：
+
+| 條件 | 結果 | 影響 |
+|------|------|------|
+| H < 0.45 OR ADX < 20 | ❌ FAIL | return SIDEWAYS + 1 個 CONFLICT_STATE warning（system category），M7 自動降 M3 weight |
+| H ≥ 0.45 AND ADX ≥ 20 | ✅ PASS | 繼續正常算法（10 條 rule + 3 個 self-check warning）|
+
+**Meta 新加 field**：
+- `hurst`: Hurst 指數（0-1, 4 decimals）
+- `adx`: ADX 值（0-100, 4 decimals）
+
+**6 隻 stock sample verify**（Phase 1 commit `863bb22b`）：
+
+| Stock | H | ADX | Gate | 結果 |
+|-------|---|-----|------|------|
+| HK.00700 | 0.45 | 10.1 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
+| HK.00005 | 0.41 | 18.3 | ❌ 兩樣 fail | SIDEWAYS 0.3 + 1w |
+| US.AAPL | 0.65 | 14.9 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
+| US.MSFT | 0.67 | 37.9 | ✅ PASS | UP 0.9 |
+| US.GOOGL | 0.63 | 6.9 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
+| HK.01347 | 0.35 | 16.8 | ❌ 兩樣 fail | SIDEWAYS 0.3 + 1w |
+
+**對應 trigger**: 大少 2026-09-07 01:00「如果先做B1＋B3之後再加你剛說的由『判斷者』變『證據提供者』」
+**對應 commit**: `863bb22b` (fix(trendline) Hurst+ADX gate v0.1.4)
+
 ---
 
 ## 5. State derivation priority

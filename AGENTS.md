@@ -193,6 +193,50 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: 7865544f (fix H guard + self-check warning) + Spec Sync #40 即將 push
 
+### M3 Hurst+ADX gate 永久 rule (大少 2026-09-07 01:08 confirm, Phase 1 (B3))
+
+**凡人話**: M3 (趨勢線法) 算法開頭加一層 gate, 用 Hurst 指數 + ADX 兩招確認個股價真係有「方向」先用 trend line。否則 (random walk / mean-reverting / 弱趨勢) 強制 return SIDEWAYS + emit 1 個 system warning, 等 M7 / M8 / M9 見到就唔好用 M3 嘅 verdict 做綜合判斷, UI 同步顯示 banner 提示大少「呢個 M3 verdict 唔可信」。
+
+**兩招確認**：
+1. **Hurst 指數 (DFA, 100 日)**: 量度 trending 持續性
+   - H > 0.55 = 有方向 (trending)
+   - H ≈ 0.50 = random walk
+   - H < 0.45 = mean-reverting
+2. **ADX (Wilder 14 日 standard)**: 量度趨勢強度
+   - ADX > 25 = 強趨勢
+   - ADX 20-25 = 發展中
+   - ADX < 20 = 弱趨勢 / 橫行
+
+**Gate 規則**:
+- H < 0.45 OR ADX < 20 → **FAIL** → return SIDEWAYS + 1 個 CONFLICT_STATE warning (system category)
+- H ≥ 0.45 AND ADX ≥ 20 → **PASS** → 繼續正常算法 (10 條 rule + 3 個 self-check warning)
+
+**Meta 新加 field**:
+- `hurst`: Hurst 指數 (0-1, 4 decimals)
+- `adx`: ADX 值 (0-100, 4 decimals)
+
+**解決 audit 揭發嘅 3 個問題** (Spec Sync #40 baseline, 404 隻 stock):
+- ✅ **一致率** 28% → 預期升：M3 改判 SIDEWAYS 對齊 M1+M2
+- ⚠️ **self-check 觸發** 84% → 預期降但仍係高 (因 84% stock 唔係 strong trending)
+- ✅ **over-confident** 46% → 預期降：全部 SIDEWAYS 0.3 唔再 over-confident
+
+**永久 rule checklist**:
+- ✅ M3 algorithm 永遠 emit Hurst+ADX gate check 用 `compute_hurst()` (DFA) + `compute_adx()` (Wilder 14 日)
+- ✅ Gate 走完整 propagation chain: M3 → M7 → M8 → M9 → frontend banner
+- ✅ Meta 永遠 emit `hurst` + `adx` 兩個 field (audit 對比用)
+- ✅ Backend `trendline/algorithm.py` v0.1.4 + Frontend `modules/trendline.ts` v0.1.4 1:1 port 同步
+- ✅ Threshold H < 0.45 / ADX < 20 (Wilder's standard, 大少 1:08 confirm)
+- ✅ 對齊 Module Warning v1.1.0 — `category: "system"` 因為 verdict 可能唔可信
+- ✅ ADX Wilder's smooth 要 `/ period` (Wilder's standard formula, 唔可以漏)
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` run() Step 0.5 gate (Hurst+ADX check)
+- `algorithms/AS-03-cycle-detection/modules/trendline.ts` detect() Step 0.5 gate (1:1 port)
+- `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §4.2 Hurst+ADX gate section
+- `backup-admin/index.html` Backup Admin Page 拎到 `restore-2026-09-07-m3-pre-b3-phase1` tag 還原
+
+對應 commit: `863bb22b` (fix(trendline) Hurst+ADX gate v0.1.4) + Spec Sync #41 即將 push
+
 ### M2 HL Structure self-check warning 永久 rule (大少 2026-09-06 15:08 confirm)
 
 **凡人話**: M2 (高低點結構法) 算法跑完之後,自己診斷個 verdict 係咪可信 / 有冇失效。如果發現有問題 (e.g. 5 年尺度判 SIDEWAYS 但短線救返、極值點太舊、結構信號老化),emit 一個系統警告 (🔧 system category),等 M7 / M8 / M9 見到就**唔好用 M2 嘅 verdict** 做綜合判斷,UI 同步顯示 banner 提示大少「呢個 M2 verdict 唔可信,小心落單」。
