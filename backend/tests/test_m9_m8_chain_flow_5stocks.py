@@ -13,7 +13,7 @@ Test 5 隻 stock:
   - HK.00005 匯豐 (mock 橫行趨勢)
   - US.AAPL (mock 強升趨勢)
   - US.MSFT (mock 上升趨勢)
-  - US.GOOGL (mock 弱升趨勢)
+  - US.GOOGL (mock 初升趨勢)
 """
 
 import sys
@@ -97,7 +97,7 @@ def _gen_us_msft_klines(n: int = 1260) -> List[Dict[str, Any]]:
 
 
 def _gen_us_googl_klines(n: int = 1260) -> List[Dict[str, Any]]:
-    """US.GOOGL — 弱升趨勢"""
+    """US.GOOGL — 初升趨勢"""
     random.seed(3333)
     prices = []
     p = 130.0
@@ -190,7 +190,7 @@ STOCKS = [
     ("HK.00005", "匯豐 (mock 橫行)", _gen_hk_00005_klines),
     ("US.AAPL", "AAPL (mock 強升)", _gen_us_aapl_klines),
     ("US.MSFT", "MSFT (mock 上升)", _gen_us_msft_klines),
-    ("US.GOOGL", "GOOGL (mock 弱升)", _gen_us_googl_klines),
+    ("US.GOOGL", "GOOGL (mock 初升)", _gen_us_googl_klines),
 ]
 
 

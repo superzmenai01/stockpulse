@@ -31,13 +31,13 @@ import { runAndStandardize } from '../std-verdict.ts';
 
 // 大少 2026-08-15 — M1 v2.1.0: extend 8 個 scenario (跟 CSV spec + 用 MA slope 補強)
 // 凡人話: 之前只 return 3 個 state (uptrend / downtrend / sideways), 7 個 scenario 全部判錯
-//   包括「強上升」、「強下跌」、「上升回調」、「下跌反彈」、「到頂轉勢」、「到底轉勢」、「弱上升」、「弱下跌」
+//   包括「強上升」、「強下跌」、「上升回調」、「下跌反彈」、「到頂轉勢」、「到底轉勢」、「初上升」、「初下跌」
 //   而家 extend 做 8 個 sub-scenario, 每個 scenario 有 強度 (強/弱) + 位置 (mid_stage / tentative / range_bound / correction / bounce / late_stage)
 export type MAAlignmentV2Cycle =
   | 'strong_uptrend'       // 強上升
-  | 'weak_uptrend'         // 弱上升
+  | 'weak_uptrend'         // 初上升
   | 'sideways'             // 橫行
-  | 'weak_downtrend'       // 弱下跌
+  | 'weak_downtrend'       // 初下跌
   | 'strong_downtrend'     // 強下跌
   | 'uptrend_correction'   // 上升回調
   | 'downtrend_bounce'     // 下跌反彈
@@ -78,9 +78,9 @@ export interface MAAlignmentV2VerdictMeta {
 
 const CYCLE_LABELS: Record<MAAlignmentV2Cycle, string> = {
   strong_uptrend:     '強上升週期',
-  weak_uptrend:       '弱上升週期',
+  weak_uptrend:       '初升週期',
   sideways:           '橫行週期',
-  weak_downtrend:     '弱下跌週期',
+  weak_downtrend:     '初跌週期',
   strong_downtrend:   '強下跌週期',
   uptrend_correction: '上升回調中',
   downtrend_bounce:   '下跌反彈中',
@@ -230,11 +230,11 @@ export class MAAlignmentV2Module implements CycleModule<KLine[]> {
 
     // ============ Step 5.5: 9 個 sub-scenario 細分判定 (大少 2026-08-15) ============
     // 凡人話: 之前只 return 3 個 state, 8 個 sub-scenario 全部 miss
-    // 跟 CSV spec: 強上升 / 弱上升 / 橫行 / 弱下跌 / 強下跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢
+    // 跟 CSV spec: 強上升 / 初上升 / 橫行 / 初下跌 / 強下跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢
     // 用 MA 排列 + MA 斜率 + 成交量 + 連續日數 細分
     //   - Priority 1 (transition, 最重要): 到頂轉勢 / 到底轉勢
     //   - Priority 2 (強趨勢): 強上升 / 強下跌
-    //   - Priority 3 (弱趨勢): 弱上升 / 弱下跌
+    //   - Priority 3 (初升趨勢): 初上升 / 初下跌
     //   - Priority 4 (過渡形態): 上升回調 / 下跌反彈
     //   - Default: 橫行
     // 排喺 Step 5 之後係因為 Priority 2 / 3 嘅 「強上升 / 強下跌」判定需要 volumeSignal
@@ -304,10 +304,10 @@ export class MAAlignmentV2Module implements CycleModule<KLine[]> {
       } else {
         subScenario = 'weak_uptrend';
         cyclePosition = 'tentative_rise';
-        adjustmentLog.push('弱上升跡象: 排列對但部分斜率 / 量能唔配合');
+        adjustmentLog.push('初升跡象: 排列對但部分斜率 / 量能唔配合');
       }
     }
-    // Priority 3: 強下跌 / 弱下跌 (排列全 bear)
+    // Priority 3: 強下跌 / 初下跌 (排列全 bear)
     else if (isBearishArrangement) {
       const allSlopesNegative = cfg.maPeriods.every(p => calcSlope(p) < 0);
       if (allSlopesNegative && volumeSignal === 'expanding') {
@@ -317,7 +317,7 @@ export class MAAlignmentV2Module implements CycleModule<KLine[]> {
       } else {
         subScenario = 'weak_downtrend';
         cyclePosition = 'tentative_fall';
-        adjustmentLog.push('弱下跌跡象: 排列對但部分斜率 / 量能唔配合');
+        adjustmentLog.push('初跌跡象: 排列對但部分斜率 / 量能唔配合');
       }
     }
     // Priority 4: 上升回調 (排列曾經 bull, 短期急跌但長期仲升)

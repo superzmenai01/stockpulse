@@ -2,7 +2,7 @@
 tmp_research_v25_v21subscenarios.py — 用 v2.1 公式 (包括放量) 拎 4 個 sub-scenario 真實 trigger
 
 凡人話: 由 M1 algorithm 內部 verdict.meta.cycle 拎 9 個 sub-scenario 嘅官方判斷 (v2.1 公式, 包括放量)
-大少 20:12 trigger「用返 2.1 嘅公式去揾 60 隻嘅強上升, 強下跌, 弱上升同弱下跌」
+大少 20:12 trigger「用返 2.1 嘅公式去揾 60 隻嘅強上升, 強下跌, 初上升同初下跌」
 """
 
 import sys

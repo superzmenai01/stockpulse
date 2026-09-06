@@ -106,7 +106,7 @@
 | 7. Bayesian Tuning + 個股化 | 30+ 樣本後 tune | ⏳ |
 
 **AS-03 current state (Stage 1 收官, Stage 2 進行中)**:
-- Module 1 (均線系統週期判斷法) ✅ v2.1.0 — 9 個 sub-scenario (到頂/到底轉勢 / 強升 / 弱升 / 上升回調 / 橫行 / 下跌反彈 / 弱跌 / 強跌) + 5 個判定優先級 + 凡人話 popup 註解
+- Module 1 (均線系統週期判斷法) ✅ v2.1.0 — 9 個 sub-scenario (到頂/到底轉勢 / 強升 / 初升 / 上升回調 / 橫行 / 下跌反彈 / 初跌 / 強跌) + 5 個判定優先級 + 凡人話 popup 註解
 - Module 2 (HL Structure) ✅ v0.1.0 — peaks/troughs + 形態 (頭肩頂/雙底)
 - Module 3 (Trendline) ✅ v0.1.0 — 10 條 rule (A-J), 動態 OLS + 觸線 + 真假突破
 - Module 4 (動能背馳與衰竭檢測法) ✅ v1.0.0 — 動能 + 背馳 + 衰竭

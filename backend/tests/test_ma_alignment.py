@@ -71,7 +71,7 @@ def test_ma_alignment_strong_uptrend():
 
     assert verdict.ok
     assert verdict.meta["cycle"] in ("strong_uptrend", "weak_uptrend", "uptrend_correction")
-    # 強上升 / 弱上升 / 上升回調 屬於 UP cycle
+    # 強上升 / 初上升 / 上升回調 屬於 UP cycle
     assert verdict.meta["confidence"] > 0
     assert "maValues" in verdict.meta
     assert "ma5" in verdict.meta["maValues"] or "MA5" in verdict.meta["maValues"]
@@ -136,8 +136,8 @@ def test_ma_alignment_all_sub_scenarios_in_meta():
     assert verdict.ok
     # cycleLabel 對應 9 個 sub-scenario 其中一個
     valid_cycles = [
-        "強上升週期", "弱上升週期", "橫行週期",
-        "弱下跌週期", "強下跌週期",
+        "強上升週期", "初升週期", "橫行週期",
+        "初跌週期", "強下跌週期",
         "上升回調中", "下跌反彈中",
         "到頂轉勢中", "到底轉勢中",
     ]
