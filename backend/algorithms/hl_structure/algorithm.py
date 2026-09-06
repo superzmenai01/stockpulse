@@ -1,5 +1,5 @@
 """
-backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.2.3 (大少 2026-09-06 12:09 Phase 4 fix)
+backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.2.2 (大少 2026-09-06 12:02 Phase 4 fix)
 
 凡人話: 拎 K 線 → 識別峰谷 (peaks + troughs) → 趨勢分析 → 結構分數 → 箱體邊界 → 形態預警 → 價格位置 → 信心指數
          → [v0.2.0 新加] 短線 mode 確認 (60 日) → 突破 override (升穿最近 peak) → 綜合信心指數
@@ -103,25 +103,21 @@ def _detect_extremes(weighted: List[Dict[str, Any]], window: int) -> Dict[str, L
     """凡人話: 識別原始極值點 (peaks 山頂 + troughs 山谷)
 
     對應 frontend detectExtremes (adapter.mjs line 3830-3849)
-    v0.2.3 fix (大少 12:09 trigger 揀 C 方案): detection value 用 max(weighted_price, high)
-        而唔係淨係 weighted_price, 拎到 historical high (e.g. 01888 6月25日 high 107.2,
-        00388 5月14日 high 423.57) 做 peak reference, 唔好 miss historical resistance
     """
     peaks = []
     troughs = []
     for i in range(window, len(weighted) - window):
-        # v0.2.3 fix: 用 max(weighted_price, high) 做 peak detection value
-        # 對齊 M2 algorithm 拎峰谷邏輯, 同時拎到 historical high
-        curr_peak = max(weighted[i]["weightedPrice"], weighted[i]["high"])
-        curr_trough = min(weighted[i]["weightedPrice"], weighted[i]["low"])
-        left_w_peak = [max(k["weightedPrice"], k["high"]) for k in weighted[i - window:i]]
-        right_w_peak = [max(k["weightedPrice"], k["high"]) for k in weighted[i + 1:i + window + 1]]
-        left_w_trough = [min(k["weightedPrice"], k["low"]) for k in weighted[i - window:i]]
-        right_w_trough = [min(k["weightedPrice"], k["low"]) for k in weighted[i + 1:i + window + 1]]
+        curr = weighted[i]["weightedPrice"]
+        left_w = [k["weightedPrice"] for k in weighted[i - window:i]]
+        right_w = [k["weightedPrice"] for k in weighted[i + 1:i + window + 1]]
+        left_max = max(left_w)
+        right_max = max(right_w)
+        left_min = min(left_w)
+        right_min = min(right_w)
 
-        if curr_peak > max(left_w_peak) and curr_peak > max(right_w_peak):
+        if curr > left_max and curr > right_max:
             peaks.append(i)
-        elif curr_trough < min(left_w_trough) and curr_trough < min(right_w_trough):
+        elif curr < left_min and curr < right_min:
             troughs.append(i)
     return {"peaks": peaks, "troughs": troughs}
 
@@ -192,7 +188,7 @@ def _analyze_trend(values: List[float], tolerance: float) -> Dict[str, Any]:
 # ============================================================
 
 class HLStructureAlgorithm(Algorithm):
-    """凡人話: 高低點結構法 (M2 v0.2.3)
+    """凡人話: 高低點結構法 (M2 v0.2.2)
 
     19 步算法詳細見 `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md`
     v0.2.0 加 Step 16 短線 mode + Step 17 突破 override (跟 2026-09-06 大少 trigger)
@@ -202,15 +198,10 @@ class HLStructureAlgorithm(Algorithm):
     v0.2.2 fix (大少 12:02 trigger): 放寬 breakoutVolMult 1.3 → 0.85
         對齊 M2 volumeConfirmRatio 0.7 + volumeBoostRatio 1.3 中間值
         解決 01888 historical high 升穿 0.876x 量能唔夠嘅 false negative
-    v0.2.3 fix (大少 12:09 trigger 揀 C 方案):
-        Bug A: 拎走 alternated < 6 早 return, 改用 alternating 拎 peaks/troughs (即使 < minPairs 都拎)
-            解決 00100 MINIMAX-W (high 1330) / 00501 豪威集團 (high 124.9) 拎唔到 peak 嘅 false negative
-        Bug B: 揾 peak detection value 用 max(weighted_price, high) 而唔係淨係 weighted_price
-            解決 00388 港交所 (high 423.57 拎唔到) / 00300 美的 (high 101.7 拎唔到) / 01888 (high 107.2) 拎唔到 historical high 嘅 bug
     """
 
     name = "hl_structure"
-    version = "0.2.3"
+    version = "0.2.2"
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -299,10 +290,6 @@ class HLStructureAlgorithm(Algorithm):
 
         # ============ Step 4 + 5: 突破確認 + 量能過濾 ============
         alternated = _alternate_extremes(weighted, peak_idxs, trough_idxs)
-        # v0.2.3 fix: 拎 adjustment_log 同 confidence_multiplier initialise 搬上嚟
-        # 因為拎走早 return 之後, low_alternated_warning 嗰段用 adjustment_log.append (喺 Step 14 之前)
-        adjustment_log = []
-        confidence_multiplier = 1.0
         K = cfg["breakoutConfirmDays"]
         for e in alternated:
             after_end = min(e["idx"] + 1 + K, len(weighted) - 1)
@@ -328,24 +315,46 @@ class HLStructureAlgorithm(Algorithm):
                 e["weight"] = 1.0
                 e["volumeRatio"] = 0
 
-        # v0.2.3 fix (大少 12:09 trigger 揀 C 方案): 拎走 alternated < 6 嘅早 return
-        # 改用 alternating 拎 peaks/troughs 拎出嚟 (即使 < minPairs 都拎)
-        # 對 00100 MINIMAX-W 同 00501 豪威集團 等 case, 拎到 historical high 做 reference
-        # 警告: 呢類 case FALLBACK_USED warning 仍會 trigger (Step 19), 但 verdict 拎 peaks/troughs
-        low_alternated_warning = None
+        # Edge case: 峰谷唔夠交替
         if len(alternated) < cfg["minPairs"] * 2:
-            low_alternated_warning = {
-                "level": "warning",
-                "category": "system",
-                "module_id": "hl_structure",
-                "code": "FALLBACK_USED",
-                "message": f"交替峰谷數量 {len(alternated)} < {cfg['minPairs'] * 2} (低於 minPairs 標準)",
-                "issue": f"交替峰谷數量 {len(alternated)} < {cfg['minPairs'] * 2} required",
-                "impact": "Verdict 唔可信, 唔好落單",
-                "fix": "增加 dataWindowDays 設定, 確認 data 有高低點變化",
-                "context": {"alternated_count": len(alternated), "min_pairs": cfg["minPairs"]},
-            }
-            adjustment_log.append(f"交替峰谷數量偏少 ({len(alternated)} 個), 仍拎 peaks/troughs 拎出嚟參考")
+            return Verdict(
+                ok=True,
+                points=[],
+                meta={
+                    "symbol": options.get("code", "TEST"),
+                    "cycle": "sideways",
+                    "state": "SIDEWAYS",  # 大少 2026-09-05 Fix A: 對齊 contract ModuleVerdictMeta Literal
+                    "cycle_label": "橫行週期",
+                    "confidence": 0.5,
+                    "base_confidence": 0.5,
+                    "peaks": [],
+                    "troughs": [],
+                    "peak_trend": "mixed",
+                    "trough_trend": "mixed",
+                    "structure_score": 0,
+                    "weighted_structure_score": 0,
+                    "box_boundary": None,
+                    "pattern_alert": "none",
+                    "latest_extreme": None,
+                    "price_position": "between",
+                    "adaptive_window": adaptive_window,
+                    "effective_tolerance": _round(effective_tolerance, 6),
+                    "adjustment_log": [f"峰谷結構唔夠清晰 ({len(alternated)} < {cfg['minPairs'] * 2})"],
+                    "reason": f"峰谷結構唔夠清晰 (只有 {len(alternated)} 個交替峰谷,需要至少 {cfg['minPairs'] * 2}),預設橫行",
+                    "last_date": str(recent[-1].get("time") or recent[-1].get("date") or recent[-1].get("timestamp") or ""),
+                    "_warnings": [{
+                        "level": "warning",
+                        "category": "system",
+                        "module_id": "hl_structure",
+                        "code": "FALLBACK_USED",
+                        "message": f"峰谷總數 {len(alternated)} < {cfg['minPairs'] * 2}",
+                        "issue": f"峰谷總數 {len(alternated)} < {cfg['minPairs'] * 2} required",
+                        "impact": "Verdict 唔可信, 唔好落單",
+                        "fix": "Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc",
+                        "context": {"alternated_count": len(alternated), "min_pairs": cfg["minPairs"]},
+                    }],
+                },
+            )
 
         # ============ Step 7: 提取最近 N 對 ============
         peak_exts = [e for e in alternated if e["type"] == "peak"][-cfg["minPairs"]:]
@@ -456,8 +465,8 @@ class HLStructureAlgorithm(Algorithm):
         else:
             price_position = "broken"
 
-        # v0.2.3 fix: adjustment_log 同 confidence_multiplier 已經 initialise 喺 Step 4 之後
-        # (因為拎走早 return 之後, low_alternated_warning 嗰段用 adjustment_log)
+        adjustment_log = []
+        confidence_multiplier = 1.0
 
         if candidate == "uptrend":
             if price_position == "below_trough":
@@ -692,9 +701,18 @@ class HLStructureAlgorithm(Algorithm):
                 "fix": "增加 dataWindowDays 設定, 確認 data 有高低點變化",
                 "context": {"peak_count": 0, "trough_count": 0, "period": options.get("period")},
             })
-        # v0.2.3 fix: alternated 唔夠 6 嗰陣拎 low_alternated_warning (拎走原本 FALLBACK_USED 拎 peaks/troughs 拎出嚟嘅 check)
-        if low_alternated_warning is not None:
-            m2_warnings.append(low_alternated_warning)
+        if original_peak_count + original_trough_count < cfg["minPairs"] * 2:
+            m2_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "hl_structure",
+                "code": "FALLBACK_USED",
+                "message": f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2}",
+                "issue": f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2} required",
+                "impact": "Verdict 唔可信, 唔好落單",
+                "fix": "Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc",
+                "context": {"peak_count": original_peak_count, "trough_count": original_trough_count, "min_pairs": cfg["minPairs"]},
+            })
 
         meta = {
             "symbol": options.get("code", "TEST"),
@@ -752,7 +770,7 @@ class HLStructureAlgorithm(Algorithm):
             # === v0.2.0 新加 (大少 2026-09-06 11:34 trigger) ===
             "short_term": short_term_result,          # Step 16 短線 mode 結果
             "breakout_override": breakout_result,    # Step 17 突破 override 結果
-            "version": "0.2.3",                       # version 寫入 meta 等 frontend 對齊
+            "version": "0.2.2",                       # version 寫入 meta 等 frontend 對齊
             "_warnings": m2_warnings,
         }
 
