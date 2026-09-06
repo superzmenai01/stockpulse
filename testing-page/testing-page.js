@@ -88,6 +88,25 @@ function setLookback(v) {
   localStorage.setItem(LS_KEY_LOOKBACK, String(v));
 }
 
+// 大少 2026-09-06 16:47 trigger — M3 趨勢線 toggle localStorage 自動記住 (跟 8月19日 13:03 Config UX 模式永久 rule)
+// 凡人話: 大少撳 🟢/🔴 checkbox 嗰陣, 即時 localStorage 自動記住, reload page 拎返 user 之前 set 過嘅 value
+// 跟 LS_KEY_LOOKBACK pattern, 但每條線獨立 key (support / resistance), default true 對齊 index.html 嘅 checked
+const LS_KEY_TRENDLINE_SUPPORT = 'stockpulse.trendline.supportVisible';
+const LS_KEY_TRENDLINE_RESISTANCE = 'stockpulse.trendline.resistanceVisible';
+
+function getTrendlineLineVisible(lineKey) {
+  // lineKey: 'support' | 'resistance'
+  const key = lineKey === 'support' ? LS_KEY_TRENDLINE_SUPPORT : LS_KEY_TRENDLINE_RESISTANCE;
+  const v = localStorage.getItem(key);
+  // default true (對齊 index.html 嘅 checked, 大少睇到線係預設)
+  if (v === null) return true;
+  return v === 'true';
+}
+function setTrendlineLineVisible(lineKey, visible) {
+  const key = lineKey === 'support' ? LS_KEY_TRENDLINE_SUPPORT : LS_KEY_TRENDLINE_RESISTANCE;
+  localStorage.setItem(key, String(visible));
+}
+
 // 大少 9月2日 00:52 trigger (4.66.0) — 拎返 P 點 + 鮮紫觸發點 marker toggle (4.53.0 拎走嘅 spirit 拎返, 預設關)
 // 4.66.5 fix: 拎走 4.66.0 嗰個 localStorage 自動記住 user choice 嘅 spec
 //   大少 9月2日 07:34 trigger「把紅框這個制預備是 Off 的」, 改為永遠 default false
@@ -580,7 +599,8 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 //   ✅ 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.144 → ?v=2.3.145
 // 大少 2026-09-06 08:00 — M1 強升/強跌 trigger 拎走放量, 加紅字「🔴 放量確認」: ALGO_CACHE_BUST = '4.66.8' → '4.67.0' (adapter.mjs renderMAAlignmentV2Result 1 處改: data-summary 加 conditional volumeConfirmed row, 強升/強跌 + meta.volumeConfirmed=True → 紅字 "🔴 放量確認", 凡人話: trigger 強升/強跌嗰陣如果有放量, 大少睇 verdict card 即刻知量能確認, 大少 232 隻 A/B test 拎走放量 trigger 永久 rule, 對應 backend algorithm.py 同步拎走放量 trigger + 加 meta.volumeConfirmed field)
 // 大少 2026-09-06 16:47 — Fix M3 trendline chart overlay silent fail: ALGO_CACHE_BUST = '4.67.0' → '4.68.0' (adapter.mjs 3 處改: renderTrendlineChartOverlay guard 拎 verdict.meta (唔再拎 verdict.meta.meta, Phase 4 拎走 frontend 改 fetch backend 之後 verdict shape 已經係 verdict.meta.X) + 修正 line 3776-3778 + 3791 嘅 stale comment (line 內文「verdict.meta.meta」/「usedPoints 唔喺 verdict meta 內」) + 修正 fallback case 嘅 console.warn 拎錯 verdict.meta.meta → verdict.meta, 凡人話: 撳 M3 (AS-03-TL) 跑算法之後, 圖表永遠冇綠色支撐線 + 紅色壓力線, 因為 guard 拎 verdict.meta.meta 永遠 true → 永遠 early return, silent fail 因為 function 內 console.warn + return 唔 throw, testing page try/catch 嗰個 (line 1528-1534) catch 唔到, 大少肉眼睇唔到線, 改 1 行 guard 拎 verdict.meta 拎返; root cause 確認: curl backend /api/algorithms/run?algo=trendline&symbol=HK.00700 拎 evidence, meta.supportLine / meta.resistanceLine 直接喺 meta 下面, 冇 meta.meta wrapper; 永久 rule: renderTrendlineChartOverlay 嘅 guard 永遠拎 verdict.meta, frontend render function 拎 path 永遠 verdict.meta.X, 改 array/object access 之前必先 curl backend 拎 evidence 確認 (對齊 AGENTS.md 4.55.0 array evidence 永久 rule); commit fix 將會 bump ?v=2.3.146 → ?v=2.3.147)
-const ALGO_CACHE_BUST = '4.68.0';
+// 大少 2026-09-06 16:47 — Feat M3 trendline toggle 控制 (跟 MA toggle 永久 rule): ALGO_CACHE_BUST = '4.68.0' → '4.69.0' (testing-page.js 3 處改: 加 LS_KEY_TRENDLINE_SUPPORT/RESISTANCE + getTrendlineLineVisible/setTrendlineLineVisible localStorage helpers (default true 對齊 index.html 嘅 checked, 跟 8月19日 13:03 Config UX 模式永久 rule 自動記住 user choice) + 加 trendline toggle change event handler (跟 line 2280-2296 MA toggle pattern, 用 lineSeries.applyOptions({ visible }) 即時切換, 唔需要 re-create series 唔需要 re-call renderChartOverlay) + 加出圖 sync block (跟 4.66.7 ZigZag pattern, 撳「跑算法」換股票出圖嗰陣, 新 chartRefs 拎返之後要 apply 返 M3 toggle 嘅 visible state, 對齊 8月19日 13:03 Config UX 模式「出圖同步 toggle 狀態」spirit); testing-page/index.html 1 處改: chart-section 入面 ma-toggle-bar 之後, chart-container 之前加 #trendline-toggle-bar (background #f5f5f5 + padding 8px 12px + border-radius 6px + margin-bottom 8px + font-size 13px, 跟 ma-toggle-bar 同樣 style), 入面 2 個 checkbox (.trendline-toggle + data-line-key: 'support' | 'resistance' + checked default) + 「(撳即時生效, 唔需要跑算法 · 預設開)」note; 對齊 Spec Sync #32 chart-control layout 永久 rule (23:20): 跟 chart 互動嘅 controls 永遠排喺 chart-section 入面 chart-container 之前; 凡人話: 撳 🟢 支撐線 → 綠色線即時消失 / 出現, 撳 🔴 壓力線 → 紅色線即時消失 / 出現, reload page 保留 user 之前 set 過嘅 toggle state; 永久 rule: M3 trendline toggle 跟 MA toggle 同樣 pattern (lineSeries.applyOptions + localStorage 自動記住 + 出圖 sync), 之後 M4/M5/M6 等加 chart overlay 嘅 module 都跟呢個 pattern; 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.147 → ?v=2.3.148)
+const ALGO_CACHE_BUST = '4.69.0';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -1520,6 +1540,21 @@ async function runAlgorithm() {
       lastChartRefs.zigzagMarkersEnabled = zigzagMarkersEnabled;
       lastChartRefs.zigzagEnabled = zigzagEnabled;
     }
+    // 大少 2026-09-06 16:47 trigger — M3 趨勢線 toggle 出圖同步 (跟 4.66.7 ZigZag pattern)
+    //   撳「跑算法」換股票出圖嗰陣, 新 chartRefs 拎返之後要 apply 返 M3 趨勢線 toggle 嘅 visible state
+    //   對齊 8月19日 13:03 Config UX 模式「出圖同步 toggle 狀態」spirit
+    //   凡人話: 換股票撳跑, 🟢 支撐線 take 過 → 出圖即見綠色支撐線; 🟢 冇 take → 出圖即拎走
+    if (lastChartRefs && lastChartRefs.trendlineLineSeries) {
+      for (const lineKey of ['support', 'resistance']) {
+        const series = lastChartRefs.trendlineLineSeries[lineKey];
+        const visible = getTrendlineLineVisible(lineKey);
+        if (series) {
+          try {
+            series.applyOptions({ visible });
+          } catch (e) { /* ignore */ }
+        }
+      }
+    }
     // 大少 8月31日 11:09 trigger (4.53.0 永久 rule) — 拎走 ZigZag sequence state pass 畀 renderChartOverlay
     // 大少 2026-08-19 08:45 — 拎 verdict/chartRefs 放 window, 大少可以喺 console 拎
     window.currentVerdict = verdict;
@@ -2291,6 +2326,35 @@ maToggleEls.forEach((el) => {
       }
     } else {
       console.log(`[MA toggle] ${maKey} series 唔存在 (可能未跑 M1 v2.0 算法)`);
+    }
+  });
+});
+
+// 大少 2026-09-06 16:47 trigger — M3 趨勢線 toggle 即時生效 (跟 MA toggle 永久 rule pattern)
+// 凡人話: 撳 🟢 支撐線 / 🔴 壓力線 checkbox → 對應嘅線即時消失 / 出現, 唔需要撳「跑算法」
+// 用 lightweight-charts lineSeries.applyOptions({ visible: false }) 即時切換
+// 唔需要 re-create series, 唔需要 re-call renderChartOverlay
+// 跟 8月19日 13:03 Config UX 模式永久 rule: 撳即時 localStorage 自動儲存, reload page 拎返 user 之前 set 過嘅 value
+// 注意: 只 support M3 (AS-03-TL), 其他 module 跑嗰陣 trendlineLineSeries 唔存在, handler 唔 crash (if check 拎走)
+// 對齊 Spec Sync #32 chart-control layout 永久 rule (23:20): 跟 chart 互動嘅 controls 永遠排喺 chart-section 入面 chart-container 之前
+const trendlineToggleEls = document.querySelectorAll('.trendline-toggle');
+trendlineToggleEls.forEach((el) => {
+  // Init 嗰陣同步 localStorage 拎返 user 之前 set 過嘅 value
+  const initLineKey = el.dataset.lineKey;
+  el.checked = getTrendlineLineVisible(initLineKey);
+  el.addEventListener('change', (e) => {
+    const lineKey = e.target.dataset.lineKey;  // 'support' | 'resistance'
+    const visible = e.target.checked;
+    setTrendlineLineVisible(lineKey, visible);  // 跟 8月19日 13:03 Config UX 模式永久 rule
+    if (lastChartRefs && lastChartRefs.trendlineLineSeries && lastChartRefs.trendlineLineSeries[lineKey]) {
+      try {
+        lastChartRefs.trendlineLineSeries[lineKey].applyOptions({ visible });
+        console.log(`[Trendline toggle] ${lineKey} → visible=${visible}`);
+      } catch (err) {
+        console.warn(`[Trendline toggle] ${lineKey} applyOptions failed:`, err);
+      }
+    } else {
+      console.log(`[Trendline toggle] ${lineKey} series 唔存在 (可能未跑 M3 算法)`);
     }
   });
 });
