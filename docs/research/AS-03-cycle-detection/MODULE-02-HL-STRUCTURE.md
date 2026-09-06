@@ -1,9 +1,37 @@
 # MODULE-02-HL-STRUCTURE — 高低點結構法 (Peak-Trough Structure Cycle Detector)
 
 > **Module ID**: `hl-structure`
+> **v0.3.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 加 5 個 self-check warning (形態預警 / 峰谷太舊 / 5年vs短線矛盾 / 信心過低 / 結構破壞), 通知 M7/M8/M9 M2 verdict 唔可信, M7 自動降 weight 0.15→0.05 + banner 提示 (大少 15:08 confirm 做法 A + C 混合)
 > **v0.2.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 19 步算法 (加 Step 16 短線 mode + Step 17 突破 override + consolidation_breakout)
 > **v0.1.0** (2026-08-07, 大少 + MiniMax Code) — 初版 18 步算法
 > **Spec source**: `docs/演算法概念SPECS/高低點結構法.docx` (v2.0)
+
+> ## 🔥 v0.3.0 改動摘要 (2026-09-06)
+>
+> **觸發原因**: 大少 14:25 問「喺 M2 algorithm 發現有問題或失效, 顯示警告, M7/8/9 唔使用」, 15:08 confirm 做法 A (降 weight) + C (banner 提示) 混合
+>
+> **5 個 self-check 條件** (凡人話, M2 算法自己診斷 verdict 係咪可信):
+> 1. **形態見頂 / 見底預警** (Step 13) — 最近 3 個峰/谷出現「頭肩頂 / 雙頂 / 雙底」, 結構可能反轉 → emit `CONFLICT_STATE` warning
+> 2. **峰谷太舊** (Step 15) — 最近 1 個峰/谷已經超過 20 日前, 結構信號開始過時 → emit `DATA_AGE` info warning
+> 3. **5 年尺度 vs 短線矛盾** (Step 16/17 核心) — 原本 5 年 K 線睇係 SIDEWAYS, 靠 60 日短線 + 突破 override 救返判 UP, 唔係真實 5 年結構 → emit `FALLBACK_USED` warning (e.g. 9月6日 11:34 trigger 00019 太古 + 00013 和黃醫藥 case)
+> 4. **信心指數太弱** (Step 18) — M2 confidence < 0.3, 算法自己都唔太信個判定 → emit `THRESHOLD_BREACH` warning
+> 5. **結構已經破壞** (Step 14) — 當前股價已經離開最近峰/谷範圍, 峰谷結構信號失效 → emit `CONFLICT_STATE` warning
+>
+> **Skip 邏輯 (做法 A + C 混合, 大少 15:08 confirm)**:
+> - **A 行為層**: M7 (Synthesizer) 拎到 M2 warning 即自動降 M2 weight 0.15 → 0.05, 5 個其他 module (M1/M3/M4/M5/M6) 等比例 normalize 補返 0.10, sum 仍 = 1.0
+> - **C 顯示層**: 頂部 banner 顯示 🔧 系統警告 (M2 self-check 觸發嗰陣), M2 verdict card 內 WarningCard inline 顯示 critical + warning level warning, Copy button 一鍵 copy Markdown 4 樣格式
+>
+> **M2_SKIPPED warning** (對應 stock_state category): M7 emit `MODULE_PARTIAL` warning 通知 banner「M2 self-check 觸發, 自動降 weight 0.15 → 0.05」(沿用 MODULE_PARTIAL 唔加新 code, 對齊 15 個 warning code 永久 rule)
+>
+> **對應 meta 字段**: M7 verdict 嘅 meta 加 `m2_discounted: bool` + `m2_original_weight: 0.15` + `m2_discounted_weight: 0.05` 3 個 field, frontend 拎到可以 display
+>
+> **永久 rule**:
+> - M2 self-check warning 永遠 emit 落 verdict._warnings (永久 rule 沿用, 唔入 DB)
+> - 統一用 ModuleWarning object format (永久 rule §Module Warning v1.1.0)
+> - M7 weight 折扣只 trigger 1 次 (即使 M2 emit 多個 self-check warning)
+> - 凡人話: M2 仲有 vote 但 weight 大減, 大少唔好太信, banner 提示
+>
+> **Frontend 1:1 port**: `algorithms/AS-03-cycle-detection/modules/hl-structure.ts` v0.2.0 同步加 4 個 self-check (skip #3 override-specific, frontend v0.1.0 仲未 port Step 16/17 override 邏輯)
 
 > ## 🔥 v0.2.0 改動摘要 (2026-09-06)
 >

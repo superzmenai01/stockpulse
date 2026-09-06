@@ -1,4 +1,4 @@
-// modules/hl-structure.ts — AS-03 · 點 2: 高低點結構法 (Peak-Trough Structure Cycle Detector, v0.1.0)
+// modules/hl-structure.ts — AS-03 · 點 2: 高低點結構法 (Peak-Trough Structure Cycle Detector, v0.2.0)
 //
 // 大少 + MiniMax Code 2026-08-07 — 跟 docx `高低點結構法.docx` v2.0 spec 嘅 18 步算法落地
 //
@@ -41,6 +41,7 @@ import type {
 } from '../types.ts';
 import { DEFAULT_HL_STRUCTURE_CONFIG, type HLStructureConfig } from '../config.ts';
 import { runAndStandardize } from '../std-verdict.ts';
+import { makeWarning, type ModuleWarning } from '../lib/warnings.ts';
 
 // ============ Internal types ============
 
@@ -64,7 +65,7 @@ interface TrendResult {
 
 export class HLStructureModule implements CycleModule<KLine[]> {
   readonly id = 'hl-structure' as const;
-  readonly version = '0.1.0';
+  readonly version = '0.2.0';  // v0.2.0 (大少 2026-09-06 15:10): M2 self-check warning 永久 rule — 1:1 port backend v0.3.0 4 個 self-check
 
   private readonly cfg: HLStructureConfig;
 
@@ -171,6 +172,19 @@ export class HLStructureModule implements CycleModule<KLine[]> {
     // ============ Edge case: 冇 rawExtremes (完全平 data / 停牌) ============
     // Spec §6: 所有價格完全相同 → sideways, conf 0.3
     if (rawExtremes.length === 0) {
+      // v0.2.0: 改 string array warnings → _warnings ModuleWarning object (永久 rule 沿用)
+      const noExtremesWarnings: ModuleWarning[] = [
+        makeWarning(
+          'critical', 'M2', 'VERDICT_MISSING',
+          '峰谷全部拎唔到 (價格完全無變化)',
+          {
+            issue: 'peak_count = 0 AND trough_count = 0 (價格完全無變化)',
+            impact: 'Verdict 唔可信, 唔好落單, M7 應該降 M2 weight',
+            fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+            context: { peak_count: 0, trough_count: 0 },
+          }
+        ),
+      ];
       return {
         moduleId: this.id,
         timeframe: ctx.ltf,
@@ -183,7 +197,7 @@ export class HLStructureModule implements CycleModule<KLine[]> {
           value: 0,
           passed: false,
         }],
-        warnings: ['價格完全無變化'],
+        _warnings: noExtremesWarnings,
         meta: {
           cycle: 'sideways',
           cycleLabel: '橫行週期',
@@ -264,6 +278,19 @@ export class HLStructureModule implements CycleModule<KLine[]> {
     if (alternated.length < cfg.minPairs * 2) {
       // 2026-08-07 — Graceful handle: 真實 K 線 noise 大,alternated 唔夠 strict 要求
       // 唔 throw,return SIDEWAYS verdict 0.5 (跟 T11 全平 data pattern)
+      // v0.2.0: 改 string array warnings → _warnings ModuleWarning object (永久 rule 沿用)
+      const insufficientAlternationWarnings: ModuleWarning[] = [
+        makeWarning(
+          'warning', 'M2', 'FALLBACK_USED',
+          `峰谷總數 ${alternated.length} < ${cfg.minPairs * 2}`,
+          {
+            issue: `峰谷總數 ${alternated.length} < ${cfg.minPairs * 2} required`,
+            impact: 'Verdict 唔可信, 唔好落單, M7 應該降 M2 weight',
+            fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+            context: { alternated_count: alternated.length, min_pairs: cfg.minPairs },
+          }
+        ),
+      ];
       return {
         moduleId: this.id,
         timeframe: ctx.ltf,
@@ -277,7 +304,7 @@ export class HLStructureModule implements CycleModule<KLine[]> {
           threshold: cfg.minPairs * 2,
           passed: false,
         }],
-        warnings: ['峰谷結構唔夠清晰,基於現有結構判定為橫行'],
+        _warnings: insufficientAlternationWarnings,
         meta: {
           cycle: 'sideways',
           cycleLabel: '橫行週期',
@@ -512,6 +539,89 @@ export class HLStructureModule implements CycleModule<KLine[]> {
     // ============ Step 17: 綜合信心指數 ============
     const confidence = Math.max(0, Math.min(1, baseConfidence * confidenceMultiplier));
 
+    // ============ v0.2.0 self-check 5 條件 (大少 2026-09-06 14:25 trigger) ============
+    // 凡人話: M2 算法自己診斷 verdict 係咪可信, 5 個條件 emit system 警告
+    // 通知 M7/M8/M9 呢個 M2 verdict 唔好用, M7 自動降 weight 0.15→0.05 + banner 提示
+    // Frontend v0.1.0 冇 Step 16/17 override 邏輯, 所以 self-check #3 (5年vs短線矛盾) frontend skip
+    // 1:1 port backend hl_structure/algorithm.py v0.3.0 4 個 self-check (1, 2, 4, 5)
+    const m2Warnings: ModuleWarning[] = [];
+
+    // Self-check 1: 形態預警 (跟 backend v0.3.0 對齊)
+    if (patternAlert === 'head_and_shoulder' || patternAlert === 'double_top' || patternAlert === 'double_bottom') {
+      m2Warnings.push(makeWarning(
+        'warning', 'M2', 'CONFLICT_STATE',
+        `形態預警: ${patternAlert}`,
+        {
+          issue: `最近 3 個峰/谷出現 ${patternAlert} 形態, 結構可能反轉`,
+          impact: 'Verdict 唔可信, M2 判嘅 cycle state 可能快將反轉, M7 應該降 M2 weight',
+          fix: '確認 Step 16 短線 mode 結果, 如有 override 觸發可能要等下一個 peak/谷 confirm',
+          context: {
+            pattern_alert: patternAlert,
+            peaks_count: peaks.length,
+            troughs_count: troughs.length,
+          },
+        }
+      ));
+    }
+
+    // Self-check 2: 極值點新鮮度 (Step 15 freshness 折扣 → DATA_AGE info warning)
+    if (daysAgo > cfg.maxExtremeAgeDays) {
+      const freshness = Math.max(
+        cfg.freshnessMinMultiplier,
+        1.0 - (daysAgo - cfg.maxExtremeAgeDays) / cfg.freshnessDecayDays,
+      );
+      m2Warnings.push(makeWarning(
+        'info', 'M2', 'DATA_AGE',
+        `極值點距今 ${daysAgo} 日 (max ${cfg.maxExtremeAgeDays} 日)`,
+        {
+          issue: `最新 peak/trough 已經 ${daysAgo} 日前, freshness multiplier 折扣到 ${freshness.toFixed(4)}`,
+          impact: '結構信號老化, Verdict 信心打折, M7 應該降 M2 嘅 base_weight',
+          fix: '等下一個新 peak/trough 出現再 re-run',
+          context: {
+            days_ago: daysAgo,
+            max_extreme_age: cfg.maxExtremeAgeDays,
+            freshness_multiplier: Number(freshness.toFixed(4)),
+          },
+        }
+      ));
+    }
+
+    // Self-check 4: 信心指數過低 (final confidence < 0.3)
+    if (confidence < 0.3) {
+      m2Warnings.push(makeWarning(
+        'warning', 'M2', 'THRESHOLD_BREACH',
+        `M2 信心指數 ${confidence.toFixed(4)} < 0.3 threshold`,
+        {
+          issue: `信心 ${confidence.toFixed(4)} 過低, structure score 唔夠強, base_confidence 折扣大`,
+          impact: 'Verdict 可信度低, M7 應該降低 M2 嘅 base_weight',
+          fix: '等結構信號更明顯先 re-run, 或 increase dataWindowDays',
+          context: {
+            confidence: Number(confidence.toFixed(4)),
+            base_confidence: Number(baseConfidence.toFixed(4)),
+            structure_score: Number(structureScore.toFixed(4)),
+          },
+        }
+      ));
+    }
+
+    // Self-check 5: 結構破壞 (Step 14 price_position = "broken")
+    if (pricePosition === 'broken') {
+      m2Warnings.push(makeWarning(
+        'warning', 'M2', 'CONFLICT_STATE',
+        '當前價格已經破壞最近峰谷結構',
+        {
+          issue: `價格 ${latestPrice.toFixed(2)} 已經離開最近 peak ${latestPeak.close.toFixed(2)} / trough ${latestTrough.close.toFixed(2)} 範圍`,
+          impact: '峰谷結構信號失效, M2 verdict 唔可信, 要等新 peak/trough 形成',
+          fix: 'Re-run / 等新結構形成',
+          context: {
+            latest_price: Number(latestPrice.toFixed(4)),
+            latest_peak_close: Number(latestPeak.close.toFixed(4)),
+            latest_trough_close: Number(latestTrough.close.toFixed(4)),
+          },
+        }
+      ));
+    }
+
     // ============ Step 18: 組裝輸出 ============
     // 3-state → 4-state mapping (D011)
     let state: CycleState;
@@ -561,7 +671,7 @@ export class HLStructureModule implements CycleModule<KLine[]> {
       confidence: round(confidence, 4),
       interpretation: finalReason,
       evidence,
-      warnings: [],
+      _warnings: m2Warnings,
       meta: {
         cycle: candidate,
         cycleLabel,

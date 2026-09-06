@@ -1,4 +1,4 @@
-# AS-03 · 模組警告系統 (Module Warning System v1.0.0)
+# AS-03 · 模組警告系統 (Module Warning System v1.2.0)
 
 > **對應 spec**: `docs/research/AS-03-cycle-detection/MODULE-{01..12}-*.md` (各 module 個別 spec)
 > **對應 impl**:
@@ -137,6 +137,11 @@ class ModuleWarning:
 | | `runMAAlignment()` return 之前 | matchedRules 0 個 (全部 A-J rule fail) | 🟡 FALLBACK_USED |
 | | `runMAAlignment()` return 之前 | latestMA5 / latestMA20 係 NaN | 🔴 NAN_RESULT |
 | **M2 HL Structure** | `detectPeaksTroughs()` return 之前 | peaks.length = 0 AND troughs.length = 0 | 🔴 VERDICT_MISSING |
+| | `Step 13 形態預警` return 之前 (v0.3.0) | pattern_alert = head_and_shoulder / double_top / double_bottom | 🟡 CONFLICT_STATE |
+| | `Step 15 極值點新鮮度` return 之前 (v0.3.0) | daysAgo > maxExtremeAgeDays (20) | 🔵 DATA_AGE |
+| | `Step 16/17 短線 vs 突破 override` return 之前 (v0.3.0) | 5 年 SIDEWAYS 靠短線 / 突破救返 (triggered = True) | 🟡 FALLBACK_USED |
+| | `Step 18 信心指數` return 之前 (v0.3.0) | confidence < 0.3 | 🟡 THRESHOLD_BREACH |
+| | `Step 14 結構破壞` return 之前 (v0.3.0) | price_position = "broken" | 🟡 CONFLICT_STATE |
 | **M3 Trendline** | `computeTrendline()` return 之前 | trendline 計算結果 null | 🟡 FALLBACK_USED |
 | **M4 Indicators** | `computeRSI()` return 之前 | rsi 超出 [0, 1] normalized range | 🟡 OUTLIER_VALUE |
 | | `computeMACD()` return 之前 | macd 結果 NaN | 🔴 NAN_RESULT |
@@ -147,6 +152,7 @@ class ModuleWarning:
 | **M7 Synthesizer** | `synthesize()` return 之前 | ssi_score NaN / alignment_score NaN | 🔴 NAN_RESULT |
 | | `synthesize()` return 之前 | module_verdicts.length < 6 (1+ 拎唔到) | 🟡 MODULE_PARTIAL |
 | | `synthesize()` return 之前 | 兩個 module 衝突 (m1 UP + zmen DOWN) | 🟡 CONFLICT_STATE |
+| | `synthesize()` return 之前 (v1.1.0) | M2 self-check warning 觸發 → M7 自動降 weight 0.15→0.05 (5 個 module 等比例 normalize 補返) | 🟡 MODULE_PARTIAL (M2_SKIPPED alias) |
 | **M8 Decision Engine** | `analyze()` return 之前 | cycle_synthesizer 係 null | 🔴 VERDICT_MISSING |
 | | `analyze()` return 之前 | meta.ma5 OR meta.ma20 係 null | 🔴 NAN_RESULT |
 | | `analyze()` return 之前 | 5 個 MA trigger 全部 false (slow market) | 🟡 THRESHOLD_BREACH |
@@ -166,6 +172,42 @@ class ModuleWarning:
 | **7 個 adaptive params** | per-param 計算之後 | R² < 0.3 (low fit) | 🟡 OUTLIER_VALUE |
 | | per-param 計算之後 | Hurst > 0.95 (extreme persistent) | 🟡 THRESHOLD_BREACH |
 | | per-param 計算之後 | Kelly 連續 3 次 >= 5% (high vol) | 🔵 CONFIG_DEFAULTS |
+
+---
+
+> ## 🔥 v1.2.0 改動摘要 (2026-09-06)
+>
+> **觸發原因**: 大少 14:25 問「M2 algorithm 發現有問題或失效, 顯示警告, M7/8/9 唔使用」, 15:08 confirm 做法 A + C 混合
+>
+> **M2 self-check warning 永久 rule (新增)**:
+> - M2 algorithm 加 5 個 self-check 注入點 (Step 13/14/15/16/17 出口位置)
+> - 5 個 self-check 條件: 形態預警 (CONFLICT_STATE) / 峰谷太舊 (DATA_AGE) / 5年vs短線矛盾 (FALLBACK_USED) / 信心過低 (THRESHOLD_BREACH) / 結構破壞 (CONFLICT_STATE)
+> - 凡人話: M2 算法自己診斷 verdict 係咪可信, 5 個條件 emit system 警告
+>
+> **M7 weight 折扣永久 rule (做法 A, 新增)**:
+> - M7 Synthesizer 拎到 M2 warning → 自動降 M2 base_weight 0.15 → 0.05
+> - 5 個其他 module (M1/M3/M4/M5/M6) 等比例 normalize 補返 0.10, sum 仍 = 1.0
+> - 凡人話: M2 仲有 vote 但 weight 大減, 大少唔好太信
+>
+> **M7_SKIPPED warning (做法 C banner 提示, 新增)**:
+> - M7 emit 1 個 stock_state `MODULE_PARTIAL` warning 通知 banner「M2 self-check 觸發, 自動降 weight 0.15 → 0.05」
+> - 沿用 MODULE_PARTIAL 唔加新 code (對齊 15 個 warning code 永久 rule)
+> - 頂部 banner 顯示 🔧 系統警告 (M2 self-check 屬 system category)
+> - M2 verdict card 內 WarningCard inline 顯示
+> - Copy button 一鍵 copy Markdown 4 樣格式
+>
+> **M7 meta 字段新增 (frontend display 用)**:
+> - `m2_discounted: bool` — M2 有冇觸發 self-check
+> - `m2_original_weight: 0.15` — M2 原本 weight
+> - `m2_discounted_weight: 0.05` — M2 discount 後 weight
+>
+> **Propagation chain 已就緒** (唔需要新邏輯):
+> - M2 self-check warning → 落 M2 verdict.warnings
+> - M2 透過 algorithm_runner 注入 M7 module_verdicts.warnings
+> - M7 _aggregate_warnings() 自動 collect + dedupe + 落 M7 verdict.warnings
+> - Frontend adapter.mjs synthesize() line 5893-5900 自動 propagate M1-M6 warnings
+> - 頂部 renderWarningBanners() 自動 render banner
+> - 凡人話: M2 warning 自動走晒成條 chain, 唔需要新嘅 propagation code
 
 ---
 

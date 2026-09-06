@@ -367,15 +367,23 @@ class SynthesizerAlgorithm(Algorithm):
 
     Algorithm ABC contract:
     - name: "synthesizer"
-    - version: "1.0.0"
+    - version: "1.1.0"
     - run(klines, options) → Verdict
     - options.moduleVerdicts: List[Dict] (6 個 module standard verdict, 由 runner inject)
 
     凡人話: 拎 6 個 module 嘅 verdict 拎綜合判定, 拎 SSI/TCM/Alignment/Grade/Kelly
+
+    v1.1.0 (大少 2026-09-06 15:10 trigger): M2 self-check weight 折扣永久 rule
+    - 拎 M2 (hl-structure) 嘅 self-check warning (FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH)
+    - 自動降 M2 weight 0.15 → 0.05
+    - 5 個其他 module (M1/M3/M4/M5/M6) 等比例 normalize 補返 0.10
+    - emit 1 個 stock_state MODULE_PARTIAL warning 通知 banner
+    - meta 加 m2_discounted / m2_original_weight / m2_discounted_weight 3 個 field
+    - 對應 commit: <即將 push>
     """
 
     name = "synthesizer"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.cfg = {**DEFAULT_SYNTHESIZER_CONFIG, **(config or {})}
@@ -387,6 +395,42 @@ class SynthesizerAlgorithm(Algorithm):
 
         # M7 Synthesizer 拎 options.moduleVerdicts (由 algorithm_runner inject)
         verdicts: List[Dict[str, Any]] = options.get("moduleVerdicts", [])
+
+        # ============ v0.3.0 M2 self-check weight 折扣 (大少 2026-09-06 15:10 trigger) ============
+        # 凡人話: M2 self-check warning emit 之後, M7 自動降 M2 weight 0.15→0.05,
+        # 5 個其他 module (M1/M3/M4/M5/M6) 等比例 normalize 補返 0.10, sum 仍 = 1.0
+        # 永久 rule: 拎 M2 self-check warning 即 FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH,
+        # shallow copy verdicts 避免 mutate caller 嘅 state
+        verdicts_for_synth: List[Dict[str, Any]] = [dict(v) for v in verdicts]
+        m2_self_check_triggered = False
+        m2_discount_codes = ("FALLBACK_USED", "CONFLICT_STATE", "THRESHOLD_BREACH")
+
+        for v in verdicts_for_synth:
+            if v.get("module_id") == "hl-structure":
+                v_warnings = v.get("warnings", []) or []
+                for w in v_warnings:
+                    if isinstance(w, dict):
+                        code = w.get("code")
+                    else:
+                        code = getattr(w, "code", None)
+                    if code in m2_discount_codes:
+                        m2_self_check_triggered = True
+                        break
+                if m2_self_check_triggered:
+                    # 折扣 M2 weight 0.15 → 0.05
+                    v["base_weight"] = 0.05
+                    # Re-normalize 其他 5 個 module weight (等比例, sum = 1.0)
+                    other_total = sum(
+                        other.get("base_weight", 0)
+                        for other in verdicts_for_synth
+                        if other.get("module_id") != "hl-structure"
+                    )
+                    if other_total > 0:
+                        factor = (1.0 - 0.05) / other_total
+                        for other in verdicts_for_synth:
+                            if other.get("module_id") != "hl-structure":
+                                other["base_weight"] = round(other.get("base_weight", 0) * factor, 4)
+                    break
 
         # Step 0: 數據驗證 (need ≥ 1 module verdict)
         if not verdicts:
@@ -431,20 +475,20 @@ class SynthesizerAlgorithm(Algorithm):
                 ],
             )
 
-        # Step 1: SSI
-        ssi_score, ssi_breakdown = _compute_ssi(verdicts)
+        # Step 1: SSI (用 verdicts_for_synth 反映 M2 weight 折扣)
+        ssi_score, ssi_breakdown = _compute_ssi(verdicts_for_synth)
 
         # Step 2: TCM
-        tcm_matrix = _compute_tcm(verdicts)
+        tcm_matrix = _compute_tcm(verdicts_for_synth)
 
         # Step 3: Alignment
-        alignment_score = _compute_alignment(verdicts)
+        alignment_score = _compute_alignment(verdicts_for_synth)
 
         # Step 3.5: ZigZagSlope Cross-Module Alignment Enrichment
         # 大少 2026-08-21 12:04 — Stage 2 第一步
         # 拎 M1 verdict 嘅 meta.zigzagSlope 做 cross-module alignment check
         # 扣 alignment 但唔直接改 grade (跟 spec: Level 4 cross-module alignment enrich)
-        zigzag_alignment = _compute_zigzag_alignment(verdicts)
+        zigzag_alignment = _compute_zigzag_alignment(verdicts_for_synth)
         zigzag_alignment_penalty = zigzag_alignment["penalty"]
         zigzag_alignment_reasons = zigzag_alignment["reasons"]
         # alignment_score 扣 penalty (cap 0)
@@ -479,11 +523,11 @@ class SynthesizerAlgorithm(Algorithm):
         # 對應 spec: MODULE-07-SYNTHESIZER.md + MODULE-WARNING-SYSTEM.md NAN_RESULT
 
         # Step 5: Kelly
-        kelly = _compute_kelly(verdicts)
+        kelly = _compute_kelly(verdicts_for_synth)
 
-        # Cycle state derivation (跟 majority state)
+        # Cycle state derivation (跟 majority state, 唔睇 weight)
         state_count: Dict[str, int] = {}
-        for v in verdicts:
+        for v in verdicts_for_synth:
             state = v.get("state", "SIDEWAYS")
             state_count[state] = state_count.get(state, 0) + 1
         if state_count:
@@ -511,7 +555,7 @@ class SynthesizerAlgorithm(Algorithm):
             {"type": "tcm-trap", "label": f"TCM 矛盾數: {sum(1 for t in tcm_matrix if t['alignment'] == -1)}", "value": sum(1 for t in tcm_matrix if t["alignment"] == -1), "passed": sum(1 for t in tcm_matrix if t["alignment"] == -1) == 0},
         ]
 
-        # Module summary (每個 module 拎 state + confidence)
+        # Module summary (用 verdicts_for_synth 拎 discount 後嘅 base_weight 顯示出嚟)
         module_summary = [
             {
                 "module_id": v.get("module_id"),
@@ -520,7 +564,7 @@ class SynthesizerAlgorithm(Algorithm):
                 "base_weight": v.get("base_weight"),
                 "rules_fired_count": len(v.get("rules_fired", [])),
             }
-            for v in verdicts
+            for v in verdicts_for_synth
         ]
 
         meta = {
@@ -540,6 +584,10 @@ class SynthesizerAlgorithm(Algorithm):
             # 大少 2026-08-21 12:04 — Stage 2 第一步: ZigZagSlope enrichment
             "alignment_score_after_penalty": alignment_score_after_penalty,
             "zigzag_alignment_penalty": zigzag_alignment_penalty,
+            # v0.3.0 (大少 2026-09-06 15:10): M2 self-check 折扣 metadata
+            "m2_discounted": m2_self_check_triggered,
+            "m2_original_weight": 0.15 if m2_self_check_triggered else None,
+            "m2_discounted_weight": 0.05 if m2_self_check_triggered else None,
             "zigzag_alignment_reasons": zigzag_alignment_reasons,
             "grade": grade,
             "grade_score": grade_score,
@@ -555,6 +603,25 @@ class SynthesizerAlgorithm(Algorithm):
 
         # Step 6: Aggregate upstream warnings (永久 rule v1.1.0 propagation chain)
         aggregated_warnings = _aggregate_warnings(verdicts, nan_fields=nan_fields)
+
+        # ============ v0.3.0 M2 self-check 通知 (大少 2026-09-06 15:10 trigger) ============
+        # 凡人話: M2 self-check 觸發咗, M7 自動降 weight 之後, 同步 emit 1 個 stock_state
+        # warning 通知 banner (用 MODULE_PARTIAL code, 沿用 15 個 code, 唔加新 code)
+        if m2_self_check_triggered:
+            aggregated_warnings.append(make_warning(
+                level="warning",
+                module_id="M7",
+                code="MODULE_PARTIAL",
+                message="M2 self-check 觸發, 自動降 weight 0.15 → 0.05",
+                issue="M2 嘅 self-check warning 觸發, M7 自動將 M2 base_weight 由 0.15 折扣到 0.05",
+                impact="M2 vote 保留但 weight 大減, 其他 5 個 module (M1/M3/M4/M5/M6) 等比例 normalize 補返, sum 仍 = 1.0",
+                fix="睇 banner 提示 M2 觸發咗邊個 self-check (形態預警/峰谷太舊/5年vs短線矛盾/信心過低/結構破壞), Re-run / 確認 K 線數據",
+                context={
+                    "m2_original_weight": 0.15,
+                    "m2_discounted_weight": 0.05,
+                    "discount_reason": "M2 self-check warning detected",
+                },
+            ).to_dict())
 
         return Verdict(ok=True, points=[], meta=meta, warnings=aggregated_warnings)
 
