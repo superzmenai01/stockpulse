@@ -1,5 +1,5 @@
 """
-backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.3.0 (大少 2026-09-06 15:10 self-check warning 永久 rule)
+backend/algorithms/hl-structure/algorithm.py — M2 HL Structure v0.4.0 (大少 2026-09-07 11:45 plan 批准, 5-layer evidence-based 優化)
 
 凡人話: 拎 K 線 → 識別峰谷 (peaks + troughs) → 趨勢分析 → 結構分數 → 箱體邊界 → 形態預警 → 價格位置 → 信心指數
          → [v0.2.0 新加] 短線 mode 確認 (60 日) → 突破 override (升穿最近 peak) → 綜合信心指數
@@ -99,25 +99,195 @@ def _calc_atr(klines: List[Dict[str, Any]], period: int) -> float:
     return sum(trs) / len(trs) if trs else 0.0
 
 
-def _detect_extremes(weighted: List[Dict[str, Any]], window: int) -> Dict[str, List[int]]:
+def _smooth_savgol(weighted_prices: List[float], window_length: int, polyorder: int = 2) -> List[float]:
+    """凡人話: Savitzky-Golay 平滑過濾, 抹走 noise 但保留峰形
+
+    對齊 `askpython.com` Savitzky-Golay 教學:
+    - window_length 必須正奇數, 細過 data 長度
+    - polyorder < window_length, 預設 2 (拋物線峰形)
+
+    Algorithm:
+    - 每個 data 點用 polyorder-degree polynomial 喺 sliding window 入面最小二乘擬合
+    - 取 polynomial 喺中心點嘅值做平滑後輸出
+    - 對 noise 大嘅 data 拎 peak/trough 之前做 smoothing 改善穩定性
+
+    Example:
+        [10, 11, 9, 12, 8, 13, 7]  (raw)
+        [9.8, 10.2, 10.5, 10.8, 11.0, 11.1, 10.9]  (smoothed, polyorder=2, window=5)
+    """
+    n = len(weighted_prices)
+    if n < 3:
+        return list(weighted_prices)
+
+    # 確保 window_length 係正奇數, 細過 data 長度
+    wl = window_length
+    if wl % 2 == 0:
+        wl += 1
+    if wl >= n:
+        wl = max(3, n - 1 if n % 2 == 0 else n)
+        if wl % 2 == 0:
+            wl -= 1
+    if wl <= polyorder:
+        wl = polyorder + 2 if (polyorder + 2) % 2 == 1 else polyorder + 3
+    if wl < 3:
+        return list(weighted_prices)
+
+    half = wl // 2
+    smoothed = [0.0] * n
+
+    # 用 numpy 1 次過計 matrix 避免 nested loop 慢
+    # 對齊 numpy savgol_filter 內部邏輯, 但唔引入 scipy 依賴 (跟 M3 pattern)
+    try:
+        import numpy as np
+        x = np.arange(wl, dtype=float) - half
+        # Vandermonde matrix
+        A = np.vander(x, polyorder + 1, increasing=True)
+        # Pseudo-inverse 拎 (A^T A)^-1 A^T
+        coeffs = np.linalg.pinv(A)
+        for i in range(n):
+            left = max(0, i - half)
+            right = min(n, i + half + 1)
+            segment_len = right - left
+            if segment_len < wl:
+                # 邊界: 用 'nearest' mode 補長 (對齊 askpython.com 教學)
+                seg = []
+                for j in range(wl):
+                    src = left + j
+                    if src < 0:
+                        src = 0
+                    elif src >= n:
+                        src = n - 1
+                    seg.append(weighted_prices[src])
+                seg_arr = np.array(seg, dtype=float)
+            else:
+                seg_arr = np.array(weighted_prices[left:right], dtype=float)
+            # 中心點 (i - left) 嘅 polynomial 值 = coeffs[0] @ segment (取 row 0 = constant + linear + ...)
+            smoothed[i] = float(np.dot(coeffs[0], seg_arr))
+        return smoothed
+    except ImportError:
+        # Fallback: numpy 冇, 用 simple moving average
+        ma_window = min(5, n)
+        half_ma = ma_window // 2
+        out = [0.0] * n
+        for i in range(n):
+            left = max(0, i - half_ma)
+            right = min(n, i + half_ma + 1)
+            out[i] = sum(weighted_prices[left:right]) / (right - left)
+        return out
+
+
+def _compute_prominence(
+    values: List[float],
+    idx: int,
+    left_end: int,
+    right_end: int,
+) -> float:
+    """凡人話: 拎 peak/trough 嘅 prominence (突出度) — 對齊 `exchangetuts.com` SciPy find_peaks 哲學
+
+    公式: prominence = peak_value - max(left_min_baseline, right_min_baseline)
+          (即係由 peak 落到最近 baseline 嘅垂直距離)
+
+    Args:
+        values: 平滑後嘅 weighted prices
+        idx: peak/trough 嘅 index
+        left_end: 左邊掃描結束 index (exclusive)
+        right_end: 右邊掃描結束 index (exclusive)
+
+    Returns:
+        prominence value (絕對值, 越大越顯著)
+    """
+    n = len(values)
+    if idx < 0 or idx >= n or n == 0:
+        return 0.0
+    peak_value = values[idx]
+
+    # 向左揾 baseline (左邊所有值嘅 min, 即係左邊最低)
+    left_min = peak_value
+    for i in range(max(0, idx - 1), max(0, left_end) - 1, -1):
+        if i < 0:
+            break
+        if values[i] < left_min:
+            left_min = values[i]
+
+    # 向右揾 baseline
+    right_min = peak_value
+    for i in range(min(n - 1, idx + 1), min(n, right_end)):
+        if i >= n:
+            break
+        if values[i] < right_min:
+            right_min = values[i]
+
+    # 對 peak 嚟講 baseline = max(left_min, right_min), 拎 min 突出度
+    # 對 trough 嚟講顛倒: trough_value - min(left_max, right_max)
+    return peak_value - min(left_min, right_min)
+
+
+def _detect_extremes(
+    weighted: List[Dict[str, Any]],
+    window: int,
+    cfg: Dict[str, Any] = None,
+) -> Dict[str, List[int]]:
     """凡人話: 識別原始極值點 (peaks 山頂 + troughs 山谷)
 
     對應 frontend detectExtremes (adapter.mjs line 3830-3849)
+
+    v0.4.0 Layer 1 (對齊 plan §Layer 1 — 揾山頂山谷更穩):
+    - 加 Savitzky-Golay 平滑 (對齊 `exchangetuts.com` / `askpython.com` 哲學)
+    - 加 prominence 過濾 (對齊 SciPy `find_peaks` 嘅 prominence 概念)
+    - enableSavitzkyGolayFilter: False 時 fallback 返 v0.3.0 simple 邏輯 (向下兼容)
+    - prominenceMinPct: prominence / peak_value 嘅最小百分比, 細過就過濾走
+
+    Returns: {"peaks": [int], "troughs": [int]}
     """
+    if cfg is None:
+        cfg = {}
+
+    enable_savgol = cfg.get("enableSavitzkyGolayFilter", False)
+    prominence_min_pct = cfg.get("prominenceMinPct", 0.02)
+
+    # 拎 weighted prices (raw 或 smoothed)
+    if enable_savgol:
+        wl = max(3, window * 2 + 1)
+        if wl % 2 == 0:
+            wl += 1
+        raw_prices = [k["weightedPrice"] for k in weighted]
+        smoothed_prices = _smooth_savgol(raw_prices, window_length=wl, polyorder=2)
+    else:
+        smoothed_prices = [k["weightedPrice"] for k in weighted]
+
     peaks = []
     troughs = []
     for i in range(window, len(weighted) - window):
-        curr = weighted[i]["weightedPrice"]
-        left_w = [k["weightedPrice"] for k in weighted[i - window:i]]
-        right_w = [k["weightedPrice"] for k in weighted[i + 1:i + window + 1]]
+        curr = smoothed_prices[i]
+        left_w = smoothed_prices[i - window:i]
+        right_w = smoothed_prices[i + 1:i + window + 1]
         left_max = max(left_w)
         right_max = max(right_w)
         left_min = min(left_w)
         right_min = min(right_w)
 
         if curr > left_max and curr > right_max:
+            # Peak: 拎 prominence 過濾
+            if enable_savgol:
+                prom = _compute_prominence(
+                    smoothed_prices,
+                    i,
+                    left_end=max(0, i - window),
+                    right_end=min(len(smoothed_prices), i + window + 1),
+                )
+                if curr > 0 and (prom / curr) < prominence_min_pct:
+                    continue  # prominence 唔夠, 過濾
             peaks.append(i)
         elif curr < left_min and curr < right_min:
+            # Trough: 拎 prominence 過濾 (對 trough 嚟講反轉)
+            if enable_savgol:
+                # trough 突出度 = min(left_max, right_max) - curr
+                left_max_full = max(smoothed_prices[max(0, i - window):i]) if i > 0 else curr
+                right_max_full = max(smoothed_prices[i + 1:min(len(smoothed_prices), i + window + 1)])
+                trough_baseline = min(left_max_full, right_max_full)
+                prom = trough_baseline - curr
+                if curr > 0 and (prom / curr) < prominence_min_pct:
+                    continue
             troughs.append(i)
     return {"peaks": peaks, "troughs": troughs}
 
@@ -207,7 +377,7 @@ class HLStructureAlgorithm(Algorithm):
     """
 
     name = "hl_structure"
-    version = "0.3.0"
+    version = "0.4.0"  # v0.4.0 (大少 2026-09-07 11:45): 5-layer evidence-based 優化 (Layer 1-5)
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -247,7 +417,8 @@ class HLStructureAlgorithm(Algorithm):
             effective_tolerance = min(cfg["tolerancePct"], 0.008)
 
         # ============ Step 3: 識別原始極值點 ============
-        extremes = _detect_extremes(weighted, adaptive_window)
+        # v0.4.0 Layer 1: 傳 cfg 入 _detect_extremes, 拎 Savitzky-Golay 平滑 + prominence 過濾
+        extremes = _detect_extremes(weighted, adaptive_window, cfg=cfg)
         peak_idxs = extremes["peaks"]
         trough_idxs = extremes["troughs"]
 
@@ -891,7 +1062,7 @@ class HLStructureAlgorithm(Algorithm):
             # === v0.2.0 新加 (大少 2026-09-06 11:34 trigger) ===
             "short_term": short_term_result,          # Step 16 短線 mode 結果
             "breakout_override": breakout_result,    # Step 17 突破 override 結果
-            "version": "0.2.2",                       # version 寫入 meta 等 frontend 對齊
+            "version": "0.4.0",                       # v0.4.0 (大少 2026-09-07 11:45): 5-layer evidence-based 優化, version 寫入 meta 等 frontend 對齊
             "_warnings": m2_warnings,
         }
 
