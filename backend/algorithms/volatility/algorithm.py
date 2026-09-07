@@ -116,6 +116,7 @@ class VolatilityAlgorithm(Algorithm):
                 points=[],
                 meta={
                     "moduleId": "volatility",
+                    "symbol": options.get("symbol", "TEST"),
                     "timeframe": timeframe,
                     "state": "SIDEWAYS",
                     "cycleLabel": "蓄力觀察",
@@ -438,6 +439,7 @@ class VolatilityAlgorithm(Algorithm):
         confidence = _round(entry_score, 4)
         meta = {
             "moduleId": "volatility",
+            "symbol": options.get("symbol", "TEST"),
             "timeframe": timeframe,
             "state": state,
             "cycleLabel": cycle_label,

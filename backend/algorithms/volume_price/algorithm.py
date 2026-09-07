@@ -166,6 +166,7 @@ class VolumePriceAlgorithm(Algorithm):
                 points=[],
                 meta={
                     "moduleId": "volume",
+                    "symbol": options.get("symbol", "TEST"),
                     "timeframe": timeframe,
                     "state": "SIDEWAYS",
                     "cycleLabel": "資金觀望",
@@ -556,6 +557,7 @@ class VolumePriceAlgorithm(Algorithm):
         confidence = _round(buy_timing_score, 4)
         meta = {
             "moduleId": "volume",
+            "symbol": options.get("symbol", "TEST"),
             "timeframe": timeframe,
             "state": cycle_state,
             "cycleLabel": cycle_label,

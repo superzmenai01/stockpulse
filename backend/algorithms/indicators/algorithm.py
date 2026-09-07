@@ -573,6 +573,7 @@ class IndicatorsAlgorithm(Algorithm):
                 points=[],
                 meta={
                     "moduleId": self.name,
+                    "symbol": options.get("symbol", "TEST"),
                     "timeframe": timeframe,
                     "state": "SIDEWAYS",
                     "cycleLabel": "動能中性",
@@ -680,6 +681,7 @@ class IndicatorsAlgorithm(Algorithm):
 
         meta = {
             "moduleId": self.name,
+            "symbol": options.get("symbol", "TEST"),
             "timeframe": timeframe,
             "state": cycle,
             "cycleLabel": cycle_label,

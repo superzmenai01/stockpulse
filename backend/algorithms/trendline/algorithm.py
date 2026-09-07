@@ -618,6 +618,7 @@ class TrendlineAlgorithm(Algorithm):
                 points=[],
                 meta={
                     "moduleId": "trendline",
+                    "symbol": options.get("symbol", "TEST"),
                     "timeframe": options.get("period", "1d"),
                     "state": "SIDEWAYS",
                     "cycle_label": "橫行",
@@ -717,6 +718,7 @@ class TrendlineAlgorithm(Algorithm):
                 points=[],
                 meta={
                     "moduleId": "trendline",
+                    "symbol": options.get("symbol", "TEST"),
                     "timeframe": options.get("period", "1d"),
                     "state": "SIDEWAYS",
                     "cycle_label": "橫行",
@@ -939,6 +941,7 @@ class TrendlineAlgorithm(Algorithm):
 
         meta = {
             "moduleId": "trendline",
+            "symbol": options.get("symbol", "TEST"),
             "timeframe": options.get("period", "1d"),
             "state": state,
             "cycle_label": cycle_label,
