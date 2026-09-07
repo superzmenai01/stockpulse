@@ -169,6 +169,45 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: b259d1db (fix A+B) + febabd99 (fix dataWindowDays) + Spec Sync #39 即將 push
 
+### verdict.meta.symbol 永久 rule (大少 2026-09-07 08:30 confirm, Spec Sync #41)
+
+**凡人話**: `verdict.meta.symbol` 永遠要 = `verdict.symbol` (即係 caller query 嗰個 stock code, e.g. "HK.00700"), 唔可以寫死 "UNKNOWN" / "TEST" / 其他 default value。`verdict.symbol` 喺頂層係 caller 真正 query 嘅 stock code, `verdict.meta.symbol` 喺 meta dict 入面本來設計畀 algo 內部 log / debug 用, 兩個應該係同一個 value。
+
+**Root cause (大少 9月7日 07:00 trigger)**: 大少用 M1 跑 DB 200 隻 stock, 發現 100% verdict 嘅 `meta.symbol` 永遠 "UNKNOWN" (142/142 成功 verdict)。凡人話:M1 答 HK.00700 個 verdict 寫「答案係 UP」✅, 但係補充資料入面寫「客人:unknown」❌, 等於落單紙上客人名漏填。
+
+**Root cause 確認 (curl evidence, 200 隻 stock 跑出 142 隻 UNKNOWN)**:
+- 8 個 algo 喺 meta dict 入面 hardcode default value:
+  - **M1 ma_alignment** (line 792): `options.get("symbol", "UNKNOWN")` ← UNKNOWN
+  - **M3-M6, M7, M8, M9** (7 個 algo): `options.get("symbol", "TEST")` ← TEST
+  - **M2 hl_structure** (3 個地方): `options.get("code", "TEST")` ← 拎 "code" 而唔係 "symbol", 仲有 "TEST" 問題
+- `backend/api/algorithms.py` line 130-136 嘅 `run_algorithm(..., **options)` spread caller options 但**冇** pass caller 嘅 `symbol` 入 options dict
+- `backend/services/algorithm_runner.py` 統一 algorithm 入口 run_algorithm() 冇 inject caller 嘅 symbol 落 options
+- Algorithm 拎 `options.get("symbol", ...)` 永遠拎 default, 因為 options dict 冇呢個 key
+
+**Fix (1 line, algorithm_runner.py)**:
+- `backend/services/algorithm_runner.py` line 64 (run_algorithm 入面) 加 `options["symbol"] = symbol`
+- 對齊 9月6日 23:17 dataWindowDays 永久 rule pattern (algorithm 拎 caller 嘅 value)
+- Fix 完之後 200 隻 stock 重跑:
+  - **144 隻成功 verdict (100%)** 嘅 `meta.symbol == caller symbol` ✅
+  - 0 隻 UNKNOWN, 0 隻 TEST
+- M3 trendline / M4 indicators 算法本身冇 emit `meta.symbol` field (即係 verdict 入面冇呢個 key, `None`), 唔受影響
+- **M2 hl_structure 用 "code" 而唔係 "symbol", 仍然 "TEST" 唔受呢個 fix 影響**, 要 follow-up 改 M2 algorithm 拎 `options.get("code") or options.get("symbol", "TEST")`
+
+**永久 rule checklist**:
+- ✅ Algorithm 喺 verdict meta 寫 stock symbol 永遠用 `options.get("symbol", caller_symbol)` (caller_symbol = top-level `verdict.symbol`), 唔可以 hardcode "UNKNOWN" / "TEST" / 其他 default
+- ✅ `backend/services/algorithm_runner.py` 統一 algorithm 入口 run_algorithm() 永遠 inject caller 嘅 symbol 落 options dict (對齊 dataWindowDays 9月6日 23:17 永久 rule)
+- ✅ Backend handler `/api/algorithms/run` 唔需要再手動 pass symbol 入 options (runner 統一做)
+- ✅ 任何新加 algorithm 唔可以喺 meta dict 寫 "UNKNOWN" / "TEST" / 其他假 default value, 永遠用 caller symbol
+- ✅ 改 algorithm_runner.py 之後必 restart backend (`./start.sh`) + curl `/api/algorithms/run?algo=ma_alignment&symbol=HK.00700` 拎 evidence 確認 `meta.symbol == "HK.00700"`
+
+**對應文件**:
+- `backend/services/algorithm_runner.py` line 64 (新加 `options["symbol"] = symbol`)
+- `backend/algorithms/ma_alignment/algorithm.py` line 792 (原本 hardcode "UNKNOWN", 而家 runner inject 真 value)
+- 7 個其他 algo 嗰度 `options.get("symbol", "TEST")` 全部受呢個 fix 影響(默認 "TEST" 變 caller symbol)
+- `backend/algorithms/hl_structure/algorithm.py` 3 個地方拎 "code" 而唔係 "symbol" (M2 follow-up)
+
+對應 commit: 即將 push (Spec Sync #41)
+
 ### M3 self-check warning 永久 rule (大少 2026-09-07 00:14 confirm)
 
 **凡人話**: M3 (趨勢線法) algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system warning (🔧 system category), 等 M7 / M8 / M9 見到就**唔好用 M3 嘅 verdict** 做綜合判斷, UI 同步顯示 banner 提示大少「呢個 M3 verdict 唔可信, 小心落單」。

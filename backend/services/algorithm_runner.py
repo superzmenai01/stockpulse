@@ -62,6 +62,13 @@ def run_algorithm(
     # 1. 拎 algorithm 實例 (凡人話: 會 trigger KeyError 如果 algorithm 唔存在)
     algo = get_algorithm(algo_name)
 
+    # 大少 2026-09-07 07:20 — meta.symbol 永久 rule 改:
+    # 將 caller 嘅 symbol 寫入 options 畀 algorithm 拎 (對齊 dataWindowDays 9月6日 23:17 永久 rule pattern)
+    # 之前 options dict 冇呢個 key, algorithm 拎 options.get("symbol", "UNKNOWN"/"TEST") 永遠 default value
+    # 142 隻 ma_alignment verdict 嘅 meta.symbol 全部 "UNKNOWN", 6 個其他 algo 全部 "TEST" (systemic dead field)
+    # Fix: caller 嘅 symbol 寫入 options["symbol"], algorithm 拎到 caller 真正 query 嘅 stock code
+    options["symbol"] = symbol
+
     # 2. 拎 K 線 (大少 #8602 永久 rule: 1d 用 30*365 wide-fetch, caller max_count 只作 trim)
     # 永久 rule (大少 2026-09-02 21:14 trigger): 拎走 `cache = KlineCache()` 嗰陣 instantiate
     # 改 module-level singleton `_cache`, 唔 instantiate, 唔 spawn thread

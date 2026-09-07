@@ -5886,4 +5886,64 @@ M7 Synthesizer 跑 00981 嗰陣, frontend 嗰度 inject 🔴 NAN_RESULT warning 
 - 拎走 `run_zigzag` helper + `_calculate_zigzag` function 拎走抽象層 (大工程, 之後 sprint 處理, 跟 §15.70 follow-up)
 - 之後 M1 cyclePosition 加「量能未確認」標示 (大少 trigger 後可選)
 
+## §15.72 — verdict.meta.symbol 永久 rule fix (大少 2026-09-07 08:30 confirm) [2026-09-07]
+
+### 觸發原因
+
+- 大少 2026-09-07 07:00 trigger「你去用M1 把DB裡的K線股票一個個的跑, 每跑完一個你就親自檢查結果合不合理, 有沒有問題, 之後再跑下一個」
+- 大少 9月7日 07:20 trigger「meta.symbol 是什麼? 我還是聽不明白, 它的作用是做什麼的? 簡單說」+「OK, 跟你的建議寫入」
+- 200 隻 stock 跑出嚟 evidence: 142/142 成功 verdict 嘅 `meta.symbol` 永遠 "UNKNOWN" (M1 ma_alignment) — 100% systemic dead field
+- 大少確認: 「保留 meta.symbol 但寫入 caller 嘅 symbol」 (同 verdict.symbol 一致)
+
+### Root cause
+
+- `backend/services/algorithm_runner.py` 統一 algorithm 入口 run_algorithm() 冇 inject caller 嘅 symbol 落 options dict
+- `backend/api/algorithms.py` line 130-136 `run_algorithm(..., **options)` spread caller options 但**冇** pass caller 嘅 `symbol` 入 options dict (對齊 9月6日 23:17 dataWindowDays 永久 rule 應該一齊做但漏咗)
+- 8 個 algorithm 喺 meta dict 寫 stock symbol 各自 default:
+  - **M1 ma_alignment** (line 792): `options.get("symbol", "UNKNOWN")` ← 永遠 "UNKNOWN"
+  - **M3 trendline / M4 indicators / M5 volume_price / M6 volatility / M7 synthesizer / M8 decision_engine / M9 back_test** (7 個 algo, 9 個地方): `options.get("symbol", "TEST")` ← 永遠 "TEST"
+  - **M2 hl_structure** (3 個地方): `options.get("code", "TEST")` ← 拎 "code" 而唔係 "symbol", 仲有 "TEST" 問題 (follow-up)
+
+### 改動內容 (1 個 file + 1 個 spec doc)
+
+- ✅ `backend/services/algorithm_runner.py` line 64 (新加 `options["symbol"] = symbol`)
+  - 對齊 9月6日 23:17 dataWindowDays 永久 rule pattern (algorithm runner 統一 inject caller 嘅 value 落 options 畀 algorithm 拎)
+  - Fix 1 line, 8 個 algo 受影響
+- ✅ `AGENTS.md` 加新永久 rule「verdict.meta.symbol 永久 rule」section
+- ✅ `ARCHITECTURE.md` §15.72 (本 section)
+
+### 凡人話解釋
+
+- `verdict.symbol` = 餐廳枱號 (頂層, caller 拎到, e.g. "HK.00700")
+- `verdict.meta.symbol` = 落單紙上細字寫嘅「客人座位」(原本設計畀 algo 內部 log 用, 但永遠寫 "UNKNOWN" 冇用)
+- 兩個應該係同一個 value, 但係之前永遠唔同步 (頂層 caller symbol, meta 入面 "UNKNOWN")
+- 修咗之後兩個一致, 將來 algo 內部 log / debug 嗰陣就有用
+
+### Evidence (curl 200 隻 stock 跑出嚟)
+
+- 修咗之後 200 隻 stock 重跑: **144 隻成功 verdict (100%)** 嘅 `meta.symbol == verdict.symbol` ✅
+- 修咗之前: 142 隻成功 verdict 入面 **100%** `meta.symbol = "UNKNOWN"` ❌
+- 0 隻 "UNKNOWN" (之前 142), 0 隻 "TEST" (之前 0 隻 M1 但其他 algo 都係 TEST)
+- curl test: `curl '/api/algorithms/run?algo=ma_alignment&symbol=HK.00700'` → `verdict.symbol=HK.00700` + `verdict.meta.symbol=HK.00700` (兩者一致 ✅)
+
+### 永久 rule checklist
+
+- ✅ Algorithm 喺 verdict meta 寫 stock symbol 永遠用 `options.get("symbol", caller_symbol)` (caller_symbol = top-level `verdict.symbol`), 唔可以 hardcode "UNKNOWN" / "TEST" / 其他假 default value
+- ✅ `backend/services/algorithm_runner.py` 統一 algorithm 入口 run_algorithm() 永遠 inject caller 嘅 symbol 落 options dict (對齊 dataWindowDays 9月6日 23:17 永久 rule pattern)
+- ✅ Backend handler `/api/algorithms/run` 唔需要再手動 pass symbol 入 options (runner 統一做)
+- ✅ 任何新加 algorithm 唔可以喺 meta dict 寫 "UNKNOWN" / "TEST" / 其他假 default value, 永遠用 caller symbol
+- ✅ 改 algorithm_runner.py 之後必 restart backend (`./start.sh`) + curl `/api/algorithms/run?algo=ma_alignment&symbol=HK.00700` 拎 evidence 確認 `meta.symbol == "HK.00700"` (對齊 4.55.0 array evidence 永久 rule)
+- ✅ 改 backend code 之後必 restart backend (對齊 Backend hot-reload 永久 rule 8月31日 11:01)
+
+### 對應 commit
+
+- 即將 push (Spec Sync #41 — meta.symbol 永久 rule fix — 1 line algorithm_runner.py + 2 個 spec doc)
+- 對應: AGENTS.md 「verdict.meta.symbol 永久 rule (大少 2026-09-07 08:30 confirm, Spec Sync #41)」section
+
+### Follow-up sprint (唔喺今次 scope)
+
+- **M2 hl_structure** (3 個地方拎 `options.get("code", "TEST")`) 改 `options.get("code") or options.get("symbol", "TEST")`, 對齊其他 7 個 algo 拎 caller symbol
+- 之後任何 algorithm 加新 field 寫入 meta, 必須對齊「caller value pattern」(永遠用 caller 嘅 value, 唔可以 hardcode default)
+
+
 
