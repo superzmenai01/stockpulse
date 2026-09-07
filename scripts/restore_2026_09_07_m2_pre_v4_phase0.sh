@@ -28,9 +28,10 @@
 #
 set -e
 
-# EXPECTED_HEAD 對齊 v0.3.0 stable state commit (40-hex full SHA)
-# 對應 commit 12d22d67 (fix(M3): Spec Sync #45) - M2 v0.4.0 改動之前嘅 working state
-EXPECTED_HEAD="12d22d67360e81db174b7367bf22bc335b9c76b7"
+# EXPECTED_HEAD 對齊 working branch HEAD (40-hex full SHA)
+# 對應 commit 8b723c46 (Sscript commit) - M2 v0.3.0 algorithm + Sscript, v0.4.0 改動之前
+# Reset 返呢個 commit = 拎走 v0.4.0 5 個 layer 改動 + 拎返 v0.3.0 algorithm 嘅 working state
+EXPECTED_HEAD="8b723c462008ce5c39739c8e4128d5d8d8fd9bfc"
 
 echo "⚠️  WARNING: 拎走 v0.4.0 改動, 還原到 M2 v0.3.0 stable state"
 echo ""
