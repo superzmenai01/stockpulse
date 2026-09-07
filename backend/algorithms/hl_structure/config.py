@@ -70,4 +70,10 @@ DEFAULT_HL_STRUCTURE_CONFIG: dict = {
     # === v0.4.0 Layer 3 新加 (大少 2026-09-07 11:45 plan 批准) ===
     "enableHeadAndShouldersNeckline": True,  # 開住 H&S 5-point neckline 確認 (對齊 deepwiki.com Bulkowski 標準)
     "patternR2Min": 0.6,                  # pattern_r2 quality threshold (1.0 完美, 0.6 對齊 head_shoulders.py 教學)
+    # === v0.4.0 Layer 4 新加 (大少 2026-09-07 11:45 plan 批准) ===
+    "enableBBSqueezeFilter": True,        # 開住 BB/KC Squeeze 確認 (對齊 thinkcapital.com / marketopia.org TTM Squeeze 教學)
+    "bbPeriod": 20,                       # BB period (對齊 Bollinger 1980 標準 20 日)
+    "bbStdDev": 2.0,                      # BB std_dev multiplier (對齊 Bollinger 1980 標準 2σ)
+    "kcEMAPeriod": 20,                    # Keltner Channel EMA period (對齊 marketopia.org 教學 20 日)
+    "kcATRFactor": 1.5,                   # Keltner Channel ATR multiplier (對齊 marketopia.org 教學 1.5x)
 }

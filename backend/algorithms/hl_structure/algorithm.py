@@ -570,6 +570,124 @@ def _detect_head_and_shoulders(
     }
 
 
+def _compute_bollinger_bands(closes: List[float], period: int, std_dev: float) -> Dict[str, float]:
+    """凡人話: 計 Bollinger Band (對齊 thinkcapital.com / marketopia.org 教學)
+
+    公式 (對齊 John Bollinger 1980 標準):
+    - middle = SMA(period) of close
+    - std = STDEV(close, period)
+    - upper = middle + std_dev × std
+    - lower = middle - std_dev × std
+
+    Returns: {"middle": float, "upper": float, "lower": float, "bandwidth": float (upper - lower)}
+    """
+    n = len(closes)
+    if n < period:
+        return {"middle": 0.0, "upper": 0.0, "lower": 0.0, "bandwidth": 0.0}
+    recent = closes[-period:]
+    middle = sum(recent) / period
+    variance = sum((c - middle) ** 2 for c in recent) / period
+    std = variance ** 0.5
+    upper = middle + std_dev * std
+    lower = middle - std_dev * std
+    return {
+        "middle": middle,
+        "upper": upper,
+        "lower": lower,
+        "bandwidth": upper - lower,
+    }
+
+
+def _compute_ema(values: List[float], period: int) -> float:
+    """凡人話: 指數移動平均 (對齊 marketopia.org Keltner Channel EMA 教學)"""
+    if not values or period <= 0:
+        return 0.0
+    if len(values) < period:
+        return sum(values) / len(values)
+    # 標準 EMA 公式: alpha = 2 / (period + 1)
+    alpha = 2.0 / (period + 1.0)
+    ema = sum(values[:period]) / period  # SMA 初始化
+    for v in values[period:]:
+        ema = alpha * v + (1 - alpha) * ema
+    return ema
+
+
+def _compute_keltner_channel(klines: List[Dict[str, Any]], ema_period: int, atr_period: int, atr_factor: float) -> Dict[str, float]:
+    """凡人話: 計 Keltner Channel (對齊 marketopia.org 教學)
+
+    公式 (對齊 Chester Keltner 1960 標準):
+    - middle = EMA(period) of close
+    - upper = middle + atr_factor × ATR(atr_period)
+    - lower = middle - atr_factor × ATR(atr_period)
+
+    Returns: {"middle": float, "upper": float, "lower": float, "atr": float}
+    """
+    n = len(klines)
+    if n < max(ema_period, atr_period + 1):
+        return {"middle": 0.0, "upper": 0.0, "lower": 0.0, "atr": 0.0}
+    closes = [k["close"] for k in klines]
+    middle = _compute_ema(closes, ema_period)
+    atr = _calc_atr(klines, atr_period)
+    upper = middle + atr_factor * atr
+    lower = middle - atr_factor * atr
+    return {"middle": middle, "upper": upper, "lower": lower, "atr": atr}
+
+
+def _check_bb_kc_squeeze(
+    klines: List[Dict[str, Any]],
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    """凡人話: 對齊 thinkcapital.com / marketopia.org 教學, 計 BB / KC Squeeze 確認波動壓縮後真突破
+
+    Squeeze logic (對齊 John Carter TTM Squeeze 永久 rule):
+    - Squeeze active: BB 縮入 KC 內 (`upper_bb < upper_kc AND lower_bb > lower_kc`)
+      即係波動壓縮, std-dev 細過 ATR envelope
+    - Squeeze released: BB 突破 KC (`upper_bb > upper_kc OR lower_bb < lower_kc`)
+      即係波動擴張, 真突破開始
+
+    Returns: {
+        "bb_active": bool (BB 縮入 KC 內),
+        "bb_released": bool (BB 突破 KC),
+        "bb_width_pct": float (BB bandwidth / middle, 衡量波動壓縮程度),
+        "bb_upper": float, "bb_lower": float, "bb_middle": float,
+        "kc_upper": float, "kc_lower": float, "kc_middle": float,
+        "squeeze_threshold": float (對齊 thinkcapital.com Bandwidth < 20-period low),
+    }
+    """
+    if len(klines) < max(cfg.get("bbPeriod", 20), cfg.get("kcEMAPeriod", 20), cfg.get("kcATRFactor", 1.5) and 10 or 10) + 1:
+        return {
+            "bb_active": False, "bb_released": False, "bb_width_pct": 0.0,
+            "bb_upper": 0.0, "bb_lower": 0.0, "bb_middle": 0.0,
+            "kc_upper": 0.0, "kc_lower": 0.0, "kc_middle": 0.0,
+            "squeeze_threshold": 0.0,
+        }
+
+    closes = [k["close"] for k in klines]
+    bb = _compute_bollinger_bands(closes, cfg.get("bbPeriod", 20), cfg.get("bbStdDev", 2.0))
+    kc = _compute_keltner_channel(klines, cfg.get("kcEMAPeriod", 20), 10, cfg.get("kcATRFactor", 1.5))
+
+    # Squeeze active: BB 縮入 KC 內
+    bb_active = bb["upper"] < kc["upper"] and bb["lower"] > kc["lower"]
+    # Squeeze released: BB 突破 KC
+    bb_released = bb["upper"] > kc["upper"] or bb["lower"] < kc["lower"]
+
+    # bb_width_pct (對齊 thinkcapital.com Bandwidth metric)
+    bb_width_pct = (bb["bandwidth"] / bb["middle"]) if bb["middle"] > 0 else 0.0
+
+    return {
+        "bb_active": bb_active,
+        "bb_released": bb_released,
+        "bb_width_pct": _round(bb_width_pct, 6),
+        "bb_upper": _round(bb["upper"], 4),
+        "bb_lower": _round(bb["lower"], 4),
+        "bb_middle": _round(bb["middle"], 4),
+        "kc_upper": _round(kc["upper"], 4),
+        "kc_lower": _round(kc["lower"], 4),
+        "kc_middle": _round(kc["middle"], 4),
+        "squeeze_threshold": _round(bb_width_pct, 6),
+    }
+
+
 # ============================================================
 # Main algorithm
 # ============================================================
@@ -1000,15 +1118,23 @@ class HLStructureAlgorithm(Algorithm):
         # 凡人話: 對齊 M2 algorithm above_peak 邏輯, 拎走「連續 2 日」條件
         # 條件 (AND): candidate == sideways + latest close > 最近 peak × (1+tolerance) + 量能 OK
         # sub-condition: 最後一對峰谷差距 < 5% = 收縮突破 (大少 00019 太古 case)
+        # v0.4.0 Layer 4 (大少 11:45 plan): 加 BB/KC Squeeze 確認 (對齊 thinkcapital.com / marketopia.org 教學)
         breakout_result = {
             "enabled": False,
             "triggered": False,
             "above_peak": False,
             "vol_ok": False,
             "consolidation_ok": False,
+            "bb_kc_squeeze_ok": False,  # v0.4.0 Layer 4
             "breakout_level": None,
             "vol_ratio": 0,
             "trigger_type": None,  # "breakout" / "consolidation_breakout"
+            # v0.4.0 Layer 4: BB/KC Squeeze field (audit 對比用)
+            "bb_kc_squeeze": {
+                "bb_active": False, "bb_released": False, "bb_width_pct": 0.0,
+                "bb_upper": 0.0, "bb_lower": 0.0, "bb_middle": 0.0,
+                "kc_upper": 0.0, "kc_lower": 0.0, "kc_middle": 0.0,
+            },
         }
 
         if cfg.get("enableBreakoutOverride", True) and candidate == "sideways" and len(peak_exts) > 0:
@@ -1054,29 +1180,40 @@ class HLStructureAlgorithm(Algorithm):
                     gap_pct = (max_p - min_t) / mid
                     consolidation_ok = gap_pct < cfg.get("consolidationMaxGapPct", 0.05)
 
+            # v0.4.0 Layer 4: BB/KC Squeeze 確認 (對齊 thinkcapital.com / marketopia.org TTM Squeeze 教學)
+            bb_kc_squeeze_result = _check_bb_kc_squeeze(recent, cfg)
+            # Squeeze released = BB 突破 KC (對齊 John Carter TTM Squeeze 永久 rule)
+            bb_kc_squeeze_ok = bb_kc_squeeze_result["bb_released"]
+
             breakout_result.update({
                 "enabled": True,
                 "above_peak": above_peak,
                 "vol_ok": vol_ok,
                 "consolidation_ok": consolidation_ok,
+                "bb_kc_squeeze_ok": bb_kc_squeeze_ok,  # v0.4.0 Layer 4
                 "breakout_level": _round(breakout_level, 4),
                 "vol_ratio": _round(vol_ratio, 3),
+                "bb_kc_squeeze": bb_kc_squeeze_result,
             })
 
-            if above_peak and vol_ok:
+            # v0.4.0 Layer 4 條件: enableBBSqueezeFilter: True 必須 bb_kc_squeeze_ok 先 trigger breakout
+            bb_kc_squeeze_required = cfg.get("enableBBSqueezeFilter", True)
+            bb_kc_squeeze_pass = (not bb_kc_squeeze_required) or bb_kc_squeeze_ok
+
+            if above_peak and vol_ok and bb_kc_squeeze_pass:
                 candidate = "uptrend"
                 breakout_result["triggered"] = True
                 if consolidation_ok:
                     breakout_result["trigger_type"] = "consolidation_breakout"
                     pattern_alert = "consolidation_breakout"
                     adjustment_log.append(
-                        f"盤整突破確認: 收縮 {cfg.get('consolidationMaxGapPct', 0.05)*100:.0f}% + 升穿 peak × {multiplier:.3f} + 量能 {vol_ratio:.2f}x"
+                        f"盤整突破確認: 收縮 {cfg.get('consolidationMaxGapPct', 0.05)*100:.0f}% + 升穿 peak × {multiplier:.3f} + 量能 {vol_ratio:.2f}x + BB/KC Squeeze released"
                     )
                 else:
                     breakout_result["trigger_type"] = "breakout"
                     pattern_alert = "breakout"
                     adjustment_log.append(
-                        f"突破確認: 升穿 peak × {multiplier:.3f} + 量能 {vol_ratio:.2f}x 均量"
+                        f"突破確認: 升穿 peak × {multiplier:.3f} + 量能 {vol_ratio:.2f}x 均量 + BB/KC Squeeze released"
                     )
                 confidence_multiplier *= 0.85  # 突破 override 信心略降 (因為原本係 SIDEWAYS)
 
