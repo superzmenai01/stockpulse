@@ -31,6 +31,20 @@ window.BACKEND_URL = BACKEND_URL;
 // Debug helper: 大少撳開個 page 想睇 backend URL 實際指去邊, console.log 呢個就見到
 console.log(`[testing-page] BACKEND_URL = ${BACKEND_URL} (hostname: ${window.location.hostname})`);
 
+// 大少 9月7日 15:34 trigger「全面檢查 Testing page 的健康和 Base Code」audit 揭發 Issue #4:
+// backend `/api/algorithms/list` 返 10 algo (ma_alignment / hl_structure / trendline / indicators / volume_price /
+// volatility / synthesizer / back_test / decision_engine / zigzag), 但 testing page dropdown REGISTRY 11 個 entry
+// (M1/M2/M3/M4/M5/M6/M7/M9/M8/M11/zmen), 即 2 個唔對齊。對齊說明:
+// - testing page dropdown 11 個 entry 全部有對應 backend algo, 冇 dead dropdown entry
+// - `zigzag` backend algo 冇 dropdown entry, 但 testing page 喺 render layer 內部 fetch `/api/algorithms/run?algo=zigzag`
+//   拎紫色線 (見 line 200-223 _zigzagFetchController), 屬於 render-time 用而唔係 dropdown 揀
+// - 11 個 dropdown entry ↔ 10 個 backend algo 對應: zmen 喺 testing page 用 ma_alignment 嘅 Layer 1 邏輯
+//   (1-to-1 port, 對齊 zmen v1.0 spec doc, 唔係獨立 backend algo), 即 zmen dropdown entry 同 ma_alignment
+//   backend algo 共用, 所以 backend 拎 10 algo 已經夠 testing page 用
+// 永久 rule: testing page dropdown 11 entry, backend algo list 10 algo, zigzag 喺 render layer 內部 fetch 用
+// 對應 plan: Testing Page 全面健康 + Base Code Audit Plan §Action #2.3
+// 對應 audit: 大少 9月7日 15:34 trigger「全面檢查 Testing page 的健康和 Base Code」Issue #4 mental model 對齊
+
 // 大少 2026-08-29 19:54 — 還原 testing page 前後台 ZigZag 永久 rule
 // 凡人話: testing page 4.18.0 之後拎走咗 frontend calculateZigZag, 紫色線 100% 用 backend `/api/algorithms/run?algo=zigzag` 拎
 //         大少 trigger「我想你把前後台的都還完可以做到嗎?」, testing page frontend 還原返原本 frontend 算法 (1-to-1 port 落 backup)
@@ -600,7 +614,8 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 // 大少 2026-09-06 08:00 — M1 強升/強跌 trigger 拎走放量, 加紅字「🔴 放量確認」: ALGO_CACHE_BUST = '4.66.8' → '4.67.0' (adapter.mjs renderMAAlignmentV2Result 1 處改: data-summary 加 conditional volumeConfirmed row, 強升/強跌 + meta.volumeConfirmed=True → 紅字 "🔴 放量確認", 凡人話: trigger 強升/強跌嗰陣如果有放量, 大少睇 verdict card 即刻知量能確認, 大少 232 隻 A/B test 拎走放量 trigger 永久 rule, 對應 backend algorithm.py 同步拎走放量 trigger + 加 meta.volumeConfirmed field)
 // 大少 2026-09-06 16:47 — Fix M3 trendline chart overlay silent fail: ALGO_CACHE_BUST = '4.67.0' → '4.68.0' (adapter.mjs 3 處改: renderTrendlineChartOverlay guard 拎 verdict.meta (唔再拎 verdict.meta.meta, Phase 4 拎走 frontend 改 fetch backend 之後 verdict shape 已經係 verdict.meta.X) + 修正 line 3776-3778 + 3791 嘅 stale comment (line 內文「verdict.meta.meta」/「usedPoints 唔喺 verdict meta 內」) + 修正 fallback case 嘅 console.warn 拎錯 verdict.meta.meta → verdict.meta, 凡人話: 撳 M3 (AS-03-TL) 跑算法之後, 圖表永遠冇綠色支撐線 + 紅色壓力線, 因為 guard 拎 verdict.meta.meta 永遠 true → 永遠 early return, silent fail 因為 function 內 console.warn + return 唔 throw, testing page try/catch 嗰個 (line 1528-1534) catch 唔到, 大少肉眼睇唔到線, 改 1 行 guard 拎 verdict.meta 拎返; root cause 確認: curl backend /api/algorithms/run?algo=trendline&symbol=HK.00700 拎 evidence, meta.supportLine / meta.resistanceLine 直接喺 meta 下面, 冇 meta.meta wrapper; 永久 rule: renderTrendlineChartOverlay 嘅 guard 永遠拎 verdict.meta, frontend render function 拎 path 永遠 verdict.meta.X, 改 array/object access 之前必先 curl backend 拎 evidence 確認 (對齊 AGENTS.md 4.55.0 array evidence 永久 rule); commit fix 將會 bump ?v=2.3.146 → ?v=2.3.147)
 // 大少 2026-09-07 — M3 Spec Sync #45 Layer 1+2+4 對齊權威 source: ALGO_CACHE_BUST = '4.71.0' → '4.72.0' (testing-page.js 0 處改 + backend/algorithms/trendline 2 處改 + spec doc 1 處改: Layer 1 DFA multi-window + log-r² emit (對齊 Peng et al. 1994) + ADX +DI/-DI/ATR emit (對齊 Wilder 1978) + Layer 2 Bulkowski 條件 (minR2 0.55→0.6, minLineLength 30, minTouchSpacing 5, maxLineSlope 0.05) + Layer 4 confidence 4 維加權公式 (base 0.6 × R² × touches × volume × self-check penalty, clamp 0.3-0.95, 永久 ban conf=1.0); 404 stock audit baseline v0.1.4 → v0.3.0: over-confident 77→0 (-100%), SIDEWAYS 矛盾 14→7 (-50%), 罕見 SIDEWAYS 41→0 (-100%), conf≥0.9 94→0 (-100%); 凡人話: Layer 4 公式將有 self-check warning 嘅 stock conf 自動扣到 0.3 floor, 從此再冇 over-confident verdict; 對齊永久 rule §M3 self-check warning spirit (warning 觸發即扣 conf) + 永久 rule §Module Warning v1.1.0 + 永久 rule §M3 trendline chart overlay 修復 (frontend render 拎 verdict.meta.X, 唔再拎 verdict.meta.meta.X); 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.150 → ?v=2.3.151)
-const ALGO_CACHE_BUST = '4.72.0';
+// 大少 9月7日 15:34 trigger「全面檢查 Testing page 的健康和 Base Code」audit 揭發 Issue #4 對齊: ALGO_CACHE_BUST = '4.72.0' → '4.72.1' (testing-page.js 1 處改: line 33 附近加 inline 註解講清楚「backend /api/algorithms/list 返 10 algo, testing page dropdown 11 entry, zigzag 喺 render layer 內部 fetch 用」+ line 10 / 205 ?v=2.3.151 → ?v=2.3.152 對齊 cache bust self-check 永久 rule 21:24; backend algorithm 冇改, 純 documentation inline 註解對齊 mental model mismatch, 永久 rule §Array 邏輯必先 curl evidence 確認排法 spirit 對齊; 對應 plan: Testing Page 全面健康 + Base Code Audit Plan §Action #2.3)
+const ALGO_CACHE_BUST = '4.72.1';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
