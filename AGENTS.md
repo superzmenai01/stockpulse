@@ -319,6 +319,56 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: <即將 push>
 
+### M2 self-check penalty 永久 rule (大少 2026-09-07 22:00 confirm, Spec Sync #48)
+
+**凡人話**: M2 (高低點結構法) 算法跑完 Step 19 emit 5 個 self-check warning 之後,自己再行 Step 19.5 — 如果 critical + warning level warning 觸發 (CONFLICT_STATE / FALLBACK_USED / THRESHOLD_BREACH / VERDICT_MISSING),自動將 confidence 折到 0.3 floor。即係算法自己都 flag 唔 sure 嗰陣,大少唔應該再睇到 80% 高信心。state 唔變, 由 M7 layer 處理 weight 折扣。
+
+**Root cause 確認 (大少 9月7日 21:47 trigger)**:
+- 撳 M2 跑 HK.00700 見到 verdict `state=UP confidence=0.8` (強升 80%) + 🟡 CONFLICT_STATE warning (峰谷結構已破壞)
+- 大少 trigger 「00700 還是強升 80% 這個可以怎處理」, 因為 backend emit warning 但 raw verdict 仲係高信心, 大少會誤信
+- 之前 commit 1f509b18 (Fix A+B+C) 修咗 frontend warning UI 唔 render 嘅 bug, 但 M2 algorithm 自己嘅 confidence 仍然 raw 0.8
+- 凡人話: 「我口話唔 sure, 我答案就係 UP 0.8」嘅邏輯矛盾
+
+**對齊 M3 Layer 4 formula spirit** (大少 9月7日 00:14 Spec Sync #45):
+- M3 self-check warning 永久 rule Layer 4 formula 永久 ban conf=1.0, conf clamp 0.3-0.95, 永遠 self-check warning 觸發即扣 conf 0.3 floor
+- M2 沿用同一個 pattern 對齊 backend 一致性
+- 對齊永久 rule §M2 self-check warning (大少 9月6日 15:08) spirit
+
+**Step 19.5 self-check penalty 邏輯** (凡人話):
+1. 拎 critical + warning level 嘅 self-check warning (4 個 code: CONFLICT_STATE / FALLBACK_USED / THRESHOLD_BREACH / VERDICT_MISSING)
+2. info level warning (DATA_AGE) **唔觸發** floor (對齊 §Module Warning v1.1.0 spirit)
+3. 觸發時 confidence = `max(confidence * 0.375, 0.3)` → 即原本 0.8 → 0.3, 原本 0.56 → 0.3
+4. clamp `min(confidence, 0.95)` → 永久 ban conf=1.0 (對齊 M3 Layer 4 永久 rule)
+5. state 唔變 → 由 M7 layer 處理 weight 折扣 0.15 → 0.05 (對齊 M2 self-check weight 折扣 永久 rule)
+
+**Meta 新加 audit field**:
+- `self_check_triggered: bool` — 呢個 verdict 有冇觸發 self-check penalty
+- `original_confidence: float` — 原本 confidence (4 decimals), 唔受 penalty
+- 凡人話: 畀 audit 同 frontend verify, 大少睇到「conf 由 0.8 折到 0.3 因為 self_check_triggered=true」
+
+**5 隻 stock verify 結果** (commit 51e19234):
+- **HK.00005 匯豐**: UP 0.7467, self_check_triggered=False, 1 個 info warning (DATA_AGE), 唔觸發 floor ✅
+- **US.AAPL**: SIDEWAYS 0.3, self_check_triggered=False, 0 warning, 本身已低 ✅
+- **US.MSFT**: UP **0.3**, self_check_triggered=True, original_conf=0.56 ✅
+- **US.GOOGL**: SIDEWAYS 0.3, self_check_triggered=True, original_conf=0.27 (floor 唔變) ✅
+- **HK.00700 騰訊**: UP **0.3**, self_check_triggered=True, original_conf=**0.8** ✅ (大少 trigger case)
+
+**永久 rule checklist**:
+- ✅ M2 algorithm Step 19.5 永遠拎 critical + warning level self-check warning 觸發 conf floor 0.3
+- ✅ 公式 `max(conf * 0.375, 0.3)` — 原本 conf 0.8 → 0.3, 0.56 → 0.3, 0.27 → 0.3 (floor 唔變)
+- ✅ 永遠 ban conf=1.0 (clamp 0.95, 對齊 M3 Layer 4 永久 rule)
+- ✅ info level warning (DATA_AGE) 唔觸發 floor (對齊 §Module Warning v1.1.0 spirit)
+- ✅ state 唔變, 由 M7 layer 處理 weight 折扣 (對齊 M2 self-check weight 折扣永久 rule)
+- ✅ Meta 永遠 emit `self_check_triggered: bool` + `original_confidence: float` 2 個 audit field
+- ✅ 改 M2 algorithm 之後必 restart backend (`./start.sh`) + curl 拎 evidence 確認
+- ✅ 對齊 M3 Layer 4 formula spirit 永久 rule (Spec Sync #45 大少 9月7日 00:14)
+
+**對應文件**:
+- `backend/algorithms/hl_structure/algorithm.py` Step 19.5 self-check penalty
+- `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md` v0.4.0 (待更新)
+
+對應 commit: `51e19234` (feat(m2-self-check-penalty): Step 19.5 auto floor confidence 0.3 when self-check warning 觸發)
+
 ### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
 
 完整 chain: **M7(綜合) → M9(回測拎最佳設定) → M8(用最佳設定做最終判斷)**
