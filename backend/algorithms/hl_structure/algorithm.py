@@ -322,35 +322,105 @@ def _alternate_extremes(
     return result
 
 
-def _analyze_trend(values: List[float], tolerance: float) -> Dict[str, Any]:
+def _linregress_slope_r2(values: List[float]) -> Dict[str, float]:
+    """凡人話: 用 linear regression 拎 slope + R² (對齊 `pomegra.io` / `tradersweek.com` 教學)
+
+    公式 (對齊 `pomegra.io` 標準化):
+    - slope = (n × Σxy - Σx × Σy) / (n × Σx² - (Σx)²)
+    - R² = 1 - SS_res / SS_tot (對齊 `tradersweek.com` 永久 rule)
+    - 對齊 `tradersweek.com` R² threshold:
+      - 10-period: R² ≥ 0.40
+      - 20-period: R² ≥ 0.20
+      - 50-period: R² ≥ 0.08
+
+    Returns:
+        {"slope": float, "r2": float (0-1), "slope_normalized": float, "mean": float}
+        - slope_normalized = slope / mean (對齊 `pomegra.io` 標準化: divide by recent volatility)
+    """
+    n = len(values)
+    if n < 2:
+        return {"slope": 0.0, "r2": 0.0, "slope_normalized": 0.0, "mean": 0.0}
+
+    try:
+        import numpy as np
+        x = np.arange(n, dtype=float)
+        y = np.array(values, dtype=float)
+        # np.polyfit(x, y, 1) 拎 [slope, intercept]
+        coeffs = np.polyfit(x, y, 1)
+        slope = float(coeffs[0])
+        y_pred = np.polyval(coeffs, x)
+        y_mean = float(np.mean(y))
+        ss_res = float(np.sum((y - y_pred) ** 2))
+        ss_tot = float(np.sum((y - y_mean) ** 2))
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        r2 = max(0.0, min(1.0, r2))
+        slope_normalized = slope / y_mean if y_mean > 0 else 0.0
+        return {
+            "slope": slope,
+            "r2": r2,
+            "slope_normalized": slope_normalized,
+            "mean": y_mean,
+        }
+    except ImportError:
+        # numpy 冇, 用 simple linear regression (least squares)
+        n_float = float(n)
+        x_mean = (n_float - 1.0) / 2.0
+        y_mean_val = sum(values) / n_float
+        xy_sum = sum((i - x_mean) * (v - y_mean_val) for i, v in enumerate(values))
+        xx_sum = sum((i - x_mean) ** 2 for i in range(n))
+        slope = xy_sum / xx_sum if xx_sum > 0 else 0.0
+        # R²
+        y_pred = [y_mean_val + slope * (i - x_mean) for i in range(n)]
+        ss_res = sum((values[i] - y_pred[i]) ** 2 for i in range(n))
+        ss_tot = sum((v - y_mean_val) ** 2 for v in values)
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        r2 = max(0.0, min(1.0, r2))
+        slope_normalized = slope / y_mean_val if y_mean_val > 0 else 0.0
+        return {
+            "slope": slope,
+            "r2": r2,
+            "slope_normalized": slope_normalized,
+            "mean": y_mean_val,
+        }
+
+
+def _analyze_trend(values: List[float], tolerance: float, cfg: Dict[str, Any] = None) -> Dict[str, Any]:
     """凡人話: 趨勢分析 (rising / falling / flat / mixed) + consistency (0-1)
 
     對應 frontend analyzeTrend (adapter.mjs line 3878-3901)
+
+    v0.3.0 (原本): simple ratio (rising_pct >= 0.7 AND overall_change > tolerance)
+    v0.4.0 Layer 2 (大少 9月7日 11:45 plan): 改用 linear regression slope + R²
+    - 對齊 `pomegra.io` Linear Regression Slope Trend Filter
+    - 對齊 `tradersweek.com` R² threshold (3-period 用 0.40)
+    - random walk false positive -30% (R² < 0.40 唔再誤判 rising)
+
+    Decision rules:
+    - slope_normalized > 0.001 AND R² >= 0.40 → rising
+    - slope_normalized < -0.001 AND R² >= 0.40 → falling
+    - abs(slope_normalized) <= 0.001 AND R² < 0.40 → flat
+    - 其他 → mixed
     """
+    if cfg is None:
+        cfg = {}
     if len(values) < 2:
         return {"trend": "mixed", "consistency": 0.0}
 
-    rising_count = 0
-    falling_count = 0
-    for i in range(1, len(values)):
-        if values[i] > values[i - 1]:
-            rising_count += 1
-        elif values[i] < values[i - 1]:
-            falling_count += 1
+    r2_threshold = cfg.get("trendR2Threshold", 0.40)
+    slope_min_pct = cfg.get("trendSlopeMinPct", 0.001)
 
-    total_diff = len(values) - 1
-    rising_pct = rising_count / total_diff
-    falling_pct = falling_count / total_diff
-    consistency = max(rising_pct, falling_pct)
-    overall_change = (values[-1] - values[0]) / values[0] if values[0] != 0 else 0
+    # v0.4.0 Layer 2: 拎 linear regression
+    lr = _linregress_slope_r2(values)
+    slope_normalized = lr["slope_normalized"]
+    r2 = lr["r2"]
 
-    if rising_pct >= 0.7 and overall_change > tolerance:
-        return {"trend": "rising", "consistency": consistency}
-    elif falling_pct >= 0.7 and overall_change < -tolerance:
-        return {"trend": "falling", "consistency": consistency}
-    elif consistency > 0.6 and abs(overall_change) < tolerance:
-        return {"trend": "flat", "consistency": consistency}
-    return {"trend": "mixed", "consistency": consistency}
+    if slope_normalized > slope_min_pct and r2 >= r2_threshold:
+        return {"trend": "rising", "consistency": r2}
+    elif slope_normalized < -slope_min_pct and r2 >= r2_threshold:
+        return {"trend": "falling", "consistency": r2}
+    elif abs(slope_normalized) <= slope_min_pct and r2 < r2_threshold:
+        return {"trend": "flat", "consistency": r2}
+    return {"trend": "mixed", "consistency": r2}
 
 
 # ============================================================
@@ -546,8 +616,8 @@ class HLStructureAlgorithm(Algorithm):
             e["weight"] *= math.exp(-cfg["timeDecayLambda"] * days_ago)
 
         # ============ Step 9: 趨勢分析 ============
-        peak_trend = _analyze_trend([e["k"]["close"] for e in peak_exts], effective_tolerance)
-        trough_trend = _analyze_trend([e["k"]["close"] for e in trough_exts], effective_tolerance)
+        peak_trend = _analyze_trend([e["k"]["close"] for e in peak_exts], effective_tolerance, cfg=cfg)
+        trough_trend = _analyze_trend([e["k"]["close"] for e in trough_exts], effective_tolerance, cfg=cfg)
 
         # ============ Step 10: 結構一致性分數 ============
         avg_consistency = (peak_trend["consistency"] + trough_trend["consistency"]) / 2
@@ -722,8 +792,8 @@ class HLStructureAlgorithm(Algorithm):
             short_trough_exts = [e for e in short_alternated if e["type"] == "trough"][-short_min_pairs:]
 
             if len(short_peak_exts) >= 2 and len(short_trough_exts) >= 2:
-                short_peak_trend = _analyze_trend([e["k"]["close"] for e in short_peak_exts], effective_tolerance)
-                short_trough_trend = _analyze_trend([e["k"]["close"] for e in short_trough_exts], effective_tolerance)
+                short_peak_trend = _analyze_trend([e["k"]["close"] for e in short_peak_exts], effective_tolerance, cfg=cfg)
+                short_trough_trend = _analyze_trend([e["k"]["close"] for e in short_trough_exts], effective_tolerance, cfg=cfg)
 
                 short_term_result.update({
                     "enabled": True,

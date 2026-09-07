@@ -64,4 +64,7 @@ DEFAULT_HL_STRUCTURE_CONFIG: dict = {
     # === v0.4.0 Layer 1 新加 (大少 2026-09-07 11:45 plan 批准) ===
     "enableSavitzkyGolayFilter": True,    # 開住 Savitzky-Golay 平滑, 抹走 noise peak/trough
     "prominenceMinPct": 0.02,             # prominence 過濾 threshold (2% = peak_value 嘅 2% 突出度先留)
+    # === v0.4.0 Layer 2 新加 (大少 2026-09-07 11:45 plan 批准) ===
+    "trendR2Threshold": 0.40,             # linear regression R² threshold (3-period 對齊 tradersweek.com 10-period 永久 rule)
+    "trendSlopeMinPct": 0.001,            # slope_normalized 最小百分比 (對齊 pomegra.io 標準化)
 }
