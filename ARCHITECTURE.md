@@ -3643,6 +3643,17 @@ for retry_attempt in range(max_retries):
 - 之後 testing page 任何 UX 改動, 全部 client-side frontend 改動, 唔需要 restart backend
 - 之後任何 algorithm 加新嘅 chart 互動 control, 排喺 chart-section 入面 chart-container 之前 (跟 Spec Sync #32 chart-control layout 永久 rule)
 - 之後 StockPulse 其他 input 欄位 (e.g. paper trading, trade journal) 可以套用 onfocus auto-select pattern
+
+### Spec Sync #46 (大少 2026-09-07 17:23) — dataWindowDays frontend inputs 表單 audit + testing page 換 stock 強制 reset
+
+凡人話: testing page 永久 rule 2026-08-14 23:15 講明 `dataWindowDays` 永遠用 5 年 (1260), 但 frontend `adapter.mjs` 嘅 M3 / M4 / M5 / M6 4 個 module `inputs` 表單**漏咗改** (default 仍然 100), 加上 testing page 換 stock 嗰陣 `onAlgorithmChange()` 唔觸發, stale `dataWindowDays=100` 永遠累積, 撞到新股 / 細股 KlineCache 拎唔到 100 條 K 線就 400。3 層同步修 (frontend inputs 表單 + frontend 換 stock 強制 reset + backend 0 K 線 / n<30 改 `ok=True` + warning), 永久 rule 加咗落 AGENTS.md「dataWindowDays frontend inputs 表單 audit 永久 rule」section。詳見 README.md Spec Sync #46 entry + AGENTS.md 永久 rule section + plan.md `/Users/zmenai/.minimax/v2/sessions/2026/09/07/09-21-32-723-session_bXZzX2U1OTk5N2QwMjE5NTRhNTlhNWNhNjZkODliM2M3MTUx/artifacts/plan.md`.
+
+對應 commit: 即將 push (Spec Sync #46)
+
+### 套用情境 — Spec Sync #46
+- 之後任何 module 嘅 `inputs` 表單必先 grep `dataWindowDays.*100\|dataWindowDays.*300` 對齊永久 rule (M2 例外, M2 永久 rule 講 3 pairs alternating 結構需要 default 300)
+- 之後 testing page 加新換 stock / 換 algorithm entry point 必強制 reset `currentOptions.dataWindowDays = 1260` 同步落 DOM
+- 之後 backend algorithm 對「冇 K 線」/「n < min_required」case 永遠返 `ok=True` + 帶 `INSUFFICIENT_DATA` warning, 唔再 return `ok=False` 400 (永久 rule: verdict 仲可信)
 - 之後 StockPulse 其他 autocomplete 可以套用 Tab/Enter/Space HotKey pattern
 
 ### 15.37 M1 Sub-scenario Trigger 用 Backend ZigZag + P1/P2/P3/P4 Indexing 永久 rule (大少 2026-08-29 15:42, Spec Sync #46)

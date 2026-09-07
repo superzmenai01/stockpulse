@@ -212,17 +212,33 @@ def run_algorithm(
         klines = klines[-data_window_days:]
 
     if not klines:
+        # 大少 2026-09-07 17:23 fix (Spec Sync #46) — 對「冇 K 線」case 返 ok=True + INSUFFICIENT_DATA warning
+        # 凡人話: 對新股 / 細股 / 停牌 / FutuOpenD 拎唔到 K 線嘅 stock, verdict 仲可信
+        # (verdict 本身就係 SIDEWAYS 0.3 + system warning), frontend 拎到就
+        # 顯示「揀錯股票 / 新股 / 停牌」user-friendly 訊息
+        # 對齊永久 rule §Module Warning v1.1.0 — category "system" 因為 verdict 可能唔可信 (冇 data)
+        # 對齊永久 rule §dataWindowDays frontend inputs 表單 audit (2026-09-07 17:23)
+        from backend.services.warning_collector import make_warning
+        insufficient_warning = make_warning(
+            level="info",
+            module_id="SYSTEM",
+            code="INSUFFICIENT_DATA",
+            message=f"{symbol} {period} 冇 K 線 data (data_window_days={data_window_days})",
+            issue=f"Symbol {symbol} 拎唔到 K 線, 可能係新股 / 細股 / 停牌 / FutuOpenD 拎唔到 / cold cache",
+            impact="Verdict 唔可信 (冇 K 線 data), 唔好落單",
+            fix="檢查 stock code 對唔對 / 等上市後再跑 / 檢查 FutuOpenD 連線 / Re-run",
+        ).to_dict()
         return {
-            "ok": False,
+            "ok": True,        # False → True (永久 rule: 0 K 線 verdict 仲可信, 只係 system warning)
             "algorithm": algo_name,
             "version": algo.version,
             "symbol": symbol,
             "period": period,
             "klines_count": 0,
             "points": [],
-            "meta": {},
-            "warnings": [],
-            "error": f"{symbol} {period} 冇 K 線 data (可能 OpenD 未連接或 cold cache)",
+            "meta": {"state": "SIDEWAYS", "confidence": 0.3, "reason": "insufficient_klines", "klines_count": 0},
+            "warnings": [insufficient_warning],
+            "error": None,     # 唔再 error, verdict 仲可信 (frontend 拎 warning 就知點解)
         }
 
     # 3. 跑 algorithm

@@ -697,9 +697,33 @@ class TrendlineAlgorithm(Algorithm):
         # ============ Step 1: 數據驗證 ============
         min_required = 30
         if n < min_required:
+            # 大少 2026-09-07 17:23 fix (Spec Sync #46) — 對「n < min_required」case 改返 ok=True + INSUFFICIENT_DATA warning
+            # 對齊 RC-3 永久 fix: algorithm 跑完成但 verdict 唔可信 → 200 + warning, 唔再 400
+            # 對齊永久 rule §Module Warning v1.1.0 — category "system" 因為 verdict 可能唔可信
+            # 對齊永久 rule §dataWindowDays frontend inputs 表單 audit (2026-09-07 17:23)
+            from backend.services.warning_collector import make_warning
+            insufficient_warning = make_warning(
+                level="info",
+                module_id="M3",
+                code="INSUFFICIENT_DATA",
+                message=f"M3 trendline 數據唔夠: need ≥ {min_required} bars, got {n}",
+                issue=f"拎到 {n} 條 K 線, trendline 至少要 {min_required} 條先 fit 到線性回歸",
+                impact="Verdict 唔可信 (數據太少, linear regression 唔穩), 唔好落單",
+                fix="加大 dataWindowDays / 檢查 stock 上市時間 / 加大 minLineLength / 換 stock 試下",
+            ).to_dict()
             return Verdict(
-                ok=False,
-                error=f"[Trendline] Insufficient data: need ≥ {min_required} bars, got {n}",
+                ok=True,         # False → True (永久 rule: verdict 仲可信, 帶 warning)
+                points=[],
+                meta={
+                    "moduleId": "trendline",
+                    "state": "SIDEWAYS",
+                    "cycle_label": "橫行",
+                    "confidence": 0.3,
+                    "dataDays": n,
+                    "minRequired": min_required,
+                    "reason": "insufficient_data",
+                },
+                warnings=[insufficient_warning],
             )
 
         data_window_days = options.get("dataWindowDays", n)

@@ -2186,7 +2186,7 @@ async function analyzeVolumePrice(klines, options = {}) {
   const BACKEND_URL = (typeof window !== "undefined" && window.BACKEND_URL) || "http://localhost:18792";
   const symbol = options.code || options.symbol || "UNKNOWN";
   const period = options.period || "1d";
-  const dataWindowDays = options.dataWindowDays || 100;  // M5 frontend 默認 100 日 (2026-08-07)
+  const dataWindowDays = options.dataWindowDays || 1260;  // M5 frontend 默認 1260 日 (2026-08-14 23:15 永久 rule, Spec Sync #46 大少 2026-09-07 17:23)
 
   const url = `${BACKEND_URL}/api/algorithms/run?algo=volume_price&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&data_window_days=${dataWindowDays}`;
 
@@ -2581,11 +2581,11 @@ export const volumePriceAdapter = {
     },
     {
       key: 'dataWindowDays',
-      label: '取數據日數',
+      label: '取數據日數 (5 年 K 線, 對齊 M9, 永久 rule: 大少 2026-08-14 23:15)',
       type: 'number',
-      default: 100,
-      min: 80,
-      max: 500,
+      default: 1260,        // 100 → 1260 (永久 rule 2026-08-14 23:15, Spec Sync #46 大少 2026-09-07 17:23)
+      min: 200,             // 80 → 200
+      max: 2520,            // 500 → 2520 (10 年)
     },
   ],
   analyze: analyzeVolumePrice,
@@ -2640,7 +2640,7 @@ async function analyzeVolatility(klines, options = {}) {
   const BACKEND_URL = (typeof window !== "undefined" && window.BACKEND_URL) || "http://localhost:18792";
   const symbol = options.code || options.symbol || "UNKNOWN";
   const period = options.period || "1d";
-  const dataWindowDays = options.dataWindowDays || 100;  // M6 frontend 默認 100 日 (2026-08-07)
+  const dataWindowDays = options.dataWindowDays || 1260;  // M6 frontend 默認 1260 日 (2026-08-14 23:15 永久 rule, Spec Sync #46 大少 2026-09-07 17:23)
 
   const url = `${BACKEND_URL}/api/algorithms/run?algo=volatility&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&data_window_days=${dataWindowDays}`;
 
@@ -2800,7 +2800,7 @@ export const volatilityAdapter = {
   inputs: [
     { key: 'code', label: '股票代碼', type: 'autocomplete', required: true, endpoint: '/api/stocks/search', queryParam: 'q', placeholder: '輸入代碼或名稱', limit: 10, marketFn: 'auto' },
     { key: 'period', label: '時間週期', type: 'select', options: [{ value: '1d', label: '日線' }, { value: '1w', label: '週線' }], default: '1d' },
-    { key: 'dataWindowDays', label: '取數據日數', type: 'number', default: 100, min: 80, max: 500 },
+    { key: 'dataWindowDays', label: '取數據日數 (5 年 K 線, 對齊 M9, 永久 rule: 大少 2026-08-14 23:15)', type: 'number', default: 1260, min: 200, max: 2520 },
   ],
   analyze: analyzeVolatility,
   renderResult: renderVolatilityResult,
@@ -3521,7 +3521,25 @@ function renderTrendlineResult(verdict) {
     <p>💡 <strong>點睇呢個結果</strong>: 等待突破方向, 配合 M6 Volatility Squeeze 訊號捕捉突破時機。</p>
   `;
 
+  // 大少 2026-09-07 17:23 fix (Spec Sync #46) — user-friendly box 對「冇 K 線」case
+  // 凡人話: 對大少肉眼顯示「揀錯股票 / 新股 / 停牌」user-friendly 提示
+  // 對齊永久 rule §dataWindowDays frontend inputs 表單 audit
+  // 對齊永久 rule §Module Warning v1.1.0 — `INSUFFICIENT_DATA` 永遠 critical, 對應 system category
+  // 用 verdict.warnings 拎 (backend Verdict.warnings 喺 top level, 唔係 _warnings — Spec Sync #46 note frontend 拎路徑統一)
+  const insufficientWarning = (verdict.warnings || []).find(
+    w => w.code === 'INSUFFICIENT_DATA' && (w.module_id === 'M3' || w.module_id === 'SYSTEM')
+  );
+  let userFriendlyBox = '';
+  if (insufficientWarning || verdict.meta.dataDays === 0 || verdict.meta.reason === 'insufficient_klines' || verdict.meta.reason === 'insufficient_data') {
+    userFriendlyBox = `
+      <div style="background: #fff7e6; border: 1px solid #ffa940; border-radius: 4px; padding: 12px 16px; margin-bottom: 12px; color: #874d00;">
+        ⚠️ <strong>呢個 stock 拎唔到 K 線</strong> (可能係新股 / 細股 / 停牌 / FutuOpenD 拎唔到), verdict 暫時 SIDEWAYS 0.3, 等有 K 線再跑
+      </div>
+    `;
+  }
+
   return `
+    ${userFriendlyBox}
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
         <h3 class="module-header">📈 趨勢線法 (Trendline)</h3>
@@ -3935,11 +3953,11 @@ export const trendlineAdapter = {
     },
     {
       key: 'dataWindowDays',
-      label: '取數據日數',
+      label: '取數據日數 (5 年 K 線, 對齊 M9, 永久 rule: 大少 2026-08-14 23:15)',
       type: 'number',
-      default: 100,
-      min: 30,
-      max: 500,
+      default: 1260,        // 100 → 1260 (永久 rule 2026-08-14 23:15, Spec Sync #46 大少 2026-09-07 17:23)
+      min: 200,             // 30 → 200 (backend Bulkowski condition 至少要 200 日先 fit 到線性回歸)
+      max: 2520,            // 500 → 2520 (10 年, 對齊 1M 週期)
     },
   ],
   analyze: analyzeTrendline,
@@ -3975,7 +3993,7 @@ async function analyzeIndicators(klines, options = {}) {
   const BACKEND_URL = (typeof window !== "undefined" && window.BACKEND_URL) || "http://localhost:18792";
   const symbol = options.code || options.symbol || "UNKNOWN";
   const period = options.period || "1d";
-  const dataWindowDays = options.dataWindowDays || 100;  // M4 frontend 默認 100 日 (2026-08-07)
+  const dataWindowDays = options.dataWindowDays || 1260;  // M4 frontend 默認 1260 日 (2026-08-14 23:15 永久 rule, Spec Sync #46 大少 2026-09-07 17:23)
 
   const url = `${BACKEND_URL}/api/algorithms/run?algo=indicators&symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&data_window_days=${dataWindowDays}`;
 

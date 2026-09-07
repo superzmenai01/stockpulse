@@ -614,8 +614,8 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 // 大少 2026-09-06 08:00 — M1 強升/強跌 trigger 拎走放量, 加紅字「🔴 放量確認」: ALGO_CACHE_BUST = '4.66.8' → '4.67.0' (adapter.mjs renderMAAlignmentV2Result 1 處改: data-summary 加 conditional volumeConfirmed row, 強升/強跌 + meta.volumeConfirmed=True → 紅字 "🔴 放量確認", 凡人話: trigger 強升/強跌嗰陣如果有放量, 大少睇 verdict card 即刻知量能確認, 大少 232 隻 A/B test 拎走放量 trigger 永久 rule, 對應 backend algorithm.py 同步拎走放量 trigger + 加 meta.volumeConfirmed field)
 // 大少 2026-09-06 16:47 — Fix M3 trendline chart overlay silent fail: ALGO_CACHE_BUST = '4.67.0' → '4.68.0' (adapter.mjs 3 處改: renderTrendlineChartOverlay guard 拎 verdict.meta (唔再拎 verdict.meta.meta, Phase 4 拎走 frontend 改 fetch backend 之後 verdict shape 已經係 verdict.meta.X) + 修正 line 3776-3778 + 3791 嘅 stale comment (line 內文「verdict.meta.meta」/「usedPoints 唔喺 verdict meta 內」) + 修正 fallback case 嘅 console.warn 拎錯 verdict.meta.meta → verdict.meta, 凡人話: 撳 M3 (AS-03-TL) 跑算法之後, 圖表永遠冇綠色支撐線 + 紅色壓力線, 因為 guard 拎 verdict.meta.meta 永遠 true → 永遠 early return, silent fail 因為 function 內 console.warn + return 唔 throw, testing page try/catch 嗰個 (line 1528-1534) catch 唔到, 大少肉眼睇唔到線, 改 1 行 guard 拎 verdict.meta 拎返; root cause 確認: curl backend /api/algorithms/run?algo=trendline&symbol=HK.00700 拎 evidence, meta.supportLine / meta.resistanceLine 直接喺 meta 下面, 冇 meta.meta wrapper; 永久 rule: renderTrendlineChartOverlay 嘅 guard 永遠拎 verdict.meta, frontend render function 拎 path 永遠 verdict.meta.X, 改 array/object access 之前必先 curl backend 拎 evidence 確認 (對齊 AGENTS.md 4.55.0 array evidence 永久 rule); commit fix 將會 bump ?v=2.3.146 → ?v=2.3.147)
 // 大少 2026-09-07 — M3 Spec Sync #45 Layer 1+2+4 對齊權威 source: ALGO_CACHE_BUST = '4.71.0' → '4.72.0' (testing-page.js 0 處改 + backend/algorithms/trendline 2 處改 + spec doc 1 處改: Layer 1 DFA multi-window + log-r² emit (對齊 Peng et al. 1994) + ADX +DI/-DI/ATR emit (對齊 Wilder 1978) + Layer 2 Bulkowski 條件 (minR2 0.55→0.6, minLineLength 30, minTouchSpacing 5, maxLineSlope 0.05) + Layer 4 confidence 4 維加權公式 (base 0.6 × R² × touches × volume × self-check penalty, clamp 0.3-0.95, 永久 ban conf=1.0); 404 stock audit baseline v0.1.4 → v0.3.0: over-confident 77→0 (-100%), SIDEWAYS 矛盾 14→7 (-50%), 罕見 SIDEWAYS 41→0 (-100%), conf≥0.9 94→0 (-100%); 凡人話: Layer 4 公式將有 self-check warning 嘅 stock conf 自動扣到 0.3 floor, 從此再冇 over-confident verdict; 對齊永久 rule §M3 self-check warning spirit (warning 觸發即扣 conf) + 永久 rule §Module Warning v1.1.0 + 永久 rule §M3 trendline chart overlay 修復 (frontend render 拎 verdict.meta.X, 唔再拎 verdict.meta.meta.X); 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.150 → ?v=2.3.151)
-// 大少 9月7日 15:34 trigger「全面檢查 Testing page 的健康和 Base Code」audit 揭發 Issue #4 對齊: ALGO_CACHE_BUST = '4.72.0' → '4.72.1' (testing-page.js 1 處改: line 33 附近加 inline 註解講清楚「backend /api/algorithms/list 返 10 algo, testing page dropdown 11 entry, zigzag 喺 render layer 內部 fetch 用」+ line 10 / 205 ?v=2.3.151 → ?v=2.3.152 對齊 cache bust self-check 永久 rule 21:24; backend algorithm 冇改, 純 documentation inline 註解對齊 mental model mismatch, 永久 rule §Array 邏輯必先 curl evidence 確認排法 spirit 對齊; 對應 plan: Testing Page 全面健康 + Base Code Audit Plan §Action #2.3)
-const ALGO_CACHE_BUST = '4.72.1';
+// 大少 2026-09-07 17:23 — Spec Sync #46 dataWindowDays frontend inputs 表單 audit + testing page 換 stock 強制 reset: ALGO_CACHE_BUST = '4.72.0' → '4.73.0' (adapter.mjs 6 處改: M3 inputs default 100→1260 min 30→200 max 500→2520 + M5 inputs default 100→1260 min 80→200 max 500→2520 + M6 inputs default 100→1260 min 80→200 max 500→2520 + M4 stub 默認 || 100 → || 1260 + M5 stub 默認 || 100 → || 1260 + M6 stub 默認 || 100 → || 1260 + renderTrendlineResult prepend user-friendly box 對「冇 K 線」case (新 stock / 細股 / 停牌 / FutuOpenD 拎唔到) + testing-page.js 3 處改: renderNumber onChange handler clamp dataWindowDays 200-2520 對齊 backend Bulkowski condition + runAlgorithm 撳跑前強制 reset currentOptions.dataWindowDays = 1260 + 同步落 DOM 避免 stale + runFullChain 撳跑前同樣強制 reset; backend 2 處改: algorithm_runner.py line 214 「冇 K 線」case 改返 ok=True + 帶 critical INSUFFICIENT_DATA warning (永久 rule auto-enforce level) + trendline/algorithm.py line 698-703 n < 30 case 改返 ok=True + 帶 INSUFFICIENT_DATA warning; Spec Sync #46 spec doc 4 份 sync)
+const ALGO_CACHE_BUST = '4.73.0';
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -1062,7 +1062,18 @@ function renderNumber(input) {
 
   const updateValue = () => {
     const v = parseFloat(inputEl.value);
-    currentOptions[input.key] = isNaN(v) ? inputEl.value : v;
+    // 大少 2026-09-07 17:23 fix (Spec Sync #46) — clamp dataWindowDays 200-2520
+    // 凡人話: backend Bulkowski condition 至少要 200 日先 fit 到線性回歸, 2520 對齊 10 年上限
+    // 對齊永久 rule §dataWindowDays frontend inputs 表單 audit
+    if (input.key === 'dataWindowDays') {
+      if (isNaN(v)) {
+        currentOptions[input.key] = 1260;  // 默認 5 年 (永久 rule 2026-08-14 23:15)
+      } else {
+        currentOptions[input.key] = Math.max(200, Math.min(2520, v));
+      }
+    } else {
+      currentOptions[input.key] = isNaN(v) ? inputEl.value : v;
+    }
   };
   inputEl.addEventListener('input', updateValue);
   inputEl.addEventListener('change', updateValue);
@@ -1355,6 +1366,13 @@ async function runAlgorithm() {
   // 大少 11:49 揀 B 修 Bug 1: 永遠讀 DOM value 直接 sync, 避免 'input' event race condition
   // (之前 fill 觸發 'input' event 仲未 process 完, click button 已經 fire, currentOptions.code 仲係舊 value)
   // 大少 12:03 Bug 1 fix 位置錯誤修正: 將 fix 移去 return check 之前, 否則 race condition 真係發生時 fix 永遠到唔到
+  // 大少 2026-09-07 17:23 fix (Spec Sync #46) — 換 stock 強制 reset dataWindowDays 為 1260
+  // (RC-2 永久 fix: 換 stock 唔觸發 onAlgorithmChange, stale 100 累積 → 400)
+  // 對齊永久 rule 2026-08-14 23:15 (dataWindowDays 永遠 5 年)
+  currentOptions.dataWindowDays = 1260;
+  const dwInput = document.getElementById('input-dataWindowDays');
+  if (dwInput) dwInput.value = '1260';
+
   const codeInputEl = document.getElementById('input-code');
   if (codeInputEl && codeInputEl.value) {
     currentOptions.code = codeInputEl.value;
@@ -2399,6 +2417,11 @@ trendlineToggleEls.forEach((el) => {
 
 async function runFullChain() {
   // 1. 同步 code (跟 runAlgorithm 一樣, 避免 race condition)
+  // 大少 2026-09-07 17:23 fix (Spec Sync #46) — 換 stock 強制 reset dataWindowDays 為 1260 (對齊 runAlgorithm)
+  currentOptions.dataWindowDays = 1260;
+  const dwInput = document.getElementById('input-dataWindowDays');
+  if (dwInput) dwInput.value = '1260';
+
   const codeInputEl = document.getElementById('input-code');
   if (codeInputEl && codeInputEl.value) {
     currentOptions.code = codeInputEl.value;

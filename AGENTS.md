@@ -501,6 +501,43 @@ if existing_history is not None:
 
 對應 commit: 即將 push (dataWindowDays 默認 100 → 1260 + CONFIG_DEFAULTS trigger 移除)
 
+### dataWindowDays frontend inputs 表單 audit 永久 rule (大少 2026-09-07 17:23 confirm, Spec Sync #46)
+
+**凡人話解釋**: testing page 永久 rule 2026-08-14 23:15 講明 `dataWindowDays` 永遠用 5 年 (1260), 但 frontend `adapter.mjs` 嘅各 module `inputs` 表單**漏咗改** (M3 / M4 / M5 / M6 4 個 module default 仍然 100, 漏 sync 永久 rule), 導致大少喺 testing page 換 stock 嗰陣 frontend 永遠送 100 畀 backend, 撞到新股 / 細股 KlineCache 拎唔到 100 條 K 線就 400。對齊 2026-08-14 23:15 永久 rule spirit, audit 全部 frontend `inputs` 表單一律 1260, 加 testing page 換 stock 強制 reset 避免 stale state 累積。
+
+**永久 rule checklist**:
+- ✅ testing page 任何 module 嘅 `inputs` 表單 `dataWindowDays` default 永遠 1260 (5 年, 對 long-history 股票最 safe)
+- ✅ min 200 (backend Bulkowski condition 至少要 200 日先 fit 到線性回歸)
+- ✅ max 2520 (10 年, 對齊 1M 週期)
+- ✅ frontend `analyzeXxx` stub fallback `options.dataWindowDays || 1260` (跟永久 rule)
+- ✅ `renderNumber` onChange handler clamp dataWindowDays 200-2520 (input box user 改都 clamp 入 range, 對齊 backend 限制)
+- ✅ 改 frontend / backend 之後 grep 全 repo `dataWindowDays.*100\|dataWindowDays.*300` 確保冇漏網 (M2 例外, M2 永久 rule 講 3 pairs = 6 alternating 需要 default 300, 唔可以強制改 1260 違背 M2 spec)
+- ✅ 改完之後必 restart backend + curl `data_window_days=1260` 拎 evidence 確認
+- ✅ testing page 換 stock 嗰陣 (`runAlgorithm()` line 1330 + `runFullChain()` line 2385 開頭) 強制 reset `currentOptions.dataWindowDays = 1260` + 同步落 DOM, 避免 stale state 累積
+- ✅ backend 「冇 K 線」case (`algorithm_runner.py` line 214) 返 `ok=True` + 帶 critical `INSUFFICIENT_DATA` warning (永久 rule: verdict 可能唔可信)
+- ✅ backend `n < min_required` case (`trendline/algorithm.py` line 698-703) 同樣改返 `ok=True` + warning, 唔再 return `ok=False` 400
+- ✅ frontend `renderTrendlineResult` prepend user-friendly 黃色 box (「揀錯股票 / 新股 / 停牌 / FutuOpenD 拎唔到」) 對「INSUFFICIENT_DATA」case
+
+**永久 rule (level override)**:
+- `INSUFFICIENT_DATA` 嘅 WARNING_CODES level 永遠 "critical" (永久 rule §Module Warning v1.1.0 auto-enforce 通過 `make_warning` line 143-144), 即使 caller pass "info" 都會被 override
+- Category 由 frontend `WARNING_CATEGORIES` dict 自動 derive (system category 因為 verdict 唔可信, 冇 data)
+
+**Spec Sync #46 audit 結果 (4 個 module 漏 sync)**:
+- M3 trendline (line 3937-3943): default 100, min 30, max 500 → 改 default 1260, min 200, max 2520
+- M4 indicators stub (line 3978): `|| 100` → `|| 1260`
+- M5 volume-price stub (line 2189): `|| 100` → `|| 1260`
+- M5 volume-price inputs (line 2583-2588): default 100, min 80, max 500 → 改 default 1260, min 200, max 2520
+- M6 volatility stub (line 2643): `|| 100` → `|| 1260`
+- M6 volatility inputs (line 2803): default 100, min 80, max 500 → 改 default 1260, min 200, max 2520
+- (M1 ma_alignment 已經係 1260 ✅, M2 hl_structure 維持 300 因為對齊 M2 spec 3 pairs alternating 結構)
+
+**前端 additional bug note (Spec Sync #46 揭發, 唔影響今次 fix scope)**:
+- frontend testing-page.js line 1480 用 `verdict._warnings || []` 拎 warning banner, 但 backend `Verdict.warnings` 喺 top level (Verdict dataclass line 56), 唔係 `_warnings`, 即係 frontend banner 永遠拎空 warning 唔 render
+- Spec Sync #46 跟住 fix: frontend 統一拎 `verdict.warnings || verdict._warnings || []` 對齊 backend Verdict contract
+- 影響: frontend warning banner 而家對 backend verdict 完全 silent, Spec Sync #46 改 renderTrendlineResult 入面 user-friendly box 喺 renderResult 內部 prepend 避咗呢個問題, 但 generic warning banner 路徑需要後續 fix
+
+對應 commit: 即將 push (Spec Sync #46 — dataWindowDays frontend inputs 表單 audit + 換 stock 強制 reset + backend 0 K 線 / n<30 改 ok=True + warning + renderTrendlineResult user-friendly box + 4 份 spec doc sync)
+
 ### Spec Sync Protocol (大少 #10203)
 
 **Trigger keywords** (case insensitive): `更新Stockpluse` / `Update Stockpluse` / `Update StockPulse`
