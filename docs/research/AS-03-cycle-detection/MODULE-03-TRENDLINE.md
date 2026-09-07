@@ -1,10 +1,18 @@
-# MODULE 03 · 趨勢線法 v0.1.0 (Trendline Cycle Detector)
+# MODULE 03 · 趨勢線法 v0.3.0 (Trendline Cycle Detector)
 
 > 對應 module: `~/stockpulse/algorithms/AS-03-cycle-detection/modules/trendline.ts`
-> 設計者: **大少** (rule-based 算法) + **MiniMax Code** (優化自 Kimi v2.0 spec)
-> 版本: **v0.1.0** (取代 Kimi v2.0 statistical model)
+> 對應 backend: `~/stockpulse/backend/algorithms/trendline/algorithm.py`
+> 設計者: **大少** (rule-based 算法) + **MiniMax Code** (優化自 Kimi v2.0 spec + 對齊權威 source)
+> 版本: **v0.3.0** (取代 Kimi v2.0 statistical model, Spec Sync #45 對齊 Peng 1994 / Wilder 1978 / Bulkowski 2005)
 > 測試: TBD (目標 12+ test cases)
 > 創建日期: 2026-08-07
+> 最新更新: 2026-09-07 (Spec Sync #45 — Layer 1 DFA multi-window + ADX emit, Layer 2 Bulkowski 條件, Layer 4 confidence 加權)
+
+**Spec Sync #45 永久 rule 摘要** (大少 2026-09-07 confirm):
+- §4.2 Layer 1: DFA Hurst 對齊 Peng et al. 1994 (log-r² emit) + ADX 對齊 Wilder 1978 (+DI/-DI/ATR emit)
+- §4.3 Layer 2: Bulkowski 2005 Encyclopedia 條件 (minLineLength 30, minTouchSpacing 5, maxLineSlope 0.05, minR2 0.6)
+- §6 Layer 4: Confidence 4 維加權 (base 0.6 × R² × touches × volume × self-check penalty, clamp 0.3-0.95)
+- 永久 rule: conf ≤ 0.95 (永久 ban conf = 1.0), warning 觸發即扣 conf
 
 ---
 
@@ -127,19 +135,20 @@ Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system 
 
 **兩招確認**：
 
-1. **Hurst 指數 (DFA - Detrended Fluctuation Analysis)**
+1. **Hurst 指數 (DFA - Detrended Fluctuation Analysis)** — 對齊 Peng et al. 1994 paper (3000+ citations)
    - 量度股價係咪有「持續方向」
-   - 計法：log return 序列 → 累積去均值 → 14 個 log-spaced scale 計 F(n) → log(F) vs log(n) 嘅 slope
-   - 窗口：100 日
+   - 計法：log return 序列 → 累積去均值 → **14 個 log-spaced scale** 計 F(n) → log(F) vs log(n) 嘅 slope
+   - 窗口：100 日（DFA 內部用 14 個 scale points 由 8 到 n_points/2）
+   - **log-r² emit 永久 rule (v0.2.0 Layer 1, Spec Sync #45)**: 對齊 Peng 1994 pitfall (Wikipedia 提到 DFA always produces positive α, 必須 check log-log linearity)。Hurst value 要 R² ≥ 0.9 先算 self-similar, 否則 verdict 唔可靠
    - 解讀：
      - H > 0.55 = 有方向（trending）
      - H ≈ 0.50 = random walk
      - H < 0.45 = mean-reverting（會返去平均）
 
-2. **ADX (Average Directional Index) — Wilder 14 日 standard**
+2. **ADX (Average Directional Index) — Wilder 14 日 standard** — 對齊 Wilder 1978 New Concepts in Technical Trading Systems
    - 量度趨勢嘅「強度」
-   - 計法：TR / +DM / -DM → Wilder's smoothing → +DI / -DI → DX → ADX
-   - 週期：14 日
+   - 計法：TR / +DM / -DM → **Wilder's smoothing** (`smoothed[i] = smoothed[i-1] - smoothed[i-1]/period + value[i]`，唔係普通 EMA) → +DI / -DI → DX → ADX
+   - 週期：14 日（Wilder's standard）
    - 解讀：
      - ADX > 25 = 強趨勢
      - ADX 20-25 = 發展中
@@ -150,25 +159,76 @@ Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system 
 | 條件 | 結果 | 影響 |
 |------|------|------|
 | H < 0.45 OR ADX < 20 | ❌ FAIL | return SIDEWAYS + 1 個 CONFLICT_STATE warning（system category），M7 自動降 M3 weight |
-| H ≥ 0.45 AND ADX ≥ 20 | ✅ PASS | 繼續正常算法（10 條 rule + 3 個 self-check warning）|
+| H ≥ 0.45 AND ADX ≥ 20 | ✅ PASS | 繼續正常算法（10 條 rule + self-check warnings）|
 
-**Meta 新加 field**：
+**Meta 新加 field**（v0.2.0 Layer 1, Spec Sync #45）:
 - `hurst`: Hurst 指數（0-1, 4 decimals）
+- `hurstLogR2`: log-log fit R²（0-1, 4 decimals，**永久 rule §Layer 1 對齊 Peng 1994 pitfall**）
 - `adx`: ADX 值（0-100, 4 decimals）
+- `plusDI`: +DI 值（0-100, 4 decimals，**永久 rule §Layer 1 對齊 Wilder 1978 standard**）
+- `minusDI`: -DI 值（0-100, 4 decimals）
+- `atr`: ATR 值（4 decimals）
 
-**6 隻 stock sample verify**（Phase 1 commit `863bb22b`）：
+**6 隻 stock sample verify**（Phase 1 commit `863bb22b` + v0.2.0 spec verify）：
 
-| Stock | H | ADX | Gate | 結果 |
-|-------|---|-----|------|------|
-| HK.00700 | 0.45 | 10.1 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
-| HK.00005 | 0.41 | 18.3 | ❌ 兩樣 fail | SIDEWAYS 0.3 + 1w |
-| US.AAPL | 0.65 | 14.9 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
-| US.MSFT | 0.67 | 37.9 | ✅ PASS | UP 0.9 |
-| US.GOOGL | 0.63 | 6.9 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
-| HK.01347 | 0.35 | 16.8 | ❌ 兩樣 fail | SIDEWAYS 0.3 + 1w |
+| Stock | H | logR² | ADX | +DI | -DI | Gate | 結果 |
+|-------|---|-------|-----|-----|-----|------|------|
+| HK.00700 | 0.4451 | 0.9363 | 9.38 | 21.60 | 21.49 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
+| HK.00005 | 0.4149 | 0.9227 | 19.25 | 33.48 | 17.21 | ❌ 兩樣 fail | SIDEWAYS 0.3 + 1w |
+| US.AAPL | 0.6469 | 0.9662 | 14.91 | 25.38 | 20.70 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
+| US.MSFT | 0.6687 | 0.9573 | 37.92 | 37.09 | 15.73 | ✅ PASS | UP 0.3 + 4w (Layer 4 修正) |
+| US.GOOGL | 0.6264 | 0.9759 | 6.91 | 27.09 | 24.97 | ❌ ADX<20 | SIDEWAYS 0.3 + 1w |
+| HK.01347 | 0.35 | - | 16.8 | - | - | ❌ 兩樣 fail | SIDEWAYS 0.3 + 1w |
 
 **對應 trigger**: 大少 2026-09-07 01:00「如果先做B1＋B3之後再加你剛說的由『判斷者』變『證據提供者』」
-**對應 commit**: `863bb22b` (fix(trendline) Hurst+ADX gate v0.1.4)
+**對應 commit**: `863bb22b` (fix(trendline) Hurst+ADX gate v0.1.4) + Spec Sync #45 (Layer 1 emit 對齊 Peng 1994 + Wilder 1978)
+
+### 4.3 Bulkowski 條件 (v0.2.0 Layer 2, 大少 2026-09-07 Spec Sync #45)
+
+**凡人話解釋**：對齊 Bulkowski 2005 Encyclopedia of Chart Patterns (thepatternsite.com) 嘅權威趨勢線 quality 標準, 解決 audit 揭發嘅 SIDEWAYS 矛盾問題 (14 隻 stock SIDEWAYS 但 matched rules 6-7 條 fire, 邏輯矛盾)。
+
+**Bulkowski 統計來源** (thepatternsite.com 嘅 3274 個 trendline study):
+- Min touch: 2 點 (理想 5+)
+- Median spacing: 13 days between touches
+- Length: > 48 days median
+- Slope: ≤ 0.05 (shallow trendline 較好)
+- Throwback/pullback rate: 64-66%
+- Break-even failure rate: 15% (rectangle bottom)
+
+**4 個新條件** (v0.2.0 Layer 2):
+
+| 條件 | Bulkowski 標準 | M3 設定 | 失敗 emit warning |
+|------|---------------|---------|------------------|
+| `minLineLength` | 48 days median | **30 days** (median 嘅 minimum floor) | `INSUFFICIENT_DATA` (system) |
+| `minTouchSpacing` | 13 days median | **5 days** (median 嘅 minimum floor) | `THRESHOLD_BREACH` (system) |
+| `maxLineSlope` | ≤ 0.05 (shallow) | **0.05** | `THRESHOLD_BREACH` (system) |
+| `minR2` | 0.6 (學術文獻 0.6-0.7) | **0.6** (0.55 → 0.6) | 用 4.1 嘅 self-check warning |
+
+**Fallback 機制**:
+- 全部 candidate 都唔過 Bulkowski 3 個 check → fallback 揾 R² 最高嘅 fit
+- Fallback 帶 `bulkowskiFallback: True` flag 落 `meta.supportBulkowski` / `meta.resistanceBulkowski`
+- UI 顯示 fallback 警示
+
+**5 隻 stock Bulkowski effect verify** (v0.2.0):
+
+| Stock | support line length | spacing check | slope check | R² check | fallback? |
+|-------|--------------------:|---------------|-------------|----------|----------|
+| US.MSFT | 37 日 | ✅ pass | ❌ fail | 0.9005 | True (4 warns) |
+| 其他 4 隻 | (Hurst+ADX gate fail 之前都拎唔到 verdict) | - | - | - | - |
+
+**404 stock audit Bulkowski effect** (Spec Sync #45):
+- Support Bulkowski fallback: 35/401 = 8%
+- Resistance Bulkowski fallback: 43/401 = 10%
+- 凡人話: 大多數 stock 嘅 support/resistance line 都過 Bulkowski check, 8-10% 比較極端 case 要 fallback
+
+**對齊永久 rule §M3 self-check warning spirit (大少 2026-09-07 00:14)**:
+- ✅ Bulkowski check 唔合格 emit system warning, frontend banner 顯示
+- ✅ Warning propagate 落 `_warnings` array (永久 rule §Module Warning v1.0.0)
+- ✅ Warning 走完整 chain: M3 → M7 → M8 → M9 → frontend
+- ✅ Layer 4 嘅 `warn_penalty = max(1.0 - 0.15 × warn_count, 0.4)` 自動將 conf 降低 (見 §6)
+
+**對應 trigger**: 大少 2026-09-07「正常來講如果公式是對的, 不應該有這麼多問題, 所以我想先上網揾出最安全最全面的公式」
+**對應 commit**: Spec Sync #45 (Layer 2 Bulkowski 對齊 thepatternsite.com)
 
 ---
 
@@ -198,10 +258,77 @@ H 真突破 + support_slope <= 0 (long-term downtrend guard) → SIDEWAYS
 
 ---
 
-## 6. Confidence formula
+## 6. Confidence formula (v0.3.0 Layer 4, 大少 2026-09-07 Spec Sync #45)
 
-跟 ma-alignment.ts 一致:
+**凡人話解釋**：對齊永久 rule §M3 self-check warning spirit (大少 2026-09-07 00:14) — warning 觸發即扣 conf。再對齊 Bulkowski 2005 trendline quality 標準 — 用 R² × touches × volume × self-check 加權, 唔再用 hardcoded 0.3 / 0.6 / 0.9。
 
+**v0.3.0 Layer 4 4 維加權公式**:
+
+```python
+# 凡人話: Confidence 由 R² + 觸線 + volume + self-check 4 維綜合
+base = 0.6  # 統一 base, 唔再分 strong / medium / weak rules
+
+# R² factor: 兩條線平均 R², 0-1 (線越 solid 越高)
+r2_avg = (support_fit["r2"] + resistance_fit["r2"]) / 2
+
+# Touch factor: 5 觸 = 1.0 (越多觸線越確認)
+total_touches = support_touch["touches"] + resistance_touch["touches"]
+touch_factor = min(total_touches / 5.0, 1.0)
+
+# Volume factor: 確認 1.0, 冇確認 0.7
+# (Layer 3 跳過, 將來對齊 Edwards-Magee 8th Ed 加 volume check 拎 1.0)
+vol_factor = 1.0 if volume_confirmed else 0.7
+
+# Self-check warning penalty: 每個 warn -0.15, floor 0.4
+# 對齊永久 rule §M3 self-check warning spirit: warning 觸發即扣 conf
+warn_count = len(m3_warnings)  # 包括 support/resistance R², channel wide, Bulkowski warnings
+warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)
+
+# 最終 confidence
+confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
+
+# 永久 rule §Layer 4: clamp 0.3 - 0.95, 永久 ban conf = 1.0
+confidence = max(min(confidence, 0.95), 0.3)
+```
+
+**永久 rule checklist** (永遠要對齊):
+- ✅ Confidence 永遠 ≤ 0.95 (clamp, 永久 ban conf = 1.0)
+- ✅ Self-check warning 永遠扣 confidence (0.15 / warn, floor 0.4)
+- ✅ Base 統一 0.6 (唔再分 strong/medium/weak, 改用 4 維加權)
+- ✅ R² factor 兩條線平均 (Bulkowski 標準 0.6+)
+- ✅ Touch factor 5 觸 = 1.0 (Bulkowski 統計 5+ 觸最理想)
+- ✅ Volume factor 暫定 0.7, Layer 3 加咗 volume check 拎 1.0
+
+**404 stock audit 改善** (Spec Sync #45 baseline → Layer 1+2+4 v0.3.0):
+
+| 指標 | v0.1.4 | v0.3.0 | 改善 |
+|------|--------|--------|------|
+| Over-confident (UP/DOWN conf≥0.85+warn) | 77 | 0 | -100% 🎯 |
+| SIDEWAYS 矛盾 (rules≥4) | 14 | 7 | -50% ✅ |
+| 罕見 SIDEWAYS (gate pass conf≥0.6) | 41 | 0 | -100% 🎯 |
+| Conf ≥ 0.9 (過度自信) | 94 | 0 | -100% 🎯 |
+| Conf = 1.0 (永久 ban) | 0 | 0 | 持平 ✅ |
+| UP avg conf | 0.881 | 0.301 | -0.580 |
+
+**5 隻 stock sample verify** (v0.3.0):
+
+| Stock | State | Conf | R² | Touches | Vol | Warns | Formula |
+|-------|-------|------|-----|---------|-----|-------|---------|
+| US.MSFT | UP | 0.300 | 0.898 | 310 | 0.7 | 4 | 0.6×0.898×1.0×0.7×0.4=0.151→clamp 0.3 |
+| HK.00700 | SIDEWAYS | 0.300 | - | - | - | 1 (gate) | gate fail 直接 SIDEWAYS 0.3 |
+| HK.00005 | SIDEWAYS | 0.300 | - | - | - | 1 (gate) | gate fail 直接 SIDEWAYS 0.3 |
+| US.AAPL | SIDEWAYS | 0.300 | - | - | - | 1 (gate) | gate fail 直接 SIDEWAYS 0.3 |
+| US.GOOGL | SIDEWAYS | 0.300 | - | - | - | 1 (gate) | gate fail 直接 SIDEWAYS 0.3 |
+
+**凡人話解讀**: MSFT 之前 v0.1.4 拎 UP 0.9 (over-confident), v0.3.0 因為 4 個 warning 扣到 0.3 floor。R² 高 (0.898) 但 warning 太多, Layer 4 公式自動處理。
+
+**對應 trigger**: 大少 2026-09-07「正常來講如果公式是對的, 不應該有這麼多問題」
+**對應 commit**: Spec Sync #45 (Layer 4 4 維加權對齊永久 rule §M3 self-check warning spirit)
+**對應 plan**: plan.md §Layer 4 Confidence 公式重寫
+
+---
+
+**舊 v0.1.4 formula (deprecated, Spec Sync #45 之後唔再用)**:
 ```
 base = 0.7 if any strong rule (A/B/G/H) fires
      = 0.5 if any medium rule (C/D/E/F) fires
@@ -213,6 +340,12 @@ base = 0.7 if any strong rule (A/B/G/H) fires
 
 cap at 1.0, round to 4 decimals
 ```
+
+舊 formula 嘅問題 (audit 揭發):
+- base 0.7 + 0.10 弱 rule = 0.9 容易超標 (77 隻 over-confident)
+- 冇 self-check warning 扣分 (Layer 4 fix)
+- 冇 Bulkowski 條件 (Layer 2 fix)
+- cap at 1.0 冇 0.95 floor (永久 ban conf=1.0)
 
 **Adjustment log 記錄咗所有加減, 方便 debug 同 testing.**
 

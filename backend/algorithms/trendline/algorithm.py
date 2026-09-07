@@ -1,5 +1,23 @@
 """
-backend/algorithms/trendline/algorithm.py — M3 Trendline v0.1.4 (大少 2026-09-07 01:08 Phase 1 B3)
+backend/algorithms/trendline/algorithm.py — M3 Trendline v0.3.0 (大少 2026-09-07 Spec Sync #45)
+
+凡人話: 拎 K 線 → 識別峰谷 → 線性回歸畫支持線 + 阻力線 → 10 條 rule check → derive state + confidence
+
+v0.3.0 Layer 4 (對齊 Bulkowski 2005 trendline quality + 永久 rule §M3 self-check warning spirit):
+- _derive_trendline_confidence 改 4 維加權公式
+- 對齊永久 rule: warning 觸發即扣 conf, conf ≤ 0.95 (clamp), 永久 ban conf = 1.0
+- 公式: base 0.6 × R² × touches × volume × self-check penalty
+
+v0.2.0 Layer 1 (對齊權威 source):
+- DFA Hurst 加 log-r² emit (Peng 1994 pitfall: check log-log linearity)
+- ADX 加 +DI / -DI / ATR emit (Wilder 1978 standard)
+
+v0.2.0 Layer 2 (對齊 Bulkowski 2005 Encyclopedia):
+- minR2: 0.55 → 0.6 (Bulkowski 標準)
+- minLineLength: 30 日 (Bulkowski median 48 嘅 minimum floor)
+- minTouchSpacing: 5 日 (Bulkowski median 13)
+- maxLineSlope: 0.05 (Bulkowski shallow trendline 標準)
+- 唔合格嘅 fit emit INSUFFICIENT_DATA / THRESHOLD_BREACH warning (system category)
 
 凡人話: 拎 K 線 → 識別峰谷 → 線性回歸畫支持線 + 阻力線 → 10 條 rule check → derive state + confidence
 
@@ -158,16 +176,26 @@ def _compute_hurst(closes: List[float], window: int = 100) -> float:
 
     # 4. log(F) vs log(n) 嘅 slope = Hurst 指數
     if len(log_scales) < 3:
-        return 0.5
+        return 0.5, 0.0
     x_mean = sum(log_scales) / len(log_scales)
     y_mean = sum(log_fluctuations) / len(log_fluctuations)
     num = sum((log_scales[i] - x_mean) * (log_fluctuations[i] - y_mean) for i in range(len(log_scales)))
     denom = sum((log_scales[i] - x_mean) ** 2 for i in range(len(log_scales)))
     if denom == 0:
-        return 0.5
+        return 0.5, 0.0
     hurst = num / denom
+
+    # 5. log-log R² (對齊 Peng 1994 DFA pitfall: 必須 check log-log linearity)
+    # 凡人話: 如果 log-log 唔 linear, Hurst value 唔可靠 (可能係 noise)
+    # 永久 rule §Layer 1 (大少 2026-09-07 Spec Sync #45): 永遠 emit log-r² 確認 DFA self-similarity
+    y_pred = [y_mean + hurst * (x - x_mean) for x in log_scales]
+    ss_res = sum((log_fluctuations[i] - y_pred[i]) ** 2 for i in range(len(log_scales)))
+    ss_tot = sum((log_fluctuations[i] - y_mean) ** 2 for i in range(len(log_fluctuations)))
+    log_r2 = 0.0 if ss_tot == 0 else max(0.0, 1 - ss_res / ss_tot)
+
     # Clamp 落 [0, 1] 範圍 (DFA 數值可能超出)
-    return max(0.0, min(1.0, hurst))
+    hurst_clamped = max(0.0, min(1.0, hurst))
+    return hurst_clamped, log_r2
 
 
 def _compute_adx(klines: List[Dict[str, Any]], period: int = 14) -> float:
@@ -199,7 +227,7 @@ def _compute_adx(klines: List[Dict[str, Any]], period: int = 14) -> float:
     """
     if len(klines) < period * 2 + 1:
         # 數據太少, 返 0 (冇方向)
-        return 0.0
+        return {"adx": 0.0, "plus_di": 0.0, "minus_di": 0.0, "atr": 0.0}
 
     n = len(klines)
 
@@ -231,7 +259,7 @@ def _compute_adx(klines: List[Dict[str, Any]], period: int = 14) -> float:
             minus_dm_list.append(0.0)
 
     if len(tr_list) < period:
-        return 0.0
+        return {"adx": 0.0, "plus_di": 0.0, "minus_di": 0.0, "atr": 0.0}
 
     # 3. Wilder's smoothing (recursive): smoothed[i] = smoothed[i-1] - smoothed[i-1]/period + value[i]
     def wilder_smooth(values: List[float], period: int) -> List[float]:
@@ -247,7 +275,7 @@ def _compute_adx(klines: List[Dict[str, Any]], period: int = 14) -> float:
     minus_dm_smooth = wilder_smooth(minus_dm_list, period)
 
     if not tr_smooth or tr_smooth[0] == 0:
-        return 0.0
+        return {"adx": 0.0, "plus_di": 0.0, "minus_di": 0.0, "atr": 0.0}
 
     # 4. +DI / -DI
     plus_di_list = []
@@ -270,7 +298,7 @@ def _compute_adx(klines: List[Dict[str, Any]], period: int = 14) -> float:
             dx_list.append(100.0 * abs(plus_di_list[i] - minus_di_list[i]) / di_sum)
 
     if len(dx_list) < period:
-        return 0.0
+        return {"adx": 0.0, "plus_di": 0.0, "minus_di": 0.0, "atr": 0.0}
 
     # 6. ADX = Wilder's smooth DX over period
     # Wilder's standard: 第一個值係 period 日平均, 之後 recursive smoothing
@@ -280,9 +308,22 @@ def _compute_adx(klines: List[Dict[str, Any]], period: int = 14) -> float:
     # 因為我嘅 wilder_smooth 返 sum 形式 (smoothed[0] = sum), 所以 ADX = smoothed_sum / period
     adx_smoothed = wilder_smooth(dx_list, period)
     if not adx_smoothed:
-        return 0.0
+        return {"adx": 0.0, "plus_di": 0.0, "minus_di": 0.0, "atr": 0.0}
 
-    return adx_smoothed[-1] / period  # 最新嘅 ADX 值, 0-100 range
+    adx_value = adx_smoothed[-1] / period  # 最新嘅 ADX 值, 0-100 range
+    # 永久 rule §Layer 1 (大少 2026-09-07 Spec Sync #45): 永遠 emit +DI / -DI / ATR 對齊 Wilder 1978 standard
+    # +DI / -DI 對齊 Wilder formula: 100 * smoothed(+DM) / smoothed(TR)
+    # ATR 對齊 Wilder formula: smoothed(TR) / period
+    plus_di_value = plus_di_list[-1] if plus_di_list else 0.0
+    minus_di_value = minus_di_list[-1] if minus_di_list else 0.0
+    atr_value = tr_smooth[-1] / period if tr_smooth else 0.0
+
+    return {
+        "adx": adx_value,
+        "plus_di": plus_di_value,
+        "minus_di": minus_di_value,
+        "atr": atr_value,
+    }
 
 
 def _linear_regression(xs: List[float], ys: List[float]) -> Dict[str, float]:
@@ -318,6 +359,12 @@ def _fit_line(points: List[Dict[str, Any]], line_type: str, cfg: Dict[str, Any])
     """凡人話: 動態最優點數 + 簡單 OLS 線性回歸擬合支持線/阻力線
 
     對應 frontend fitLine (adapter.mjs line 4611-4630)
+
+    Bulkowski 對齊 (大少 2026-09-07 Spec Sync #45, 對齊 thepatternsite.com 標準):
+    - minLineLength: 趨勢線覆蓋至少 30 日 (Bulkowski median 48 嘅 minimum floor)
+    - minTouchSpacing: 觸線間距至少 5 日 (Bulkowski median 13)
+    - maxLineSlope: slope 絕對值 ≤ 0.05 (Bulkowski shallow trendline 標準)
+    - 凡人話: 唔啱 Bulkowski 標準嘅 fit 都會 emit warning, 但 keep best fit 避免 silent return
     """
     ys = [p["low"] for p in points] if line_type == "support" else [p["high"] for p in points]
     xs = [p["index"] for p in points]
@@ -325,17 +372,83 @@ def _fit_line(points: List[Dict[str, Any]], line_type: str, cfg: Dict[str, Any])
     best_fit = None
     best_r2 = float("-inf")
     max_n = min(cfg["maxLinePoints"], len(points))
+
+    # Bulkowski checks 收集 (Layer 2 emit warnings 用)
+    bulkowski_warnings = []
+
     for n in range(cfg["minLinePoints"], max_n + 1):
         x_subset = xs[-n:]
         y_subset = ys[-n:]
         points_subset = points[-n:]
         reg = _linear_regression(x_subset, y_subset)
+
+        # Layer 2: Bulkowski checks (永久 rule §Layer 2 大少 2026-09-07)
+        line_length = x_subset[-1] - x_subset[0] if x_subset else 0
+        spacings = [x_subset[i+1] - x_subset[i] for i in range(len(x_subset)-1)] if len(x_subset) > 1 else []
+        min_spacing = min(spacings) if spacings else 0
+
+        # Check 1: Line length (永久 rule)
+        if line_length < cfg["minLineLength"]:
+            # 唔 override best_fit, 但記低 warning 畀後續 emit
+            if not any(w["code"] == "INSUFFICIENT_DATA" and w["line_type"] == line_type for w in bulkowski_warnings):
+                bulkowski_warnings.append({
+                    "code": "INSUFFICIENT_DATA",
+                    "line_type": line_type,
+                    "issue": f"{line_type} 線覆蓋只有 {line_length} 日 (< {cfg['minLineLength']})",
+                })
+            continue  # 呢個 n 唔做 candidate
+
+        # Check 2: Touch spacing (永久 rule)
+        if spacings and min_spacing < cfg["minTouchSpacing"]:
+            if not any(w["code"] == "THRESHOLD_BREACH" and w["line_type"] == line_type and "spacing" in w.get("detail", "") for w in bulkowski_warnings):
+                bulkowski_warnings.append({
+                    "code": "THRESHOLD_BREACH",
+                    "line_type": line_type,
+                    "detail": f"{line_type} spacing 太密",
+                    "issue": f"{line_type} 觸線間距最細 {min_spacing} 日 (< {cfg['minTouchSpacing']})",
+                })
+            continue  # 唔做 candidate
+
+        # Check 3: Slope magnitude (永久 rule)
+        if abs(reg["slope"]) > cfg["maxLineSlope"]:
+            if not any(w["code"] == "THRESHOLD_BREACH" and w["line_type"] == line_type and "slope" in w.get("detail", "") for w in bulkowski_warnings):
+                bulkowski_warnings.append({
+                    "code": "THRESHOLD_BREACH",
+                    "line_type": line_type,
+                    "detail": f"{line_type} slope 太陡",
+                    "issue": f"{line_type} slope 絕對值 {abs(reg['slope']):.4f} (> {cfg['maxLineSlope']})",
+                })
+            continue  # 唔做 candidate
+
+        # 通過 Bulkowski checks, 計 candidate
         if reg["r2"] > best_r2:
             best_r2 = reg["r2"]
             best_fit = {**reg, "numPoints": n, "usedPoints": points_subset}
+
     if not best_fit:
-        return {"slope": 0.0, "intercept": 0.0, "r2": 0.0, "numPoints": 0, "usedPoints": []}
-    return best_fit
+        # 全部 candidate 都唔過 Bulkowski check, fallback 揾一個最接近嘅 (R² 最高) 同 emit warning
+        fallback_fit = None
+        fallback_r2 = float("-inf")
+        for n in range(cfg["minLinePoints"], max_n + 1):
+            x_subset = xs[-n:]
+            y_subset = ys[-n:]
+            points_subset = points[-n:]
+            reg = _linear_regression(x_subset, y_subset)
+            if reg["r2"] > fallback_r2:
+                fallback_r2 = reg["r2"]
+                fallback_fit = {**reg, "numPoints": n, "usedPoints": points_subset}
+        if not fallback_fit:
+            return {
+                "slope": 0.0, "intercept": 0.0, "r2": 0.0, "numPoints": 0, "usedPoints": [],
+                "bulkowskiWarnings": bulkowski_warnings,
+            }
+        # Fallback 帶 warning
+        return {
+            **fallback_fit,
+            "bulkowskiWarnings": bulkowski_warnings,
+            "bulkowskiFallback": True,
+        }
+    return {**best_fit, "bulkowskiWarnings": bulkowski_warnings}
 
 
 def _analyze_touches(fit: Dict[str, Any], line_type: str, recent: List[Dict[str, Any]], cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -483,42 +596,63 @@ def _derive_trendline_confidence(
     rules: List[Dict[str, str]],
     support_fit: Dict[str, Any],
     resistance_fit: Dict[str, Any],
-    latest_idx: int,
+    support_touch: Dict[str, Any],
+    resistance_touch: Dict[str, Any],
+    m3_warnings: List[Dict[str, Any]],
     recent_n: int,
     cfg: Dict[str, Any],
+    volume_confirmed: bool = False,
 ) -> Dict[str, Any]:
-    """凡人話: 信心分數 — 強 0.7 / 中 0.5 / 弱 +0.10, R² 偏低 -0.05, 老化 -0.10
+    """凡人話: 信心分數 — 4 維加權公式 (Layer 4 大少 2026-09-07 Spec Sync #45)
 
-    對應 frontend deriveTrendlineConfidence (adapter.mjs line 4756-4788)
+    對齊 Bulkowski 2005 trendline quality 標準 + 永久 rule §M3 self-check warning spirit:
+    - 唔再用 hardcoded 0.3 / 0.6 / 0.9 baseConfidence
+    - 由 R² (line fit quality) × touches (5 觸 = 1.0) × volume (1.0/0.7) × self-check warning (-0.15/warn) 綜合
+    - 永久 rule: conf ≤ 0.95 (clamp), 永久 ban conf = 1.0
+
+    Formula:
+        base = 0.6
+        r2_avg = (support_fit.r2 + resistance_fit.r2) / 2  # 0-1
+        touch_factor = min((support_touches + resistance_touches) / 5, 1.0)
+        vol_factor = 1.0 if volume_confirmed else 0.7
+        warn_penalty = max(1.0 - 0.15 * len(m3_warnings), 0.4)
+        confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
+        confidence = clamp(confidence, 0.3, 0.95)
+
+    對齊永久 rule §M3 self-check warning spirit (大少 2026-09-07 00:14): warning 觸發即扣 conf
+    對齊永久 rule §M2 self-check 永久 rule (大少 2026-09-06 15:08): A 行為層 + C 顯示層
+
+    Volume factor 預設 0.7 (volume 確認要等 Layer 3 對齊 Edwards-Magee 8th Ed,
+    大少 Option A 跳過 Layer 3 先做 Layer 4 — 將來 Layer 3 加咗 volume check,
+    傳 volume_confirmed=True 即可)
     """
-    adjustment_log = []
-    base = 0.5
-    if any(r["strength"] == "strong" for r in rules):
-        base = 0.7
+    # R² factor: 兩條線平均 R², 0-1
+    r2_avg = (support_fit["r2"] + resistance_fit["r2"]) / 2
 
-    conf = base
-    for r in rules:
-        if r["strength"] == "weak":
-            conf += 0.10
+    # Touch factor: 5 觸 = 1.0 (凡人話: 越多觸線, trendline 越確認)
+    total_touches = support_touch["touches"] + resistance_touch["touches"]
+    touch_factor = min(total_touches / 5.0, 1.0)
 
-    if support_fit["r2"] < cfg["minR2"] and resistance_fit["r2"] < cfg["minR2"]:
-        conf -= 0.10
-        adjustment_log.append("兩條趨勢線 R² 均低於 minR2, 信心 -0.10")
-    elif support_fit["r2"] < cfg["minR2"]:
-        conf -= 0.05
-        adjustment_log.append("支撐線 R² 偏低, 信心 -0.05")
-    elif resistance_fit["r2"] < cfg["minR2"]:
-        conf -= 0.05
-        adjustment_log.append("壓力線 R² 偏低, 信心 -0.05")
+    # Volume factor: 確認 1.0, 冇確認 0.7 (Layer 3 跳過, 永遠 0.7 暫時)
+    vol_factor = 1.0 if volume_confirmed else 0.7
 
-    last_fit_idx = max((p["index"] for p in support_fit["usedPoints"]), default=0)
-    latest_extreme_age = recent_n - 1 - last_fit_idx
-    if latest_extreme_age > cfg["maxExtremeAgeDays"]:
-        conf -= 0.10
-        adjustment_log.append(f"趨勢線最舊極值點距今 {latest_extreme_age} 日, 信號老化, 信心 -0.10")
+    # Self-check warning penalty: 每個 warn -0.15, floor 0.4
+    warn_count = len(m3_warnings)
+    warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)
 
-    clamped = max(0.0, min(1.0, conf))
-    return {"baseConfidence": base, "confidence": clamped, "adjustmentLog": adjustment_log}
+    # Base + 4 維加權
+    base = 0.6
+    confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
+
+    # 永久 rule §Layer 4: clamp 0.3 - 0.95, 永久 ban conf = 1.0
+    confidence = max(min(confidence, 0.95), 0.3)
+
+    # Adjustment log 凡人話解釋
+    adjustment_log = [
+        f"Layer 4 4 維加權: base=0.6 × R²={r2_avg:.3f} × touches={total_touches}/5={touch_factor:.3f} × vol={vol_factor} × (1-0.15×{warn_count})={warn_penalty:.3f} = {confidence:.3f}",
+    ]
+
+    return {"baseConfidence": base, "confidence": confidence, "adjustmentLog": adjustment_log}
 
 
 def _build_trendline_reason(
@@ -550,10 +684,10 @@ def _build_trendline_reason(
 # ============================================================
 
 class TrendlineAlgorithm(Algorithm):
-    """凡人話: 趨勢線法 (M3 v0.1.4) — 10 條 rule 自動畫趨勢線 + 突破/跌破信號 + Hurst+ADX gate"""
+    """凡人話: 趨勢線法 (M3 v0.3.0) — 10 條 rule 自動畫趨勢線 + 突破/跌破信號 + Hurst+ADX gate + Bulkowski 條件 + Layer 4 confidence 加權"""
 
     name = "trendline"
-    version = "0.1.4"
+    version = "0.3.0"
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -594,8 +728,14 @@ class TrendlineAlgorithm(Algorithm):
         #   - H < 0.45 OR ADX < 20: fail (random walk / 橫行, SIDEWAYS + 2 warnings)
         #   - 其他 (灰色地帶 0.45-0.50 / 20-22): pass 但 emit 1 個 LOW_CONFIDENCE warning
         closes = [bar["close"] for bar in recent]
-        hurst_value = _compute_hurst(closes, window=100)
-        adx_value = _compute_adx(recent, period=14)
+        # Layer 1 (大少 2026-09-07 Spec Sync #45): _compute_hurst 返 (hurst, log_r2) tuple, 用 Peng 1994 pitfall check
+        hurst_value, hurst_log_r2 = _compute_hurst(closes, window=100)
+        # Layer 1: _compute_adx 返 dict, emit +DI / -DI / ATR 對齊 Wilder 1978 standard
+        adx_data = _compute_adx(recent, period=14)
+        adx_value = adx_data["adx"]
+        plus_di_value = adx_data["plus_di"]
+        minus_di_value = adx_data["minus_di"]
+        atr_value = adx_data["atr"]
 
         if hurst_value < 0.45 or adx_value < 20:
             # Gate fail: 股價 random walk / mean-reverting / 弱趨勢
@@ -656,6 +796,12 @@ class TrendlineAlgorithm(Algorithm):
                     "configUsed": cfg,
                     "hurst": _round(hurst_value, 4),
                     "adx": _round(adx_value, 4),
+                    # Layer 1 emit: Peng 1994 DFA log-r² 確認 self-similarity
+                    "hurstLogR2": _round(hurst_log_r2, 4),
+                    # Layer 1 emit: Wilder 1978 +DI / -DI / ATR
+                    "plusDI": _round(plus_di_value, 4),
+                    "minusDI": _round(minus_di_value, 4),
+                    "atr": _round(atr_value, 4),
                 },
                 warnings=gate_warnings,
             )
@@ -747,6 +893,13 @@ class TrendlineAlgorithm(Algorithm):
                     "adjustmentLog": [f"極值點不足 (peaks={len(peaks)}, troughs={len(troughs)})"],
                     "dataDays": recent_n,
                     "configUsed": cfg,
+                    # Layer 1 emit: 都要 emit 即係極值點不足都對齊 Layer 1 fields
+                    "hurst": _round(hurst_value, 4),
+                    "adx": _round(adx_value, 4),
+                    "hurstLogR2": _round(hurst_log_r2, 4),
+                    "plusDI": _round(plus_di_value, 4),
+                    "minusDI": _round(minus_di_value, 4),
+                    "atr": _round(atr_value, 4),
                 },
                 warnings=fallback_warnings,
             )
@@ -804,12 +957,10 @@ class TrendlineAlgorithm(Algorithm):
         state = _derive_trendline_state(matched_rules, support_fit)
 
         # ============ Step 9: Confidence derivation ============
-        conf = _derive_trendline_confidence(
-            matched_rules, support_fit, resistance_fit, latest_idx, recent_n, cfg
-        )
-        base_confidence = conf["baseConfidence"]
-        confidence = conf["confidence"]
-        adjustment_log = conf["adjustmentLog"]
+        # Layer 4 (大少 2026-09-07 Spec Sync #45): _derive_trendline_confidence 改 4 維加權公式
+        # 對齊永久 rule §M3 self-check warning spirit: warning 觸發即扣 conf
+        # 因為公式要拎 m3_warnings, 所以 call site 移到 warnings emit 之後 (line 1113 之後)
+        # 暫時喺度唔 call, 之後 line 1115 之前 call
 
         # 計算 latest extreme age
         all_extrema = peaks + troughs
@@ -937,7 +1088,47 @@ class TrendlineAlgorithm(Algorithm):
                 "context": {"matched_rules": 0, "period": options.get("period")},
             })
 
+        # Layer 2 emit (大少 2026-09-07 Spec Sync #45): Bulkowski checks warnings propagate
+        # 凡人話: support/resistance 嘅 Bulkowski check (line length / spacing / slope) 唔合格時 emit warning
+        for bw in support_fit.get("bulkowskiWarnings", []):
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": bw["code"],
+                "message": f"支撐線 Bulkowski check 唔合格 ({bw['line_type']})",
+                "issue": bw["issue"],
+                "impact": "Verdict 唔可信 (Bulkowski 標準: 線太短 / spacing 太密 / slope 太陡), trend line 唔穩",
+                "fix": "Re-run / 用 dataWindowDays 100 拎 short-term 短 trendline / 接受 short-term 弱信號",
+                "context": {"line_type": bw["line_type"], "detail": bw.get("detail", "")},
+            })
+        for bw in resistance_fit.get("bulkowskiWarnings", []):
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": bw["code"],
+                "message": f"阻力線 Bulkowski check 唔合格 ({bw['line_type']})",
+                "issue": bw["issue"],
+                "impact": "Verdict 唔可信 (Bulkowski 標準: 線太短 / spacing 太密 / slope 太陡), trend line 唔穩",
+                "fix": "Re-run / 用 dataWindowDays 100 拎 short-term 短 trendline / 接受 short-term 弱信號",
+                "context": {"line_type": bw["line_type"], "detail": bw.get("detail", "")},
+            })
+
         cycle_label = {"UP": "上升", "DOWN": "下跌", "SIDEWAYS": "橫行", "TRANSITION": "轉折"}[state]
+
+        # ============ Step 9 (Layer 4): Confidence derivation 用 m3_warnings ============
+        # 凡人話: 因為 Layer 4 4 維加權公式要拎 m3_warnings 嘅長度 (self-check penalty),
+        # 所以要喺 m3_warnings 全部 emit 之後 (line 1113 嘅 Bulkowski warnings) 先 call
+        conf = _derive_trendline_confidence(
+            matched_rules, support_fit, resistance_fit,
+            support_touch, resistance_touch, m3_warnings,
+            recent_n, cfg,
+            volume_confirmed=False,  # Layer 3 跳過, 將來加 Edwards-Magee volume check
+        )
+        base_confidence = conf["baseConfidence"]
+        confidence = conf["confidence"]
+        adjustment_log = conf["adjustmentLog"]
 
         meta = {
             "moduleId": "trendline",
@@ -991,6 +1182,22 @@ class TrendlineAlgorithm(Algorithm):
             "configUsed": cfg,
             "hurst": _round(hurst_value, 4),
             "adx": _round(adx_value, 4),
+            # Layer 1 emit (大少 2026-09-07 Spec Sync #45): 對齊 Peng 1994 + Wilder 1978 標準
+            "hurstLogR2": _round(hurst_log_r2, 4),
+            "plusDI": _round(plus_di_value, 4),
+            "minusDI": _round(minus_di_value, 4),
+            "atr": _round(atr_value, 4),
+            # Layer 2 emit (大少 2026-09-07 Spec Sync #45): Bulkowski checks 結果
+            "supportBulkowski": {
+                "lineLength": (support_fit["usedPoints"][-1]["index"] - support_fit["usedPoints"][0]["index"]) if support_fit.get("usedPoints") else 0,
+                "fallback": support_fit.get("bulkowskiFallback", False),
+                "warningCodes": [w["code"] for w in support_fit.get("bulkowskiWarnings", [])],
+            },
+            "resistanceBulkowski": {
+                "lineLength": (resistance_fit["usedPoints"][-1]["index"] - resistance_fit["usedPoints"][0]["index"]) if resistance_fit.get("usedPoints") else 0,
+                "fallback": resistance_fit.get("bulkowskiFallback", False),
+                "warningCodes": [w["code"] for w in resistance_fit.get("bulkowskiWarnings", [])],
+            },
         }
 
         return Verdict(
