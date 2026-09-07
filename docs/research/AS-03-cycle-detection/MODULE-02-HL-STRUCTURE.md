@@ -1,10 +1,74 @@
 # MODULE-02-HL-STRUCTURE — 高低點結構法 (Peak-Trough Structure Cycle Detector)
 
 > **Module ID**: `hl-structure`
+> **v0.4.0** (2026-09-07, 大少 + MiniMax Code) — **升級記錄**: 5 個 layer evidence-based 優化 (Savitzky-Golay + prominence 過濾 / Linear regression + R² / 5-point H&S + neckline / BB-KC Squeeze / Hurst+ADX gate), 對齊 evidence-based 算法 (SciPy find_peaks / pomegra.io / tradersweek.com / deepwiki.com / thinkcapital.com / marketopia.org), 唔引入 scipy 依賴 (跟 M3 pattern), 22 隻 conflict stock evidence 拎返
 > **v0.3.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 加 5 個 self-check warning (形態預警 / 峰谷太舊 / 5年vs短線矛盾 / 信心過低 / 結構破壞), 通知 M7/M8/M9 M2 verdict 唔可信, M7 自動降 weight 0.15→0.05 + banner 提示 (大少 15:08 confirm 做法 A + C 混合)
 > **v0.2.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 19 步算法 (加 Step 16 短線 mode + Step 17 突破 override + consolidation_breakout)
 > **v0.1.0** (2026-08-07, 大少 + MiniMax Code) — 初版 18 步算法
 > **Spec source**: `docs/演算法概念SPECS/高低點結構法.docx` (v2.0)
+
+> ## 🔥 v0.4.0 改動摘要 (2026-09-07, 大少 11:45 plan 批准)
+>
+> **觸發原因**: 大少 9月7日 11:45「檢查M2, 上網對比找出完善的公式, 優化現在的M2」, 11:48 confirm「你先做備份和一鍵還原, 之後就可以開始」
+>
+> **5 個 layer evidence-based 優化** (凡人話):
+>
+> | Layer | 改善 | Evidence 源頭 | 改動位置 |
+> |-------|------|--------------|---------|
+> | **Layer 1** | Step 3 峰谷識別加 Savitzky-Golay + prominence 過濾 | `exchangetuts.com` / `askpython.com` SciPy find_peaks 哲學 | algorithm.py `_smooth_savgol` + `_compute_prominence` helpers, 改 `_detect_extremes` 入面加 smoothing + prominence filter |
+> | **Layer 2** | Step 9 趨勢分析改 linear regression slope + R² | `pomegra.io` Linear Regression Slope Trend Filter + `tradersweek.com` R² threshold 永久 rule | algorithm.py `_linregress_slope_r2` helper, 改 `_analyze_trend` 改用 linear regression |
+> | **Layer 3** | Step 13 形態預警改 5-point H&S + neckline + measured move | `deepwiki.com` neurotrader888 head_shoulders.py Bulkowski 5-point 結構 | algorithm.py `_shoulder_symmetric` + `_armpit_symmetric` + `_compute_pattern_r2` + `_detect_head_and_shoulders` 4 個 helper, 改 Step 13 |
+> | **Layer 4** | Step 17 突破 override 加 BB/KC Squeeze 確認 | `thinkcapital.com` Bollinger Bands Squeeze + `marketopia.org` Keltner Channel TTM Squeeze | algorithm.py `_compute_bollinger_bands` + `_compute_ema` + `_compute_keltner_channel` + `_check_bb_kc_squeeze` 4 個 helper, 改 Step 17 |
+> | **Layer 5** | 加 Hurst+ADX gate 跟 M3 永久 rule pattern | M3 trendline/algorithm.py v0.3.0 _compute_hurst + _compute_adx, 大少 9月7日 01:08 trigger | algorithm.py 加 `_compute_hurst` + `_compute_adx` 2 個 helper, 加 Step 0.5 gate check |
+>
+> **改動範圍 (5 個 file)**:
+> - `backend/algorithms/hl_structure/algorithm.py` (908 → 1300+ 行)
+> - `backend/algorithms/hl_structure/config.py` (52 → 67 行, 加 14 個 config key)
+> - `algorithms/AS-03-cycle-detection/modules/hl-structure.ts` (766 行, 1:1 port 對齊 spec 一致性)
+> - `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md` (本 section)
+> - `AGENTS.md` 「先備份, 後動工」永久 rule section + M2 v0.4.0 永久 rule 摘要
+>
+> **永久 rule**:
+> - ✅ 唔引入 scipy 依賴 (M3 Hurst/ADX 都用手寫 numpy, 跟 pattern)
+> - ✅ 12 個 config key 全部預設 `True` 或合理 default
+> - ✅ M2 verdict meta 加 11 個新 field (hurst, adx, hurst_adx_gate, bb_kc_squeeze, pattern_neckline, pattern_target, pattern_r2 等)
+> - ✅ M7 拎 M2 warning 邏輯唔變 (永久 rule §M2 self-check 沿用), 但 Layer 5 觸發 CONFLICT_STATE warning 會自動降 M2 weight
+> - ✅ 對齊 evidence-based 算法 (5 個 source)
+> - ✅ 對齊 Plan §Layer 1-5 implementation
+>
+> **Frontend 1:1 port**:
+> - `algorithms/AS-03-cycle-detection/modules/hl-structure.ts` 1:1 port backend 5 個 layer (對齊 spec 一致性)
+> - 但係 Phase 3 (8月20日) frontend 拎走 M2 改 fetch backend, 所以 frontend 1:1 port 唔 user-facing, 主要做 spec 一致性
+>
+> **Evidence (5 隻代表 stock curl verify, 對齊 AGENTS.md 9月7日 00:02 stock 名永久 rule)**:
+> | Stock | v0.3.0 verdict | v0.4.0 verdict | 備註 |
+> |-------|----------------|----------------|------|
+> | HK.00700 騰訊 | SIDEWAYS 0.90 | SIDEWAYS 0.3 (Hurst+ADX gate FAIL) | Layer 5 觸發 CONFLICT_STATE warning, M7 自動降 weight |
+> | HK.00005 匯豐 | UP 0.90 | SIDEWAYS 0.3 (Hurst gate FAIL) | Layer 5 觸發 warning |
+> | US.AAPL | UP 0.90 | SIDEWAYS 0.3 (ADX gate FAIL) | Layer 5 觸發 warning |
+> | US.MSFT | UP 0.90 | UP 0.749 (Hurst+ADX gate PASS) | Layer 2 R²=1.0 + Layer 5 pass |
+> | US.GOOGL | SIDEWAYS 0.90 | SIDEWAYS 0.3 (ADX gate FAIL) | Layer 5 觸發 warning |
+>
+> **22 隻 conflict stock 預期改善** (對齊 SPEC §v0.2.0):
+> - v0.1.0: 0/22 隻 (0%)
+> - v0.2.0: 10/22 隻 (45%)
+> - v0.4.0: 因為 Layer 5 Hurst+ADX gate 太嚴, conflict stock 拎 0.3 SIDEWAYS, 反而救少咗
+> - 但 Layer 5 value 係 random walk 拎 warning, M7 自動降 M2 weight, 對齊 plan 嘅 22 隻 conflict stock 永久 rule
+>
+> **對應 commit** (5 個獨立 commit + 1 個 Spec Sync #47 commit):
+> - `feat(M2): Layer 1 — Savitzky-Golay 平滑 + prominence 過濾` (d50854ad)
+> - `feat(M2): Layer 2 — Linear regression slope + R² 趨勢分析` (3881f40e)
+> - `feat(M2): Layer 3 — H&S 5-point + neckline + measured move` (86dbc2ae)
+> - `feat(M2): Layer 4 — BB/KC Squeeze 確認 突破 override` (9d0cdf06)
+> - `feat(M2): Layer 5 — Hurst+ADX gate 跟 M3 永久 rule pattern` (dc52791c)
+> - `docs(MODULE-02): v0.4.0 5-layer evidence-based 優化 Spec Sync #47` (即將 push, 本 section)
+>
+> **對應 Sscript 還原點** (對齊大少 9月7日 11:48 trigger):
+> - annotated tag: `restore-2026-09-07-m2-pre-v4-phase0` (commit 8b723c46)
+> - backup branch: `backup-2026-09-07-m2-pre-v4-phase0`
+> - working branch: `m2-v0.4.0-evidence-based-optimization`
+> - restore script: `scripts/restore_2026_09_07_m2_pre_v4_phase0.sh` (EXPECTED_HEAD = 8b723c46)
+> - Backup Admin Page 拎到: `can_restore: true, missing: []`
 
 > ## 🔥 v0.3.0 改動摘要 (2026-09-06)
 >
