@@ -67,4 +67,7 @@ DEFAULT_HL_STRUCTURE_CONFIG: dict = {
     # === v0.4.0 Layer 2 新加 (大少 2026-09-07 11:45 plan 批准) ===
     "trendR2Threshold": 0.40,             # linear regression R² threshold (3-period 對齊 tradersweek.com 10-period 永久 rule)
     "trendSlopeMinPct": 0.001,            # slope_normalized 最小百分比 (對齊 pomegra.io 標準化)
+    # === v0.4.0 Layer 3 新加 (大少 2026-09-07 11:45 plan 批准) ===
+    "enableHeadAndShouldersNeckline": True,  # 開住 H&S 5-point neckline 確認 (對齊 deepwiki.com Bulkowski 標準)
+    "patternR2Min": 0.6,                  # pattern_r2 quality threshold (1.0 完美, 0.6 對齊 head_shoulders.py 教學)
 }

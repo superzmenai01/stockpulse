@@ -423,6 +423,153 @@ def _analyze_trend(values: List[float], tolerance: float, cfg: Dict[str, Any] = 
     return {"trend": "mixed", "consistency": r2}
 
 
+def _shoulder_symmetric(ls_price: float, rs_price: float, head_price: float, tolerance_pct: float) -> bool:
+    """凡人話: 對齊 deepwiki.com Bulkowski 標準, 兩肩對稱 (跟 head 距離相近)
+
+    對應 deepwiki.com head_shoulders.py check_hs_pattern 規則
+    """
+    if head_price <= 0:
+        return False
+    diff = abs(ls_price - rs_price) / head_price
+    return diff < tolerance_pct
+
+
+def _armpit_symmetric(la_price: float, ra_price: float, head_price: float, tolerance_pct: float) -> bool:
+    """凡人話: 對齊 Bulkowski 標準, 兩腋對稱 (neckline 兩端高度相近)"""
+    if head_price <= 0:
+        return False
+    diff = abs(la_price - ra_price) / head_price
+    return diff < tolerance_pct
+
+
+def _compute_pattern_r2(prices: List[float], head_idx: int, la_idx: int, ra_idx: int) -> float:
+    """凡人話: 拎 5-point pattern 嘅 R² quality metric (對齊 deepwiki.com head_shoulders.py pattern_r2)
+
+    公式: pattern_r2 = 1 - SS_res / SS_tot
+    - SS_res = 5 個實際價對 neckline (la + ra 線) 嘅距離
+    - SS_tot = 5 個實際價對 mean 嘅距離
+
+    1.0 = 完美貼合 neckline, 0 噪聲, < 0 差過 mean
+    """
+    n = len(prices)
+    if n < 5 or head_idx < 0 or la_idx < 0 or ra_idx < 0 or head_idx >= n or la_idx >= n or ra_idx >= n:
+        return 0.0
+    if la_idx == ra_idx:
+        return 0.0
+    try:
+        # Neckline 線性內插
+        la = prices[la_idx]
+        ra = prices[ra_idx]
+        la_x, ra_x = float(la_idx), float(ra_idx)
+        if ra_x == la_x:
+            return 0.0
+        slope = (ra - la) / (ra_x - la_x)
+        intercept = la - slope * la_x
+        # 5 個 point 嘅實際價 vs neckline 預測價
+        y_actual = [prices[i] for i in range(la_idx, ra_idx + 1)]
+        y_pred = [slope * i + intercept for i in range(la_idx, ra_idx + 1)]
+        y_mean = sum(y_actual) / len(y_actual)
+        ss_res = sum((y_actual[i] - y_pred[i]) ** 2 for i in range(len(y_actual)))
+        ss_tot = sum((v - y_mean) ** 2 for v in y_actual)
+        if ss_tot <= 0:
+            return 0.0
+        r2 = 1.0 - ss_res / ss_tot
+        return max(0.0, min(1.0, r2))
+    except (ZeroDivisionError, ValueError):
+        return 0.0
+
+
+def _detect_head_and_shoulders(
+    peak_exts: List[Dict[str, Any]],
+    trough_exts: List[Dict[str, Any]],
+    sym_tol: float,
+    latest_price: float,
+) -> Dict[str, Any]:
+    """凡人話: 對齊 deepwiki.com Bulkowski 5-point 結構檢測 H&S pattern (bearish reversal)
+
+    5-point 結構 (對齊 deepwiki.com neurotrader888 head_shoulders.py):
+    - left_shoulder (LS) = peak_exts[-3]
+    - left_armpit (LA) = trough_exts[-2]
+    - head (H) = peak_exts[-2]  (中間最高)
+    - right_armpit (RA) = trough_exts[-1]
+    - right_shoulder (RS) = peak_exts[-1]
+
+    Bulkowski 規則:
+    1. H > max(LS, RS) (head 必須係 3 個 peak 嘅最高)
+    2. 兩肩對稱 (LS ≈ RS)
+    3. 兩腋對稱 (LA ≈ RA)
+    4. neckline 連接 LA + RA
+    5. 確認: 當前 close < neckline 即 H&S 確認 (跌穿)
+
+    Returns: {
+        "detected": bool,
+        "neckline": float or None,
+        "neckline_slope": float or None,
+        "head_height": float or None,
+        "measured_target": float or None (對齊 deepwiki.com head_to_neckline 距離 projecting down),
+        "pattern_r2": float (0-1),
+        "confirmed": bool (close < neckline),
+    }
+    """
+    if len(peak_exts) < 3 or len(trough_exts) < 2:
+        return {"detected": False, "neckline": None, "neckline_slope": None, "head_height": None, "measured_target": None, "pattern_r2": 0.0, "confirmed": False}
+
+    # 5-point 結構
+    ls = peak_exts[-3]["k"]  # left_shoulder
+    la = trough_exts[-2]["k"]  # left_armpit
+    h = peak_exts[-2]["k"]  # head
+    ra = trough_exts[-1]["k"]  # right_armpit
+    rs = peak_exts[-1]["k"]  # right_shoulder
+
+    ls_p = ls["close"]
+    la_p = la["close"]
+    h_p = h["close"]
+    ra_p = ra["close"]
+    rs_p = rs["close"]
+
+    # Rule 1: head 必須係 3 個 peak 嘅最高
+    if h_p <= max(ls_p, rs_p):
+        return {"detected": False, "neckline": None, "neckline_slope": None, "head_height": None, "measured_target": None, "pattern_r2": 0.0, "confirmed": False}
+
+    # Rule 2: 兩肩對稱
+    if not _shoulder_symmetric(ls_p, rs_p, h_p, sym_tol):
+        return {"detected": False, "neckline": None, "neckline_slope": None, "head_height": None, "measured_target": None, "pattern_r2": 0.0, "confirmed": False}
+
+    # Rule 3: 兩腋對稱
+    if not _armpit_symmetric(la_p, ra_p, h_p, sym_tol):
+        return {"detected": False, "neckline": None, "neckline_slope": None, "head_height": None, "measured_target": None, "pattern_r2": 0.0, "confirmed": False}
+
+    # Rule 4: neckline 連接 LA + RA
+    la_idx = trough_exts[-2]["idx"]
+    ra_idx = trough_exts[-1]["idx"]
+    neckline_slope = (ra_p - la_p) / (ra_idx - la_idx) if ra_idx != la_idx else 0.0
+    neckline = la_p  # 拎 LA 嘅價做 baseline
+
+    # Rule 5: 確認 (close < neckline)
+    confirmed = latest_price < neckline
+
+    # measured_target (對齊 deepwiki.com head_height 距離 projecting down)
+    head_height = h_p - neckline
+    measured_target = neckline - head_height if confirmed else None
+
+    # pattern_r2 (對齊 deepwiki.com 嘅 R² quality metric)
+    try:
+        range_closes = [ls_p, la_p, h_p, ra_p, rs_p]  # 簡化用 5 個 pattern 點
+        pattern_r2 = _compute_pattern_r2(range_closes, head_idx=2, la_idx=1, ra_idx=3)
+    except Exception:
+        pattern_r2 = 0.0
+
+    return {
+        "detected": True,
+        "neckline": _round(neckline, 4),
+        "neckline_slope": _round(neckline_slope, 6),
+        "head_height": _round(head_height, 4),
+        "measured_target": _round(measured_target, 4) if measured_target is not None else None,
+        "pattern_r2": _round(pattern_r2, 4),
+        "confirmed": confirmed,
+    }
+
+
 # ============================================================
 # Main algorithm
 # ============================================================
@@ -672,18 +819,43 @@ class HLStructureAlgorithm(Algorithm):
 
         # ============ Step 13: 形態預警 ============
         pattern_alert = "none"
+        # v0.4.0 Layer 3 (大少 11:45 plan): 加 3 個 H&S field 落 meta (audit 對比用)
+        pattern_neckline = None
+        pattern_target = None
+        pattern_r2 = 0.0
         reason_base = f"判定: {'上升' if candidate == 'uptrend' else '下跌' if candidate == 'downtrend' else '橫行'}"
 
         if cfg["enablePatternAlert"] and len(peak_exts) >= 3 and len(trough_exts) >= 2:
             sym_tol = effective_tolerance * cfg["patternSymmetryTolerance"]
-            # 頭肩頂: 3 個 peak, 中間最高
-            if len(peak_exts) >= 3:
-                last_3 = peak_exts[-3:]
-                if (last_3[1]["k"]["close"] > last_3[0]["k"]["close"]
-                    and last_3[1]["k"]["close"] > last_3[2]["k"]["close"]
-                    and abs(last_3[0]["k"]["close"] - last_3[2]["k"]["close"]) / last_3[1]["k"]["close"] < sym_tol):
-                    pattern_alert = "head_and_shoulder"
-                    reason_base += "；出現頭肩頂形態預警"
+            # 頭肩頂: v0.4.0 Layer 3 — 用 _detect_head_and_shoulders 5-point 確認 (對齊 deepwiki.com Bulkowski 標準)
+            if len(peak_exts) >= 3 and len(trough_exts) >= 2:
+                # latest_price 拎 weighted[-1]["close"] (Step 14 會重拎, 呢度先預取)
+                _latest_price = weighted[-1]["close"]
+                hs_result = _detect_head_and_shoulders(peak_exts, trough_exts, sym_tol, _latest_price)
+                if hs_result["detected"] and cfg.get("enableHeadAndShouldersNeckline", True):
+                    # v0.3.0 simple 對稱 對比 v0.4.0 H&S 5-point: 用 R² quality 確認
+                    if hs_result["pattern_r2"] >= cfg.get("patternR2Min", 0.6):
+                        pattern_alert = "head_and_shoulder"
+                        pattern_neckline = hs_result["neckline"]
+                        pattern_target = hs_result["measured_target"]
+                        pattern_r2 = hs_result["pattern_r2"]
+                        reason_base += f"；H&S 5-point 確認 (neckline={hs_result['neckline']}, R²={hs_result['pattern_r2']}, confirmed={hs_result['confirmed']})"
+                    else:
+                        # R² 唔夠, 用 v0.3.0 嘅 simple 對稱 fallback
+                        last_3 = peak_exts[-3:]
+                        if (last_3[1]["k"]["close"] > last_3[0]["k"]["close"]
+                            and last_3[1]["k"]["close"] > last_3[2]["k"]["close"]
+                            and abs(last_3[0]["k"]["close"] - last_3[2]["k"]["close"]) / last_3[1]["k"]["close"] < sym_tol):
+                            pattern_alert = "head_and_shoulder"
+                            reason_base += "；出現頭肩頂形態預警 (R²<0.6 fallback)"
+                else:
+                    # v0.3.0 simple 對稱 fallback
+                    last_3 = peak_exts[-3:]
+                    if (last_3[1]["k"]["close"] > last_3[0]["k"]["close"]
+                        and last_3[1]["k"]["close"] > last_3[2]["k"]["close"]
+                        and abs(last_3[0]["k"]["close"] - last_3[2]["k"]["close"]) / last_3[1]["k"]["close"] < sym_tol):
+                        pattern_alert = "head_and_shoulder"
+                        reason_base += "；出現頭肩頂形態預警 (3-peak simple 對稱)"
             # 雙底: 3 個 trough, 兩邊低, 中間反彈
             if pattern_alert == "none" and len(trough_exts) >= 3:
                 last_3 = trough_exts[-3:]
@@ -1115,6 +1287,10 @@ class HLStructureAlgorithm(Algorithm):
             "weighted_structure_score": _round(weighted_structure_score, 4),
             "box_boundary": box_boundary,
             "pattern_alert": pattern_alert,
+            # === v0.4.0 Layer 3 (大少 11:45 plan): H&S 5-point pattern field (audit 對比用) ===
+            "pattern_neckline": pattern_neckline,
+            "pattern_target": pattern_target,
+            "pattern_r2": _round(pattern_r2, 4),
             "latest_extreme": {
                 "type": latest_extreme["type"],
                 "date": str(latest_extreme["k"].get("time") or latest_extreme["k"].get("date") or latest_extreme["k"].get("timestamp") or ""),
