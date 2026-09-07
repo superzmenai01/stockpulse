@@ -269,7 +269,7 @@ class HLStructureAlgorithm(Algorithm):
                 ok=True,
                 points=[],
                 meta={
-                    "symbol": options.get("code", "TEST"),
+                    "symbol": options.get("code") or options.get("symbol", "TEST"),
                     "cycle": "sideways",
                     "state": "SIDEWAYS",  # 大少 2026-09-05 Fix A: 對齊 contract ModuleVerdictMeta Literal
                     "cycle_label": "橫行週期",
@@ -328,7 +328,7 @@ class HLStructureAlgorithm(Algorithm):
                 ok=True,
                 points=[],
                 meta={
-                    "symbol": options.get("code", "TEST"),
+                    "symbol": options.get("code") or options.get("symbol", "TEST"),
                     "cycle": "sideways",
                     "state": "SIDEWAYS",  # 大少 2026-09-05 Fix A: 對齊 contract ModuleVerdictMeta Literal
                     "cycle_label": "橫行週期",
@@ -836,7 +836,7 @@ class HLStructureAlgorithm(Algorithm):
             })
 
         meta = {
-            "symbol": options.get("code", "TEST"),
+            "symbol": options.get("code") or options.get("symbol", "TEST"),
             "cycle": candidate,
             "state": HL_STRUCTURE_STATE_MAP.get(candidate, "SIDEWAYS"),  # 大少 2026-09-05 Fix A
             "cycle_label": cycle_label,
