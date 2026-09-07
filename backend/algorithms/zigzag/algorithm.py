@@ -557,6 +557,11 @@ class ZigZagAlgorithm(Algorithm):
                     "threshold_mode": threshold_mode,
                     "lookback": lookback,
                     "multiplier": multiplier,
+                    # 永久 rule (大少 2026-09-07 7:20 trigger): verdict meta 永遠 emit `symbol` field
+                    # 對齊 caller 真正 query 嘅 stock code (e.g. "HK.00700"), 唔可以 default "TEST"/"UNKNOWN"
+                    # 跟 ma_alignment/algorithm.py 71677711 Spec Sync #43 pattern
+                    # algorithm_runner.py 已經 inject options["symbol"] = caller_symbol, 所以 options.get("symbol") 拎 caller symbol
+                    "symbol": options.get("symbol", "TEST"),
                 },
                 warnings=[],
                 error=result.get("error", "ZigZag algorithm 跑失敗"),
@@ -577,6 +582,11 @@ class ZigZagAlgorithm(Algorithm):
                 "lookback": lookback,
                 "multiplier": multiplier,
                 "zigzag_points_count": result["sequence_count"],
+                # 永久 rule (大少 2026-09-07 7:20 trigger): verdict meta 永遠 emit `symbol` field
+                # 對齊 caller 真正 query 嘅 stock code (e.g. "HK.00700"), 唔可以 default "TEST"/"UNKNOWN"
+                # 跟 ma_alignment/algorithm.py 71677711 Spec Sync #43 pattern
+                # algorithm_runner.py 已經 inject options["symbol"] = caller_symbol, 所以 options.get("symbol") 拎 caller symbol
+                "symbol": options.get("symbol", "TEST"),
             },
             warnings=[],
         )
