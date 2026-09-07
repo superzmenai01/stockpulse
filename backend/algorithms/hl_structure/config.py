@@ -76,4 +76,8 @@ DEFAULT_HL_STRUCTURE_CONFIG: dict = {
     "bbStdDev": 2.0,                      # BB std_dev multiplier (對齊 Bollinger 1980 標準 2σ)
     "kcEMAPeriod": 20,                    # Keltner Channel EMA period (對齊 marketopia.org 教學 20 日)
     "kcATRFactor": 1.5,                   # Keltner Channel ATR multiplier (對齊 marketopia.org 教學 1.5x)
+    # === v0.4.0 Layer 5 新加 (大少 2026-09-07 11:45 plan 批准) ===
+    "enableHurstADXGate": True,           # 開住 Hurst+ADX gate (對齊 M3 永久 rule pattern, 大少 01:08 trigger)
+    "hurstThreshold": 0.45,               # Hurst threshold (對齊 M3 H>=0.45 standard)
+    "adxThreshold": 20,                   # ADX threshold (Wilder 1978 standard, ADX >= 20 = 發展中趨勢)
 }

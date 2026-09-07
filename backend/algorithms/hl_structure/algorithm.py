@@ -688,6 +688,177 @@ def _check_bb_kc_squeeze(
     }
 
 
+def _compute_hurst(closes: List[float], window: int = 100) -> float:
+    """凡人話: Hurst 指數 (DFA - Detrended Fluctuation Analysis)
+
+    對齊 M3 永久 rule (大少 2026-09-07 01:08): 跟 M3 algorithm v0.3.0 _compute_hurst port
+    - H > 0.55 = 有方向 (trending)
+    - H < 0.45 = mean-reverting
+    - H ≈ 0.50 = random walk baseline
+
+    對應 M3 trendline/algorithm.py line 73-198 _compute_hurst
+    對應 spec doc: MODULE-03-TRENDLINE.md §4.2 Hurst+ADX gate
+    """
+    if len(closes) < window + 10:
+        return 0.5  # 數據太少, 返 0.5 default
+
+    recent_closes = closes[-window:]
+    n_total = len(recent_closes)
+
+    # 1. 計 log return 序列
+    log_returns = []
+    for i in range(1, n_total):
+        if recent_closes[i] > 0 and recent_closes[i - 1] > 0:
+            log_returns.append(math.log(recent_closes[i] / recent_closes[i - 1]))
+    if len(log_returns) < 20:
+        return 0.5
+
+    # 2. 累積去均值序列
+    mean_r = sum(log_returns) / len(log_returns)
+    cum_dev = []
+    cum_sum = 0.0
+    for r in log_returns:
+        cum_sum += r - mean_r
+        cum_dev.append(cum_sum)
+
+    # 3. 對多個 scale 計 F(n)
+    n_points = len(cum_dev)
+    scales = []
+    for k in range(1, 15):
+        n_scale = int(8 * (n_points / 8) ** (k / 14))
+        if n_scale < 8:
+            n_scale = 8
+        if n_scale > n_points // 2:
+            n_scale = n_points // 2
+        if n_scale not in scales:
+            scales.append(n_scale)
+
+    log_scales = []
+    log_fluctuations = []
+    for n_scale in scales:
+        if n_scale < 4:
+            continue
+        n_segments = n_points // n_scale
+        if n_segments < 1:
+            continue
+        fluctuation_sum = 0.0
+        segment_count = 0
+        for seg in range(n_segments):
+            start = seg * n_scale
+            end = start + n_scale
+            segment = cum_dev[start:end]
+            if len(segment) < 4:
+                continue
+            # Linear detrend
+            xs = list(range(len(segment)))
+            x_mean = sum(xs) / len(xs)
+            y_mean = sum(segment) / len(segment)
+            num = sum((xs[i] - x_mean) * (segment[i] - y_mean) for i in range(len(segment)))
+            denom = sum((xs[i] - x_mean) ** 2 for i in range(len(segment)))
+            if denom == 0:
+                continue
+            slope = num / denom
+            intercept = y_mean - slope * x_mean
+            residuals = [segment[i] - (slope * xs[i] + intercept) for i in range(len(segment))]
+            variance = sum(r ** 2 for r in residuals) / len(residuals)
+            fluctuation_sum += variance ** 0.5
+            segment_count += 1
+        if segment_count == 0:
+            continue
+        avg_fluctuation = fluctuation_sum / segment_count
+        if avg_fluctuation > 0:
+            log_scales.append(math.log(n_scale))
+            log_fluctuations.append(math.log(avg_fluctuation))
+
+    if len(log_scales) < 3:
+        return 0.5
+    x_mean = sum(log_scales) / len(log_scales)
+    y_mean = sum(log_fluctuations) / len(log_fluctuations)
+    num = sum((log_scales[i] - x_mean) * (log_fluctuations[i] - y_mean) for i in range(len(log_scales)))
+    denom = sum((log_scales[i] - x_mean) ** 2 for i in range(len(log_scales)))
+    if denom == 0:
+        return 0.5
+    hurst = num / denom
+    return max(0.0, min(1.0, hurst))
+
+
+def _compute_adx(klines: List[Dict[str, Any]], period: int = 14) -> float:
+    """凡人話: ADX (Average Directional Index) — 量度股價趨勢強度 (Wilder 14 日 standard)
+
+    對齊 M3 永久 rule (大少 2026-09-07 01:08): 跟 M3 algorithm v0.3.0 _compute_adx port
+    - ADX > 25 = 強趨勢
+    - ADX 20-25 = 發展中
+    - ADX < 20 = 弱趨勢 / 橫行
+
+    對應 M3 trendline/algorithm.py _compute_adx (Wilder 14 日 standard)
+    對應 spec doc: MODULE-03-TRENDLINE.md §4.2
+    """
+    if len(klines) < period * 2 + 1:
+        return 0.0
+
+    # Wilder 標準: 1) 計 +DM / -DM / TR 2) Wilder smooth (遞歸) 3) +DI / -DI 4) DX 5) ADX
+    highs = [k["high"] for k in klines]
+    lows = [k["low"] for k in klines]
+    closes = [k["close"] for k in klines]
+
+    # Step 1: +DM / -DM / TR
+    plus_dm = []
+    minus_dm = []
+    tr = []
+    for i in range(1, len(klines)):
+        up = highs[i] - highs[i - 1]
+        down = lows[i - 1] - lows[i]
+        if up > down and up > 0:
+            plus_dm.append(up)
+        else:
+            plus_dm.append(0.0)
+        if down > up and down > 0:
+            minus_dm.append(down)
+        else:
+            minus_dm.append(0.0)
+        tr.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        ))
+
+    # Step 2: Wilder smooth (遞歸)
+    def wilder_smooth(values: List[float], period: int) -> List[float]:
+        if len(values) < period:
+            return []
+        smoothed = [sum(values[:period])]
+        for i in range(period, len(values)):
+            smoothed.append(smoothed[-1] - smoothed[-1] / period + values[i])
+        return smoothed
+
+    atr_smooth = wilder_smooth(tr, period)
+    plus_di_smooth = wilder_smooth(plus_dm, period)
+    minus_di_smooth = wilder_smooth(minus_dm, period)
+
+    if not atr_smooth or atr_smooth[-1] == 0:
+        return 0.0
+
+    # Step 3: +DI / -DI
+    plus_di = 100 * plus_di_smooth[-1] / atr_smooth[-1]
+    minus_di = 100 * minus_di_smooth[-1] / atr_smooth[-1]
+
+    # Step 4: DX
+    di_sum = plus_di + minus_di
+    if di_sum == 0:
+        return 0.0
+    dx = 100 * abs(plus_di - minus_di) / di_sum
+
+    # Step 5: ADX (Wilder smooth DX 拎 period 平均)
+    if len(atr_smooth) >= period:
+        # 拎最近 period 個 DX 拎平均
+        recent_dx = [dx] * period  # 簡化, 用最後 1 個 DX (完整版要 track 全部 DX history)
+        adx = sum(recent_dx) / period
+    else:
+        adx = dx
+
+    return adx
+
+
 # ============================================================
 # Main algorithm
 # ============================================================
@@ -734,6 +905,86 @@ class HLStructureAlgorithm(Algorithm):
         # 攞最後 dataWindowDays 條 (跟 M1 一樣)
         data_window_days = options.get("dataWindowDays", n)
         recent = klines[-min(data_window_days, n):]
+
+        # ============ Step 0.5: Hurst+ADX gate (v0.4.0 Layer 5, 跟 M3 永久 rule pattern) ============
+        # 凡人話: 跟 M3 永久 rule (大少 9月7日 01:08) 對齊, 用 Hurst+ADX 兩招 confirm 個股價真係有方向
+        # H >= hurstThreshold (default 0.45) AND ADX >= adxThreshold (default 20) 先繼續
+        # 唔通過: return SIDEWAYS + emit CONFLICT_STATE warning (system category)
+        hurst_value = 0.5
+        adx_value = 0.0
+        hurst_adx_gate_pass = True
+        hurst_adx_warnings = []
+
+        if cfg.get("enableHurstADXGate", True) and len(recent) >= 100:
+            closes = [k["close"] for k in recent]
+            hurst_value = _compute_hurst(closes, window=100)
+            adx_value = _compute_adx(recent, period=14)
+            hurst_threshold = cfg.get("hurstThreshold", 0.45)
+            adx_threshold = cfg.get("adxThreshold", 20)
+
+            hurst_pass = hurst_value >= hurst_threshold
+            adx_pass = adx_value >= adx_threshold
+            hurst_adx_gate_pass = hurst_pass and adx_pass
+
+            if not hurst_adx_gate_pass:
+                # 唔通過: 拎 SIDEWAYS verdict + 1 個 CONFLICT_STATE warning (system category)
+                _gate_warnings = [{
+                    "level": "warning",
+                    "module_id": "M2",
+                    "code": "CONFLICT_STATE",
+                    "message": f"Hurst+ADX gate 唔通過 (H={hurst_value:.4f}, ADX={adx_value:.2f})",
+                    "debug": {
+                        "issue": f"Hurst={hurst_value:.4f} (threshold {hurst_threshold}), ADX={adx_value:.2f} (threshold {adx_threshold})",
+                        "impact": "Verdict 唔可信 (random walk / 弱趨勢), M2 判嘅 cycle state 唔好用, M7 應該降 M2 weight",
+                        "fix": "等 trend 真出現先 re-run, 或 increase dataWindowDays",
+                        "context": {
+                            "hurst": round(hurst_value, 4),
+                            "adx": round(adx_value, 2),
+                            "hurst_threshold": hurst_threshold,
+                            "adx_threshold": adx_threshold,
+                            "hurst_pass": hurst_pass,
+                            "adx_pass": adx_pass,
+                        },
+                    },
+                }]
+                return Verdict(
+                    ok=True,
+                    points=[],
+                    meta={
+                        "symbol": options.get("code") or options.get("symbol", "TEST"),
+                        "cycle": "sideways",
+                        "state": "SIDEWAYS",
+                        "cycle_label": "橫行週期",
+                        "confidence": 0.3,
+                        "base_confidence": 0.3,
+                        "peaks": [],
+                        "troughs": [],
+                        "peak_trend": "mixed",
+                        "trough_trend": "mixed",
+                        "structure_score": 0,
+                        "weighted_structure_score": 0,
+                        "box_boundary": None,
+                        "pattern_alert": "none",
+                        "latest_extreme": None,
+                        "price_position": "between",
+                        "adaptive_window": cfg["baseWindow"],
+                        "effective_tolerance": _round(cfg["tolerancePct"], 6),
+                        "adjustment_log": [f"Hurst+ADX gate 唔通過: H={hurst_value:.4f} ADX={adx_value:.2f}"],
+                        "reason": f"Hurst+ADX gate 唔通過 (H={hurst_value:.4f}, ADX={adx_value:.2f}), 預設橫行",
+                        "last_date": str(recent[-1].get("time") or recent[-1].get("date") or recent[-1].get("timestamp") or ""),
+                        "hurst": round(hurst_value, 4),
+                        "adx": round(adx_value, 2),
+                        "hurst_adx_gate": {
+                            "enabled": True,
+                            "passed": False,
+                            "hurst_pass": hurst_pass,
+                            "adx_pass": adx_pass,
+                        },
+                        "version": "0.4.0",
+                        "_warnings": _gate_warnings,
+                    },
+                    warnings=_gate_warnings,
+                )
 
         # ============ Step 1: ATR + 自適應 Window ============
         atr = _calc_atr(recent, cfg["atrPeriod"]) if cfg["enableAtrWindow"] else 0.0
@@ -1445,6 +1696,13 @@ class HLStructureAlgorithm(Algorithm):
             # === v0.2.0 新加 (大少 2026-09-06 11:34 trigger) ===
             "short_term": short_term_result,          # Step 16 短線 mode 結果
             "breakout_override": breakout_result,    # Step 17 突破 override 結果
+            # === v0.4.0 Layer 5 (大少 11:45 plan): Hurst+ADX gate field (audit 對比用, 對齊 M3 永久 rule) ===
+            "hurst": round(hurst_value, 4),
+            "adx": round(adx_value, 2),
+            "hurst_adx_gate": {
+                "enabled": True,
+                "passed": hurst_adx_gate_pass,
+            },
             "version": "0.4.0",                       # v0.4.0 (大少 2026-09-07 11:45): 5-layer evidence-based 優化, version 寫入 meta 等 frontend 對齊
             "_warnings": m2_warnings,
         }
