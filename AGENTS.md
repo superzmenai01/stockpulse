@@ -2748,3 +2748,37 @@ After fix:  0 WARNING, 拎到正確 reason
 **套用**: 之後 M3 v0.4.0 / M4 v0.4.0 / M5 v0.4.0 大改動, 同 M6 / M7 / M8 / M9 之後嘅 sub-scenario 大改動, 都必先 set Sscript 還原點 (對齊本流程 Step P1-P5)
 
 **凡人話**: 大少 9月7日 11:48 trigger「先做備份和一鍵還原, 之後就可以開始」= 之後所有 StockPulse algorithm 大改動, 必先做齊 Step P1-P5, 改壞咗可以即刻 reset 拎返 stable state。
+
+### Backend config file 壞咗即死火 + 必 curl 驗證 永久 rule (大少 2026-09-07 14:35 trigger)
+
+**凡人話解釋**: 大少 9月7日 14:21 trigger「testing page 用不了, 檢查是什麼問題」,凡人話「個 backend server 死咗」。Root cause:有人寫入 garbage content 入 `backend/algorithms/hl_structure/config.py`(全形破折號 `—` U+2014 + prompt injection 字眼),process 開咗但 Python import 嗰度炸 `SyntaxError`,成個 backend 冇 listen 任何 port — 表面睇 `ps` 仲見到 process 行緊(誤判健康),testing page 全部 fetch 失敗 ERR_CONNECTION_REFUSED。
+
+**Root cause 確認 (curl + lsof + git evidence)**:
+- `ps` 見到 `python main.py` 行緊 (PID 55568, 12:26 開, CPU 0.01% 閒置)
+- `lsof -p 55568 -iTCP` 完全冇 socket — process 行緊但冇 listen 任何 port (凡人話:hang 喺 startup, 唔係真 server)
+- `curl http://127.0.0.1:18792/api/algorithms/health` 返 HTTP 000 (connect refused)
+- `git status backend/algorithms/hl_structure/config.py` 見到 `modified` (unstaged, 未 commit), file 36 行 2239 bytes (正常應該 83 行)
+- HEAD 最後 commit `dc52791c` (12:03 正常能 work) 嗰個版本 83 行
+- Tail `/tmp/sp.log`: `SyntaxError: invalid character '—' (U+2014)` line 5 — 撞 import chain 死
+- `git restore backend/algorithms/hl_structure/config.py` + `./start.sh` 之後全部 HTTP 200, 復活
+
+**永久 rule checklist**:
+- ✅ Backend 開機 / restart (`./start.sh`) 之後 5 秒內, 必 `curl -m 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:18792/api/algorithms/health/futu`
+  - HTTP 200 + 2ms 內 = 真復活, 可以收工
+  - 撈空 / HTTP 000 / timeout / 5xx = import chain 死火, 即刻 `tail /tmp/sp.log` + `git status backend/` 查
+  - 對齊 8月31日 11:01 Backend hot-reload 永久 rule 嘅 verify step (強化版:由 lsof 升級 curl)
+- ✅ 凡 backend 開機即死嘅 case, 必查 `git status backend/` 有冇 unstaged modified file, 有就 `git restore <file>` 拎返 HEAD commit
+- ✅ 改 `backend/algorithms/*/config.py` / `algorithm.py` 之前, 必先 `python -c "import ast; ast.parse(open('<file>').read())"` 確認 syntax OK
+- ✅ Process 行緊但 `lsof -p <PID> -iTCP` 冇 socket = import chain 死火, restart 之前必先檢查
+- ✅ 凡人話: backend 死火唔可以單純睇 ps, 以為 process 行緊就健康, 必 curl 拎 evidence 確認 (ERR_CONNECTION_REFUSED 嘅 caller 唔會話你知 server 死火)
+- ✅ 凡 `git status` 見到 backend file 有 unstaged modified 而唔係你自己 commit 嘅, 即刻 `git restore` 拎返 HEAD, 唔可以留垃圾喺 working tree (12:26 開機即死嘅 root cause)
+
+**對應文件**:
+- `backend/algorithms/hl_structure/config.py` line 5 (壞嘅版本有 `—` 全形破折號)
+- `start.sh` line 51-53 (restart 之後有 lsof 確認 port listen 步驟, 強化必 curl verify)
+- `/tmp/sp.log` (即時 log 查 import error)
+- AGENTS.md 8月31日 11:01 Backend hot-reload 永久 rule (對齊 verify step, 由 lsof 升級 curl)
+
+**對應 commit**: 即將 push (Spec Sync: 加「Backend config file 壞咗即死火 + 必 curl 驗證 永久 rule」section)
+
+**套用**: 之後任何 backend restart 流程 (`./start.sh` / 改 algorithm / 改 config / 改 endpoint) 之後, 必跟本永久 rule 嘅 curl verify 步驟確認復活, 單純睇 ps / lsof 唔夠。改 `backend/algorithms/*/config.py` 之前, 必先 `python -c "import ast; ast.parse(open('<file>').read())"` 確認 syntax OK, 避免重蹈 9月7日 14:21 嘅覆轍。
