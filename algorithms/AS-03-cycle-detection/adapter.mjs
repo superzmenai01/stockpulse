@@ -2995,6 +2995,11 @@ async function analyzeHLStructure(klines, options = {}) {
   if (!verdict.ok) {
     throw new Error(`Backend M2 verdict fail: ${verdict.error || "unknown"}`);
   }
+  // 大少 2026-09-07 Fix A — M2 frontend propagate `_warnings` 落 verdict 頂層
+  // 永久 rule §Module Warning v1.0.0: frontend testing page 拎 verdict._warnings 渲染頂部 banner
+  // 永久 rule §Module Warning v1.1.0: 警告分 2 category (system / stock_state)
+  // backend emit 嘅係 meta._warnings (ModuleWarning object array) + top-level warnings, frontend 統一拎 top-level _warnings
+  verdict._warnings = verdict.meta?._warnings || verdict.warnings || [];
   // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 cycle / peaks / troughs / etc)
   return verdict;
 }
@@ -3048,6 +3053,8 @@ function renderHLStructureResult(verdict) {
           <div class="summary-row"><span>結構分數:</span> <strong>${verdict.meta.structure_score}</strong></div>
         </div>
       </div>
+
+      ${verdict._warnings && verdict._warnings.length > 0 ? renderWarningCards(verdict._warnings) : ''}
 
       <div class="interpretation">
         <strong>📌 判斷：</strong>${verdict.meta.reason}
@@ -5647,6 +5654,13 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
     module_id: moduleId,
     module_specific,
     timestamp: verdict.timestamp,
+    // 大少 2026-09-07 Fix B — decisionEngineToStandardVerdict propagate `_warnings` 落 standard verdict
+    // 永久 rule §M2 self-check warning (大少 2026-09-06 15:08): M7 Synthesizer 拎 M2 self-check warning
+    // 自動降 M2 weight 0.15 → 0.05, 5 個其他 module 等比例 normalize 補返 0.10
+    // backend M7 algorithm.py line 410 拎 v.get("warnings", []), 即係靠 standard verdict 嘅 warnings field
+    // Fix 前 decisionEngineToStandardVerdict 永遠冇 propagate _warnings, M7 永遠拎唔到 → 永遠唔 trigger discount
+    // 對齊 §Module Warning v1.0.0 永久 rule: 對外一定要有 _warnings array (propagate chain M1-M6 → M7 → M8 → M9)
+    warnings: verdict._warnings || [],
   };
 }
 
