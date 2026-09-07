@@ -2693,3 +2693,58 @@ After fix:  0 WARNING, 拎到正確 reason
 **對應 doc**: ARCHITECTURE.md §15.55 + MODULE-01-MA-ALIGNMENT.md (改 trigger 描述, 拎走「放量」, 加 volumeConfirmed field)
 **對應凡人話 trigger**: 大少 2026-09-06 07:30 trigger「先做個測試對比, 如果把強升和強跌的放量拿走」+ 232 隻 stock 對比 evidence + 08:00 confirm「放量不要放到強升和強跌裡, 但我想要有放量的提示, 例如該股的強升強跌如果Trigger到放量, 你要在結果裡用紅色字給我提示」+ 08:10 改寫「我弄錯了, 如果是放量的, 用藍色字, 如果沒有達到放量的, 用紅色字寫明狀況和有什麼影響解讀」
 **套用情境**: 之後任何 sub-scenario trigger 拎走/加條件必須: (1) 先用 A/B test 對比 ≥30 隻 stock 拎 evidence (2) 拎走嘅條件如果有保留 value, 變 confidence indicator 唔好直接刪 (3) frontend 顯示規則跟 v2.3.0 永久 rule 嘅 volumeConfirmed 模式 (backend meta field + testing page conditional row + 藍字/紅字二選一 + 影響解讀)
+
+### 「先備份, 後動工」流程永久 rule (大少 2026-09-07 11:48 trigger)
+
+**凡人話解釋**: 大少 9月7日 11:45 plan 批准 M2 v0.4.0 5-layer evidence-based 優化, 11:48 trigger「你先做備份和一鍵還原, 之後就可以開始」— 改 algorithm 之前必先 set Sscript 還原點 (annotated tag + backup branch + Sscript + verify Backup Admin Page can_restore=true), 對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule。
+
+**流程 (Step P1-P5)**:
+- **P1**: Git tag + branch (備份當前 working state)
+  - `git tag -a "restore-<日期>-<algo>-pre-v<version>" <stable-commit> -m "備份 reason"`
+  - `git branch "backup-<日期>-<algo>-pre-v<version>" <stable-commit>`
+  - `git checkout -b "<algo>-v<version>-<改動-name>"` (working branch, 唔需要對齊 backup-* pattern)
+- **P2**: Sscript 一鍵還原 (對齊 §15.45 pattern)
+  - `scripts/restore_<日期>_<algo>_<version>.sh` (EXPECTED_HEAD = stable-commit, double confirm `yes` + `RESET`)
+  - `chmod +x scripts/restore_*.sh` (executable 必加)
+  - 對齊 m2-v0.2.2-stable / m3-pre-b3-phase1 Sscript pattern
+- **P3**: Backup Admin Page sync (對齊 §15.54 + §15.55 永久 rule)
+  - `curl 'http://localhost:18792/api/backup-points/list'` 拎到新建還原點
+  - 預期: `can_restore: true, missing: []` (有齊 tag + branch + script)
+  - 凡人話: 大少去 `~/stockpulse/backup-admin/index.html` 撳「掃描還原點」, 見到新 tag 拎得到
+- **P4**: ARCHITECTURE.md 加新 § (對齊 §15.58 pattern)
+  - 加 `§15.<n> <algo> v<version> 5-layer 優化 Sscript 還原點 永久 rule`
+  - 列 5 個改動 file + 對應 Sscript 還原點 (tag + branch + script)
+  - 列永久 rule checklist (10 個 ✅ 對齊)
+- **P5**: AGENTS.md 加永久 rule section (即本段)
+  - 對齊流程 Step P1-P5
+
+**永久 rule**:
+- ✅ 改任何 StockPulse algorithm (M1 / M2 / M3 / M4 / M5 / M6 / M7 / M8 / M9) v<version> 改動, 必先 set Sscript 還原點
+- ✅ 必先 git tag + branch + script + verify Backup Admin Page can_restore=true 先可以落 algorithm code
+- ✅ Sscript EXPECTED_HEAD 必對齊 tag peel commit (避開 dedup merge bug — 兩個 entry 用同一個 stable commit 會 merge, 拎錯 Sscript)
+- ✅ 必建 backup branch 對齊 `backup-*` pattern, 否則 can_restore = false 因為 missing branch
+- ✅ working branch (`<algo>-v<version>-<改動-name>`) 唔顯示喺 backup admin page 因為 pattern 唔 match, 屬正常
+- ✅ Restart backend (`./start.sh`) + curl 5 隻代表 stock verify (對齊 §15.51 永久 rule)
+- ✅ 22 隻 M1 UP + M2 SIDEWAYS conflict stock 必先 review ≥ 3 隻 (對齊 8月16日 sub-scenario 永久 rule)
+- ✅ 5 隻代表 stock (HK.00700 / HK.00005 / US.AAPL / US.MSFT / US.GOOGL) 必用 backend curl evidence 確認 verdict 對齊 spec (對齊 9月5日 Stock 名 evidence 永久 rule)
+- ✅ 改 algorithm.py 之後必 restart backend + curl verify (對齊 §15.51 永久 rule)
+- ✅ 改 adapter.mjs / testing-page.js 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (對齊 2026-08-09 13:10 永久 rule)
+- ✅ 凡人話: 大少唔想見到「改壞咗要 git log 慢慢搵返 v0.3.0」, 必先備份到 tag + Sscript
+
+**對應 commit**:
+- `feat(scripts): Sscript 一鍵還原 M2 v0.3.0 (備份 before v0.4.0 5-layer 優化)` (8b723c46)
+- `fix(scripts): Sscript EXPECTED_HEAD 拎 8b723c46 (對齊 tag peel commit)` (690d28cd)
+- `docs(ARCHITECTURE): 加 §15.58 M2 v0.4.0 Sscript 還原點 永久 rule` (即將 push)
+- `docs(AGENTS): 加「先備份, 後動工」永久 rule section` (即將 push, 本段)
+- Spec Sync: ARCHITECTURE.md §15.58 + AGENTS.md 「先備份, 後動工 永久 rule」section
+
+**對應 Sscript 還原點**:
+- annotated tag: `restore-2026-09-07-m2-pre-v4-phase0` (commit 8b723c46, v0.3.0 working state)
+- backup branch: `backup-2026-09-07-m2-pre-v4-phase0`
+- working branch: `m2-v0.4.0-evidence-based-optimization` (改動落呢度, 之後可以 reset 拎返 8b723c46)
+- restore script: `scripts/restore_2026_09_07_m2_pre_v4_phase0.sh` (EXPECTED_HEAD = 8b723c46, double confirm)
+- Backup Admin Page 拎到: `can_restore: true, missing: []`
+
+**套用**: 之後 M3 v0.4.0 / M4 v0.4.0 / M5 v0.4.0 大改動, 同 M6 / M7 / M8 / M9 之後嘅 sub-scenario 大改動, 都必先 set Sscript 還原點 (對齊本流程 Step P1-P5)
+
+**凡人話**: 大少 9月7日 11:48 trigger「先做備份和一鍵還原, 之後就可以開始」= 之後所有 StockPulse algorithm 大改動, 必先做齊 Step P1-P5, 改壞咗可以即刻 reset 拎返 stable state。

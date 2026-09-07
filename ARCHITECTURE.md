@@ -4789,6 +4789,61 @@ git push origin main
 - 改 Git endpoint 必先 restart backend + curl verify (對齊 §15.51 永久 rule)
 - uvicorn subprocess + git reflog 拎 dangling commit 嘅 issue 屬於 OS-level, 之後 follow-up
 
+### 15.58 M2 v0.4.0 5-layer 優化 Sscript 還原點 永久 rule (大少 2026-09-07 11:48 trigger)
+
+### 大少 trigger
+9月7日 11:45 plan 批准 M2 v0.4.0 5-layer evidence-based 優化, 11:48 確認「你先做備份和一鍵還原, 之後就可以開始」。
+
+### 凡人話解釋
+大少 M2 (高低點結構法) algorithm 之前 v0.3.0 (19 步 + 5 個 self-check) 有 5 個 step 弱點, 11:45 plan 拎 5 個 layer 改善 (Savitzky-Golay + prominence / Linear regression + R² / 5-point H&S + neckline / BB-KC Squeeze / Hurst+ADX gate)。11:48 trigger 必先做備份 + 一鍵還原先至可以動工, 對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule。
+
+### 5 個 layer 改善 (大少 9月7日 11:45 plan 批准)
+- **Layer 1**: Step 3 峰谷識別加 Savitzky-Golay filter + prominence 過濾 (對齊 `exchangetuts.com` / `askpython.com` SciPy `find_peaks` 哲學)
+- **Layer 2**: Step 9 趨勢分析改 linear regression slope + R² (對齊 `pomegra.io` + `tradersweek.com` R² threshold)
+- **Layer 3**: Step 13 形態預警改 5-point H&S + neckline + measured move (對齊 `deepwiki.com` Bulkowski 標準)
+- **Layer 4**: Step 17 突破 override 加 BB / KC Squeeze 確認 (對齊 `thinkcapital.com` + `marketopia.org` Squeeze 教學)
+- **Layer 5**: 加 Hurst+ADX gate (對齊 M3 永久 rule, M3 algorithm v0.3.0 已有)
+
+### 改動範圍 (5 個 file + 1 個備份點 + 1 個 spec section)
+| # | File | 改動 |
+|---|------|------|
+| 1 | `backend/algorithms/hl_structure/algorithm.py` | 加 5 個 helper (savgol, prominence, linregress, head_shoulders, bb_kc_squeeze, hurst, adx) + 改 Step 3/9/13/17 + 加 Step 0.5 gate |
+| 2 | `backend/algorithms/hl_structure/config.py` | 加 12 個 config key (savgol filter + prominence + R² threshold + H&S r2 + BB/KC params + Hurst/ADX threshold) |
+| 3 | `algorithms/AS-03-cycle-detection/modules/hl-structure.ts` | 1:1 port 同步 (frontend 已拎走, 對齊 spec 一致性) |
+| 4 | `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md` | 加 v0.4.0 改動摘要 section |
+| 5 | `AGENTS.md` | 加 M2 v0.4.0 永久 rule 摘要 (5 個 layer 改動要點 + 「先備份, 後動工」流程) |
+
+### 對應 Sscript 還原點 (對齊 §15.45 + §15.53 + §15.54 永久 rule)
+- annotated tag: `restore-2026-09-07-m2-pre-v4-phase0` (commit 8b723c46, v0.3.0 working state)
+- backup branch: `backup-2026-09-07-m2-pre-v4-phase0`
+- working branch: `m2-v0.4.0-evidence-based-optimization` (改動落呢度, 之後可以 reset 拎返 8b723c46)
+- restore script: `scripts/restore_2026_09_07_m2_pre_v4_phase0.sh` (EXPECTED_HEAD = 8b723c46, double confirm)
+- Backup Admin Page 拎到: `can_restore: true, missing: []`
+
+### 永久 rule (對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule)
+- ✅ 大少 11:48 trigger「先做備份和一鍵還原, 之後就可以開始」= 改 algorithm 必先 set Sscript 還原點
+- ✅ 改 algorithm.py 之前必 git tag + branch + script + verify Backup Admin Page can_restore=True
+- ✅ 改 algorithm.py 之後必 restart backend + curl 5 隻代表 stock verify (對齊 §15.51 永久 rule)
+- ✅ Sscript EXPECTED_HEAD 必對齊 tag peel commit (避開 dedup merge bug)
+- ✅ 22 隻 M1 UP + M2 SIDEWAYS conflict stock 必先 review ≥ 3 隻 (對齊 8月16日 sub-scenario 永久 rule)
+- ✅ 5 隻代表 stock (HK.00700 / HK.00005 / US.AAPL / US.MSFT / US.GOOGL) 必用 backend curl evidence 確認 verdict 對齊 spec (對齊 9月5日 Stock 名 evidence 永久 rule)
+- ✅ 唔引入 scipy 依賴 (跟 M3 pattern, Hurst/ADX 都用手寫 numpy)
+- ✅ 唔用「拎」用「取」 (對齊 8月20日 21:50 永久 rule)
+- ✅ 全部註解用簡單普通話 (對齊 8月14日 19:02 永久 rule)
+- ✅ 之後 M3 / M4 / M5 v0.4.0 大改動必先 set Sscript 還原點 (套用同一流程)
+
+### 對應 commit
+- `feat(scripts): Sscript 一鍵還原 M2 v0.3.0 (備份 before v0.4.0 5-layer 優化)` (8b723c46)
+- `fix(scripts): Sscript EXPECTED_HEAD 拎 8b723c46 (對齊 tag peel commit)` (690d28cd)
+- `docs(ARCHITECTURE): 加 §15.58 M2 v0.4.0 Sscript 還原點 永久 rule` (即將 push)
+- Spec Sync: ARCHITECTURE.md §15.58 (本段) + AGENTS.md 「先備份, 後動工 永久 rule」section
+
+### 教訓
+- 大少 11:48 trigger「先做備份」= 改 algorithm 必先 set Sscript 還原點 (對齊 §15.45 + §15.53 + §15.54 + 12:08 user memory 永久 rule)
+- tag 同 Sscript EXPECTED_HEAD 對齊重要: dedup 用 commit hash, 不對齊會 merge 兩個 entry 拎錯 Sscript
+- 必建 backup branch 對齊 `backup-*` pattern, 否則 can_restore = false 因為 missing branch
+- working branch (`m2-v0.4.0-evidence-based-optimization`) 唔顯示喺 backup admin page 因為 pattern 唔 match, 屬正常
+
 ### 15.57 M1 Console Log 加 Threshold % + 觸發點 (Trigger 確認點) 永久 rule (大少 2026-08-31 17:42 修改版 20:51 + 20:57 trigger, 4.57.0)
 
 ### 大少 trigger
