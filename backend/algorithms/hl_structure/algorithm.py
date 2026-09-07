@@ -1636,6 +1636,32 @@ class HLStructureAlgorithm(Algorithm):
                 },
             })
 
+        # ============ Step 19.5: Self-check warning penalty (大少 2026-09-07 22:00 trigger) ============
+        # 凡人話: 5 個 self-check warning (Step 19) 觸發之後, M2 algorithm 自己將 confidence
+        # 自動 floor 0.3, 等大少睇 verdict card 即見「上升 30%」而唔係「上升 80%」誤信
+        # 對齊永久 rule §M3 self-check warning (大少 2026-09-07 00:14) Layer 4 formula spirit:
+        #   - warning 觸發即 conf auto floor 0.3
+        #   - state 唔變, 由 M7 layer 處理 weight 折扣
+        # 對齊永久 rule §M2 self-check warning (大少 2026-09-06 15:08) 嘅 spirit
+        # Trigger codes (critical + warning level, 唔包 info):
+        #   - CONFLICT_STATE (Step 13 形態預警 / Step 14 結構破壞)
+        #   - FALLBACK_USED (峰谷不足 / 5年 vs 短線 override)
+        #   - THRESHOLD_BREACH (Step 18 confidence < 0.3)
+        #   - VERDICT_MISSING (Step 0 峰谷全部拎唔到)
+        # 永久 rule: self-check warning 觸發, confidence 自動 × 0.375 (即 0.8 × 0.375 = 0.3), floor 0.3
+        # 凡人話: 對齊 M3 Layer 4 永久 rule, 永遠 ban conf=1.0, conf clamp 0.0-0.95
+        m2_self_check_penalty_trigger_codes = ("CONFLICT_STATE", "FALLBACK_USED", "THRESHOLD_BREACH", "VERDICT_MISSING")
+        m2_self_check_triggered = any(
+            w.get("code") in m2_self_check_penalty_trigger_codes and w.get("level") in ("critical", "warning")
+            for w in m2_warnings
+        )
+        original_confidence_before_penalty = confidence
+        if m2_self_check_triggered:
+            # 永久 rule: confidence auto floor 0.3 (對齊 M3 Layer 4 formula spirit)
+            # 凡人話: 算法自己都 flag 唔 sure 啦, 大少唔應該再見到 80% 高信心
+            confidence = max(confidence * 0.375, 0.3)
+            confidence = min(confidence, 0.95)  # ban conf=1.0, 對齊 M3 Layer 4 永久 rule
+
         meta = {
             "symbol": options.get("code") or options.get("symbol", "TEST"),
             "cycle": candidate,
@@ -1643,6 +1669,10 @@ class HLStructureAlgorithm(Algorithm):
             "cycle_label": cycle_label,
             "confidence": _round(confidence, 4),
             "base_confidence": _round(base_confidence, 4),
+            # Step 19.5 self-check penalty audit fields (大少 2026-09-07 22:00 trigger)
+            # 凡人話: 畀 audit 同 frontend 用, 等大少肉眼睇到「conf 由 X 折到 Y 因為 self-check 觸發」
+            "self_check_triggered": m2_self_check_triggered,
+            "original_confidence": _round(original_confidence_before_penalty, 4),
             "peaks": [
                 {
                     "date": str(e["k"].get("time") or e["k"].get("date") or e["k"].get("timestamp") or ""),
