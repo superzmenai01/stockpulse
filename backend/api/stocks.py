@@ -60,7 +60,7 @@ async def get_by_code(code: str):
 @router.get('/')
 async def list_by_market(
     market: str = Query(..., description='市場 (HK/US)'),
-    limit: int = Query(100, description='返回數量', ge=1, le=500)
+    limit: int = Query(500, description='返回數量 (大少 2026-09-08 09:46 trigger 改 100→500,對齊 stock list 真實規模)', ge=1, le=500)
 ):
     """獲取指定市場的股票列表
 
