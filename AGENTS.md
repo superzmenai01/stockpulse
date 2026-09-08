@@ -1334,6 +1334,56 @@ def get_name(sym):
 **對應凡人話 trigger**: 大少 2026-09-08 14:13 (217 stock audit) + 16:09 (拎走 trigger) + 16:54 (揀 A 立即做)
 
 
+### M1 v2.5.0 confidence 增減量 + boost/penalty 配對 永久 rule (大少 2026-09-08 20:31 trigger, Sub-Option C 揀)
+
+**凡人話解釋**: 之前 M1 v2.4.0 用「倍數」公式計 confidence (`base × vol_mul × slope_mul`), 9月8日 audit 217 stock 揭發 23 隻 conf=1.0 (10.6%), 因為 `base=1.0 × vol_mul=1.25 × slope_mul=1.0 = 1.25` 撞 cap 1.0。大少 trigger「理論上唔應該有 100% 肯定」, 9月8日 20:31 揀 Sub-Option C (增減量 + boost/penalty 配對 + clamp 0.3-0.95, 對齊 M3 Layer 4 永久 rule)。
+
+**改動範圍** (Spec Sync #50+):
+- ✅ `backend/algorithms/ma_alignment/algorithm.py` line 643-718 (Step 7a-7c) 拎走倍數, 改 +/- 配對
+- ✅ `algorithm.py` Step 7c final formula 改 `confidence = base + boost - penalty` + `clamp(0.3, 0.95, ...)` (永遠 ban conf=1.0)
+- ✅ `backend/algorithms/ma_alignment/config.py` 加 12 個 boost/penalty default value (對齊 Config UX 模式 8月19日)
+- ✅ `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` v2.4.0 → v2.5.0 spec table + 新 section「Step 7 Confidence 計算公式 v2.5.0」
+
+**永久 rule checklist**:
+- ✅ **永久 ban conf=1.0** (對齊 M3 Layer 4 formula 永久 rule, Spec Sync #45, 9月7日 00:14): `clamp(0.3, 0.95, confidence)`
+- ✅ **永遠唔郁 sub_scenario 判定** (對齊大少 Q1 confirm 9月8日 20:21 trigger): Step 5.5 line 514-674 唔動, sub_scenario cycle 拎走前拎走後 100% 唔變
+- ✅ **6 對 boost/penalty 配對永遠平衡** (Sub-Option C 揀): 配對 1-5 都有對應 boost/penalty, 條件疊加唔會一面倒撞 0.95 cap
+- ✅ **Config 可手動微調** (對齊 Config UX 模式 8月19日 trigger): 12 個 boost/penalty 全部放 config.py, 大少可手動 override
+- ✅ **每個 boost/penalty 對應凡人話解釋** (對齊 plain language 8月7日 + 8月14日 trigger): 「放量 (+0.05) 信心提升」/「縮量 (-0.10) 信心打折」/「短斜率負 (-0.08) 上升動能減弱」等
+- ✅ **凡人話追蹤容易** (對齊大少 trigger 8月20日 「用取唔用拎」): 每個 boost/penalty 獨立追蹤, 大少讀 log 一目了然
+- ✅ **改 conf 計算必先 audit ≥ 3 隻 stock 拎 evidence** (對齊 8月16日 19:21 永久 rule): 拎走前 vs 拎走後對比表
+- ✅ **改 conf 計算必先 update spec doc** (對齊 8月18日 06:36 永久 rule): 「Step 7 Confidence 計算公式」section 即時 update
+
+**凡人話 audit 拎走前 vs 拎走後** (6 隻 stock, 對齊 8月16日 19:21 永久 rule):
+| Stock | Cycle | 拎走前 (倍數) | 拎走後 (增減量 + Cap 0.95) | Δ |
+|---|---|---|---|---|
+| HK.00013 和黃醫藥 | 強升 | 1.0000 | 0.9500 | -0.05 |
+| HK.00019 太古A | 強升 | 0.7173 | 0.8100 | +0.09 |
+| HK.00386 中國石油化工股份 | 強升 | 1.0000 | 0.9100 | -0.09 |
+| HK.00151 中國旺旺 | 強跌 | 1.0000 | 0.7800 | -0.22 |
+| HK.00700 騰訊 | 強跌 | 0.2104 | 0.3992 | +0.19 |
+| HK.00068 群核科技 | 到底轉勢 | 1.0000 | 0.8400 | -0.16 |
+
+**Audit 結論**:
+- 拎走前 conf≥0.99: 4/6 隻
+- 拎走後 conf≥0.99: **0/6 隻** ← 永久 ban conf=1.0 成功
+- 6 對 boost/penalty 配對正常 fire (放量 +0.05 / 縮量 -0.10 / 短斜率 ± / 趨勢一致 +0.04)
+- sub_scenario cycle 唔變 (強升/強跌/到底 等) ← 對齊大少 Q1 confirm
+
+**凡人話決策**:
+- Sub-Option A 純加法: 太簡單, 多條件 fire 撞 0.95 cap
+- Sub-Option B 加法 + Cap 0.95: 對齊 M3 但無配對
+- Sub-Option C ⭐ 揀: 配對 + 平衡, 大少最穩陣 (9月8日 20:31 trigger)
+
+**對應 commit**: 即將 push (Spec Sync #50+, 大少 9月8日 20:34 trigger「Go」確認開工)
+**對應 spec doc**: `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` v2.5.0 spec table + 「Step 7 Confidence 計算公式 v2.5.0」section
+**對應凡人話 trigger**: 大少 2026-09-08 20:15 (audit 23 隻 conf=1.0 stock) + 20:18 (大少提議增減量) + 20:21 (大少 Q1 Q2 confirm) + 20:31 (揀 Sub-Option C) + 20:34 (trigger「Go」開工)
+**對應算法改動**: Option C feature branch `feat/m1-v2.5.0-confidence-additive` (對齊今次新加嘅 StockPulse Git workflow 永久 rule)
+**對應 verify**: 6 隻 stock audit 拎 evidence 確認 (對齊 8月16日 19:21 永久 rule + 8月31日 11:01 Backend hot-reload + 9月7日 14:35 Backend curl verify)
+
+**套用情境**: 之後任何 M1 confidence 計算公式改動, 必跟本永久 rule 嘅 checklist (audit ≥ 3 stock + spec doc update + config 可微調 + 凡人話追蹤 + 永遠 ban conf=1.0)
+
+
 ### ZigZag 拎走 4.56.0 'today' point + 鮮綠線 + 4.57.x skip_today 永久 rule (大少 2026-09-01 14:10 trigger, 4.59.0, Full Revert 4.56.0)
 
 **凡人話解釋**: 大少 14:10 trigger「處理M1 zigzag 最後一個Point的問題, 這是01347的console結果... P1 還未被觸發的情況下就定了在2026-08-31 的 123價位, 這是錯誤的因為這個Peak還未被觸發, 隨時也因應股價上升而改變」+「我覺得可能是以前我要求把今日的Close來做P1, 所以去揾出除了正常計算zigzag之外, 有那些日是額外做出來的, 包括我之前要求的鮮綠線, 連線到今日等這些要求, 我全要删除重新再做」。

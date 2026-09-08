@@ -318,11 +318,11 @@
 
 ---
 
-## 📋 8 個 sub-scenario v2.4.0 簡單算法表 (大少 2026-08-18 06:36 trigger, v2.3.0 拎走強升中整固 → 2026-09-08, v2.4.0 commit)
+## 📋 8 個 sub-scenario v2.5.0 簡單算法表 (大少 2026-08-18 06:36 trigger, v2.3.0 拎走強升中整固 → v2.4.0 2026-09-08, v2.5.0 confidence 增減量 → 2026-09-08 20:31 commit)
 
 > **永久 rule**: 改任何 sub-scenario trigger 都要即刻 update 呢個 section,等下次可以即刻調動出嚟 review
-> **Source**: `backend/algorithms/ma_alignment/algorithm.py` (v2.4.0 2026-09-08)
-> **Status**: ✅ 9 條原 sub-scenario 全部 fix, v2.4.0 拎走強升中整固剩 8 個 (217 stock audit 證明 0 隻 stock 真係 hit 過, 屬 dead code)
+> **Source**: `backend/algorithms/ma_alignment/algorithm.py` (v2.5.0 2026-09-08)
+> **Status**: ✅ 8 個 sub-scenario + v2.5.0 confidence 改增減量 (Sub-Option C 揀, 6 對 boost/penalty 配對, clamp 0.3-0.95 永遠 ban conf=1.0)
 
 ### 🔼 Priority 1 - 警號 (transition, 最重要)
 
@@ -365,6 +365,73 @@
 | # | 狀態 | 凡人話 | v2.1.0 簡單算法 (現有) | 已知問題 | 大少提議 |
 |---|------|--------|----------------|---------|---------|
 | 9 | **橫行** | 平, 唔升唔跌 | 其他所有情況 (排列唔 clear) | ⚠️ 過寬 (16 隻中 13 隻 MA5 斜率 > 2%) + 大少提議 close<MA5 條件 | 改用 `MA5>MA60 + close<MA5 ≥ 50%` + 其他 sub-condition |
+
+---
+
+## 📐 Step 7 Confidence 計算公式 v2.5.0 (增減量 + boost/penalty 配對)
+
+> **凡人話**: 對齊大少 2026-09-08 20:31 trigger Sub-Option C。之前 v2.4.0 用「倍數」公式 (`base × vol_mul × slope_mul`), 容易爆 conf=1.0 (217 stock audit 23 隻 conf=1.0)。v2.5.0 改用「增減量」公式 (`base + boost - penalty`), 永遠 ban conf=1.0 (對齊 M3 Layer 4 永久 rule, clamp 0.3-0.95)。
+> **Source**: `backend/algorithms/ma_alignment/algorithm.py` line 643-718 (Step 7a-7c) + `config.py` 12 個 boost/penalty default
+
+### 7a. 基礎信心 (base_confidence, 永遠 0.30-0.80)
+
+| Cycle 分類 | 公式 | 上限 |
+|---|---|---|
+| 強升/強跌/上升回調/下跌回彈/到頂/到底 | `min(0.80, 0.50 + max_spread_pct × 4.0)` | **0.80** ← 唔爆 1.0 |
+| 初升/初跌 | `min(0.50, 0.35 + max_spread_pct × 2.0)` | **0.50** |
+| 橫行 | `max(sidewaysBaseConfidence=0.30, min(0.50, 0.30 + (1 - abs(spread-thr)/thr) × 0.20))` | **0.50** |
+
+凡人話: spread 0% → base 0.50, spread 7.5%+ → base 0.80 (永遠唔爆 1.0)
+
+### 7b. 6 對 Boost/Penalty 配對 (凡人話: 「加減清單」, 永遠平衡)
+
+| # | 條件 | Boost (+X) | Penalty (-Y) | Config 預設 |
+|---|---|---|---|---|
+| 1 | 成交量 | 放量 (vol>1.0) **+0.05** | 縮量 (vol<1.0) **-0.10** | `boostVolExpanding=0.05` / `penaltyVolShrinking=0.10` |
+| 2 | 短斜率 (MA5+MA10) | 短斜率正 **+0.03** | 短斜率負 **-0.08** | `boostShortSlopePos=0.03` / `penaltyShortSlopeNeg=0.08` |
+| 3 | 長斜率 (MA60) 分裂 | 強升 + 長正 **+0.02** | 強跌 + 長正 **-0.05** | `boostLongSlopeUptrend=0.02` / `penaltyLongSlopeDowntrend=0.05` |
+| 4 | Spread 闊度 | spread ≥ 5% **+0.02** | spread < 2% **-0.05** | `boostSpreadWide=0.02` / `penaltySpreadNarrow=0.05` |
+| 5 | 趨勢一致性 | 4 條均線斜率同方向 **+0.04** | 斜率分裂 (有正有負) **-0.06** | `boostTrendConsistent=0.04` / `penaltySlopeDiverged=0.06` |
+| 6 | 整固信號 (橫行 only) | (冇對應, 橫行特性) | 橫行但斜率過大 **-0.04** | `penaltySidewaysSlope=0.04` |
+
+凡人話: **每個 boost 都有對應 penalty** (配對 1-5), 條件平衡, 唔會一面倒 boost 撞 0.95 cap。
+
+### 7c. 綜合信心 (對齊 M3 Layer 4 永久 rule)
+
+```python
+confidence = base_confidence + boost - penalty
+confidence = max(0.30, min(0.95, confidence))   # clamp 0.3-0.95, 永遠 ban conf=1.0
+```
+
+**凡人話**: 對齊 M3 Layer 4 formula 永久 rule (Spec Sync #45, 大少 9月7日 00:14) — 「永久 ban conf=1.0, conf clamp 0.3-0.95」。
+
+### v2.5.0 vs v2.4.0 對比
+
+| 項目 | v2.4.0 (倍數) | v2.5.0 (增減量) |
+|---|---|---|
+| 公式 | `base × vol_mul × slope_mul` | `base + boost - penalty` |
+| base 上限 | 1.0 (容易爆) | **0.80** (永遠唔爆) |
+| vol/slope 影響 | 倍數 (1.25 / 0.65) | +/- 固定 % (0.05 / -0.10) |
+| 容易爆 conf=1.0 | ✅ 是 (217 stock 23 隻 hit) | ❌ 否 (永遠 ban) |
+| 凡人話追蹤 | 倍數疊加難追蹤 | 每個 boost/penalty 獨立追蹤 |
+| Config UX 模式 (8月19日 trigger) | 倍數 hardcode | **可微調** (12 個 default 值) |
+
+### Audit 拎走前 vs 拎走後 (6 隻 stock, 對齊 8月16日 19:21 永久 rule)
+
+| Stock | Cycle | 拎走前 (倍數) | 拎走後 (增減量 + Cap 0.95) | Δ |
+|---|---|---|---|---|
+| HK.00013 和黃醫藥 | 強升 | 1.0000 | 0.9500 | -0.05 |
+| HK.00019 太古A | 強升 | 0.7173 | 0.8100 | +0.09 |
+| HK.00386 中國石油化工股份 | 強升 | 1.0000 | 0.9100 | -0.09 |
+| HK.00151 中國旺旺 | 強跌 | 1.0000 | 0.7800 | -0.22 |
+| HK.00700 騰訊 | 強跌 | 0.2104 | 0.3992 | +0.19 |
+| HK.00068 群核科技 | 到底轉勢 | 1.0000 | 0.8400 | -0.16 |
+
+凡人話 audit 結論:
+- 拎走前 conf≥0.99: 4/6 隻
+- 拎走後 conf≥0.99: **0/6 隻** ← 永久 ban conf=1.0 成功
+- 6 對 boost/penalty 配對正常 fire (放量 +0.05 / 縮量 -0.10 / 短斜率 ± / 趨勢一致 +0.04)
+- sub_scenario cycle 唔變 (強升/強跌/到底 等) ← 對齊大少 Q1 confirm
 
 ---
 

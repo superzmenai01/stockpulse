@@ -640,80 +640,93 @@ class MAAlignmentV2Algorithm(Algorithm):
                 ma_slopes[f"MA{period}"] = slope
                 momentum_score += (slope * (1.0 / period)) / total_weight
 
-        # ============ Step 7: Confidence (三階段調整) ============
-        # 7a. 基礎信心
+        # ============ Step 7: Confidence (增減量 + boost/penalty 配對, v2.5.0) ============
+        # 凡人話: 對齊大少 2026-09-08 20:31 trigger Sub-Option C
+        # 之前用「倍數」公式 (base × vol_mul × slope_mul), 容易爆 conf=1.0 (217 stock audit 23 隻 conf=1.0)
+        # 改用「增減量」公式 (base + boost - penalty), 永遠 ban conf=1.0 (對齊 M3 Layer 4 永久 rule)
+        # 對齊 Config UX 模式 (大少 8月19日 trigger): 每個 boost/penalty % 可 config 調
+
+        # 7a. 基礎信心 (cap 0.80 唔爆 1.0)
         if candidate in ("strong_uptrend", "strong_downtrend", "uptrend_correction", "downtrend_bounce", "decelerating_up", "decelerating_down"):
-            base_confidence = min(1.0, max_spread_pct / cfg["spreadConfidenceScale"])
+            # 凡人話: spread 0% → 0.50, 7.5%+ → 0.80 (永遠唔爆 1.0)
+            base_confidence = min(0.80, 0.50 + max_spread_pct * 4.0)
             if max_spread_pct < 0.05:
-                base_confidence *= 0.7
+                base_confidence *= 0.7  # 細 spread 折扣 (對齊 v2.4.0 邏輯)
         elif candidate in ("weak_uptrend", "weak_downtrend"):
-            base_confidence = min(0.7, max_spread_pct / cfg["spreadConfidenceScale"] * 0.7)
+            # 凡人話: spread 0% → 0.35, 7.5%+ → 0.50
+            base_confidence = min(0.50, 0.35 + max_spread_pct * 2.0)
         else:  # sideways
             base_confidence = max(
-                cfg["sidewaysBaseConfidence"],
-                1.0 - abs(max_spread_pct - cfg["thresholdPct"]) / cfg["thresholdPct"]
+                cfg["sidewaysBaseConfidence"],  # 0.30
+                min(0.50, 0.30 + (1.0 - abs(max_spread_pct - cfg["thresholdPct"]) / cfg["thresholdPct"]) * 0.20)
             )
 
-        # 7b. 成交量加權
-        vol_multiplier = 1.0
-        if cfg["enableVolumeWeight"]:
-            if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction"):
-                if volume_signal == "expanding":
-                    vol_multiplier = min(1.25, 1.0 + (volume_trend_ratio - 1.0) * 0.5)
-                    adjustment_log.append("放量上漲，信心提升")
-                elif volume_signal == "shrinking":
-                    vol_multiplier = max(0.65, 1.0 - (1.0 - volume_trend_ratio) * 0.8)
-                    adjustment_log.append("上漲縮量，信心打折")
-            elif candidate in ("strong_downtrend", "weak_downtrend", "downtrend_bounce"):
-                if volume_signal == "expanding":
-                    vol_multiplier = 1.15
-                    adjustment_log.append("放量下跌，趨勢確認")
-                elif volume_signal == "shrinking":
-                    vol_multiplier = 0.85
-                    adjustment_log.append("下跌縮量，動能可能不足")
-            elif candidate in ("decelerating_up", "decelerating_down"):
-                vol_multiplier = 1.0
-            else:  # sideways
-                if volume_signal == "shrinking":
-                    vol_multiplier = 1.15
-                    adjustment_log.append("縮量整理，橫行信號增強")
-                elif volume_signal == "expanding":
-                    vol_multiplier = 0.85
-                    adjustment_log.append("放量震盪，可能醞釀突破")
+        # 7b. 6 對 boost/penalty 配對 (凡人話: 「加減清單」, 永遠平衡)
+        boost = 0.0
+        penalty = 0.0
 
-        # 7c. 斜率動能
-        slope_multiplier = 1.0
+        # 預先計算公用變數
         if cfg["enableSlopeCheck"]:
             sorted_periods = sorted(cfg["maPeriods"])
             short_periods = sorted_periods[:2]
             long_period = max(cfg["maPeriods"])
             negative_count = sum(1 for p in cfg["maPeriods"] if ma_slopes.get(f"MA{p}", 0) < 0)
+            positive_count = sum(1 for p in cfg["maPeriods"] if ma_slopes.get(f"MA{p}", 0) > 0)
 
+        # 配對 1: 成交量 (放量 boost / 縮量 penalty 對沖)
+        if cfg["enableVolumeWeight"]:
+            if volume_signal == "expanding":
+                boost += cfg["boostVolExpanding"]
+                adjustment_log.append(f"放量 (+{cfg['boostVolExpanding']:.2f}) 信心提升")
+            elif volume_signal == "shrinking":
+                penalty += cfg["penaltyVolShrinking"]
+                adjustment_log.append(f"縮量 (-{cfg['penaltyVolShrinking']:.2f}) 信心打折")
+
+        # 配對 2: 短斜率 (正 boost / 負 penalty 對沖)
+        if cfg["enableSlopeCheck"]:
+            if any(ma_slopes.get(f"MA{p}", 0) < 0 for p in short_periods):
+                penalty += cfg["penaltyShortSlopeNeg"]
+                adjustment_log.append(f"短斜率負 (-{cfg['penaltyShortSlopeNeg']:.2f}) 上升動能減弱")
+            else:
+                boost += cfg["boostShortSlopePos"]
+                adjustment_log.append(f"短斜率正 (+{cfg['boostShortSlopePos']:.2f})")
+
+        # 配對 3: 長斜率分裂 (強升長正 boost, 強跌長正 penalty)
+        if cfg["enableSlopeCheck"]:
             if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction"):
-                if any(ma_slopes.get(f"MA{p}", 0) < 0 for p in short_periods):
-                    slope_multiplier = cfg["slopeDiscountFactor"]
-                    adjustment_log.append("短期均線斜率為負，上升動能減弱")
-                elif negative_count > 0:
-                    slope_multiplier = 0.85
-                    adjustment_log.append("部分長期均線斜率為負")
+                if ma_slopes.get(f"MA{long_period}", 0) > 0:
+                    boost += cfg["boostLongSlopeUptrend"]
             elif candidate in ("strong_downtrend", "weak_downtrend", "downtrend_bounce"):
                 if ma_slopes.get(f"MA{long_period}", 0) > 0:
-                    slope_multiplier = 0.8
-                    adjustment_log.append("長期均線斜率轉正，下跌動能減弱")
-                elif any(ma_slopes.get(f"MA{p}", 0) > 0 for p in short_periods):
-                    slope_multiplier = 0.9
-                    adjustment_log.append("短期均線斜率轉正，可能醞釀反彈")
-            elif candidate in ("decelerating_up", "decelerating_down"):
-                slope_multiplier = 1.0
-            else:  # sideways
-                avg_abs_slope = sum(abs(ma_slopes.get(f"MA{p}", 0)) for p in cfg["maPeriods"]) / len(cfg["maPeriods"])
-                if avg_abs_slope > 0.005:
-                    slope_multiplier = 0.8
-                    adjustment_log.append("均線斜率過大，橫行周期可能即將結束")
+                    penalty += cfg["penaltyLongSlopeDowntrend"]
+                    adjustment_log.append(f"長斜率正 (強跌) (-{cfg['penaltyLongSlopeDowntrend']:.2f}) 下跌動能減弱")
 
-        # 7d. 綜合信心
-        confidence = base_confidence * vol_multiplier * slope_multiplier
-        confidence = max(0.0, min(1.0, confidence))
+        # 配對 4: Spread 闊度 (闊 boost / 細 penalty)
+        if max_spread_pct >= 0.05:
+            boost += cfg["boostSpreadWide"]
+        elif max_spread_pct < 0.02:
+            penalty += cfg["penaltySpreadNarrow"]
+            adjustment_log.append(f"spread 太細 (-{cfg['penaltySpreadNarrow']:.2f})")
+
+        # 配對 5: 趨勢一致性 (4 條均線斜率同方向 boost / 分裂 penalty)
+        if cfg["enableSlopeCheck"]:
+            if negative_count == 0 or positive_count == 0:
+                boost += cfg["boostTrendConsistent"]
+                adjustment_log.append(f"趨勢一致 (+{cfg['boostTrendConsistent']:.2f})")
+            elif negative_count > 0 and positive_count > 0:
+                penalty += cfg["penaltySlopeDiverged"]
+                adjustment_log.append(f"斜率分裂 (-{cfg['penaltySlopeDiverged']:.2f})")
+
+        # 配對 6: 整固信號 (橫行特別處理)
+        if candidate == "sideways" and cfg["enableSlopeCheck"]:
+            avg_abs_slope = sum(abs(ma_slopes.get(f"MA{p}", 0)) for p in cfg["maPeriods"]) / len(cfg["maPeriods"])
+            if avg_abs_slope > 0.005:
+                penalty += cfg["penaltySidewaysSlope"]
+                adjustment_log.append(f"橫行但斜率過大 (-{cfg['penaltySidewaysSlope']:.2f}) 周期可能即將結束")
+
+        # 7c. 綜合信心 (對齊 M3 Layer 4 永久 rule: clamp 0.3-0.95, 永遠 ban conf=1.0)
+        confidence = base_confidence + boost - penalty
+        confidence = max(0.30, min(0.95, confidence))
         confidence = _round(confidence, 4)
 
         # ============ Step 8: 組裝 verdict ============
