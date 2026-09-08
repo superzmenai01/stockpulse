@@ -124,6 +124,29 @@ Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system 
 **對應 trigger**: 大少 2026-09-07 00:14「HK.01347 撳 M3 結果是上升這個有問題嗎」
 **對應 commit**: `7865544f` (fix H guard + self-check warning)
 
+### 4.1.1 self-check audit field emit (Spec Sync #49, 大少 2026-09-08 23:30 confirm)
+
+**凡人話**: M3 algorithm 對齊 M2 self-check penalty 永久 rule (Spec Sync #48 commit 51e19234) 嘅 audit field 設計, 永遠 emit 3 個 audit field 落 verdict meta, 等 frontend / M7 拎一致 view 知道呢個 verdict 有冇 self-check warning 觸發。
+
+**3 個 audit field**:
+- `self_check_triggered: bool` — m3_warnings 任何 level (critical / warning / info) 觸發就 True
+- `original_confidence: float` — 同 confidence 一樣 (M3 Layer 4 公式已經內置 warn_penalty, 唔需要 floor 前後分離)
+- `self_check_warning_count: int` — m3_warnings 總數, frontend / M7 audit 用
+
+**3 處 emit 點** (要全部 cover, 等 verdict shape 一致):
+1. Main path (Layer 4 公式之後) — 計 self_check_triggered = len(m3_warnings) > 0
+2. Hurst+ADX gate fail 早 return — self_check_triggered = True (gate fail 本身係 self-check 觸發)
+3. 極值點不足早 return — self_check_triggered = True (FALLBACK_USED warning 觸發)
+4. Insufficient data 早 return — self_check_triggered = True (INSUFFICIENT_DATA warning 觸發)
+
+**對齊 spirit** (唔係 1:1 copy M2):
+- M2: critical / warning level warn 觸發 conf = `max(conf * 0.375, 0.3)` (Step 19.5 multiply floor)
+- M3: 任何 level warn 觸發 warn_penalty = `max(1.0 - 0.15 * warn_count, 0.4)` × conf (Layer 4 formula 內置)
+- 兩者 formula 唔同但 audit field 設計對齊, frontend / M7 拎一致 view
+
+**對應 commit**: Spec Sync #49 (大少 9月8日 23:30 confirm)
+**對應 trigger**: 大少 9月8日 23:30「Go」(audit report 即刻修 Bug 1+2 + Spec Sync #49 加 audit field)
+
 ### 4.2 Hurst+ADX gate (大少 2026-09-07 01:08 永久 rule, Phase 1 (B3))
 
 **凡人話解釋**：確認個股價真係有「方向」先用得 trend line，唔係 random walk / mean-reverting / 弱趨勢。

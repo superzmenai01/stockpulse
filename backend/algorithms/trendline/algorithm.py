@@ -56,6 +56,14 @@ from typing import List, Dict, Any, Tuple
 from ..base import Algorithm, Verdict
 from ..registry import register
 from .config import DEFAULT_TRENDLINE_CONFIG
+# 大少 2026-09-08 23:30 fix — 將 make_warning import 拎出 function 內 inner scope
+# Root cause: 之前 `from backend.services.warning_collector import make_warning` 喺
+# `if n < min_required:` 內 scope (line 704), 個 import 從來冇 trigger (n 一定 >= 30),
+# Python 將 make_warning 標 local, 之後 7 個 self-check warning 全部 call make_warning().to_dict()
+# 時 UnboundLocalError, M3 100% runtime fail
+# 對齊永久 rule §M9 postErrors ReferenceError spirit (大少 2026-08-11 Spec Sync #23)
+# 對齊 synthesizer/algorithm.py:38 pattern
+from backend.services.warning_collector import make_warning
 
 
 # ============================================================
@@ -701,7 +709,7 @@ class TrendlineAlgorithm(Algorithm):
             # 對齊 RC-3 永久 fix: algorithm 跑完成但 verdict 唔可信 → 200 + warning, 唔再 400
             # 對齊永久 rule §Module Warning v1.1.0 — category "system" 因為 verdict 可能唔可信
             # 對齊永久 rule §dataWindowDays frontend inputs 表單 audit (2026-09-07 17:23)
-            from backend.services.warning_collector import make_warning
+            # 大少 2026-09-08 23:30 fix — 拎走 inner-scope import, make_warning 已經喺 file 頂部 import
             insufficient_warning = make_warning(
                 level="info",
                 module_id="M3",
@@ -722,6 +730,10 @@ class TrendlineAlgorithm(Algorithm):
                     "dataDays": n,
                     "minRequired": min_required,
                     "reason": "insufficient_data",
+                    # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
+                    "self_check_triggered": True,  # INSUFFICIENT_DATA warning 觸發
+                    "original_confidence": 0.3,    # 早 return 強制 0.3
+                    "self_check_warning_count": 1,  # 1 個 INSUFFICIENT_DATA warning
                 },
                 warnings=[insufficient_warning],
             )
@@ -826,6 +838,11 @@ class TrendlineAlgorithm(Algorithm):
                     "plusDI": _round(plus_di_value, 4),
                     "minusDI": _round(minus_di_value, 4),
                     "atr": _round(atr_value, 4),
+                    # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
+                    # 凡人話: 早 return 路徑都要 emit, 等 verdict shape 一致
+                    "self_check_triggered": True,  # gate fail 本身已經係 self-check 觸發
+                    "original_confidence": 0.3,    # gate fail 強制 0.3, 唔需要 floor
+                    "self_check_warning_count": len(gate_warnings),
                 },
                 warnings=gate_warnings,
             )
@@ -924,6 +941,10 @@ class TrendlineAlgorithm(Algorithm):
                     "plusDI": _round(plus_di_value, 4),
                     "minusDI": _round(minus_di_value, 4),
                     "atr": _round(atr_value, 4),
+                    # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
+                    "self_check_triggered": True,  # 極值點不足 = self-check 觸發 (FALLBACK_USED warning)
+                    "original_confidence": 0.3,    # 早 return 強制 0.3
+                    "self_check_warning_count": len(fallback_warnings),
                 },
                 warnings=fallback_warnings,
             )
@@ -1154,6 +1175,19 @@ class TrendlineAlgorithm(Algorithm):
         confidence = conf["confidence"]
         adjustment_log = conf["adjustmentLog"]
 
+        # ============ Step 9.5 (Spec Sync #49): self-check audit field emit (對齊 M2 永久 rule spirit) ============
+        # 凡人話: M3 對齊 M2 self-check penalty 永久 rule (大少 2026-09-07 22:00 confirm, Spec Sync #48 commit 51e19234)
+        # 嘅 audit field 設計 — frontend / M7 拎到 self_check_triggered 就知道呢個 verdict 有冇 self-check warning 觸發
+        # M3 同 M2 唔同: M3 嘅 Layer 4 公式 (warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)) 已經內置 self-check penalty,
+        # 唔需要 Step 19.5 multiply 0.375。但 audit field emit 對齊 M2 spirit, 等 frontend / M7 拎一致 view
+        # - self_check_triggered: m3_warnings 任何 level (critical / warning / info) 觸發就 True
+        # - original_confidence: 同 confidence 一樣 (M3 formula 已經內置 warn_penalty, 唔需要 floor 前後分離)
+        # - self_check_warning_count: m3_warnings 總數, frontend / M7 audit 用
+        self_check_triggered = len(m3_warnings) > 0
+        self_check_warning_count = len(m3_warnings)
+        original_confidence = confidence  # M3 formula 已經內置 warn_penalty, 唔需要分離
+
+
         meta = {
             "moduleId": "trendline",
             "symbol": options.get("symbol", "TEST"),
@@ -1222,6 +1256,11 @@ class TrendlineAlgorithm(Algorithm):
                 "fallback": resistance_fit.get("bulkowskiFallback", False),
                 "warningCodes": [w["code"] for w in resistance_fit.get("bulkowskiWarnings", [])],
             },
+            # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
+            # 凡人話: frontend / M7 拎呢 3 個 field 就知道呢個 verdict 有冇 self-check warning 觸發
+            "self_check_triggered": self_check_triggered,
+            "original_confidence": _round(original_confidence, 4),
+            "self_check_warning_count": self_check_warning_count,
         }
 
         return Verdict(

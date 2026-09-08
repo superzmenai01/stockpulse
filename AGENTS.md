@@ -2869,3 +2869,65 @@ After fix:  0 WARNING, 拎到正確 reason
 **對應 commit**: 即將 push (Spec Sync: 加「Backend config file 壞咗即死火 + 必 curl 驗證 永久 rule」section)
 
 **套用**: 之後任何 backend restart 流程 (`./start.sh` / 改 algorithm / 改 config / 改 endpoint) 之後, 必跟本永久 rule 嘅 curl verify 步驟確認復活, 單純睇 ps / lsof 唔夠。改 `backend/algorithms/*/config.py` 之前, 必先 `python -c "import ast; ast.parse(open('<file>').read())"` 確認 syntax OK, 避免重蹈 9月7日 14:21 嘅覆轍。
+
+### Algorithm `from X import Y` 必 import 喺 module level 永久 rule (大少 2026-09-08 23:30 confirm, Spec Sync #49)
+
+**凡人話**: Python 嘅 `from X import Y` 喺 function 內 scope 用嘅話, 個 `Y` name 會被 Python bytecode 標 local, 即使個 import 喺 `if` 入面從來冇 trigger, 之後喺同一個 function 內用 `Y` 都會 UnboundLocalError。所以 algorithm 寫 warning 注入點, 個 `from backend.services.warning_collector import make_warning` import **永遠喺 file 頂部 (module level)**, 唔好喺 function 入面 inner scope。
+
+**Root cause 確認 (curl evidence, 大少 9月8日 23:30 trigger)**:
+- M3 (trendline) algorithm.py 9月8日 09:17 commit `bdaf50e4` 將 7 個 self-check warning 由 raw dict 改用 `make_warning().to_dict()`, 但 `from backend.services.warning_collector import make_warning` 仍然喺 `if n < min_required:` 內 scope (line 704), 個 import 因為 `n >= 30` 從來冇 trigger
+- Python bytecode 將 `make_warning` 標 local, 之後 7 個 call (line 1067+) 全部 `UnboundLocalError: cannot access local variable 'make_warning' where it is not associated with a value`
+- M3 100% runtime fail 14 個鐘頭, 大少肉眼撳 M3 跑任何 stock 全部 backend 500 error
+- 同期 M1 (ma_alignment v2.2.0) / M2 (hl_structure v0.5.0) 都 work, 證明 backend 本身冇事, 只係 M3 algorithm.py 嘅 import 結構 bug
+
+**對齊永久 rule §M9 ReferenceError 'postErrors is not defined' (2026-08-11 Spec Sync #23) 嘅 spirit**:
+- 之前永久 rule 涵蓋: local scope 用嘅 variable 必先 `const 拎出嚟`, 唔好直接用 `fold.x` 假設 global 可用
+- 而家擴展: `from X import Y` 都係 local variable 嘅一種, 一樣要 import 喺 module level 唔好 inner scope
+
+**永久 rule checklist**:
+- ✅ Algorithm 寫 warning 注入點, `from backend.services.warning_collector import make_warning` 永遠 import 喺 **file 頂部 / module level**, 唔好喺 function 內 inner scope (包括 `if` / `try` / `for` 任何 block)
+- ✅ 對齊 pattern: `synthesizer/algorithm.py:38` 用 `from backend.services.warning_collector import WarningCollector, make_warning` (module level) 已經 work, 跟呢個 pattern
+- ✅ 改 algorithm 之後必 restart backend (`./start.sh`) + curl 5 隻 stock 拎 evidence 確認 100% pass (對齊 8月31日 11:01 Backend hot-reload 永久 rule + 9月7日 14:35 Backend config 永久 rule)
+- ✅ 凡人話: 即使個 import "睇落 OK" (例如 `if some_condition: from X import Y`) 都唔好咁寫, Python bytecode 會將 `Y` 標 local, 之後 scope 外用就 UnboundLocalError
+- ✅ 改 warning 注入點用 `make_warning().to_dict()` 之後必 curl 5 隻 stock 拎 evidence 確認 100% pass
+- ✅ 改 `backend/algorithms/*/algorithm.py` 之前必先 `python -c "from backend.algorithms.<module>.algorithm import <AlgorithmClass>"` 確認 import chain 唔會撞
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` line 60 (新加 module level `from backend.services.warning_collector import make_warning`, 對齊 synthesizer/algorithm.py:38 pattern) + line 704 (拎走 inner-scope import)
+- `backend/algorithms/synthesizer/algorithm.py` line 38 (reference pattern, 已經 work)
+- AGENTS.md §M9 ReferenceError 'postErrors is not defined' (2026-08-11) 永久 rule (spirit 對齊)
+- AGENTS.md §Backend hot-reload (8月31日 11:01) 永久 rule (verify step 對齊)
+- AGENTS.md §Backend config file 壞咗即死火 (9月7日 14:35) 永久 rule (curl verify step 對齊)
+
+**對應 commit**: 即將 push (Spec Sync #49)
+
+**套用**: 之後任何 algorithm 寫 `from backend.services.warning_collector import make_warning` / `from <任何 service> import <任何 helper>`, 全部要 import 喺 module level。改 import 結構之後必 restart backend + curl 5 隻 stock 拎 evidence 確認 100% pass。
+
+### M3 audit field (self_check_triggered + original_confidence) emit 永久 rule (Spec Sync #49, 大少 2026-09-08 23:30 confirm)
+
+**凡人話**: M3 algorithm 跑完之後, 對齊 M2 self-check penalty 永久 rule (Spec Sync #48 commit 51e19234) 嘅 audit field 設計, 永遠 emit 3 個 audit field 落 verdict meta, 等 frontend / M7 拎一致 view:
+- `self_check_triggered: bool` — m3_warnings 任何 level (critical / warning / info) 觸發就 True
+- `original_confidence: float` — 同 confidence 一樣 (M3 嘅 Layer 4 公式已經內置 warn_penalty, 唔需要 floor 前後分離)
+- `self_check_warning_count: int` — m3_warnings 總數, frontend / M7 audit 用
+
+**對齊 spirit** (唔係 1:1 copy):
+- M2: critical / warning level warn 觸發 conf = `max(conf * 0.375, 0.3)` (Step 19.5 multiply floor)
+- M3: 任何 level warn 觸發 warn_penalty = `max(1.0 - 0.15 * warn_count, 0.4)` × conf (Layer 4 formula 內置)
+- 兩者 formula 唔同但 audit field 設計對齊, frontend / M7 拎一致 view
+
+**永久 rule checklist**:
+- ✅ M3 algorithm 永遠 emit `self_check_triggered` + `original_confidence` + `self_check_warning_count` 3 個 audit field 落 verdict meta
+- ✅ 3 處早 return 路徑 (insufficient_data / Hurst+ADX gate fail / 極值點不足) 都要 emit, 等 verdict shape 一致
+- ✅ Main algorithm path (Layer 4 公式之後) 都要 emit, `self_check_triggered = len(m3_warnings) > 0`
+- ✅ 改 M3 algorithm 必 restart backend + curl 5 隻 stock 拎 evidence 確認 5/5 stock 都拎到 audit field (冇 None)
+- ✅ 對齊 §M2 self-check penalty 永久 rule (Spec Sync #48) 嘅 spirit
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` line 1165-1170 (Step 9.5 audit field compute) + line 1245-1247 (main path emit) + line 723-735 (insufficient_data emit) + line 837-839 (Hurst+ADX gate fail emit) + line 939-941 (極值點不足 emit)
+- AGENTS.md §M2 self-check penalty 永久 rule (Spec Sync #48, commit 51e19234) 嘅 spirit 對齊
+- AGENTS.md §M3 self-check warning 永久 rule (大少 9月7日 00:14) 對齊
+
+**對應 commit**: 即將 push (Spec Sync #49)
+
+**套用**: 之後任何 algorithm 嘅 self-check / fallback / early return 邏輯, 都要 emit `self_check_triggered` + audit field 落 verdict meta, 等 frontend / M7 拎一致 view。將來其他 module (M4 / M5 / M6 等) 加 self-check penalty 都要對齊呢個 audit field design。
+
