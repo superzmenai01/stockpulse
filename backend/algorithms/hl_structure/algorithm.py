@@ -59,6 +59,9 @@ from ..base import Algorithm, Verdict
 from ..registry import register
 from .config import DEFAULT_HL_STRUCTURE_CONFIG
 
+# v1.3.0: 永久 rule v1.1.0 — Backend emit `category` 字段, 自動 apply CATEGORY_DISPLAY template
+from backend.services.warning_collector import make_warning
+
 
 # 凡人話: 對齊 ma_alignment STATE_MAP pattern, candidate 1-to-1 map 返 uppercase
 # 對應 contract.py ModuleVerdictMeta state Literal
@@ -927,26 +930,24 @@ class HLStructureAlgorithm(Algorithm):
             hurst_adx_gate_pass = hurst_pass and adx_pass
 
             if not hurst_adx_gate_pass:
-                # 唔通過: 拎 SIDEWAYS verdict + 1 個 CONFLICT_STATE warning (system category)
-                _gate_warnings = [{
-                    "level": "warning",
-                    "module_id": "M2",
-                    "code": "CONFLICT_STATE",
-                    "message": f"Hurst+ADX gate 唔通過 (H={hurst_value:.4f}, ADX={adx_value:.2f})",
-                    "debug": {
-                        "issue": f"Hurst={hurst_value:.4f} (threshold {hurst_threshold}), ADX={adx_value:.2f} (threshold {adx_threshold})",
-                        "impact": "Verdict 唔可信 (random walk / 弱趨勢), M2 判嘅 cycle state 唔好用, M7 應該降 M2 weight",
-                        "fix": "等 trend 真出現先 re-run, 或 increase dataWindowDays",
-                        "context": {
-                            "hurst": round(hurst_value, 4),
-                            "adx": round(adx_value, 2),
-                            "hurst_threshold": hurst_threshold,
-                            "adx_threshold": adx_threshold,
-                            "hurst_pass": hurst_pass,
-                            "adx_pass": adx_pass,
-                        },
+                # v1.3.0: 用 make_warning() helper, 自動 emit category 字段 + apply CATEGORY_DISPLAY template
+                # 永久 rule §Module Warning v1.1.0 — Backend emit category = source of truth
+                _gate_warnings = [make_warning(
+                    level="warning",
+                    module_id="M2",
+                    code="CONFLICT_STATE",
+                    message=f"Hurst+ADX gate 唔通過 (H={hurst_value:.4f}, ADX={adx_value:.2f})",
+                    issue=f"Hurst={hurst_value:.4f} (threshold {hurst_threshold}), ADX={adx_value:.2f} (threshold {adx_threshold})",
+                    # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state].impact_template / fix_template
+                    context={
+                        "hurst": round(hurst_value, 4),
+                        "adx": round(adx_value, 2),
+                        "hurst_threshold": hurst_threshold,
+                        "adx_threshold": adx_threshold,
+                        "hurst_pass": hurst_pass,
+                        "adx_pass": adx_pass,
                     },
-                }]
+                ).to_dict()]
                 return Verdict(
                     ok=True,
                     points=[],
@@ -1010,18 +1011,16 @@ class HLStructureAlgorithm(Algorithm):
 
         # Edge case: 完全平 data
         if len(peak_idxs) == 0 and len(trough_idxs) == 0:
-            _flat_warnings = [{
-                "level": "critical",
-                "module_id": "hl_structure",
-                "code": "VERDICT_MISSING",
-                "message": "峰谷全部拎唔到 (價格完全無變化)",
-                "debug": {
-                    "issue": "peak_count = 0 AND trough_count = 0 (價格完全無變化)",
-                    "impact": "Verdict 唔可信, 唔好落單",
-                    "fix": "Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc",
-                    "context": {"peak_count": 0, "trough_count": 0, "period": options.get("period")},
-                },
-            }]
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            _flat_warnings = [make_warning(
+                level="critical",
+                module_id="M2",
+                code="VERDICT_MISSING",
+                message="峰谷全部拎唔到 (價格完全無變化)",
+                issue="peak_count = 0 AND trough_count = 0 (價格完全無變化)",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system].impact_template / fix_template
+                context={"peak_count": 0, "trough_count": 0, "period": options.get("period")},
+            ).to_dict()]
             return Verdict(
                 ok=True,
                 points=[],
@@ -1106,18 +1105,15 @@ class HLStructureAlgorithm(Algorithm):
                     "adjustment_log": [f"峰谷結構唔夠清晰 ({len(alternated)} < {cfg['minPairs'] * 2})"],
                     "reason": f"峰谷結構唔夠清晰 (只有 {len(alternated)} 個交替峰谷,需要至少 {cfg['minPairs'] * 2}),預設橫行",
                     "last_date": str(recent[-1].get("time") or recent[-1].get("date") or recent[-1].get("timestamp") or ""),
-                    "_warnings": [{
-                        "level": "warning",
-                        "module_id": "hl_structure",
-                        "code": "FALLBACK_USED",
-                        "message": f"峰谷總數 {len(alternated)} < {cfg['minPairs'] * 2}",
-                        "debug": {
-                            "issue": f"峰谷總數 {len(alternated)} < {cfg['minPairs'] * 2} required",
-                            "impact": "Verdict 唔可信, 唔好落單",
-                            "fix": "Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc",
-                            "context": {"alternated_count": len(alternated), "min_pairs": cfg["minPairs"]},
-                        },
-                    }],
+                    "_warnings": [make_warning(
+                        level="warning",
+                        module_id="M2",
+                        code="FALLBACK_USED",
+                        message=f"峰谷總數 {len(alternated)} < {cfg['minPairs'] * 2}",
+                        issue=f"峰谷總數 {len(alternated)} < {cfg['minPairs'] * 2} required",
+                        # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                        context={"alternated_count": len(alternated), "min_pairs": cfg["minPairs"]},
+                    ).to_dict()],
                 },
             )
 
@@ -1505,136 +1501,121 @@ class HLStructureAlgorithm(Algorithm):
         # ============ Step 19: 組裝輸出 (frontend 兼容 shape) ============
         m2_warnings = []
         if len(peak_exts) == 0 and len(trough_exts) == 0:
-            m2_warnings.append({
-                "level": "critical",
-                "module_id": "hl_structure",
-                "code": "VERDICT_MISSING",
-                "message": "峰谷全部拎唔到",
-                "debug": {
-                    "issue": "peak_count = 0 AND trough_count = 0",
-                    "impact": "Verdict 唔可信, 唔好落單",
-                    "fix": "增加 dataWindowDays 設定, 確認 data 有高低點變化",
-                    "context": {"peak_count": 0, "trough_count": 0, "period": options.get("period")},
-                },
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m2_warnings.append(make_warning(
+                level="critical",
+                module_id="M2",
+                code="VERDICT_MISSING",
+                message="峰谷全部拎唔到",
+                issue="peak_count = 0 AND trough_count = 0",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={"peak_count": 0, "trough_count": 0, "period": options.get("period")},
+            ).to_dict())
         if original_peak_count + original_trough_count < cfg["minPairs"] * 2:
-            m2_warnings.append({
-                "level": "warning",
-                "module_id": "hl_structure",
-                "code": "FALLBACK_USED",
-                "message": f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2}",
-                "debug": {
-                    "issue": f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2} required",
-                    "impact": "Verdict 唔可信, 唔好落單",
-                    "fix": "Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc",
-                    "context": {"peak_count": original_peak_count, "trough_count": original_trough_count, "min_pairs": cfg["minPairs"]},
-                },
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m2_warnings.append(make_warning(
+                level="warning",
+                module_id="M2",
+                code="FALLBACK_USED",
+                message=f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2}",
+                issue=f"峰谷總數 {original_peak_count + original_trough_count} < {cfg['minPairs'] * 2} required",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={"peak_count": original_peak_count, "trough_count": original_trough_count, "min_pairs": cfg["minPairs"]},
+            ).to_dict())
 
         # ============ v0.3.0 Self-check 5 條件 (大少 2026-09-06 14:25 trigger) ============
         # 凡人話: M2 算法跑完自己診斷 verdict 係咪可信, 5 個條件各自 emit system 警告,
         # 通知 M7/M8/M9 呢個 M2 verdict 唔好用, M7 自動降 weight 0.15→0.05
-        # 對應 commit: <即將 push>
-        # 永久 rule: emit warning 永遠用 `debug` field 包住 issue/impact/fix/context,
-        #            對齊 backend/services/warning_collector.py 嘅 ModuleWarning dataclass 結構
+        # v1.3.0: 全部 self-check warning 改用 make_warning() helper, 自動 emit category 字段
+        # 對齊永久 rule §Module Warning v1.1.0 — Backend emit category = source of truth
 
         # Self-check 1: 形態預警 (Step 13 pattern_alert) - 頭肩頂 / 雙底 / 雙頂
         if pattern_alert in ("head_and_shoulder", "double_top", "double_bottom"):
-            m2_warnings.append({
-                "level": "warning",
-                "module_id": "M2",
-                "code": "CONFLICT_STATE",
-                "message": f"形態預警: {pattern_alert}",
-                "debug": {
-                    "issue": f"最近 3 個峰/谷出現 {pattern_alert} 形態, 結構可能反轉",
-                    "impact": "Verdict 唔可信, M2 判嘅 cycle state 可能快將反轉, M7 應該降 M2 weight",
-                    "fix": "確認 Step 16 短線 mode 結果, 如有 override 觸發可能要等下一個 peak/谷 confirm",
-                    "context": {
-                        "pattern_alert": pattern_alert,
-                        "peaks_count": len(peak_exts),
-                        "troughs_count": len(trough_exts),
-                    },
+            # v1.3.0: CONFLICT_STATE 默認 stock_state category (永久 rule v1.1.0 分配)
+            m2_warnings.append(make_warning(
+                level="warning",
+                module_id="M2",
+                code="CONFLICT_STATE",
+                message=f"形態預警: {pattern_alert}",
+                issue=f"最近 3 個峰/谷出現 {pattern_alert} 形態, 結構可能反轉",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
+                context={
+                    "pattern_alert": pattern_alert,
+                    "peaks_count": len(peak_exts),
+                    "troughs_count": len(trough_exts),
                 },
-            })
+            ).to_dict())
 
         # Self-check 2: 極值點新鮮度 (Step 15 freshness 折扣 → DATA_AGE info warning)
         if days_ago > cfg["maxExtremeAgeDays"]:
-            m2_warnings.append({
-                "level": "info",
-                "module_id": "M2",
-                "code": "DATA_AGE",
-                "message": f"極值點距今 {days_ago} 日 (max {cfg['maxExtremeAgeDays']} 日)",
-                "debug": {
-                    "issue": f"最新 peak/trough 已經 {days_ago} 日前, freshness multiplier 折扣到 {freshness:.4f}",
-                    "impact": "結構信號老化, Verdict 信心打折, M7 應該降 M2 嘅 base_weight",
-                    "fix": "等下一個新 peak/trough 出現再 re-run",
-                    "context": {
-                        "days_ago": days_ago,
-                        "max_extreme_age": cfg["maxExtremeAgeDays"],
-                        "freshness_multiplier": round(freshness, 4),
-                    },
+            # v1.3.0: DATA_AGE 默認 system category (永久 rule v1.1.0 分配)
+            m2_warnings.append(make_warning(
+                level="info",
+                module_id="M2",
+                code="DATA_AGE",
+                message=f"極值點距今 {days_ago} 日 (max {cfg['maxExtremeAgeDays']} 日)",
+                issue=f"最新 peak/trough 已經 {days_ago} 日前, freshness multiplier 折扣到 {freshness:.4f}",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={
+                    "days_ago": days_ago,
+                    "max_extreme_age": cfg["maxExtremeAgeDays"],
+                    "freshness_multiplier": round(freshness, 4),
                 },
-            })
+            ).to_dict())
 
         # Self-check 3: 5 年尺度 vs 短線 override 觸發 (Step 16/17 核心, 9月6日 11:34 trigger 嘅 case)
         # 凡人話: 5 年判 SIDEWAYS, 但短線 60 日 + 突破 override 救返判 UP, 通知 M7/8/9
         if breakout_result.get("triggered", False) or short_term_result.get("triggered", False):
-            m2_warnings.append({
-                "level": "warning",
-                "module_id": "M2",
-                "code": "FALLBACK_USED",
-                "message": f"5 年尺度 {original_candidate} → override 後 {candidate} (短線 60 日 / 突破救返)",
-                "debug": {
-                    "issue": f"原本 {data_window_days} 日判定 = {original_candidate}, 短線 override = {candidate}, trigger_type = {breakout_result.get('trigger_type') or 'short_term_confirm'}",
-                    "impact": "Verdict 唔可信 (靠 60 日短線 + 突破救返), M2 vote 信心打折, M7 應該降 weight",
-                    "fix": "等 5 年尺度確認 (需要 2 個新 peak/trough 確認趨勢)",
-                    "context": {
-                        "original_candidate": original_candidate,
-                        "override_candidate": candidate,
-                        "trigger_type": breakout_result.get("trigger_type") or "short_term_confirm",
-                        "vol_ratio": breakout_result.get("vol_ratio", 0),
-                        "consolidation_ok": breakout_result.get("consolidation_ok", False),
-                    },
+            # v1.3.0: FALLBACK_USED 默認 system category (永久 rule v1.1.0 分配)
+            m2_warnings.append(make_warning(
+                level="warning",
+                module_id="M2",
+                code="FALLBACK_USED",
+                message=f"5 年尺度 {original_candidate} → override 後 {candidate} (短線 60 日 / 突破救返)",
+                issue=f"原本 {data_window_days} 日判定 = {original_candidate}, 短線 override = {candidate}, trigger_type = {breakout_result.get('trigger_type') or 'short_term_confirm'}",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={
+                    "original_candidate": original_candidate,
+                    "override_candidate": candidate,
+                    "trigger_type": breakout_result.get("trigger_type") or "short_term_confirm",
+                    "vol_ratio": breakout_result.get("vol_ratio", 0),
+                    "consolidation_ok": breakout_result.get("consolidation_ok", False),
                 },
-            })
+            ).to_dict())
 
         # Self-check 4: 信心指數過低 (Step 18 final confidence < 0.3)
         if confidence < 0.3:
-            m2_warnings.append({
-                "level": "warning",
-                "module_id": "M2",
-                "code": "THRESHOLD_BREACH",
-                "message": f"M2 信心指數 {confidence:.4f} < 0.3 threshold",
-                "debug": {
-                    "issue": f"信心 {confidence:.4f} 過低, structure score 唔夠強, base_confidence 折扣大",
-                    "impact": "Verdict 可信度低, M7 應該降低 M2 嘅 base_weight",
-                    "fix": "等結構信號更明顯先 re-run, 或 increase dataWindowDays",
-                    "context": {
-                        "confidence": round(confidence, 4),
-                        "base_confidence": round(base_confidence, 4),
-                        "structure_score": round(structure_score, 4),
-                    },
+            # v1.3.0: THRESHOLD_BREACH 默認 stock_state category (永久 rule v1.1.0 分配)
+            m2_warnings.append(make_warning(
+                level="warning",
+                module_id="M2",
+                code="THRESHOLD_BREACH",
+                message=f"M2 信心指數 {confidence:.4f} < 0.3 threshold",
+                issue=f"信心 {confidence:.4f} 過低, structure score 唔夠強, base_confidence 折扣大",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
+                context={
+                    "confidence": round(confidence, 4),
+                    "base_confidence": round(base_confidence, 4),
+                    "structure_score": round(structure_score, 4),
                 },
-            })
+            ).to_dict())
 
         # Self-check 5: 結構破壞 (Step 14 price_position = "broken")
         if price_position == "broken":
-            m2_warnings.append({
-                "level": "warning",
-                "module_id": "M2",
-                "code": "CONFLICT_STATE",
-                "message": "當前價格已經破壞最近峰谷結構",
-                "debug": {
-                    "issue": f"價格 {latest_price:.2f} 已經離開最近 peak {latest_peak['k']['close']:.2f} / trough {latest_trough['k']['close']:.2f} 範圍",
-                    "impact": "峰谷結構信號失效, M2 verdict 唔可信, 要等新 peak/trough 形成",
-                    "fix": "Re-run / 等新結構形成",
-                    "context": {
-                        "latest_price": round(latest_price, 4),
-                        "latest_peak_close": round(latest_peak["k"]["close"], 4),
-                        "latest_trough_close": round(latest_trough["k"]["close"], 4),
-                    },
+            # v1.3.0: CONFLICT_STATE 默認 stock_state category (永久 rule v1.1.0 分配)
+            m2_warnings.append(make_warning(
+                level="warning",
+                module_id="M2",
+                code="CONFLICT_STATE",
+                message="當前價格已經破壞最近峰谷結構",
+                issue=f"價格 {latest_price:.2f} 已經離開最近 peak {latest_peak['k']['close']:.2f} / trough {latest_trough['k']['close']:.2f} 範圍",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
+                context={
+                    "latest_price": round(latest_price, 4),
+                    "latest_peak_close": round(latest_peak["k"]["close"], 4),
+                    "latest_trough_close": round(latest_trough["k"]["close"], 4),
                 },
-            })
+            ).to_dict())
 
         # ============ Step 19.5: Self-check warning penalty (大少 2026-09-07 22:00 trigger) ============
         # 凡人話: 5 個 self-check warning (Step 19) 觸發之後, M2 algorithm 自己將 confidence
