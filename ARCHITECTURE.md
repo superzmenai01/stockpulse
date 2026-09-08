@@ -4061,47 +4061,54 @@ M1 algorithm 入面已經有完整嘅 ZigZag implementation, response 入面每�
 - 之後 M-AS02 LLM call 撞 rate limit, frontend 顯示 🟡 warning banner, 大少知 verdict 唔可信
 - 之後 MiniMax / Kimi / Gemini rate limit 政策改, 只改 `as02_analyzer.py` retry logic, 唔影響其他 module
 
-### 15.45 Sprint 還原點永久 rule (大少 2026-08-31 07:52, Spec Sync #53)
+### 15.45 純 branch 還原點永久 rule (大少 2026-09-08 21:00 trigger, 大項目之前必做)
 
 ### 大少 trigger
-8月31日 07:52「你先備份, 設位一個還原點, 當然到意外或不想改時, 可以一鍵完全還到回到現在」— 大項目 (Sprint 4 follow-up frontend 改) 之前必做還原點, 避免 race condition / 永久 rule 違反 / 改到一半發現唔啱。
+9月8日 21:00「以後的還原點是用分支來做, 名字前要有 \"Backup-\", 和現在的分支還原點一樣」— 拎走 Sscript pattern (annotated tag + backup branch + restore script) + Backup Admin Page (§15.45 + §15.53 + §15.54 拎走), 改為**純 branch 還原點 pattern**。
 
 ### 凡人話解釋
-之前大少 8月30日 22:51 已經做過類似 pattern (備份 commit `3a5c2fa4` 拎走 4.45.0 + un-committed 4.46.0-4.48.1), 跟 permanent rule §15.39 「還原備份還原點」。今次 Sprint 4 follow-up 風險高 (testing page 改要 cache bust + race condition 永久 rule), 大少 trigger 設新還原點對齊 pattern。
+之前 §15.45 嘅 Sscript pattern (annotated tag + backup branch + restore script) 配 §15.54 Backup Admin Page 統一管理所有還原點, 太複雜大少用唔著個 page, 9月8日 21:00 拎走成個 stack, 改為**純 branch 還原點 pattern**: 大少只係開 1 個 `Backup-YYYY-MM-DD-description` branch, push 去 origin, 之後做改動, 拎返就 `git checkout Backup-xxx` 或者 merge 返 main。
 
-### 還原點 4 個 component
+### 還原點 pattern (對齊 §15.39 簡化版)
+- ✅ **Branch 名**: `Backup-YYYY-MM-DD-<description>` (e.g. `Backup-2026-09-08-m1-v2.5.0-stable`)
+- ✅ **Tag**: 唔再需要 (純 branch 就夠, 大少可以 `git log Backup-xxx` 拎 evidence)
+- ✅ **Restore script**: 唔再需要 (大少可以直接 `git checkout Backup-xxx` 或者 merge 返 main)
+- ✅ **Backup Admin Page**: 拎走 (`backup-admin/` + `backend/api/backup_admin.py` 拎走, endpoint `/api/backup-points/*` 拎走)
 
-| Component | 內容 | 用途 |
-|-----------|------|------|
-| **Annotated tag** | `restore-before-sprint-4-followup` (喺 `7e68053a`) | 永久 marker, 唔會被 future commit 改變 |
-| **Backup branch** | `backup-before-sprint-4-followup` (喺 `7e68053a`) | 大少可以 `git checkout` 入去睇, 永久 branch 唔會被刪 |
-| **Restore script** | `~/stockpulse/scripts/restore_sprint_4.sh` (chmod +x) | 一鍵還原: 兩次 confirm 撳 `yes` + `RESET` 即 `git reset --hard $RESTORE_TAG` |
-| **永久 rule** | ARCHITECTURE §15.45 + HANDOVER §Q | 之後大項目之前必做還原點 set (annotated tag + branch + script) |
+### 永久 rule
+- ✅ 大項目 (refactor / spec rewrite / framework 升級 / 大少明確 trigger) 之前必做 branch 還原點
+- ✅ 還原點 branch 名永遠用 `Backup-` prefix (對齊大少 trigger 9月8日 21:00, 名字前要有 "Backup-")
+- ✅ 還原點 branch 必 push 去 origin (大少可以隨時拎返)
+- ✅ 改動之後 Spec Sync 即時 commit (對齊 8月18日 06:36 永久 rule)
+- ✅ 之後新加 feature 必先開 `feat/<description>` branch (對齊 9月8日 17:00 StockPulse Git workflow 永久 rule, Option C)
+- ✅ 之前嘅 Sscript 還原點 (`restore-*` tag + `backup-*` branch + `scripts/restore_*.sh`) 保留 (歷史 trace, 拎走反而 issue)
 
-### 還原點 當前狀態 (7e68053a)
-- 架構評審 5 個 batch 全部完成 + push (a38f6d3c / 512a2138 / f8a8b6ea / 5e5b3c66 / 7e68053a)
-- 267/268 pytest pass
-- 17 個 warning codes 統一 (6 critical / 8 warning / 3 info)
-- ARCHITECTURE §15.40-§15.44 + HANDOVER §L-§P 永久 rule 全部加咗
+### 還原點 set 流程 (對齊 9月8日 17:00 Option C Hybrid)
+```bash
+# 1. 開 backup branch (從 main HEAD)
+git checkout main
+git pull origin main
+git checkout -b Backup-YYYY-MM-DD-description
 
-### 永久 rule (Sprint 還原點)
-- ✅ 大項目 (refactor / spec rewrite / framework 升級 / 預期 risk > 2 小時 scope) 之前必做還原點
-- ✅ 還原點必含 4 個 component: annotated tag + backup branch + restore script + 永久 rule entry
-- ✅ Annotated tag 命名: `restore-before-<project-name>` (e.g. `restore-before-sprint-4-followup`)
-- ✅ Backup branch 命名: `backup-before-<project-name>` (e.g. `backup-before-sprint-4-followup`)
-- ✅ Restore script 必入 `~/stockpulse/scripts/restore_<project>.sh`, 兩次 confirm (`yes` + `RESET`) 防止意外
-- ✅ Restore script `git reset --hard` 會 destroy main 上未來 commit, 永久 rule acknowledge 呢個 trade-off
-- ✅ Tag + branch 必 push 去 origin (大少可以拎 `git fetch origin <tag>`)
-- ✅ 對齊 permanent rule §15.39 「還原備份還原點」pattern + 大少 8月30日 22:51 嘅 `git reset --hard 3a5c2fa4` 經驗
+# 2. Push 去 origin
+git push -u origin Backup-YYYY-MM-DD-description
+
+# 3. 之後做改動 (大少可以 trigger 我)
+# ... 改動 + commit + push
+
+# 4. 大少要還原: git checkout Backup-xxx 或者 merge 返 main
+git checkout main
+git merge Backup-xxx --no-ff
+```
 
 ### 對應 commit
-- `chore(backup): Sprint 4 還原點 (tag + branch + script) (大少 8月31日 07:52「你先備份, 設位一個還原點」trigger)`
-- Spec Sync: ARCHITECTURE.md §15.45 (本段) + HANDOVER.md §Q (新永久 rule section)
+- `7edf3aec feat(refactor): 拎走 Backup Admin Page + backend code (§15.45/§15.53/§15.54 拎走, 改為純 branch 還原點 pattern)`
+- Spec Sync: AGENTS.md / HANDOVER.md / ARCHITECTURE.md (本段)
 
-### 套用情境
-- 之後 Sprint 4 follow-up 開始之前, 已經 set 咗還原點, 大少可以放心 trigger 我做
-- 之後 Sprint 5 / 6 / 7 大項目之前, 必做同樣還原點 set
-- 之後 AS-04+ 開發 / framework 升級 / 跨 file refactor 之前, 必做同樣還原點 set
+### 教訓
+- ✅ 之前 Sscript pattern (tag + branch + script + page) 太複雜, 用唔著個 page
+- ✅ 改為純 branch 就夠, 大少可以直接 `git checkout` / merge 操作
+- ✅ 對齊 9月8日 17:00 永久 rule「StockPulse Git workflow Option C」: feature branch 用 `feat/`, backup branch 用 `Backup-`
 
 ### 15.46 Sprint 4 Task 3 — KlineCache 30 秒自動 Health Check (大少 2026-08-31 07:56「GO」trigger, Spec Sync #54)
 
@@ -4386,160 +4393,17 @@ cd /Users/zmenai/stockpulse && ./start.sh
 - `AGENTS.md` 「ZigZag 拎走橙旗 + 鮮綠線 + P 點 sequence marker 永久 rule (大少 2026-08-31 11:09, 4.53.0)」section
 - `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` 「🔴 大少 trigger #N+2 — 拎走 ZigZag 橙旗決定點 + 鮮綠線 + P 點 sequence marker (2026-08-31 11:09, 4.53.0)」section
 
-### 15.53 ZigZag 4.53.0 Sscript 還原點永久 rule (大少 2026-08-31 11:59 trigger)
+### 15.53 ZigZag 4.53.0 Sscript 還原點永久 rule (大少 2026-08-31 11:59 trigger) — 已拎走 (大少 2026-09-08 21:00 trigger)
 
-### 大少 trigger
-8月31日 11:59「對齊 Sscript pattern (推薦)」— 大少發現我啱啱用 empty commit 嘅備份 (5c89c659, 7a424c58) 同之前 8月31日 07:52 嘅 Sscript pattern 唔同,要求對齊 3-component 還原點 pattern (annotated tag + backup branch + restore script)。
+**狀態**: 拎走 (大少 9月8日 21:00 trigger「以後的還原點是用分支來做, 名字前要有 Backup-」)。
 
-### 凡人話解釋
-之前 §15.45 (大少 8月31日 07:52 trigger) 嘅 Sscript pattern 已經 set 過 Sprint 4 follow-up 嘅還原點 (annotated tag `restore-before-sprint-4-followup` + branch `backup-before-sprint-4-followup` + script `scripts/restore_sprint_4.sh`)。但今次 4.53.0 拎走橙旗嘅備份,我用咗 empty commit 嘅簡化方式,大少話要對齊返 Sscript pattern。
+原本 §15.53 ZigZag 4.53.0 Sscript 還原點永久 rule (annotated tag + backup branch + restore script) 拎走, 改為「純 branch 還原點 pattern」, 詳見上方「15.45 純 branch 還原點永久 rule」段。對應 `f4adfe05` commit (Sscript commit) 拎走。
 
-### 還原點 4 個 component
+### 15.54 Backup Admin Page 永久 rule (大少 2026-08-31 12:00 trigger) — 已拎走 (大少 2026-09-08 21:00 trigger)
 
-| Component | 內容 | 用途 |
-|-----------|------|------|
-| **Annotated tag** | `restore-after-zigzag-4.53.0` (喺 `7a424c58`) | 永久 marker, 唔會被 future commit 改變 |
-| **Backup branch** | `backup-after-zigzag-4.53.0` (喺 `7a424c58`) | 大少可以 `git checkout` 入去睇, 永久 branch 唔會被刪 |
-| **Restore script** | `~/stockpulse/scripts/restore_after_zigzag_4.53.0.sh` (chmod +x) | 一鍵還原: 兩次 confirm 撳 `yes` + `RESET` 即 `git reset --hard $RESTORE_TAG` |
-| **永久 rule** | ARCHITECTURE §15.53 + AGENTS.md + HANDOVER §Q | 之後大項目之前必做還原點 set (annotated tag + branch + script) |
+**狀態**: 拎走 (大少 9月8日 21:00 trigger「以後的還原點是用分支來做, 名字前要有 Backup-」)。
 
-### 對應 commit
-- `7a424c58` (本還原點,4.53.0 之後 empty commit,大少 trigger「再做一次備份和還是點」)
-- `5c89c659` (舊還原點,4.53.0 之前最後狀態,拎返橙旗嗰個)
-- `23d0231a` (4.53.0 commit,拎走橙旗嗰個)
-- `f4adfe05` (本 §15.53 Sscript commit,加 script + push tag + branch)
-
-### 還原命令 (對齊 8月31日 01:48 永久 rule「一鍵還原」)
-```bash
-# 還原返 4.53.0 拎走橙旗後狀態 (推薦)
-bash scripts/restore_after_zigzag_4.53.0.sh
-
-# 或者手動 (無 double confirm)
-git reset --hard 7a424c58c7180d9cc4617f1ec2f79484a4a9083d
-
-# 還原返 4.53.0 之前 (拎返橙旗 + 鮮綠線 + P 點 sequence)
-git reset --hard 5c89c659eda481918101fe8060480ccfdbc1a67a
-```
-
-### 永久 rule (對齊 §15.45 Sscript pattern)
-- ✅ 之後大項目 (refactor / spec rewrite / framework 升級 / 大少明確 trigger) 必做還原點 set
-- ✅ 還原點必用 Sscript pattern: annotated tag + backup branch + restore script
-- ✅ Restore script 必 double confirm (撳 `yes` + `RESET`) 避免意外
-- ✅ Restore script 必 verify HEAD 對應 tag 啱唔啱 + working tree clean
-- ✅ Restore script 必 `chmod +x` + push tag + branch 去 origin
-- ✅ 對齊 §15.39 「還原備份還原點」pattern
-
-### 對應 file
-- `scripts/restore_after_zigzag_4.53.0.sh` (本 Sscript,double confirm + verify HEAD + reset --hard tag)
-- 對齊 `scripts/restore_sprint_4.sh` (大少 8月31日 07:52 第一個 Sscript)
-
-### 對應 commit
-- `f4adfe05 chore(scripts): 加 ZigZag 4.53.0 拎走橙旗後還原點 Sscript (大少 8月31日 11:59 trigger 對齊 Sscript pattern) + Spec Sync`
-- Spec Sync: ARCHITECTURE.md §15.53 (本段)
-
-### 教訓
-大少 trigger「現在你這個怎麼不一樣了」提醒我:**大項目備份之前,先睇返之前嘅 Sscript pattern,唔好自己用簡化方式**。之後我每次做備份都先查 `ls scripts/restore_*.sh` 睇返之前 pattern。
-
-### 15.54 Backup Admin Page 永久 rule (大少 2026-08-31 12:00 trigger)
-
-### 大少 trigger
-8月31日 12:00「你去做一個新Page,係比我管理所有一鍵還原的備份,要有備份資料和備份的原因,如果我想還原我可以查看後簡單話你知就可以做到」
-
-### 凡人話解釋
-大少想有一個 Page 統一管理所有備份點,睇到每個備份嘅 metadata (commit hash, 日期, 原因) 同揀邊個做一鍵還原。對齊 §15.45 Sscript pattern (annotated tag + backup branch + restore script),Backend 拎所有備份,Frontend 顯示 list + double confirm modal 做還原。
-
-### 改動範圍 (5 個 file)
-
-| # | File | 改動 |
-|---|------|------|
-| 1 | `backend/api/backup_admin.py` | 新加 endpoint: `GET /api/backup-points/list` 拎所有備份 list, `POST /api/backup-points/restore` 揀 tag 跑對應 restore script |
-| 2 | `backend/main.py` | Register `backup_admin_router` 落 FastAPI app |
-| 3 | `backup-admin/index.html` | 新加 Page UI: header + 載入掣 + 備份 list container + double confirm modal + progress modal + footer (跟 testing-page 風格) |
-| 4 | `backup-admin/backup-admin.js` | JS: loadBackupList + renderBackupList + showRestoreConfirm (double modal) + executeRestore (POST + 顯示 output) + event listeners |
-| 5 | `backup-admin/backup-admin.css` | CSS: 備份 card layout + modal 樣式 + status banner + badge 配色 (testing-page 風格) |
-
-### API endpoint shape
-
-#### `GET /api/backup-points/list`
-- 掃 `refs/tags/restore-*` + `refs/heads/backup-*` + `scripts/restore_*.sh`
-- Dedup by commit hash, combine tag + branch + script 入同一個 point
-- Sort by date desc
-- Return:
-```json
-{
-  "ok": true,
-  "points": [{
-    "name": "restore-after-zigzag-4.53.0",
-    "tag": "restore-after-zigzag-4.53.0",
-    "branch": "backup-after-zigzag-4.53.0",
-    "commit": "7a424c58c7180d9cc4617f1ec2f79484a4a9083d",
-    "commit_short": "7a424c58",
-    "date": "2026-08-31 11:48:33 +0800",
-    "reason_short": "chore: ZigZag 還原點 after 拎走橙旗 (4.53.0 final, chart 完全乾淨)",
-    "reason_long": "對齊 8月31日 01:48 永久 rule + 8月31日 11:17/11:23 trigger pattern: 大少 trigger「再做一次備份和還是點」...",
-    "script_path": "scripts/restore_after_zigzag_4.53.0.sh",
-    "has_script": true,
-    "missing": []
-  }, ...],
-  "script_count": 2,
-  "scripts": ["scripts/restore_sprint_4.sh", "scripts/restore_after_zigzag_4.53.0.sh"]
-}
-```
-
-#### `POST /api/backup-points/restore`
-- Body: `{ "tag": "restore-after-zigzag-4.53.0", "confirm": "RESET" }`
-- 兩層 confirm 跟 Sscript pattern: backend 驗 `confirm == "RESET"` + frontend modal 撳 yes 才發 request
-- 跑對應 `scripts/restore_<name>.sh`, auto input `"yes\nRESET\n"` 落 stdin
-- Return: `{ ok, tag, commit, script, returncode, stdout, stderr }`
-
-### Frontend UX (大少 8月31日 12:03 揀 double confirm modal + 撳 yes)
-- 撳「🔄 載入備份 list」→ fetch `/api/backup-points/list` → render card list
-- 每個 card: 名字 (優先 tag) + 日期 + commit_short + badge (tag/branch/script/reason) + reason_long box
-- 撳「⚠️ 還原到呢個備份」掣 → double confirm modal 顯示
-  - 警告 (destroy commit + git stash hint)
-  - 還原 command preview
-  - 撳「確認還原 (RESET)」才發 request
-- 撳 cancel / Esc 取消
-- Progress modal 顯示 stdout / stderr
-- 撳關閉掣 dismiss
-
-### 永久 rule
-- ✅ 對齊 §15.45 Sscript pattern (annotated tag + backup branch + restore script)
-- ✅ 對齊 §15.39 還原備份還原點 pattern
-- ✅ 兩層 confirm 防止意外: frontend modal + backend 驗 "RESET" (對齊 Sscript 永久 rule)
-- ✅ Backend 用 `_resolve_commit_from_ref` peel annotated tag, dedup by commit hash
-- ✅ Backend `_scan_restore_scripts` 拎 EXPECTED_HEAD 配對 commit, 拎唔到 warn 但唔 crash
-- ✅ Frontend auto input `"yes\nRESET\n"` 落 stdin, 跟 Sscript double confirm 對齊
-- ✅ Restore script timeout 60s (通常 5-10 秒, set buffer)
-- ✅ UI 對齊 testing-page 風格 (跟 zigzag-testing/), simple HTML + JS + CSS, 唔引入 React 等
-- ✅ 對應 8月29日 22:44 永久 rule「所有改動要 confirm」: 大少 12:00 + 12:03 trigger 明確揀 options
-
-### Curl verify (8月31日 12:08, 對齊 §15.51 Backend hot-reload 永久 rule)
-```bash
-curl -s "http://localhost:18792/api/backup-points/list"
-```
-✅ ok: True
-✅ points count: 2 (restore-after-zigzag-4.53.0 + restore-before-sprint-4-followup)
-✅ script count: 2
-✅ 全部有 tag + branch + script (missing: [])
-
-### 對應 file
-- `backend/api/backup_admin.py` (新加, 12KB)
-- `backend/main.py` (加 import + include_router)
-- `backup-admin/index.html` (新加, 3.7KB)
-- `backup-admin/backup-admin.js` (新加, 8.7KB)
-- `backup-admin/backup-admin.css` (新加, 7KB)
-
-### 對應 commit
-- `chore: 加 Backup Admin Page (§15.54 永久 rule, 大少 8月31日 12:00 trigger) (跟 testing-page 風格 + double confirm modal) + Spec Sync`
-- Spec Sync: ARCHITECTURE.md §15.54 (本段)
-
-### 教訓
-- 大少 trigger「現在你這個怎麼不一樣了」之前我發現: 之前 §15.45 嘅 Sscript pattern 包括 tag + branch + script,但我啱啱用 empty commit 簡化咗,要對齊返
-- 對齊 §15.45 永久 rule: 之後大項目備份必用 Sscript pattern (annotated tag + backup branch + restore script)
-- 對齊 §15.45 pattern 之後, Backup Admin Page 拎 metadata 自動對應 commit hash dedup, 拎到就顯示, 拎唔到就 warn
-- 之後大項目改動, 必先 set Sscript 還原點, 然後改 code, 然後 update Backup Admin Page (auto, 因為 backend 動態 scan git)
-
+原本 §15.54 Backup Admin Page 永久 rule (`backup-admin/` + `backend/api/backup_admin.py` + 5 個 endpoint) 拎走, 改為「純 branch 還原點 pattern」, 詳見上方「15.45 純 branch 還原點永久 rule」段。對應 `chore: 加 Backup Admin Page` commit 拎走。
 
 ### 15.55 M1 Console Log 加 ZigZag 最新 10 點 永久 rule (大少 2026-08-31 12:50 trigger, 4.54.0)
 
@@ -4767,7 +4631,7 @@ points count: 11
 
 ### 永久 rule (4 個方向)
 - ✅ A. Missing warning UI: `can_restore: true/false` field 加落 `GET /api/backup-points/list`, missing 嘅 card 顯示「🚫 缺 component, 撳 Recover」+ disable reset btn + 加「🔧 Recover script」inline btn
-- ✅ B. Sscript set helper: Frontend「+ 設定新還原點」掣 → modal 輸入 name + reason → Backend `POST /api/backup-points/set` 自動 generate script + tag + branch + push (對齊 §15.45 Sscript pattern)
+- ✅ B. Sscript set helper: Frontend「+ 設定新還原點」掣 → modal 輸入 name + reason → Backend `POST /api/backup-points/set` 自動 generate script + tag + branch + push (對齊「純 branch 還原點永久 rule」永久 rule)
 - ✅ C. Audit trail: Backend `GET /api/backup-points/audit` 拎 git reflog 嘅 reset history, Frontend「Restore History」section 顯示 timestamp + tag + commit
 - ✅ D. Recover script (redefined cleanup): Backend `POST /api/backup-points/recover-script` 用 `git show <tag-commit>:<script-path>` 拎返 reset 之前 commit 嘅 script 寫返 disk + commit + push, 保留 tag 對齊大少 trigger「可能會再用」
 
@@ -4795,7 +4659,7 @@ git push origin main
 ```
 
 ### 教訓
-- 大少 trigger「保留 tag」+「可能會再用」= 對齊 §15.45 Sscript pattern + 12:08 user memory 永久 rule
+- 大少 trigger「保留 tag」+「可能會再用」= 對齊「純 branch 還原點永久 rule」永久 rule + 12:08 user memory 永久 rule
 - 改 endpoint 前必先 curl evidence (對齊 4.55.0 lesson learned)
 - 改 Git endpoint 必先 restart backend + curl verify (對齊 §15.51 永久 rule)
 - uvicorn subprocess + git reflog 拎 dangling commit 嘅 issue 屬於 OS-level, 之後 follow-up
