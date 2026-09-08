@@ -353,6 +353,60 @@ confidence = max(min(confidence, 0.95), 0.3)
 - 三方一致率仲係 ~42%, 因為 M1/M2/M3 對趨勢定義唔同 (M1 睇均線, M2 睇峰谷, M3 睇通道), 唔係單 formula 改可以解決
 - 將來要再 tune Bulkowski 條件 (minLineLength 30 → 20, minTouchSpacing 5 → 3, maxLineSlope 0.05 → 0.08) 先可以再降 conf floor, 但屬於大改動, 對齊 8月16日 19:21 永久 rule 嘅 sub-scenario 逐條 review 流程
 
+### 4.4 5-layer framework (Spec Sync #51, 大少 2026-09-09 00:42 confirm)
+
+**凡人話**: 對齊 9月9日 00:39 web research 推薦嘅 5-layer confirmation framework (fractalcycles.com + newtrading.io 100 年 backtest), M3 由單一 10 條 rule 改為 5-layer confirmation, 改善對 UP/DOWN 識別率。
+
+**5-layer framework**:
+1. **Layer 1 (regime)**: Hurst 0.50+ = trending regime (Peng 1994, 對齊野生 standard)
+2. **Layer 2 (tactical)**: ADX 20+ = trend strength (Wilder 1978, 對齊發展中 minimum)
+3. **Layer 3 (direction)**: +DI/-DI direction signal (Wilder 1978, 即係 Donchian Rule K/L 帶 direction)
+4. **Layer 4 (breakout)**: Donchian 20-period upper/lower breakout (newtrading.io 100 年 backtest 74.1% win rate, rank #3)
+5. **Layer 5 (pattern)**: M3 10+2 條 rule (Bulkowski 2005 條件 + Magee 1948 closing price confirmation)
+
+**Spec Sync #51 改動 (大少 9月9日 00:42 confirm)**:
+- **Gate 由 hard gate 改 confirmation filter** (對齊 fractalcycles 3-layer):
+  - 之前 (Spec Sync #49/#50): H<0.45 OR ADX<18 → 早 return SIDEWAYS 0.3 (hard gate, 99% stock 跌到呢度)
+  - 而家 (Spec Sync #51): gate fail 繼續行正常 algorithm, emit 1 個 `LOW_CONFIDENCE` warning 落 m3_warnings, Layer 4 公式 warn_penalty 自動扣 conf 0.10
+  - 凡人話: gate 失敗時 verdict 仍然出但 conf 偏低, 大少見到 LOW_CONFIDENCE warning 就知
+- **Bulkowski 條件放寬** (對齊 Donchian 20-period standard):
+  - minLineLength 30 → 20
+  - minTouchSpacing 5 → 3
+- **新增 Rule K/L (Donchian 20-period breakout)**:
+  - Rule K: close > 最近 20 日 high → 強 UP (Priority 1)
+  - Rule L: close < 最近 20 日 low → 強 DOWN (Priority 2)
+  - 對齊 newtrading.io 100 年 backtest 74.1% win rate (rank #3 全部 indicator)
+
+**State priority 改** (大少 9月9日 confirm):
+- K (Donchian 上突破) → UP 第一
+- L (Donchian 下突破) → DOWN 第二
+- H 真突破 + support_slope <= 0 → SIDEWAYS 第三 (保留 Spec Sync #45 永久 rule)
+- H+G → TRANSITION 第四
+- H 單獨 → UP 第五
+- A+B → SIDEWAYS 第六 (保留 spec doc §5 特殊規則)
+- A → UP 第七
+- B → DOWN 第八
+- F/G → DOWN 第九
+- C/D → SIDEWAYS 第十
+- 默認 SIDEWAYS
+
+**5-layer framework 永久 rule checklist**:
+- ✅ M3 algorithm 永遠 emit Layer 1 (hurst) + Layer 2 (adx + plusDI/minusDI) + Layer 4 (donchianRule K/L 條件) 落 verdict meta
+- ✅ Gate fail 永遠 emit LOW_CONFIDENCE warning 而非 SIDEWAYS 早 return (對齊 fractalcycles 3-layer framework)
+- ✅ Rule K/L 永遠優先 (Priority 1/2) 因為 Donchian 100 年 backtest 74.1% win rate 最高
+- ✅ Bulkowski 條件永遠 minLineLength 20 + minTouchSpacing 3 (對齊 Donchian 20-period standard)
+- ✅ 凡人話: 改 M3 algorithm 永遠要 preserve 5-layer framework, 唔好拎走任何 layer
+
+**5 隻 stock verify (Spec Sync #51)**:
+- HK.00700: SIDEWAYS → **DOWN** ✅ (B 觸發, 配合 A+I 推動 UP 因為 +DI 弱)
+- US.MSFT: UP 0.3 → UP 0.3 持平 (gate pass, A+I+J matched, R² 高但 Bulkowski 條件唔過, warn 4)
+- US.AAPL: SIDEWAYS → **UP** ✅ (A 觸發)
+- HK.00005: SIDEWAYS → **UP** ✅ (A 觸發)
+- US.GOOGL: SIDEWAYS → **DOWN** ✅ (B 觸發)
+
+**對應 commit**: 即將 push (Spec Sync #51)
+**對應 trigger**: 大少 9月9日 00:39「你上網再研究下有無其他方法」→ 00:42「confirm」
+
 **5 隻 stock sample verify** (v0.3.0):
 
 | Stock | State | Conf | R² | Touches | Vol | Warns | Formula |

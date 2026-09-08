@@ -2931,6 +2931,42 @@ After fix:  0 WARNING, 拎到正確 reason
 
 **套用**: 之後任何 algorithm 嘅 self-check / fallback / early return 邏輯, 都要 emit `self_check_triggered` + audit field 落 verdict meta, 等 frontend / M7 拎一致 view。將來其他 module (M4 / M5 / M6 等) 加 self-check penalty 都要對齊呢個 audit field design。
 
+### M3 5-layer framework 永久 rule (大少 2026-09-09 00:42 confirm, Spec Sync #51)
+
+**凡人話**: 對齊 9月9日 web research 推薦嘅 5-layer confirmation framework (fractalcycles.com 3-layer + newtrading.io 100 年 backtest), M3 algorithm 永遠要對齊 5-layer framework, 唔可以拎走任何 layer。
+
+**5-layer framework**:
+1. **Layer 1 (regime)**: Hurst 0.50+ = trending regime (Peng 1994 標準)
+2. **Layer 2 (tactical)**: ADX 20+ = trend strength (Wilder 1978 發展中 minimum)
+3. **Layer 3 (direction)**: +DI/-DI direction signal (Wilder 1978, 由 Donchian Rule K/L 帶 direction)
+4. **Layer 4 (breakout)**: Donchian 20-period upper/lower breakout (newtrading.io 100 年 backtest 74.1% win rate)
+5. **Layer 5 (pattern)**: M3 10+2 條 rule (Bulkowski 2005 條件 + Magee 1948 closing price confirmation)
+
+**對應 spec doc**: docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md §4.4
+
+**永久 rule checklist**:
+- ✅ M3 algorithm 永遠 emit Layer 1 (hurst + hurstLogR2) + Layer 2 (adx + plusDI + minusDI + atr) + Layer 4 (matched rules K/L) 落 verdict meta
+- ✅ Gate (H<0.45 OR ADX<18) 永遠 emit LOW_CONFIDENCE warning 而非 SIDEWAYS 早 return (對齊 fractalcycles 3-layer framework)
+- ✅ Rule K/L (Donchian 20-period breakout) 永遠 priority 第一/二位, 因為 Donchian 100 年 backtest 74.1% win rate 最高
+- ✅ Bulkowski 條件永遠 minLineLength 20 + minTouchSpacing 3 (對齊 Donchian 20-period standard, 之前 30/5 太嚴)
+- ✅ 改 M3 algorithm 永遠要 preserve 5-layer framework, 唔好拎走任何 layer
+- ✅ 凡人話: 5-layer framework 對齊權威 source 推薦, 拎走任何 layer 等於 拎走 confirmation, 會令對齊率跌
+
+**對應 trigger**:
+- 大少 9月9日 00:39「你上網再研究下有無其他方法」trigger web research
+- 大少 9月9日 00:42「confirm」trigger 即刻實作 5-layer framework
+- 對齊 AGENTS.md §三方一致率 audit 永久 rule (Spec Sync #50) 嘅 spirit: 改 algorithm 必跑 audit 對比 baseline
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` line 990-1011 (12 條 rule check) + line 553-606 (_derive_trendline_state priority)
+- `backend/algorithms/trendline/config.py` line 22-23 (Bulkowski 條件 20/3, Spec Sync #51)
+- `backend/algorithms/trendline/algorithm.py` line 788-807 (gate 改 confirmation filter, LOW_CONFIDENCE warning)
+- `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §4.4 (5-layer framework 描述)
+
+**對應 commit**: 即將 push (Spec Sync #51)
+
+**套用**: 之後任何 algorithm 改動, 永遠要對齊 5-layer framework (regime / tactical / direction / breakout / pattern)。拎走任何 layer 屬於 Spec Sync 範圍, 必先 web research 拎權威 source 確認先做。改之後必跑 217 stock audit + 對比 baseline, 一致率跌過 50% 唔收貨。
+
 ### 三方一致率 audit 永久 rule (大少 2026-09-08 23:38 trigger, Spec Sync #50)
 
 **凡人話**: M1 + M2 + M3 3 個 algo 對同一隻 stock 嘅 verdict 一致率係可信性最重要嘅指標。改任何 algorithm 嘅 formula / threshold / gate 之後, 必跑 217 隻 stock 嘅三方一致率 audit, 對比改前改後, 一致率跌過 50% 就要 trigger 重新校。

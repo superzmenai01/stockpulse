@@ -579,6 +579,14 @@ def _derive_trendline_state(rules: List[Dict[str, str]], support_fit: Dict[str, 
     - default SIDEWAYS 第十
     """
     ids = {r["id"] for r in rules}
+    # Spec Sync #51 (大少 2026-09-09 00:42 confirm): Donchian Rule K/L 入 priority 第一/二位
+    # 對齊 newtrading.io 100 年 backtest Donchian win rate 74.1% (rank #3 全部 indicator)
+    # Rule K = Donchian 上突破 20 日 high → 強 UP
+    # Rule L = Donchian 下突破 20 日 low → 強 DOWN
+    if "K" in ids:
+        return "UP"
+    if "L" in ids:
+        return "DOWN"
     # 大少 2026-09-07 00:14 fix: H 真突破 guard — H fire + support_slope <= 0 → SIDEWAYS
     # 短線突破但 long-term 兩個 support/resistance 都 downtrend → over-confident 改判 SIDEWAYS
     if support_fit is not None and "H" in ids and support_fit["slope"] <= 0:
@@ -771,10 +779,12 @@ class TrendlineAlgorithm(Algorithm):
         #   - ADX 20-25 = 發展中
         #   - ADX < 20 = 弱 / 橫行
         #
-        # Gate 規則:
-        #   - H >= 0.50 AND ADX >= 22: pass (有方向有強度, 正常算法)
-        #   - H < 0.45 OR ADX < 20: fail (random walk / 橫行, SIDEWAYS + 2 warnings)
-        #   - 其他 (灰色地帶 0.45-0.50 / 20-22): pass 但 emit 1 個 LOW_CONFIDENCE warning
+        # Gate 規則 (大少 2026-09-09 00:42 confirm Spec Sync #51 — gate 由 hard gate 改 confirmation filter):
+        #   - 之前: H<0.45 OR ADX<18 → 早 return SIDEWAYS 0.3 (hard gate, 99% stock 跌到呢度)
+        #   - Spec Sync #51: gate 失敗時繼續出 verdict, 但 emit 1 個 LOW_CONFIDENCE warning,
+        #     由 Layer 4 公式 warn_penalty 自動扣 conf 0.10
+        #   - 對齊 fractalcycles.com 3-layer framework: Hurst + ADX 應該係 confirmation 而非 hard gate
+        #   - 對齊權威 source: AInvest 建議 H>0.65 strong, 0.5-0.6 maybe, <0.4 mean-reverting
         closes = [bar["close"] for bar in recent]
         # Layer 1 (大少 2026-09-07 Spec Sync #45): _compute_hurst 返 (hurst, log_r2) tuple, 用 Peng 1994 pitfall check
         hurst_value, hurst_log_r2 = _compute_hurst(closes, window=100)
@@ -786,78 +796,28 @@ class TrendlineAlgorithm(Algorithm):
         atr_value = adx_data["atr"]
 
         if hurst_value < 0.45 or adx_value < 18:
-            # Gate fail: 股價 random walk / mean-reverting / 弱趨勢
-            # M3 verdict 唔可信, 強制 SIDEWAYS
-            gate_warnings = [
-                {
-                    "level": "warning",
-                    "category": "system",
-                    "module_id": "trendline",
-                    "code": "CONFLICT_STATE",
-                    "message": f"Hurst+ADX gate fail (H={hurst_value:.3f}, ADX={adx_value:.1f})",
-                    "issue": f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 18), 股價 random walk / mean-reverting / 弱趨勢, trend line 唔可信",
-                    "impact": "Verdict 唔可信 (M3 趨勢線算法喺 random walk 市況會誤判), 強制 SIDEWAYS",
-                    "fix": "Re-run / 檢查 kline data 範圍 / Hurst+ADX 適合 trending 市況, 橫行市況請用 M1/M2 verdict",
-                    "context": {"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 18},
-                }
-            ]
-            return Verdict(
-                ok=True,
-                points=[],
-                meta={
-                    "moduleId": "trendline",
-                    "symbol": options.get("symbol", "TEST"),
-                    "timeframe": options.get("period", "1d"),
-                    "state": "SIDEWAYS",
-                    "cycle_label": "橫行",
-                    "confidence": 0.3,
-                    "interpretation": f"Hurst+ADX gate fail (H={hurst_value:.3f}, ADX={adx_value:.1f}), 股價 random walk / 弱趨勢, 強制 SIDEWAYS",
-                    "evidence": [
-                        {
-                            "type": "hurst",
-                            "label": f"Hurst 指數 (DFA): {hurst_value:.3f}",
-                            "value": hurst_value,
-                            "threshold": 0.45,
-                            "passed": hurst_value >= 0.45,
-                        },
-                        {
-                            "type": "adx",
-                            "label": f"ADX (14 日): {adx_value:.1f}",
-                            "value": adx_value,
-                            "threshold": 20,
-                            "passed": adx_value >= 20,
-                        },
-                    ],
-                    "_warnings": gate_warnings,
-                    "matchedRules": [],
-                    "ruleLabels": [],
-                    "baseConfidence": 0.3,
-                    "supportLine": None,
-                    "resistanceLine": None,
-                    "channel": None,
-                    "breakout": {"support": {"type": "none", "daysSince": -1}, "resistance": {"type": "none", "daysSince": -1}},
-                    "latestClose": _round(recent[-1]["close"], 2) if recent else 0.0,
-                    "latestExtremeAge": -1,
-                    "projection": {"days": cfg["projectionDays"], "supportFuture": 0.0, "resistanceFuture": 0.0, "midFuture": 0.0},
-                    "adjustmentLog": [f"Hurst+ADX gate fail: H={hurst_value:.3f}, ADX={adx_value:.1f}"],
-                    "dataDays": recent_n,
-                    "configUsed": cfg,
-                    "hurst": _round(hurst_value, 4),
-                    "adx": _round(adx_value, 4),
-                    # Layer 1 emit: Peng 1994 DFA log-r² 確認 self-similarity
-                    "hurstLogR2": _round(hurst_log_r2, 4),
-                    # Layer 1 emit: Wilder 1978 +DI / -DI / ATR
-                    "plusDI": _round(plus_di_value, 4),
-                    "minusDI": _round(minus_di_value, 4),
-                    "atr": _round(atr_value, 4),
-                    # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
-                    # 凡人話: 早 return 路徑都要 emit, 等 verdict shape 一致
-                    "self_check_triggered": True,  # gate fail 本身已經係 self-check 觸發
-                    "original_confidence": 0.3,    # gate fail 強制 0.3, 唔需要 floor
-                    "self_check_warning_count": len(gate_warnings),
-                },
-                warnings=gate_warnings,
-            )
+            # Spec Sync #51 (大少 2026-09-09 00:42 confirm): gate 由 hard gate 改 confirmation filter
+            # 之前: 早 return SIDEWAYS 0.3 (99% stock 跌到呢度, 對 UP/DOWN 識別差)
+            # 而家: emit 1 個 LOW_CONFIDENCE warning 落 m3_warnings (Layer 4 公式 warn_penalty 自動扣 conf 0.10)
+            # 繼續行正常 algorithm (10 + 2 條 rule + self-check)
+            gate_soft_warning = {
+                "level": "info",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "LOW_CONFIDENCE",
+                "message": f"Hurst+ADX gate 偏弱 (H={hurst_value:.3f}, ADX={adx_value:.1f})",
+                "issue": f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 18), 股價 random walk / mean-reverting / 弱趨勢, trend line 偏弱但繼續 verdict (Spec Sync #51 改 confirmation filter)",
+                "impact": "Verdict 偏弱 (Hurst+ADX 偏低, trend line 唔太可信), conf 自動扣 0.10",
+                "fix": "Re-run / 對齊 M1/M2 verdict 確認 / 接受低 conf 但繼續判斷",
+                "context": {"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 18},
+            }
+        else:
+            gate_soft_warning = None
+
+        # Spec Sync #51 (大少 2026-09-09 00:42 confirm): Hurst+ADX gate 由 hard gate 改 confirmation filter
+        # 之前: gate fail 早 return SIDEWAYS 0.3, 99% stock 跌到呢度 (對 UP/DOWN 識別差)
+        # 而家: gate fail 繼續行正常 algorithm (10 + 2 條 rule + self-check)
+        # gate_soft_warning 喺 main path m3_warnings 嗰度 append, Layer 4 公式 warn_penalty 自動扣 conf 0.10
 
         # ============ Step 2: 識別極值點 (peaks + troughs) ============
         peaks = []
@@ -987,7 +947,8 @@ class TrendlineAlgorithm(Algorithm):
         resistance_future = resistance_fit["intercept"] + resistance_fit["slope"] * future_idx
         mid_future = (support_future + resistance_future) / 2
 
-        # ============ 10 條 rule check (Step 7) ============
+        # ============ 12 條 rule check (Step 7, Spec Sync #51 對齊權威 source 加 2 條) ============
+        # 大少 2026-09-09 00:42 confirm Spec Sync #51: 加 Rule K/L (Donchian 20-period breakout 對齊 newtrading 74.1% win rate)
         matched_rules = []
         if support_fit["slope"] > 0 and support_fit["r2"] >= cfg["minR2"]:
             matched_rules.append({"id": "A", "label": "支撐線上升", "strength": "strong"})
@@ -1009,6 +970,19 @@ class TrendlineAlgorithm(Algorithm):
             matched_rules.append({"id": "I", "label": "支撐有效", "strength": "weak"})
         if resistance_touch["touches"] >= 2 and resistance_touch["avgBouncePct"] >= 0.01:
             matched_rules.append({"id": "J", "label": "壓力有效", "strength": "weak"})
+
+        # Rule K (新, Spec Sync #51): Donchian 20-period upper breakout (close > 20 日 high)
+        # 對齊 newtrading.io 100 年 backtest 74.1% win rate (Donchian rank #3)
+        # 對齊 Magee 1948 closing price confirmation
+        donchian_window = cfg.get("donchianWindow", 20)
+        if len(recent) >= donchian_window + 1:
+            upper_donchian = max(bar["high"] for bar in recent[-(donchian_window + 1):-1])
+            lower_donchian = min(bar["low"] for bar in recent[-(donchian_window + 1):-1])
+            latest_close = recent[-1]["close"]
+            if latest_close > upper_donchian:
+                matched_rules.append({"id": "K", "label": "Donchian 上突破 (20 日 high)", "strength": "strong"})
+            elif latest_close < lower_donchian:
+                matched_rules.append({"id": "L", "label": "Donchian 下突破 (20 日 low)", "strength": "strong"})
 
         # ============ Step 8: State derivation ============
         state = _derive_trendline_state(matched_rules, support_fit)
@@ -1088,6 +1062,12 @@ class TrendlineAlgorithm(Algorithm):
 
         # Warnings (跟 Module Warning System v1.1.0)
         m3_warnings = []
+
+        # Spec Sync #51 (大少 2026-09-09 00:42 confirm): Hurst+ADX gate 改 confirmation filter
+        # gate fail 唔再 SIDEWAYS 0.3, 而係 emit 1 個 LOW_CONFIDENCE warning 落 m3_warnings
+        # Layer 4 公式 warn_penalty 自動扣 conf 0.10
+        if gate_soft_warning is not None:
+            m3_warnings.append(gate_soft_warning)
         # 大少 2026-09-07 00:14 fix: M3 self-check warning system (對齊 M2 self-check warning 永久 rule 嘅 spirit)
         # 凡人話: M3 algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system warning
         # 跟 M2 self-check warning 永久 rule 嘅 pattern (M2 emit 5 個 self-check conditions, M7 Synthesizer 拎 M2 warning 自動降 weight)
