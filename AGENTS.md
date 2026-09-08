@@ -2906,3 +2906,81 @@ After fix:  0 WARNING, 拎到正確 reason
 **對應 commit**: 即將 push (Spec Sync: 加「Backend config file 壞咗即死火 + 必 curl 驗證 永久 rule」section)
 
 **套用**: 之後任何 backend restart 流程 (`./start.sh` / 改 algorithm / 改 config / 改 endpoint) 之後, 必跟本永久 rule 嘅 curl verify 步驟確認復活, 單純睇 ps / lsof 唔夠。改 `backend/algorithms/*/config.py` 之前, 必先 `python -c "import ast; ast.parse(open('<file>').read())"` 確認 syntax OK, 避免重蹈 9月7日 14:21 嘅覆轍。
+
+### StockPulse Git workflow 永久 rule (大少 2026-09-08 17:00 trigger, Option C Hybrid 揀)
+
+**凡人話解釋**: 之前 StockPulse commit 全部都係直接喺 main commit + push (e.g. 0d7988d3 / ec2a87f0 / 87a934c8), 冇用 feature branch 流程。對齊大少 8月29日 22:44「所有改動要 confirm」+ 8月31日 12:08「一鍵還原 Backup Admin Page」永久 rule, 9月8日 17:00 大少 trigger「教我流程」後揀 Option C (Feature Branch + Local Merge), 設立 standard git workflow。
+
+**3 個 Options 對比**:
+
+| Option | 流程 | 優點 | 缺點 | 適用 |
+|---|---|---|---|---|
+| A 直接 main | commit + push origin main | 簡單, single dev 最快 | main 直接受影響, 唔易 rollback | single dev quick fix (我哋做法) |
+| B Feature Branch + GitHub PR | checkout -b → commit → push origin feat/xxx → GitHub PR → merge | 多人 review, history 清晰 | 慢, 步驟多 | 團隊開發 |
+| C Feature Branch + Local Merge ⭐ | checkout -b → commit → checkout main → merge --no-ff → push origin main → delete branch | 保留 branch 好處 (rollback 容易), 唔需要 GitHub PR | 仍然要自己 review | ⭐ **StockPulse 標準 (single dev + 一鍵還原 backup + 永久 rule)** |
+
+**Option C 完整流程範本 (StockPulse 永久 rule)**:
+
+```bash
+# 開發前
+git checkout main
+git pull origin main                       # 確保 main 最新
+git checkout -b feat/xxx                   # 開 feature branch
+
+# 開發中
+# ... 改 code + 改 spec doc ...
+./start.sh                                 # backend 改 → restart (8月31日 11:01 永久 rule)
+curl /api/algorithms/health/futu          # curl verify backend 復活 (9月7日 14:35 永久 rule)
+# 跑 audit verify (≥ 3 隻 stock, 8月16日 19:21 M1 sub-scenario 永久 rule)
+git add <files>
+git commit -m "feat(xxx): xxx"
+# (可選) git push origin feat/xxx         # 將 feature branch 推到 remote 做 backup
+
+# 完成
+git checkout main
+git merge --no-ff feat/xxx                # local merge, 留 --no-ff merge commit 保留 history
+git push origin main                       # 推到 remote
+git branch -d feat/xxx                     # delete local branch
+git push origin --delete feat/xxx          # delete remote branch
+```
+
+**永久 rule checklist**:
+- ✅ **改動前必先 confirm plan** (對齊 8月29日 22:44 永久 rule — 開 branch 之前 confirm)
+- ✅ **改動前必先 Sscript 一鍵還原 backup** (對齊 8月31日 12:08 永久 rule — `Backup Admin Page 拎到 can_restore: true`)
+- ✅ **Backend 改動必 restart + curl verify** (對齊 8月31日 11:01 + 9月7日 14:35 永久 rule)
+- ✅ **Spec doc 改動即時 update** (對齊 8月18日 06:36 sub-scenario 簡單算法表永久 rule — 改任何 sub-scenario trigger 即刻 update)
+- ✅ **Sub-scenario 改動必先 audit ≥ 3 隻 stock 拎 evidence** (對齊 8月16日 19:21 永久 rule)
+- ✅ **改動後即時 commit + Spec Sync + commit + push** (對齊 AGENTS.md「Spec Sync + commit + push」流程)
+- ✅ **commit message 對齊 `feat(scope): xxx` / `fix(scope): xxx` / `docs(scope): xxx` / `chore(scope): xxx` prefix** (對齊 git log 已 commit pattern: 0d7988d3 `chore(api)` / ec2a87f0 `chore(db)` / 87a934c8 `feat(m1)`)
+- ✅ **merge 用 `--no-ff`** 保留 feature branch 嘅 merge commit, history 清晰
+- ✅ **delete feature branch 喺 merge 之後**, 唔留 dead branch
+
+**凡人話決策樹**:
+```
+需要多人 review 嗎?
+├─ 係 → Option B (GitHub PR)
+└─ 否 (single dev)
+    ├─ 改動大 + 怕改錯? → Option C (Feature Branch + Local Merge) ⭐ StockPulse 標準
+    ├─ 改動小 + quick fix (1-2 行 typo)? → Option A (直接 main)
+    └─ 1-2 隻 stock 嘅 spec doc update? → Option A
+```
+
+**例外 (Option A 直接 main 適用)**:
+- 1-2 行 typo fix
+- Doc string / comment 改動
+- Spec doc 純敘述 update (唔改 code)
+- StockPulse 一鍵還原 Sscript 已經做好 backup (對齊 8月31日 12:08), 直接 main 都安全
+- 大少明確 trigger「直接 commit + push」(e.g. 9月8日 16:54 trigger 揀 A 立即做 + commit + push)
+
+**對應 commit**: 即將 push (大少 9月8日 17:00 trigger「Go」確認揀 Option C, 加本永久 rule section 入 AGENTS.md)
+
+**對應文件**:
+- AGENTS.md 本 section (永久 rule checklist)
+- git log 之前 commit 沿用 Option A (0d7988d3 / ec2a87f0 / 87a934c8) ← 之後會 follow Option C
+- `start.sh` (Backend hot-reload)
+- `Backup Admin Page` (一鍵還原)
+
+**套用情境**:
+- 之後 StockPulse 任何新改動 (M1-M9 / frontend / spec doc / Sscript), 都用 Option C 流程
+- 大少直接 trigger「直接 commit + push」/「quick fix」/「1-2 行」等 keyword, 我可以跳過 Option C 直接 Option A
+- 之後 audit / Spec Sync 會 check 本永久 rule 嘅流程有冇跟
