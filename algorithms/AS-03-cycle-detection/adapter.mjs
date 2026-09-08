@@ -4163,6 +4163,15 @@ function renderDetailedExplanationIndicators(verdict) {
   const div = verdict.meta.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
   const exhaustion = verdict.meta.exhaustionScore || 0;
   const winProb = verdict.meta.winProbability || 0.5;
+  // v0.2.0 (大少 2026-09-09 Spec Sync #52): 拎 Hurst/ADX/regimeGate/M1 state/self-check audit field
+  // 對齊 9月9日 07:20 ReferenceError fix — renderDetailedExplanationIndicators 係獨立 function,
+  // 唔可以攞 renderIndicatorsResult 嘅 local var, 一定要喺呢度重新拎 verdict.meta.*
+  const hurst = verdict.meta.hurst;
+  const adx = verdict.meta.adx;
+  const regimeGate = verdict.meta.regimeGate;
+  const m1State = verdict.meta.m1State;
+  const selfCheckTriggered = verdict.meta.selfCheckTriggered;
+  const originalConfidence = verdict.meta.originalConfidence;
 
   return `
     <div class="detailed-explanation">
