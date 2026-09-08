@@ -1,12 +1,60 @@
 # MODULE-02-HL-STRUCTURE — 高低點結構法 (Peak-Trough Structure Cycle Detector)
 
 > **Module ID**: `hl-structure`
+> **v0.5.0** (2026-09-08, 大少 + MiniMax Code) — **升級記錄**: 對齊永久 rule §Module Warning v1.1.0 + v1.3.0 — 10 個 self-check warning 注入點全部用 `make_warning()` helper 統一 (auto-emit `category` 字段 + auto-apply CATEGORY_DISPLAY template + 統一 `module_id="M2"`), 對齊 backend `services/warning_collector.py` v1.3.0 升級
 > **v0.4.0** (2026-09-07, 大少 + MiniMax Code) — **升級記錄**: 5 個 layer evidence-based 優化 (Savitzky-Golay + prominence 過濾 / Linear regression + R² / 5-point H&S + neckline / BB-KC Squeeze / Hurst+ADX gate), 對齊 evidence-based 算法 (SciPy find_peaks / pomegra.io / tradersweek.com / deepwiki.com / thinkcapital.com / marketopia.org), 唔引入 scipy 依賴 (跟 M3 pattern), 22 隻 conflict stock evidence 拎返
 > **v0.3.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 加 5 個 self-check warning (形態預警 / 峰谷太舊 / 5年vs短線矛盾 / 信心過低 / 結構破壞), 通知 M7/M8/M9 M2 verdict 唔可信, M7 自動降 weight 0.15→0.05 + banner 提示 (大少 15:08 confirm 做法 A + C 混合)
 > **v0.2.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 19 步算法 (加 Step 16 短線 mode + Step 17 突破 override + consolidation_breakout)
 > **v0.1.0** (2026-08-07, 大少 + MiniMax Code) — 初版 18 步算法
 > **Spec source**: `docs/演算法概念SPECS/高低點結構法.docx` (v2.0)
 
+> ## 🔥 v0.5.0 改動摘要 (2026-09-08, Spec Sync #49)
+>
+> **觸發原因**: 大少 9月8日 09:02 trigger「你去檢查M2 對比 M1 的結果」audit, 拎 evidence 發現 M2 hl_structure algorithm 嘅 7 個 self-check warning 注入點 (Step 19 嗰 5 個 + Step 0.5 Hurst+ADX gate + 兩個峰谷不足 case) 全部用 raw dict 寫, 違反永久 rule §Module Warning v1.1.0 (大少 2026-08-14 11:33 Spec Sync #18)
+>
+> **永久 rule §Module Warning v1.1.0 違規揭發** (15 隻 stock sample):
+> - **違規 1**: Backend warning 唔 emit `category` 字段 — frontend 用 `WARNING_CATEGORIES[code]` lookup 推算, source of truth 跌咗落 frontend
+> - **違規 2**: M2 raw dict warning 嘅 `impact` / `fix` 字段由 caller 自己寫, 唔跟 CATEGORY_DISPLAY template
+> - **違規 3**: M2 `module_id` 唔統一 — 5 個 Step 19 注入點用 `"M2"`, 但 3 個其他注入點 (Step 0.5 / 峰谷 0 / 峰谷 < minPairs × 2) 用 `"hl_structure"`, 違反永久 rule v1.0.0 統一編號
+>
+> **改動範圍 (1 個 file)**:
+> - `backend/algorithms/hl_structure/algorithm.py` (加 import + 改 10 個 self-check warning 注入點)
+>
+> **10 個注入點改動表** (全部由 raw dict 改用 `make_warning().to_dict()` helper):
+>
+> | 注入點 | Line | Code | 之前 `module_id` | 之前自己寫 `impact/fix`? | v0.5.0 改用 `make_warning()` |
+> |--------|------|------|----------------|------------------------|-----------------------------|
+> | Hurst+ADX gate 唔通過 | 931 | CONFLICT_STATE | "M2" ✅ | 是 ❌ | ✅ auto-emit stock_state category + auto template |
+> | 峰谷全部拎唔到 (Step 3) | 1013 | VERDICT_MISSING | "hl_structure" ❌ | 是 ❌ | ✅ auto-emit system category + auto template |
+> | 峰谷 < minPairs × 2 (Step 6) | 1109 | FALLBACK_USED | "hl_structure" ❌ | 是 ❌ | ✅ auto-emit system category + auto template |
+> | 峰谷全部拎唔到 (Step 19) | 1508 | VERDICT_MISSING | "hl_structure" ❌ | 是 ❌ | ✅ auto-emit system category + auto template |
+> | 峰谷 < minPairs × 2 (Step 19) | 1521 | FALLBACK_USED | "hl_structure" ❌ | 是 ❌ | ✅ auto-emit system category + auto template |
+> | 形態預警 (Step 19 self-check 1) | 1543 | CONFLICT_STATE | "M2" ✅ | 是 ❌ | ✅ auto-emit stock_state category + auto template |
+> | 峰谷太舊 (Step 19 self-check 2) | 1562 | DATA_AGE | "M2" ✅ | 是 ❌ | ✅ auto-emit system category + auto template |
+> | 5年 vs 短線 override (Step 19 self-check 3) | 1582 | FALLBACK_USED | "M2" ✅ | 是 ❌ | ✅ auto-emit system category + auto template |
+> | 信心指數過低 (Step 19 self-check 4) | 1603 | THRESHOLD_BREACH | "M2" ✅ | 是 ❌ | ✅ auto-emit stock_state category + auto template |
+> | 結構破壞 (Step 19 self-check 5) | 1622 | CONFLICT_STATE | "M2" ✅ | 是 ❌ | ✅ auto-emit stock_state category + auto template |
+>
+> **永久 rule** (v0.5.0 新加):
+> - ✅ M2 10 個 self-check warning 注入點全部用 `make_warning()` helper (永久 rule §Module Warning v1.3.0 沿用)
+> - ✅ 統一 `module_id="M2"` (永久 rule v1.0.0 統一 M1-M12 編號)
+> - ✅ 唔再自己寫 `impact` / `fix` string (永久 rule v1.1.0 沿用, helper 自動 apply template)
+> - ✅ `issue` 保留 caller 自己寫嘅 specific context (永久 rule v1.1.0 沿用, 例如「Hurst=0.4 (threshold 0.45), ADX=15 (threshold 20)」呢啲具體訊號)
+> - ✅ Step 19.5 self-check penalty 邏輯唔變 (conf floor 0.3 沿用, 因為 `_warnings` 結構唔影響 trigger codes check)
+>
+> **Frontend 影響**:
+> - 4 隻 stock 嘅 CONFLICT_STATE warning (HK.00700 / HK.00005 / HK.00388 / HK.00939) 之前 fallback 默認為「🔧 系統警告」(verdict 可能唔可信), 修完自動分流做「📊 股票狀態提醒」(verdict 已經準確) — 因為 CONFLICT_STATE 永久 rule v1.1.0 歸 stock_state
+> - 凡人話: 大少見到 CONFLICT_STATE banner 之前會誤信 verdict 唔可信, 修完之後先睇得正確 (股票狀態衝突但 verdict 已經準確反映呢個狀況)
+>
+> **對應 commit** (1 個 refactor + 1 個 Spec Sync):
+> - `refactor(m2): use make_warning() helper for 10 self-check injection points` (即將 push)
+> - `docs(spec): Spec Sync #49 warning system v1.3.0 + module-02 v0.5.0` (即將 push)
+>
+> **凡人話總結**:
+> - M2 algorithm 嘅 10 個 self-check warning 注入點, 之前 4 個違規 (冇 category / 自己寫 impact/fix / module_id 唔統一), 修完全部對齊永久 rule v1.1.0 + v1.3.0
+> - 凡人話: 大少 Copy warning 畀 Mavis 嗰陣, `category` 永遠正確, `impact`/`fix` 永遠跟 template, 唔再怕 caller 寫錯或忘記填
+> - 影響 banner: 4 隻 stock 嘅 CONFLICT_STATE warning 之前誤判做系統警告, 修完自動分流做股票狀態提醒
+>
 > ## 🔥 v0.4.0 改動摘要 (2026-09-07, 大少 11:45 plan 批准)
 >
 > **觸發原因**: 大少 9月7日 11:45「檢查M2, 上網對比找出完善的公式, 優化現在的M2」, 11:48 confirm「你先做備份和一鍵還原, 之後就可以開始」
