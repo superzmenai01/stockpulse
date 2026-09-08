@@ -369,6 +369,111 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: `51e19234` (feat(m2-self-check-penalty): Step 19.5 auto floor confidence 0.3 when self-check warning 觸發)
 
+### M4 Indicators v0.2.0 永久 rules (大少 2026-09-09 01:55 confirm, Spec Sync #52)
+
+**凡人話**: M4 (動能背馳法) 算法 v1.0.0 永遠 100% SIDEWAYS 係錯嘅, 2026-09-09 01:55 Spec Sync #52 做咗 12 個 fix — 加 Hurst+ADX regime gate + M1 state filter + self-check warning + self-check penalty + cross-confirm bonus + meta.symbol + 改 lookbackDays 60→250 + signalThreshold 0.6→0.5 + ban conf 1.0 + confirmation candle + RSI 5 日 linear slope, 對齊 M2/M3 永久 rule pattern。
+
+**Stage 2 audit 結果** (214 隻 stock, v0.2.0 vs v1.0.0):
+- v1.0.0 baseline: 211/214 SIDEWAYS (98.6%), 0 UP verdict, 0 warning
+- v0.2.0: **188/214 (87.9%) 有 warning**, **2 UP verdict (新!)**
+- Warning code 分布: CONFLICT_STATE 101, INSUFFICIENT_DATA 44, THRESHOLD_BREACH 43
+- M1 一致率: 56.5% (v0.2.0, A3 M1 filter 持續改善)
+
+**§M4 Hurst+ADX regime gate (A1, 對齊 M3 Spec Sync #45 永久 rule)**
+- ✅ M4 algorithm Step 0.5 永遠 emit Hurst+ADX gate check
+- ✅ H < 0.45 OR ADX < 20 → 強制 return SIDEWAYS + emit 1 個 CONFLICT_STATE warning (info level, 唔 floor conf)
+- ✅ Backend `indicators/algorithm.py` + Frontend `modules/indicators.ts` 1:1 port 同步
+- ✅ Meta 永遠 emit `hurst` + `adx` + `regimeGate` 3 個 audit field
+- ✅ Backend import `_compute_hurst` (返 tuple) + `_compute_adx` (返 dict) from `trendline.algorithm` (有底線 prefix)
+- ✅ Frontend import `computeHurst` (返 number) + `computeAdx` (返 number) from `./trendline.ts` (冇底線, frontend 簡化版)
+- ✅ 對齊 Module Warning v1.1.0 — `CONFLICT_STATE` info level, 唔 floor conf
+
+**§M4 M1 state trend filter cross-module alignment (A3)**
+- ✅ algorithm_runner.py 統一 inject `options["m1State"]` 落 M4 (對齊 9月7日 08:30 meta.symbol 永久 rule pattern)
+- ✅ M4 見到 M1=DOWN 但 M4 出 buy → bull_score × 0.5 + emit FALLBACK_USED warning
+- ✅ M4 見到 M1=UP 但 M4 出 sell → bear_score × 0.5 + emit FALLBACK_USED warning
+- ✅ Signal emit `m1FilterApplied: bool` flag 畀 caller audit
+- ✅ Meta 永遠 emit `m1State: 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION'` 4 個 value
+- ✅ 凡人話: 大環境 DOWN 嗰陣唔好亂話 buy, 大環境 UP 嗰陣唔好亂話 sell, 由 M1 過濾
+
+**§M4 self-check warning emit (A4, 5 個 code)**
+- ✅ `INSUFFICIENT_DATA` (critical) — K 線唔夠 min data 295 條
+- ✅ `CONFLICT_STATE` (info) — Regime gate 唔過, 唔 floor conf
+- ✅ `FALLBACK_USED` (warning) — M1 state 同 M4 signal 矛盾, 已降權 50%
+- ✅ `THRESHOLD_BREACH` (warning) — 最終 conf < 0.3 門檻
+- ✅ `MODULE_PARTIAL` (warning) — 冇背馳 evidence 但有 buy/sell signal
+- ✅ 統一用 `make_warning()` helper (對齊 §Module Warning v1.1.0 spirit)
+- ✅ Frontend indicators.ts 對齊用 `warnings: string[]` 落 verdict (永久 rule v1.1.0 spirit, 永遠 inlined 唔入 DB)
+
+**§M4 self-check penalty (A5, 對齊 M2 9月7日 22:00 永久 rule spirit)**
+- ✅ M4 algorithm Step 9.5 永遠拎 critical + warning level self-check warning 觸發 conf floor 0.3
+- ✅ 公式 `max(conf * 0.375, 0.3)` — 原本 conf 0.8 → 0.3, 0.56 → 0.3, 0.27 → 0.3 (floor 唔變)
+- ✅ info level (CONFLICT_STATE) 唔觸發 floor (對齊 §Module Warning v1.1.0 spirit)
+- ✅ state 唔變, 由 M7 layer 處理 weight 折扣
+- ✅ Meta 永遠 emit `selfCheckTriggered: bool` + `originalConfidence: float` 2 個 audit field
+- ✅ 對齊 M2 / M3 Layer 4 formula 永久 rule spirit (Spec Sync #45+#48)
+
+**§M4 cross-confirm bonus (A7)**
+- ✅ RSI + MACD 同時出現同一類背馳 (cross-confirm) → bull_score / bear_score +0.10 bonus
+- ✅ Signal emit `crossConfirmed: bool` flag 畀 caller audit
+- ✅ 凡人話: 兩個獨立指標同時確認, 信心提升 (對齊 Tradealgo 71% win rate research)
+
+**§M4 Layer 4 formula ban conf 1.0 (B1, 對齊 M3 Layer 4 永久 rule)**
+- ✅ Signal strength clamp 0.95 (永久 ban 1.0)
+- ✅ Confidence clamp 0.95
+- ✅ 對齊 M3 Layer 4 永久 rule (Spec Sync #45, 2026-09-07 00:14)
+
+**§M4 confirmation candle (B2)**
+- ✅ B2 放量必須同時 收 > MA5 (對齊 Arxum 67% win rate research)
+- ✅ 之前 v1.0.0 純粹放量 (volume > 10d avg × 1.2), v0.2.0 加 `close > MA5` 確認
+- ✅ 同時觸發先 +0.15 score
+
+**§M4 RSI 5 日 linear slope (B3)**
+- ✅ 用 `rsi[-1] - rsi[-6]` raw difference, threshold ±5.0 (0-100 scale 嘅 5% 變化)
+- ✅ 之前 v1.0.0 單點 vs 5 日 average 唔穩, v0.2.0 改 linear slope
+
+**§M4 meta.symbol caller symbol (A6, 對齊 9月7日 08:30 永久 rule)**
+- ✅ Algorithm 永遠用 `options.get("symbol", "UNKNOWN")` 拎 caller symbol
+- ✅ algorithm_runner.py 統一 inject `options["symbol"] = caller_symbol`
+- ✅ Meta 永遠 emit `symbol` field, 唔好 hardcode "TEST" / "UNKNOWN" / 其他 default
+- ✅ Frontend indicators.ts 對齊用 `ctx.symbol` 拎 caller symbol (永久 rule 9月7日 08:30 spirit)
+
+**§M4 config 改動 (A2 + A8)**
+- ✅ `signalThreshold` 0.6 → 0.5 (對齊業界 momentum win rate 35-45%, 之前 0.6 太嚴 98.6% 永遠 hold)
+- ✅ `lookbackDays` 60 → 250 (1 年尺度, 凡人話: 60 日太短, 永遠 0 個 historical opportunity)
+- ✅ Min data 119 條 → 295 條 (14 RSI + 35 MACD + 250 lookback + 10 buffer)
+- ✅ Backend `config.py` + Frontend `config.ts` 同步 (1:1 port)
+
+**永久 rule checklist** (對齊 M2/M3 永久 rule pattern):
+- ✅ Backend `indicators/algorithm.py` v0.2.0 + Frontend `modules/indicators.ts` v0.2.0 1:1 port 同步
+- ✅ Backend `config.py` v0.2.0 + Frontend `config.ts` v0.2.0 同步
+- ✅ `algorithm_runner.py` 統一 inject `m1State` + `symbol` 落 M4 options (對齊 9月7日 08:30 + A3 永久 rule)
+- ✅ Adapter `renderIndicatorsResult` 對齊 v0.2.0 verdict shape (加 Hurst/ADX/regimeGate/M1 state/self-check/cross-confirm 顯示)
+- ✅ `renderDetailedExplanationIndicators` 加 Hurst/ADX/M1/regimeGate/cross-confirm/self-check 詳細解讀 line
+- ✅ Spec doc `MODULE-04-MOMENTUM-DIVERGENCE.md` v0.2.0 update (12 個 fix 全部寫入 §5 algorithm step + §8 永久 rules)
+- ✅ 改 backend / frontend / adapter / config / spec doc 任何一個, 必對齊其他 4 個 (1:1 port 永久 rule)
+- ✅ 改 backend 之後必 restart backend (`./start.sh`) + curl `/api/algorithms/run?algo=indicators&symbol=HK.00700&data_window_days=1260` 拎 evidence 確認
+- ✅ 改 adapter.mjs / testing-page.js 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (cache bust 永久 rule)
+- ✅ 凡人話: M4 v0.2.0 12 個 fix 對齊 M2/M3 永久 rule pattern, 凡 backend algorithm 改 self-check warning 嗰陣, frontend + adapter + spec doc 全部要一齊改 (1:1 port 永久 rule)
+
+**5 隻 stock verify 結果** (Stage 2 curl evidence, 對齊 9月5日 stock evidence 永久 rule):
+- **HK.00700 騰訊**: state=SIDEWAYS conf=0.3 Hurst=0.428 ADX=9.25 emit 1 個 CONFLICT_STATE (regime gate 唔過) ✅
+- **HK.00005 匯豐**: state=SIDEWAYS conf=0.0 INSUFFICIENT_DATA (144 K 線 < 295 min_required) ✅
+- **US.AAPL**: state=SIDEWAYS conf=0.3 Hurst=0.674 ADX=14.22 CONFLICT_STATE ✅
+- **US.MSFT**: state=SIDEWAYS conf=0.35 signal=hold Hurst=0.649 ADX=37.04 (regime pass, score < 0.5) ✅
+- **US.GOOGL**: state=SIDEWAYS conf=0.3 Hurst=0.686 ADX=6.68 CONFLICT_STATE ✅
+
+**對應文件**:
+- `backend/algorithms/indicators/algorithm.py` v0.2.0 (936 行, 12 個 fix 全部 implement)
+- `backend/algorithms/indicators/config.py` v0.2.0 (A2 + A8, 2 個 value 改)
+- `backend/services/algorithm_runner.py` (A3 + A6: 統一 inject `m1State` + `symbol` 落 M4 options)
+- `algorithms/AS-03-cycle-detection/modules/indicators.ts` v0.2.0 (~870 行, 1:1 port backend)
+- `algorithms/AS-03-cycle-detection/config.ts` v0.2.0 (A2 + A8, 2 個 value 改)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` v0.2.0 (對齊 backend shape 加 Hurst/ADX/M1/self-check/cross-confirm 顯示)
+- `docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md` v0.2.0 (12 個 fix 全部寫入 §5 + §8)
+
+對應 commit: `e342e4b` (M4 v0.2.0 backend, 261 line 改) + Spec Sync #52 即將 push (frontend sync + cache bust + spec doc update)
+
 ### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
 
 完整 chain: **M7(綜合) → M9(回測拎最佳設定) → M8(用最佳設定做最終判斷)**

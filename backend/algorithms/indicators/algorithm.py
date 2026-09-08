@@ -665,7 +665,7 @@ class IndicatorsAlgorithm(Algorithm):
                     "minRequired": min_required,
                     "reason": "數據不足",
                 },
-                _warnings=[w.to_dict() for w in warnings_list],
+                warnings=[w.to_dict() for w in warnings_list],
             )
 
         # Step 0.5: Hurst+ADX regime gate (v0.2.0 A1, 對齊 M3 Spec Sync #45 永久 rule)
@@ -708,7 +708,7 @@ class IndicatorsAlgorithm(Algorithm):
                     "inputBars": len(klines),
                     "reason": "Regime gate 唔通過",
                 },
-                _warnings=[w.to_dict() for w in warnings_list],
+                warnings=[w.to_dict() for w in warnings_list],
             )
 
         # Step 1: 計算 RSI + MACD
@@ -928,7 +928,7 @@ class IndicatorsAlgorithm(Algorithm):
             ok=True,
             points=[],
             meta=meta,
-            _warnings=[w.to_dict() for w in final_warnings],
+            warnings=[w.to_dict() for w in final_warnings],
         )
 
 
