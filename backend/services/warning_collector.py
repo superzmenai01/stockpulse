@@ -1,8 +1,18 @@
 """
-backend/services/warning_collector.py — Module Warning System v1.0.0 (大少 2026-08-11)
+backend/services/warning_collector.py — Module Warning System v1.3.0 (大少 2026-09-08 12:10 Spec Sync #49)
 
 統一收集 / dedupe / 排序 12 個 module (M1-M12) + zmen + adaptive params 嘅警告。
 Warning inlined 入 verdict (唔入 DB table, 避免 storage overhead)。
+
+v1.3.0 改動 (大少 2026-09-08 12:10 trigger, Spec Sync #49):
+- Backend `make_warning()` helper 自動 emit `category` 字段 (對齊永久 rule v1.1.0)
+  之前: caller 自己填 impact/fix, frontend 用 WARNING_CATEGORIES[code] lookup 推算
+  而家: backend 自動查 WARNING_CATEGORIES 表 emit `category: "system" | "stock_state"`
+- Backend 自動 apply CATEGORY_DISPLAY template
+  之前: caller 自己寫 impact/fix string, 容易唔跟 template
+  而家: caller 唔填就自動 apply CATEGORY_DISPLAY[category].impactTemplate / fixTemplate
+- ModuleWarning dataclass 加 `category` 字段, to_dict() 自動 emit
+- 對齊 frontend algorithms/AS-03-cycle-detection/lib/warnings.mjs WARNING_CATEGORIES / CATEGORY_DISPLAY
 
 凡人話設計:
 - dataclass ModuleWarning (簡單 type, 易 extend)
@@ -39,13 +49,15 @@ Warning inlined 入 verdict (唔入 DB table, 避免 storage overhead)。
     # 3. Frontend 拎到 verdict._warnings 會自動 render WarningBanner + WarningCard
     #    大少撳 Copy button → formatWarningForCopy() → Markdown 4 樣貼畀 Mavis 修復
 ================================================================================
-⚠️ 永久 rule (大少 2026-08-11):
+⚠️ 永久 rule (大少 2026-08-11 + 2026-08-14 11:33 v1.1.0 + 2026-09-08 12:10 v1.3.0):
   - 12 個 module (M1-M12) + zmen + 7 個 adaptive params 全部要 inlined _warnings
   - 唔入 DB table (避免 storage overhead, 每次 run 即時計算)
   - 排序: Critical (0) → Warning (1) → Info (2) → module_id
   - Dedupe by (level + module_id + code)
   - Copy 提示用 Markdown 4 樣格式 (大少 22:30 確認)
   - Cross-ref: algorithms/AS-03-cycle-detection/lib/warnings.{ts,mjs}
+  - v1.3.0: Backend 永遠 emit `category` 字段 (永久 rule v1.1.0 source of truth)
+  - v1.3.0: impact/fix 自動 apply CATEGORY_DISPLAY template, caller 唔好自己寫
 ================================================================================
 """
 
@@ -82,6 +94,50 @@ WARNING_CODES = {
     'DATA_AGE': 'info',
 }
 
+# v1.3.0: 永久 rule v1.1.0 — Warning 永久分 2 個 category
+# 凡人話: 🔧 system = verdict 可能唔可信, 唔好落單 / 📊 stock_state = verdict 已經準確, 只係提示
+# 對齊 frontend algorithms/AS-03-cycle-detection/lib/warnings.mjs line 21-42
+WARNING_CATEGORIES: Dict[str, str] = {
+    # 🔧 System (12 個) — verdict 可能唔可信
+    'INSUFFICIENT_DATA': 'system',
+    'VERDICT_MISSING': 'system',
+    'NAN_RESULT': 'system',
+    'CACHE_INVALID': 'system',
+    'KLINE_MISSING': 'system',
+    'OPEN_D_UNAVAILABLE': 'system',
+    'MODULE_PARTIAL': 'system',
+    'OUTLIER_VALUE': 'system',
+    'LOW_SAMPLE_SIZE': 'system',
+    'POST_FAILED': 'system',
+    'FALLBACK_USED': 'system',
+    'LLM_RATE_LIMIT': 'system',
+    'DATA_AGE': 'system',
+    'CONFIG_DEFAULTS': 'system',
+    # 📊 Stock State (3 個) — verdict 已經準確
+    'THRESHOLD_BREACH': 'stock_state',
+    'CONFLICT_STATE': 'stock_state',
+    'CACHE_EXPIRING': 'stock_state',
+}
+
+# v1.3.0: CATEGORY_DISPLAY template (凡人話 string, 自動 apply 落 warning.impact / warning.fix)
+# 對齊 frontend algorithms/AS-03-cycle-detection/lib/warnings.mjs line 44-57
+CATEGORY_DISPLAY: Dict[str, Dict[str, str]] = {
+    'system': {
+        'icon': '🔧',
+        'label': '系統警告',
+        'desc': '系統/演算法/數據問題, verdict 可能唔可信, 唔好落單',
+        'impact_template': 'Verdict 唔可信, 唔好落單',
+        'fix_template': 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
+    },
+    'stock_state': {
+        'icon': '📊',
+        'label': '股票狀態',
+        'desc': '股票狀態提醒, verdict 已經準確, 只係提示狀態',
+        'impact_template': 'Verdict 已經準確, 留意股票狀態',
+        'fix_template': '睇其他 module 確認 / 留意 M7 alignment',
+    },
+}
+
 
 @dataclass
 class ModuleWarning:
@@ -92,6 +148,9 @@ class ModuleWarning:
     message: str
     debug: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
+    # v1.3.0: 永久 rule v1.1.0 — Backend emit category 字段
+    # 凡人話: 'system' = 系統問題 verdict 可能唔可信 / 'stock_state' = 股票狀態提示 verdict 已經準確
+    category: str = 'system'  # 默認 system, 安全 (frontend 永遠 fall back to system)
 
     def __post_init__(self):
         """凡人話: 自動 validate 個 warning code 嘅 level 係咪啱。
@@ -107,6 +166,15 @@ class ModuleWarning:
                 logger.debug(
                     f"[WarningCollector] Level mismatch: {self.code} should be {expected_level}, got {self.level}"
                 )
+        # v1.3.0: 自動 validate category (永久 rule v1.1.0)
+        # 凡人話: caller 唔填 category 嗰陣, 自動查 WARNING_CATEGORIES 表取正確 category
+        # 對齊 frontend lib/warnings.mjs WARNING_CATEGORIES[code] lookup
+        if self.code in WARNING_CATEGORIES:
+            expected_category = WARNING_CATEGORIES[self.code]
+            if self.category != expected_category:
+                logger.debug(
+                    f"[WarningCollector] Category mismatch: {self.code} should be {expected_category}, got {self.category}"
+                )
 
     def to_dict(self) -> dict:
         return {
@@ -116,6 +184,7 @@ class ModuleWarning:
             'message': self.message,
             'debug': self.debug,
             'timestamp': int(self.timestamp * 1000),
+            'category': self.category,  # v1.3.0: 永久 rule v1.1.0 自動 emit
         }
 
 
@@ -128,20 +197,44 @@ def make_warning(
     impact: str = '',
     fix: str = '',
     context: Optional[Dict[str, Any]] = None,
+    category: Optional[str] = None,
 ) -> ModuleWarning:
     """Helper: 建立 ModuleWarning (debug dict 自動 build)
+    
+    v1.3.0: 自動 emit `category` 字段 (永久 rule v1.1.0 source of truth)
+    v1.3.0: 自動 apply CATEGORY_DISPLAY template (永久 rule v1.1.0)
     
     Usage:
         make_warning('critical', 'M1', 'INSUFFICIENT_DATA',
                      '數據不足',
                      issue=f'kline count {count} < {min_required} required',
-                     impact='5 個 module verdict 全部 fallback',
-                     fix='增加 dataWindowDays 設定 count=200',
+                     impact='5 個 module verdict 全部 fallback',  # 可選, 唔填就自動 apply template
+                     fix='增加 dataWindowDays 設定 count=200',     # 可選, 唔填就自動 apply template
                      context={'kline_count': count, 'min_required': min_required})
+    
+    凡人話:
+    - `category` 永遠自動 emit (查 WARNING_CATEGORIES[code], caller 唔使填)
+    - `impact` / `fix` caller 唔填嗰陣, 自動 apply CATEGORY_DISPLAY[category].impact_template / fix_template
+    - `issue` 保留 caller 自己寫 (永久 rule: 必須保留 specific context, 唔好丟失「橫行判斷信心不足」、「Hurst > 0.95」呢啲具體訊號)
     """
     # Auto-fix level if code-level mismatch (per WARNING_CODES map)
     if code in WARNING_CODES and WARNING_CODES[code] != level:
         level = WARNING_CODES[code]
+    
+    # v1.3.0: 自動查 WARNING_CATEGORIES 取 category (永久 rule v1.1.0)
+    auto_category = WARNING_CATEGORIES.get(code, 'system')
+    if category and category != auto_category:
+        logger.debug(
+            f"[WarningCollector] Category override: {code} default={auto_category}, caller provided={category}"
+        )
+    final_category = category or auto_category
+    
+    # v1.3.0: 自動 apply CATEGORY_DISPLAY template (永久 rule v1.1.0)
+    template = CATEGORY_DISPLAY.get(final_category, CATEGORY_DISPLAY['system'])
+    if not impact:
+        impact = template['impact_template']
+    if not fix:
+        fix = template['fix_template']
     
     debug = {
         'issue': issue,
@@ -155,6 +248,7 @@ def make_warning(
         code=code,
         message=message,
         debug=debug,
+        category=final_category,
     )
 
 

@@ -1,0 +1,328 @@
+StockPulse kline_cache 清理候選名單 v2 (加入板塊龍頭股)
+=======================================================
+生成時間: 2026-09-08
+加入板塊龍頭股: 12 隻(AS-01 之前 run 揀過嘅)
+
+=== 板塊龍頭股(AS-01 歷史結果, 加入 keep_set) ===
+  HK.00243        QPL INT'L                     
+  HK.00501        豪威集團                          
+  HK.00522        ASMPT                         
+  HK.00763        中興通訊                          
+  HK.00981        中芯國際                          
+  HK.01347        華虹半導體                         
+  HK.01385        上海復旦                          
+  HK.02631        天嶽先進                          
+  HK.02726        瀚天天成                          
+  HK.03986        兆易創新                          
+  HK.08637        元續科技                          
+  HK.09660        地平線機器人-W                      
+
+總共 12 隻
+
+=== 識別結果統計 ===
+藍/紅/科技必留:    166 隻
+板塊龍頭股(AS-01):  12 隻
+高活躍 top 80:     80 隻
+業務表用過:         30 隻
+總保留(有 overlap):  221 隻
+
+=== 總可刪除:293 隻 ===
+
+【tr = 0 (完全冇成交) — 87 隻】
+  HK.00007        智富資源投資                                   lot=10000 tr=0.0000
+  HK.00025        CHEVALIER INT'L                          lot=2000 tr=0.0000
+  HK.00033        INTL GENIUS                              lot=2000 tr=0.0000
+  HK.00036        遠東控股國際                                   lot=6000 tr=0.0000
+  HK.00039        中國北大荒                                    lot=8000 tr=0.0000
+  HK.00059        天譽置業                                     lot=2000 tr=0.0000
+  HK.00061        綠領控股                                     lot=20000 tr=0.0000
+  HK.00075        渝太地產                                     lot=2000 tr=0.0000
+  HK.00084        寶光實業                                     lot=1000 tr=0.0000
+  HK.00105        凱聯國際酒店                                   lot=2000 tr=0.0000
+  HK.00106        朗詩綠色管理                                   lot=4000 tr=0.0000
+  HK.00115        鈞濠集團                                     lot=2000 tr=0.0000
+  HK.00219        順豪物業                                     lot=2000 tr=0.0000
+  HK.00224        建生國際                                     lot=4000 tr=0.0000
+  HK.00225        博富臨置業                                    lot=2000 tr=0.0000
+  HK.00236        香港生力啤                                    lot=2000 tr=0.0000
+  HK.00237        安全貨倉                                     lot=2000 tr=0.0000
+  HK.00244        先施                                       lot=1000 tr=0.0000
+  HK.00247        TST PROPERTIES                           lot=2000 tr=0.0000
+  HK.00248        香港通訊國際控股                                 lot=10000 tr=0.0000
+  HK.00251        爪哇控股                                     lot=2000 tr=0.0000
+  HK.00252        華信地產財務                                   lot=2000 tr=0.0000
+  HK.00253        順豪控股                                     lot=2000 tr=0.0000
+  HK.00444        SINCEREWATCH HK                          lot=10000 tr=0.0000
+  HK.00458        聯亞集團                                     lot=1000 tr=0.0000
+  HK.00468        紛美包裝                                     lot=1000 tr=0.0000
+  HK.00472        新絲路控股集團                                  lot=10000 tr=0.0000
+  HK.00488        麗新發展                                     lot=300 tr=0.0000
+  HK.00496        卡森國際                                     lot=1000 tr=0.0000
+  HK.00498        藍河控股                                     lot=10000 tr=0.0000
+  HK.00509        世紀陽光                                     lot=10000 tr=0.0000
+  HK.00515        中華銀科技                                    lot=10000 tr=0.0000
+  HK.00606        中駿商管                                     lot=1000 tr=0.0000
+  HK.00608        達利國際                                     lot=2000 tr=0.0000
+  HK.00609        天德化工                                     lot=4000 tr=0.0000
+  HK.00612        嘉文世紀投資公司                                 lot=8000 tr=0.0000
+  HK.00619        南華金融                                     lot=2000 tr=0.0000
+  HK.00626        大眾金融控股                                   lot=2000 tr=0.0000
+  HK.00627        共生智築                                     lot=20000 tr=0.0000
+  HK.00629        悅達國際控股                                   lot=1000 tr=0.0000
+  HK.00630        雋泰控股                                     lot=10000 tr=0.0000
+  HK.00637        利記                                       lot=2000 tr=0.0000
+  HK.00853        微創醫療                                     lot=100 tr=0.0000
+  HK.01376        RAFFLESINTERIOR                          lot=8000 tr=0.0000
+  US.A            安捷倫科技                                    lot=1 tr=0.0000
+  US.AA           美國鋁業公司                                   lot=1 tr=0.0000
+  US.AACG         ATA Creativity Global                    lot=1 tr=0.0000
+  US.AACI         Armada Acquisition Corp III              lot=1 tr=0.0000
+  US.AACIU        ARMADA ACQUISITION CORPORATION III UNIT 1 CLASS A ORD & 1/2 WAR(13/02/2031) lot=1 tr=0.0000
+  US.AACO         ABONY ACQUISITION CORPORATION I          lot=1 tr=0.0000
+  US.AACOU        ABONY ACQUISITION CORPORATION I UNIT 1 CL A ORD & 1/3 WT(29/01/2031) lot=1 tr=0.0000
+  US.AACPU        APOGEE ACQUISITION CORPORATION UNIT 1 CL A 1 WT & 1 RT 27/03/2031 lot=1 tr=0.0000
+  US.AAIC.PRB     ARLINGTON ASSET INVESTMENT CORP 7% CUM PRF 12/05/2022 SER B USD25 lot=1 tr=0.0000
+  US.AAIC.PRC     ARLINGTON ASSET INVESTMENT CORP 8.250%CUM RED FIX TO FLT RATE SR C USD25 lot=1 tr=0.0000
+  US.AAIN         ARLINGTON ASSET INVESTMENT CORP 6.000% SENIOR NOTES DUE 01/08/2026 lot=1 tr=0.0000
+  US.AAL          美國航空                                     lot=1 tr=0.0000
+  US.AAM.PRA      APOLLO ASSET MANAGEMENT INC 6.375% PREFERRED STOCK SERIES A USD25 lot=1 tr=0.0000
+  US.AAM.PRB      APOLLO ASSET MANAGEMENT INC 6.375% PREFERRED STOCK SERIES B USD25 lot=1 tr=0.0000
+  US.AAME         美國大西洋                                    lot=1 tr=0.0000
+  US.AAMI         Acadian Asset Management                 lot=1 tr=0.0000
+  US.AAOI         Applied Optoelectronics                  lot=1 tr=0.0000
+  US.AAON         艾倫建材                                     lot=1 tr=0.0000
+  US.AAP          Advance Auto Parts                       lot=1 tr=0.0000
+  US.AAPG         亞盛醫藥                                     lot=1 tr=0.0000
+  US.AARD         Aardvark Therapeutics                    lot=1 tr=0.0000
+  US.AAUC         Allied Gold                              lot=1 tr=0.0000
+  US.AB           聯博控股                                     lot=1 tr=0.0000
+  US.ABAT         American Battery Technology              lot=1 tr=0.0000
+  US.ABEO         Abeona Therapeutics                      lot=1 tr=0.0000
+  US.ABEV         Ambev SA                                 lot=1 tr=0.0000
+  US.ABNB         愛彼迎                                      lot=1 tr=0.0000
+  US.ABOS         Acumen Pharmaceuticals                   lot=1 tr=0.0000
+  US.ABR.PRD      ARBOR REALTY TRUST INC 6.375% SERIES D CUMULATIVE RED PFD STK lot=1 tr=0.0000
+  US.ABR.PRE      ARBOR REALTY TRUST INC SER E CUM RED PFD SHS lot=1 tr=0.0000
+  US.ABR.PRF      ARBOR REALTY TRUST INC 6.25% SER F FXD/FLTG RATE CUMULATIVE PFD lot=1 tr=0.0000
+  US.ABSI         Absci Corp                               lot=1 tr=0.0000
+  US.ABTC         American Bitcoin                         lot=1 tr=0.0000
+  US.ABTS         Abits                                    lot=1 tr=0.0000
+  US.ABUS         Arbutus Biopharma                        lot=1 tr=0.0000
+  US.ABVC         ABVC BioPharma                           lot=1 tr=0.0000
+  US.ABVX         Abivax S.A.                              lot=1 tr=0.0000
+  US.ABX          Abacus Global Management                 lot=1 tr=0.0000
+  US.ABXL         ABACUS GLOBAL MANAGEMENT INC 9.875% SENIOR NOTES 15/11/2028 USD25 lot=1 tr=0.0000
+  US.ACA          Arcosa                                   lot=1 tr=0.0000
+  US.ACAA         AVERIN CAP ACQUISITION CORP              lot=1 tr=0.0000
+  US.ACAAU        AVERIN CAP ACQUISITION CORP UNIT 1 CL A ORD & 1/6 WT(30/01/2031) lot=1 tr=0.0000
+  US.ACAD         阿卡迪亞                                     lot=1 tr=0.0000
+
+【tr 0.0001-0.0009 (極低) — 146 隻】
+  HK.00008        電訊盈科                                     lot= 1000 tr=0.0010
+  HK.00010        恒隆集團                                     lot= 1000 tr=0.0002
+  HK.00018        東方傳媒集團                                   lot= 2000 tr=0.0001
+  HK.00021        大中華控股                                    lot= 5000 tr=0.0002
+  HK.00022        茂盛控股                                     lot=40000 tr=0.0009
+  HK.00023        東亞銀行                                     lot=  200 tr=0.0008
+  HK.00026        中華汽車                                     lot=  200 tr=0.0000
+  HK.00027        銀河娛樂                                     lot= 1000 tr=0.0009
+  HK.00028        天安                                       lot= 1000 tr=0.0001
+  HK.00029        達力集團                                     lot= 2000 tr=0.0003
+  HK.00030        雲白國際                                     lot= 2000 tr=0.0001
+  HK.00031        航天控股                                     lot= 2000 tr=0.0007
+  HK.00032        港通控股                                     lot= 1000 tr=0.0001
+  HK.00034        九龍建業                                     lot= 1000 tr=0.0001
+  HK.00035        遠東發展                                     lot= 1000 tr=0.0003
+  HK.00037        遠東酒店實業                                   lot= 2000 tr=0.0002
+  HK.00040        金山科技工業                                   lot= 1000 tr=0.0000
+  HK.00041        鷹君                                       lot= 1000 tr=0.0005
+  HK.00042        東北電氣                                     lot= 2000 tr=0.0002
+  HK.00045        大酒店                                      lot=  500 tr=0.0002
+  HK.00046        科聯繫統                                     lot= 2000 tr=0.0000
+  HK.00048        中國汽車內飾                                   lot=10000 tr=0.0001
+  HK.00050        香港小輪(集團)                                 lot= 1000 tr=0.0001
+  HK.00051        海港企業                                     lot= 1000 tr=0.0000
+  HK.00052        大快活集團                                    lot=  500 tr=0.0004
+  HK.00053        國浩集團                                     lot= 1000 tr=0.0000
+  HK.00055        中星集團控股                                   lot=10000 tr=0.0001
+  HK.00057        震雄集團                                     lot= 2000 tr=0.0001
+  HK.00058        新威國際                                     lot=20000 tr=0.0001
+  HK.00060        香港食品投資                                   lot= 2000 tr=0.0000
+  HK.00062        載通                                       lot=  400 tr=0.0002
+  HK.00063        中亞烯谷集團                                   lot= 1000 tr=0.0001
+  HK.00064        結好控股                                     lot= 2000 tr=0.0001
+  HK.00065        弘海高新資源                                   lot= 4000 tr=0.0001
+  HK.00069        香格裡拉(亞洲)                                 lot= 2000 tr=0.0003
+  HK.00070        金粵控股                                     lot=10000 tr=0.0004
+  HK.00071        美麗華酒店                                    lot= 1000 tr=0.0001
+  HK.00072        超媒體控股                                    lot= 2000 tr=0.0003
+  HK.00073        亞洲果業                                     lot= 1000 tr=0.0003
+  HK.00077        進智公共運輸                                   lot= 2000 tr=0.0003
+  HK.00078        REGAL INT'L                              lot= 2000 tr=0.0001
+  HK.00080        CAI控股                                    lot=10000 tr=0.0004
+  HK.00082        瘋狂體育                                     lot= 2000 tr=0.0005
+  HK.00083        信和置業                                     lot= 2000 tr=0.0006
+  HK.00085        中電華大科技                                   lot= 2000 tr=0.0008
+  HK.00086        新鴻基公司                                    lot= 1000 tr=0.0002
+  HK.00087        太古股份公司B                                  lot= 2500 tr=0.0002
+  HK.00088        TAI CHEUNG HOLD                          lot= 1000 tr=0.0000
+  HK.00089        大生地產                                     lot= 1000 tr=0.0000
+  HK.00090        普星能量                                     lot= 2000 tr=0.0000
+  HK.00092        冠軍科技集團                                   lot=12000 tr=0.0003
+  HK.00093        零在科技金融                                   lot= 2000 tr=0.0000
+  HK.00094        綠心集團                                     lot=80000 tr=0.0000
+  HK.00095        綠景中國地產                                   lot= 2000 tr=0.0001
+  HK.00096        YUSEI                                    lot= 2000 tr=0.0000
+  HK.00097        恒基發展                                     lot= 1000 tr=0.0000
+  HK.00098        興發鋁業                                     lot= 1000 tr=0.0000
+  HK.00099        王氏國際                                     lot= 1000 tr=0.0001
+  HK.00103        首佳科技                                     lot= 1000 tr=0.0004
+  HK.00104        ASIA COMM HOLD                           lot= 5000 tr=0.0004
+  HK.00107        四川成渝高速公路                                 lot= 2000 tr=0.0007
+  HK.00108        國銳生活                                     lot= 2000 tr=0.0003
+  HK.00110        中國長遠                                     lot= 4000 tr=0.0002
+  HK.00113        迪生創建                                     lot=  500 tr=0.0001
+  HK.00114        HERALD HOLD                              lot= 5000 tr=0.0003
+  HK.00218        申萬宏源香港                                   lot= 5000 tr=0.0004
+  HK.00220        統一企業中國                                   lot= 1000 tr=0.0004
+  HK.00222        閩信集團                                     lot= 2000 tr=0.0000
+  HK.00223        易生活控股                                    lot=20000 tr=0.0002
+  HK.00227        第一上海                                     lot= 8000 tr=0.0000
+  HK.00228        中能控股                                     lot= 2000 tr=0.0006
+  HK.00229        利民實業                                     lot= 5000 tr=0.0002
+  HK.00234        新世紀集團                                    lot=24000 tr=0.0001
+  HK.00235        中策資本控股                                   lot= 5000 tr=0.0003
+  HK.00239        白花油                                      lot= 2500 tr=0.0001
+  HK.00240        利基控股                                     lot=10000 tr=0.0002
+  HK.00242        信德集團                                     lot= 2000 tr=0.0006
+  HK.00245        中薇金融                                     lot= 5000 tr=0.0000
+  HK.00255        龍記集團                                     lot= 2000 tr=0.0000
+  HK.00256        冠城鐘錶珠寶                                   lot= 2000 tr=0.0005
+  HK.00257        光大環境                                     lot= 1000 tr=0.0007
+  HK.00258        湯臣集團                                     lot= 2000 tr=0.0002
+  HK.00259        億都(國際控股)                                 lot= 2000 tr=0.0003
+  HK.00261        GBA集團                                    lot=16000 tr=0.0003
+  HK.00262        迪臣發展國際                                   lot= 5000 tr=0.0002
+  HK.00327        百富環球                                     lot= 1000 tr=0.0007
+  HK.00345        VITASOY INT'L                            lot= 2000 tr=0.0004
+  HK.00432        盈大地產                                     lot= 1000 tr=0.0001
+  HK.00436        新宇環保                                     lot=20000 tr=0.0000
+  HK.00438        彩虹新能源                                    lot=  200 tr=0.0000
+  HK.00439        瀚源控股                                     lot= 2000 tr=0.0001
+  HK.00440        大新金融                                     lot=  400 tr=0.0006
+  HK.00442        域能控股                                     lot= 1000 tr=0.0000
+  HK.00450        鴻興印刷集團                                   lot= 2000 tr=0.0002
+  HK.00455        天大藥業                                     lot= 2000 tr=0.0001
+  HK.00456        新城市建設發展                                  lot= 2000 tr=0.0008
+  HK.00464        中國智能科技                                   lot= 4000 tr=0.0001
+  HK.00465        富通科技                                     lot= 2000 tr=0.0001
+  HK.00471        中播數據                                     lot= 4000 tr=0.0006
+  HK.00474        信銘生命科技                                   lot= 6000 tr=0.0000
+  HK.00475        中發展控股                                    lot= 2000 tr=0.0000
+  HK.00480        香港興業國際                                   lot=  800 tr=0.0001
+  HK.00482        聖馬丁國際(新)                                 lot=10000 tr=0.0004
+  HK.00483        包浩斯國際                                    lot= 2000 tr=0.0001
+  HK.00484        雲遊控股                                     lot= 3000 tr=0.0002
+  HK.00485        中國華星                                     lot=20000 tr=0.0002
+  HK.00486        俄鋁                                       lot= 1000 tr=0.0000
+  HK.00487        實德環球                                     lot= 4000 tr=0.0000
+  HK.00491        英皇文化產業                                   lot=20000 tr=0.0000
+  HK.00493        國美零售                                     lot= 1000 tr=0.0000
+  HK.00497        資本策略地產                                   lot=20000 tr=0.0000
+  HK.00499        青島控股                                     lot= 2000 tr=0.0000
+  HK.00500        先豐服務集團                                   lot= 1000 tr=0.0000
+  HK.00505        興業合金                                     lot= 1000 tr=0.0000
+  HK.00508        鼎億集團投資                                   lot= 5000 tr=0.0003
+  HK.00510        時富金融服務集團                                 lot= 6000 tr=0.0001
+  HK.00513        恆和集團                                     lot=10000 tr=0.0000
+  HK.00518        同得仕(集團)                                  lot= 2000 tr=0.0001
+  HK.00519        諾科達科技                                    lot= 5000 tr=0.0000
+  HK.00520        呷哺呷哺                                     lot=  500 tr=0.0003
+  HK.00521        CWT INT'L                                lot=10000 tr=0.0002
+  HK.00603        中油燃氣                                     lot=20000 tr=0.0001
+  HK.00604        深圳控股                                     lot= 2000 tr=0.0006
+  HK.00605        中國金融投資管理                                 lot= 2000 tr=0.0001
+  HK.00607        豐盛控股                                     lot= 4000 tr=0.0002
+  HK.00610        WAI KEE HOLD                             lot= 2000 tr=0.0006
+  HK.00611        中國核能科技                                   lot= 2000 tr=0.0005
+  HK.00617        百利保控股                                    lot= 2000 tr=0.0003
+  HK.00618        北大資源                                     lot= 8000 tr=0.0000
+  HK.00620        大唐西市                                     lot= 2000 tr=0.0001
+  HK.00621        壇金礦業                                     lot= 5000 tr=0.0004
+  HK.00623        中視金橋                                     lot= 1000 tr=0.0002
+  HK.00635        彩星集團                                     lot= 2000 tr=0.0004
+  HK.00636        KLN                                      lot=  500 tr=0.0003
+  HK.00681        中民控股                                     lot= 2000 tr=0.0002
+  HK.01234        中國利郎                                     lot= 1000 tr=0.0001
+  HK.01239        TEAMWAY INTL GP                          lot=20000 tr=0.0000
+  HK.01972        太古地產                                     lot=  200 tr=0.0003
+  HK.02282        美高梅中國                                    lot=  400 tr=0.0007
+  HK.02389        北京健康                                     lot= 6000 tr=0.0001
+  HK.03328        交通銀行                                     lot= 1000 tr=0.0008
+  HK.03692        翰森製藥                                     lot= 2000 tr=0.0009
+  HK.06098        碧桂園服務                                    lot= 1000 tr=0.0005
+  HK.08017        捷利交易寶                                    lot= 4000 tr=0.0002
+  HK.09922        九毛九                                      lot= 1000 tr=0.0006
+  HK.09998        光榮控股                                     lot= 5000 tr=0.0004
+
+【tr 0.0010-0.0059 (低, 灰色地帶) — 60 隻】
+  HK.00014        希慎興業                                     lot= 1000 tr=0.0011
+  HK.00076        誼礫控股                                     lot= 4000 tr=0.0012
+  HK.00079        世紀建業                                     lot= 4000 tr=0.0014
+  HK.00081        中國海外宏洋集團                                 lot= 1000 tr=0.0016
+  HK.00111        信達國際控股                                   lot= 2000 tr=0.0012
+  HK.00116        周生生                                      lot= 1000 tr=0.0015
+  HK.00151        中國旺旺                                     lot= 1000 tr=0.0012
+  HK.00152        深圳國際                                     lot=  500 tr=0.0020
+  HK.00178        莎莎國際                                     lot= 2000 tr=0.0020
+  HK.00232        大陸航空科技控股                                 lot= 2000 tr=0.0021
+  HK.00308        香港中旅                                     lot= 2000 tr=0.0029
+  HK.00316        東方海外國際                                   lot=  500 tr=0.0016
+  HK.00321        德永佳集團                                    lot= 2000 tr=0.0016
+  HK.00322        康師傅控股                                    lot= 2000 tr=0.0012
+  HK.00400        硬蛋創新                                     lot= 1000 tr=0.0031
+  HK.00425        敏實集團                                     lot=  100 tr=0.0026
+  HK.00433        北方礦業                                     lot=10000 tr=0.0014
+  HK.00451        協鑫新能源                                    lot= 2000 tr=0.0010
+  HK.00460        四環醫藥                                     lot= 1000 tr=0.0016
+  HK.00467        聯合能源集團                                   lot= 2000 tr=0.0015
+  HK.00476        科軒動力控股                                   lot=10000 tr=0.0014
+  HK.00506        中國食品                                     lot= 2000 tr=0.0022
+  HK.00511        電視廣播                                     lot=  100 tr=0.0012
+  HK.00512        遠大醫藥                                     lot=  500 tr=0.0011
+  HK.00517        中遠海運國際                                   lot= 2000 tr=0.0020
+  HK.00524        長城天下                                     lot=50000 tr=0.0010
+  HK.00579        京能清潔能源                                   lot= 2000 tr=0.0010
+  HK.00613        梧桐國際                                     lot= 2000 tr=0.0011
+  HK.00622        威華達控股                                    lot= 3000 tr=0.0014
+  HK.00631        三一國際                                     lot= 1000 tr=0.0036
+  HK.00632        中港石油                                     lot= 2000 tr=0.0026
+  HK.00836        華潤電力                                     lot= 2000 tr=0.0013
+  HK.00868        信義玻璃                                     lot= 1000 tr=0.0011
+  HK.00884        旭輝控股集團                                   lot= 2000 tr=0.0037
+  HK.00921        海信家電                                     lot= 1000 tr=0.0013
+  HK.00968        信義光能                                     lot= 2000 tr=0.0030
+  HK.00998        中信銀行                                     lot= 1000 tr=0.0022
+  HK.01060        大麥娛樂                                     lot=10000 tr=0.0031
+  HK.01070        TCL電子                                    lot= 1000 tr=0.0016
+  HK.01208        五礦資源                                     lot= 4000 tr=0.0014
+  HK.01288        農業銀行                                     lot= 1000 tr=0.0024
+  HK.01313        華潤建材科技                                   lot= 2000 tr=0.0012
+  HK.01378        中國宏橋                                     lot=  500 tr=0.0024
+  HK.01658        郵儲銀行                                     lot= 1000 tr=0.0019
+  HK.02057        中通快遞-W                                   lot=   50 tr=0.0014
+  HK.02328        中國財險                                     lot= 2000 tr=0.0034
+  HK.02688        新奧能源                                     lot=  100 tr=0.0021
+  HK.02689        玖龍紙業                                     lot= 1000 tr=0.0026
+  HK.03311        中國建築國際                                   lot= 2000 tr=0.0012
+  HK.03808        中國重汽                                     lot=  500 tr=0.0014
+  HK.03968        招商銀行                                     lot=  500 tr=0.0027
+  HK.03993        洛陽鉬業                                     lot= 3000 tr=0.0039
+  HK.06030        中信證券                                     lot=  500 tr=0.0038
+  HK.06110        滔搏                                       lot= 1000 tr=0.0014
+  HK.06808        高鑫零售                                     lot=  500 tr=0.0023
+  HK.06862        海底撈                                      lot= 1000 tr=0.0022
+  HK.06969        思摩爾國際                                    lot= 1000 tr=0.0013
+  HK.09688        再鼎醫藥                                     lot=  100 tr=0.0024
+  HK.09987        百勝中國                                     lot=   50 tr=0.0017
+  US.NXP          Nuveen Select Tax-Free Income Portfolio  lot=    1 tr=0.0030

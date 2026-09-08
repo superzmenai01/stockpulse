@@ -1,4 +1,4 @@
-# AS-03 · 模組警告系統 (Module Warning System v1.2.0)
+# AS-03 · 模組警告系統 (Module Warning System v1.3.0)
 
 > **對應 spec**: `docs/research/AS-03-cycle-detection/MODULE-{01..12}-*.md` (各 module 個別 spec)
 > **對應 impl**:
@@ -7,7 +7,7 @@
 > - UI: `testing-page/` 頂部 `WarningBanner` + 個別 verdict card `WarningCard`
 >
 > **建立日期**: 2026-08-11 (大少 trigger 「我想加一個警告提示」)
-> **版本**: 1.0.0
+> **版本**: 1.3.0 (2026-09-08 Spec Sync #49, 大少 + MiniMax Code)
 > **永久 rule**: 「全部 module 都要有 `_warnings` inlined 入 verdict」(AGENTS.md 永久 rule)
 
 ---
@@ -124,6 +124,7 @@ class ModuleWarning:
             'message': self.message,
             'debug': self.debug,
             'timestamp': int(self.timestamp * 1000),
+            'category': self.category,  # v1.3.0: 永久 rule v1.1.0 — Backend emit category 字段 (source of truth)
         }
 ```
 
@@ -175,7 +176,74 @@ class ModuleWarning:
 
 ---
 
-> ## 🔥 v1.2.0 改動摘要 (2026-09-06)
+> ## 🔥 v1.3.0 改動摘要 (2026-09-08, Spec Sync #49)
+>
+> **觸發原因**: 大少 9月8日 09:02 trigger「你去檢查M2 對比 M1 的結果」audit, 拎 evidence 發現 M2 hl_structure algorithm 嘅 7 個 self-check warning 注入點 + M3 trendline 嘅 7 個 self-check warning 注入點, 全部都違反永久 rule §Module Warning v1.1.0 (大少 2026-08-14 11:33 Spec Sync #18): Backend warning 永遠 emit `category` 字段, 唔可以靠 frontend `WARNING_CATEGORIES[code]` lookup 推算
+>
+> **永久 rule §Module Warning v1.1.0 違規揭發** (15 隻 stock sample):
+> - **違規 1**: Backend warning 唔 emit `category` 字段 — 永久 rule v1.1.0 要求 source of truth 喺 backend, frontend lookup 只係 fallback
+> - **違規 2**: M2 / M3 raw dict warning 嘅 `impact` / `fix` 字段由 caller 自己寫, 唔跟 CATEGORY_DISPLAY template (永久 rule v1.1.0 要求 caller 唔好自己寫, 由 helper 自動 apply)
+> - **違規 3 (M2 only)**: M2 嘅 `module_id` 用 `"hl_structure"` / `"M2"` 唔統一 (永久 rule v1.0.0 要求統一 M1-M12 編號)
+>
+> **Backend `make_warning()` helper 升級 (核心改動)**:
+> - 自動查 `WARNING_CATEGORIES[code]` 表 emit `category: "system" | "stock_state"`
+> - 自動 apply `CATEGORY_DISPLAY[category].impact_template / fix_template` (caller 唔填嗰陣)
+> - `ModuleWarning` dataclass 加 `category: str = 'system'` 字段, `to_dict()` 自動 emit
+> - 對齊 frontend `algorithms/AS-03-cycle-detection/lib/warnings.mjs` WARNING_CATEGORIES / CATEGORY_DISPLAY 表
+>
+> **WARNING_CATEGORIES 表** (永久 rule v1.1.0 統一, backend 落地):
+> | Category | 12 個 system code | 3 個 stock_state code |
+> |----------|------------------|----------------------|
+> | 🔧 system (verdict 可能唔可信) | INSUFFICIENT_DATA / VERDICT_MISSING / NAN_RESULT / CACHE_INVALID / KLINE_MISSING / OPEN_D_UNAVAILABLE / MODULE_PARTIAL / OUTLIER_VALUE / LOW_SAMPLE_SIZE / POST_FAILED / FALLBACK_USED / LLM_RATE_LIMIT / DATA_AGE / CONFIG_DEFAULTS | — |
+> | 📊 stock_state (verdict 已經準確) | — | THRESHOLD_BREACH / CONFLICT_STATE / CACHE_EXPIRING |
+>
+> **CATEGORY_DISPLAY template** (永久 rule v1.1.0 統一, helper 自動 apply):
+> - system impact: `Verdict 唔可信, 唔好落單` / system fix: `Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc`
+> - stock_state impact: `Verdict 已經準確, 留意股票狀態` / stock_state fix: `睇其他 module 確認 / 留意 M7 alignment`
+>
+> **M2 hl_structure algorithm.py 改動** (10 個注入點):
+> - 加 `from backend.services.warning_collector import make_warning` import
+> - 10 個 self-check warning 注入點 (line 931 / 1013 / 1109 / 1508 / 1521 / 1543 / 1562 / 1582 / 1603 / 1622) 由 raw dict 改用 `make_warning().to_dict()` helper
+> - 統一 `module_id="M2"` (之前有 `"hl_structure"` 唔統一)
+> - 唔再自己寫 `impact` / `fix` string (helper 自動 apply template)
+>
+> **M3 trendline algorithm.py 改動** (7 個 self-check 注入點):
+> - 已經有 `from backend.services.warning_collector import make_warning` import (line 704, 之前 INSUFFICIENT_DATA case 用)
+> - 7 個 self-check warning 注入點 (line 767 / 875 / 1067 / 1079 / 1091 / 1102 / 1117 / 1129) 由 raw dict 改用 `make_warning().to_dict()` helper
+> - 統一 `module_id="M3"` (之前用 `"trendline"`)
+> - 結構對齊 frontend 期望 (raw dict 之前用 top-level issue/impact/fix/context, frontend `lib/warnings.mjs` 用 `w.debug?.issue/impact/fix/context`, 改用 helper 之後統一 `debug` 結構)
+>
+> **Frontend 影響**:
+> - Frontend `lib/warnings.mjs` 嘅 `WARNING_CATEGORIES[w.code] || 'system'` fallback 由「安全網」變「冗餘」, 但保留 (防禦性)
+> - Frontend `renderWarningBanners()` 已經用 `w.category` 字段 (v1.1.0 加咗), backend 而家 emit 之後 frontend 直接用, 唔再 fallback
+> - 之前 4 隻 stock 嘅 CONFLICT_STATE warning 誤判做「🔧 系統警告」(verdict 可能唔可信), 修完自動分流做「📊 股票狀態提醒」(verdict 已經準確) — 因為 CONFLICT_STATE 永久 rule v1.1.0 歸 stock_state
+> - 凡人話: 大少見到 CONFLICT_STATE banner 之前會誤信 verdict 唔可信, 修完之後先睇得正確 (股票狀態衝突但 verdict 已經準確反映呢個狀況)
+>
+> **永久 rule** (v1.3.0 新加):
+> - ✅ Backend 永遠 emit `category` 字段 (永久 rule v1.1.0 source of truth)
+> - ✅ Backend 自動 apply CATEGORY_DISPLAY template (永久 rule v1.1.0, caller 唔再自己寫 impact/fix)
+> - ✅ Backend warning 統一用 `make_warning()` helper, 唔可以再寫 raw dict (避免 `module_id` 唔統一 / `category` 缺 / `impact/fix` 唔跟 template)
+> - ✅ `module_id` 永遠用 M1-M12 統一編號 (永久 rule v1.0.0 沿用)
+> - ✅ 13 個 warning code 嘅 `impact` / `fix` 永久跟 CATEGORY_DISPLAY template, 唔再用各 module 自己寫 (永久 rule v1.1.0 沿用)
+> - ✅ 改 warning 注入點嗰陣, `issue` 必須保留 specific context (永久 rule v1.1.0 沿用)
+>
+> **對應 commit** (1 個 warning system + 2 個 algorithm + 1 個 Spec Sync):
+> - `feat(warning-system): v1.3.0 auto-emit category + auto-apply CATEGORY_DISPLAY template` (即將 push)
+> - `refactor(m2): use make_warning() helper for 10 self-check injection points` (即將 push)
+> - `refactor(m3): align 7 self-check warnings to use make_warning() helper` (即將 push)
+> - `docs(spec): Spec Sync #49 warning system v1.3.0 + module-02 v0.5.0` (即將 push)
+>
+> **對應 Sscript 還原點** (對齊大少 2026-08-31 12:08 永久 rule):
+> - annotated tag: `restore-2026-09-08-warning-v1.3.0-pre` (即將 push)
+> - backup branch: `backup-2026-09-08-warning-v1.3.0-pre`
+> - restore script: `scripts/restore_2026_09_08_warning_v1_3_0_pre.sh`
+> - Backup Admin Page 拎到: `can_restore: true, missing: []`
+>
+> **凡人話總結**:
+> - 永久 rule v1.1.0 之前靠 frontend 推算 category (lookup table), 而家 backend 自己 emit
+> - 永久 rule v1.1.0 之前 caller 自己寫 impact/fix, 而家 helper 自動 apply template
+> - 凡人話: 大少 Copy warning 畀 Mavis 嗰陣, `category` 永遠正確, `impact`/`fix` 永遠跟 template, 唔再怕 caller 寫錯或忘記填
+
 >
 > **觸發原因**: 大少 14:25 問「M2 algorithm 發現有問題或失效, 顯示警告, M7/8/9 唔使用」, 15:08 confirm 做法 A + C 混合
 >

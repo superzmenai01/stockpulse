@@ -1,0 +1,330 @@
+StockPulse kline_cache 清理候選名單
+=====================================
+生成時間: 2026-09-08
+DB 位置: backend/stockpulse.db (kline_cache 表 56.9 萬行, 450 隻股票)
+
+分類依據:
+  必留 (Keep):
+    - 港股藍籌 (HSI 恆生指數成份股) + 紅籌 + 科技股
+    - 美股大型科技 + 大型股 (AAPL/MSFT/GOOGL/NVDA/TSLA/AMD/INTC/JPM/V/MA/JNJ/UNH/XOM/CVX/...)
+    - 業務表用過嘅 stock (saved_algorithm_runs / trade_journal / stock_reasons / algorithm_dq_log)
+    - 活躍股 (avg_turnover_rate top 50)
+
+  可刪 (Delete):
+    - 以上必留以外嘅 301 隻
+    - 主要係冷門股/殼股/SPAC/幼細股/老牌地產/老牌工業
+
+
+【可刪除 — 美股 43 隻】
+(全部 lot=1, turnover_rate 接近 0, 唔係大型藍/科技, 全部建議刪)
+
+  US.A              安捷倫科技
+  US.AA             美國鋁業公司
+  US.AACG           ATA Creativity Global
+  US.AACI           Armada Acquisition Corp III
+  US.AACIU          ARMADA ACQUISITION CORPORATION III UNIT 1 CLASS A ORD & 1/2 WAR(13/02/2031)
+  US.AACO           ABONY ACQUISITION CORPORATION I
+  US.AACOU          ABONY ACQUISITION CORPORATION I UNIT 1 CL A ORD & 1/3 WT(29/01/2031)
+  US.AACPU          APOGEE ACQUISITION CORPORATION UNIT 1 CL A 1 WT & 1 RT 27/03/2031
+  US.AAIC.PRB       ARLINGTON ASSET INVESTMENT CORP 7% CUM PRF 12/05/2022 SER B USD25
+  US.AAIC.PRC       ARLINGTON ASSET INVESTMENT CORP 8.250%CUM RED FIX TO FLT RATE SR C USD25
+  US.AAIN           ARLINGTON ASSET INVESTMENT CORP 6.000% SENIOR NOTES DUE 01/08/2026
+  US.AAL            美國航空
+  US.AAM.PRA        APOLLO ASSET MANAGEMENT INC 6.375% PREFERRED STOCK SERIES A USD25
+  US.AAM.PRB        APOLLO ASSET MANAGEMENT INC 6.375% PREFERRED STOCK SERIES B USD25
+  US.AAME           美國大西洋
+  US.AAMI           Acadian Asset Management
+  US.AAOI           Applied Optoelectronics
+  US.AAON           艾倫建材
+  US.AAP            Advance Auto Parts
+  US.AAPG           亞盛醫藥
+  US.AARD           Aardvark Therapeutics
+  US.AAUC           Allied Gold
+  US.AB             聯博控股
+  US.ABAT           American Battery Technology
+  US.ABEO           Abeona Therapeutics
+  US.ABEV           Ambev SA
+  US.ABOS           Acumen Pharmaceuticals
+  US.ABR.PRD        ARBOR REALTY TRUST INC 6.375% SERIES D CUMULATIVE RED PFD STK
+  US.ABR.PRE        ARBOR REALTY TRUST INC SER E CUM RED PFD SHS
+  US.ABR.PRF        ARBOR REALTY TRUST INC 6.25% SER F FXD/FLTG RATE CUMULATIVE PFD
+  US.ABSI           Absci Corp
+  US.ABTC           American Bitcoin
+  US.ABTS           Abits
+  US.ABUS           Arbutus Biopharma
+  US.ABVC           ABVC BioPharma
+  US.ABVX           Abivax S.A.
+  US.ABX            Abacus Global Management
+  US.ABXL           ABACUS GLOBAL MANAGEMENT INC 9.875% SENIOR NOTES 15/11/2028 USD25
+  US.ACA            Arcosa
+  US.ACAA           AVERIN CAP ACQUISITION CORP
+  US.ACAAU          AVERIN CAP ACQUISITION CORP UNIT 1 CL A ORD & 1/6 WT(30/01/2031)
+  US.ACAD           阿卡迪亞
+  US.NXP            Nuveen Select Tax-Free Income Portfolio
+
+
+【可刪除 — 港股 258 隻】
+(按 turnover_rate 由低至高排, 最冷門喺最頂)
+
+  --- turnover_rate = 0.0000 (完全冇成交) ---
+  HK.00007          智富資源投資
+  HK.00025          CHEVALIER INT'L
+  HK.00033          INTL GENIUS
+  HK.00036          遠東控股國際
+  HK.00039          中國北大荒
+  HK.00059          天譽置業
+  HK.00061          綠領控股
+  HK.00075          渝太地產
+  HK.00084          寶光實業
+  HK.00105          凱聯國際酒店
+  HK.00106          朗詩綠色管理
+  HK.00115          鈞濠集團
+  HK.00219          順豪物業
+  HK.00224          建生國際
+  HK.00225          博富臨置業
+  HK.00236          香港生力啤
+  HK.00237          安全貨倉
+  HK.00244          先施
+  HK.00247          TST PROPERTIES
+  HK.00248          香港通訊國際控股
+  HK.00251          爪哇控股
+  HK.00252          華信地產財務
+  HK.00253          順豪控股
+  HK.00444          SINCEREWATCH HK
+  HK.00458          聯亞集團
+  HK.00468          紛美包裝
+  HK.00472          新絲路控股集團
+  HK.00488          麗新發展
+  HK.00496          卡森國際
+  HK.00498          藍河控股
+  HK.00509          世紀陽光
+  HK.00515          中華銀科技
+  HK.00606          中駿商管
+  HK.00608          達利國際
+  HK.00609          天德化工
+  HK.00612          嘉文世紀投資公司
+  HK.00619          南華金融
+  HK.00626          大眾金融控股
+  HK.00627          共生智築
+  HK.00629          悅達國際控股
+  HK.00630          雋泰控股
+  HK.00637          利記
+  HK.00853          微創醫療
+  HK.01376          RAFFLESINTERIOR
+  HK.00089          大生地產
+  HK.00096          YUSEI
+  HK.00053          國浩集團
+  HK.00436          新宇環保
+  HK.00500          先豐服務集團
+  HK.00093          零在科技金融
+  HK.00487          實德環球
+  HK.00499          青島控股
+  HK.00505          興業合金
+  HK.00094          綠心集團
+  HK.00088          TAI CHEUNG HOLD
+  HK.00090          普星能量
+  HK.00245          中薇金融
+  HK.00438          彩虹新能源
+  HK.00442          域能控股
+  HK.00513          恆和集團
+  HK.00474          信銘生命科技
+  HK.00227          第一上海
+  HK.00618          北大資源
+  HK.00046          科聯繫統
+  HK.00486          俄鋁
+  HK.00060          香港食品投資
+  HK.00097          恒基發展
+  HK.00222          閩信集團
+  HK.00255          龍記集團
+  HK.00475          中發展控股
+  HK.00491          英皇文化產業
+  HK.00493          國美零售
+  HK.00497          資本策略地產
+  HK.00051          海港企業
+  HK.00040          金山科技工業
+  HK.00026          中華汽車
+  HK.00098          興發鋁業
+  HK.01239          TEAMWAY INTL GP
+  HK.00519          諾科達科技
+  HK.00239          白花油
+  HK.02389          北京健康
+  HK.00030          雲白國際
+  HK.00510          時富金融服務集團
+  HK.00048          中國汽車內飾
+  HK.00071          美麗華酒店
+  HK.00483          包浩斯國際
+  HK.00099          王氏國際
+  HK.00603          中油燃氣
+  HK.00605          中國金融投資管理
+  HK.00055          中星集團控股
+  HK.00032          港通控股
+  HK.00064          結好控股
+  HK.00518          同得仕(集團)
+  HK.00113          迪生創建
+  HK.00078          REGAL INT'L
+  HK.00620          大唐西市
+  HK.00058          新威國際
+  HK.00480          香港興業國際
+  HK.00439          瀚源控股
+  HK.01234          中國利郎
+  HK.00465          富通科技
+  HK.00234          新世紀集團
+
+  --- tr 0.0001-0.0010 (極低成交) ---
+  HK.00037          遠東酒店實業
+  HK.00607          豐盛控股
+  HK.00062          載通
+  HK.00521          CWT INT'L
+  HK.00010          恒隆集團
+  HK.00262          迪臣發展國際
+  HK.00258          湯臣集團
+  HK.00240          利基控股
+  HK.00623          中視金橋
+  HK.00045          大酒店
+  HK.00021          大中華控股
+  HK.00042          東北電氣
+  HK.00229          利民實業
+  HK.00110          中國長遠
+  HK.00086          新鴻基公司
+  HK.00485          中國華星
+  HK.08017          捷利交易寶
+  HK.00484          雲遊控股
+  HK.00223          易生活控股
+  HK.00087          太古股份公司B
+  HK.00450          鴻興印刷集團
+  HK.00681          中民控股
+  HK.00069          香格裡拉(亞洲)
+  HK.00261          GBA集團
+  HK.00108          國銳生活
+  HK.00073          亞洲果業
+  HK.00035          遠東發展
+  HK.00259          億都(國際控股)
+  HK.00114          HERALD HOLD
+  HK.00235          中策資本控股
+  HK.00617          百利保控股
+  HK.00636          KLN
+  HK.01972          太古地產
+  HK.00029          達力集團
+  HK.00072          超媒體控股
+  HK.00520          呷哺呷哺
+  HK.00092          冠軍科技集團
+  HK.00508          鼎億集團投資
+  HK.00077          進智公共運輸
+  HK.00104          ASIA COMM HOLD
+  HK.00218          申萬宏源香港
+  HK.00345          VITASOY INT'L
+  HK.00482          聖馬丁國際(新)
+  HK.00052          大快活集團
+  HK.00621          壇金礦業
+  HK.00070          金粵控股
+  HK.00080          CAI控股
+  HK.00220          統一企業中國
+  HK.00103          首佳科技
+  HK.00635          彩星集團
+  HK.09998          光榮控股
+  HK.00041          鷹君
+  HK.00256          冠城鐘錶珠寶
+  HK.06098          碧桂園服務
+  HK.00082          瘋狂體育
+  HK.00611          中國核能科技
+  HK.00604          深圳控股
+  HK.00083          信和置業
+  HK.00242          信德集團
+  HK.00471          中播數據
+  HK.00610          WAI KEE HOLD
+  HK.00440          大新金融
+  HK.09922          九毛九
+  HK.00228          中能控股
+  HK.00257          光大環境
+  HK.00327          百富環球
+  HK.00031          航天控股
+  HK.02282          美高梅中國
+  HK.00107          四川成渝高速公路
+  HK.00456          新城市建設發展
+  HK.00023          東亞銀行
+  HK.00085          中電華大科技
+  HK.03328          交通銀行
+  HK.00022          茂盛控股
+  HK.00027          銀河娛樂
+  HK.03692          翰森製藥
+
+  --- tr 0.0010-0.0030 (低成交, 大部分唔係藍/紅/科技) ---
+  HK.00008          電訊盈科
+  HK.00524          長城天下
+  HK.00451          協鑫新能源
+  HK.00579          京能清潔能源
+  HK.00512          遠大醫藥
+  HK.00014          希慎興業
+  HK.00868          信義玻璃
+  HK.00613          梧桐國際
+  HK.00322          康師傅控股
+  HK.00111          信達國際控股
+  HK.00151          中國旺旺
+  HK.01313          華潤建材科技
+  HK.03311          中國建築國際
+  HK.00076          誼礫控股
+  HK.06969          思摩爾國際
+  HK.00836          華潤電力
+  HK.00921          海信家電
+  HK.00079          世紀建業
+  HK.00433          北方礦業
+  HK.01208          五礦資源
+  HK.06110          滔搏
+  HK.03808          中國重汽
+  HK.00622          威華達控股
+  HK.00476          科軒動力控股
+  HK.00467          聯合能源集團
+  HK.00116          周生生
+  HK.00321          德永佳集團
+  HK.00316          東方海外國際
+  HK.01070          TCL電子
+  HK.00460          四環醫藥
+  HK.00081          中國海外宏洋集團
+  HK.09987          百勝中國
+  HK.01658          郵儲銀行
+  HK.00152          深圳國際
+  HK.00178          莎莎國際
+  HK.00517          中遠海運國際
+  HK.00232          大陸航空科技控股
+  HK.02688          新奧能源
+  HK.00998          中信銀行
+  HK.06862          海底撈
+  HK.00506          中國食品
+  HK.06808          高鑫零售
+  HK.01288          農業銀行
+  HK.09688          再鼎醫藥
+  HK.01378          中國宏橋
+  HK.00632          中港石油
+  HK.02689          玖龍紙業
+  HK.03968          招商銀行
+  HK.00308          香港中旅
+  HK.00968          信義光能
+  HK.01060          大麥娛樂
+  HK.00400          硬蛋創新
+  HK.02328          中國財險
+  HK.00631          三一國際
+  HK.00884          旭輝控股集團
+  HK.06030          中信證券
+  HK.03993          洛陽鉬業
+  HK.01359          中國信達
+  HK.02727          上海電氣
+  HK.00628          通通AI社交
+  HK.00434          博雅互動
+  HK.01478          丘鈦科技
+  HK.00902          華能國際電力股份
+  HK.00285          比亞迪電子
+  HK.00728          中國電信
+  HK.00914          海螺水泥
+  HK.00168          青島啤酒股份
+  HK.03800          協鑫科技
+  HK.00038          第一拖拉機股份
+
+
+統計:
+  kline_cache 全部:    450 隻
+  建議保留:            149 隻 (藍/紅/科技/業務/活躍)
+  建議刪除:            301 隻 (冷門/殼股/幼細股)
+
+  刪除按市場:
+    US:  43 隻
+    HK: 258 隻
