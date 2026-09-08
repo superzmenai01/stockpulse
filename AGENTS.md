@@ -124,6 +124,8 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 - ✅ 改 `adapter.mjs` 之後必同步 bump `testing-page.js` 嘅 `ALGO_CACHE_BUST` + `testing-page/index.html` 嘅 `?v=2.3.X` (cache bust self-check 永久 rule 21:24)
 - ✅ Testing page chart overlay 嘅 silent return (`console.warn + return` 唔 throw) testing page 嗰個 try/catch catch 唔到 → 撳跑算法之後必肉眼 verify chart overlay 有冇 render (**唔可以** 淨靠 console log 確認)
 - ✅ M3 trendline toggle 跟 MA toggle 同樣 pattern (lineSeries.applyOptions + localStorage 自動記住 + 出圖 sync), 之後 M4/M5/M6 等加 chart overlay 嘅 module 都跟呢個 pattern
+- ✅ **大少 2026-09-09 07:20 加**: 改 `renderXxxResult` / `renderDetailedExplanationXxx` 加 v0.2.0 audit field 必喺 function 開頭加 local variable 拎 `verdict.meta.*` (唔可以假設攞到 caller 嘅 local var — `renderDetailedExplanationIndicators` 係獨立 function, 同 `renderIndicatorsResult` 唔共享 scope, 凡 7 個 audit field 都要喺 function 開頭重新拎)
+- ✅ **大少 2026-09-09 07:20 加**: 凡用 audit field 嘅 render line, 必加 falsy guard 兜 backend 唔 emit 嘅 case (e.g. reg gate fail 早 return verdict 唔行 Step 9.5 → `m1State` / `selfCheckTriggered` / `originalConfidence` 全部 `None`, 用 `?:` 或 `!= null` ternary 兜底, 唔可以直接 `originalConfidence * 100` 會 TypeError)
 
 **對應文件**:
 - `algorithms/AS-03-cycle-detection/adapter.mjs` line 3775-3876 嘅 `renderTrendlineChartOverlay`
