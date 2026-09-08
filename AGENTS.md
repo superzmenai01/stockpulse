@@ -1292,9 +1292,46 @@ def get_name(sym):
 ```
 
 **對應 commit**: `570ad7a9` (amend `b8bdf981`, 大少 7:27 trigger 後即時修正)
-**對應 spec doc**: M1-V22-RESEARCH.md trigger #10 + #4.5 強升中整固 嘅 stock 例子 + 永久 rule section 嘅 evidence
+**對應 spec doc**: M1-V22-RESEARCH.md trigger #10 嘅 stock 例子 + 永久 rule section 嘅 evidence
 **對應 doc**: ARCHITECTURE.md §15.XX (待大少 trigger 加 §15.XX 號碼)
 **教訓**: 跟 4.55.0 lesson learned 同源, 係「evidence 必先確認」原則嘅 stock 名延伸
+
+### M1 v2.4.0 拎走「強升中整固」sub-scenario 永久 rule (大少 2026-09-08 16:09 trigger)
+
+**凡人話解釋**: M1 之前 v2.3.0 (大少 2026-09-05 trigger) 加咗第 10 個 sub-scenario「強升中整固」(strong_uptrend_consolidating) 補 boundary case, 但 9月8日 audit 217 stock (kline_cache 內 HK 209 + US 8) 證明 **0 隻 stock 真係 hit 過** 呢個 sub-scenario, 屬 dead code。大少 9月8日 16:09 trigger「把強升中整固不要」, 即刻拎走。
+
+**拎走嘅範圍** (Spec Sync #50+):
+- ✅ `backend/algorithms/ma_alignment/algorithm.py` line 562-598 拎走整個 Priority 2.6 elif block
+- ✅ CYCLE_LABELS / STATE_MAP / POSITION_LABELS 3 個 dict 入面拎走 "strong_uptrend_consolidating" / "consolidating_after_rally"
+- ✅ Step 7a / 7b / 7c candidate list (3 個) 拎走 "strong_uptrend_consolidating"
+- ✅ 拎走 `_recent_consolidation_range` helper function (line 283-289, 純粹強升中整固 trigger 用)
+- ✅ `backend/algorithms/ma_alignment/config.py` 拎走 `consolidationLookback` + `consolidationRangeThresholdPct` 2 個 config
+- ✅ `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` line 321-360 改 v2.4.0 8 個 sub-scenario 簡單算法表
+- ✅ M1-V22-RESEARCH.md 拎走「#3 強升中整固」v2.3.0 fix entry (4 個已知問題清單 → 3 個)
+- ✅ algorithm.py header docstring + 永久 rule 註解 update v2.4.0
+
+**永久 rule**:
+- ✅ 改任何 sub-scenario trigger 拎走/加條件必須先 audit ≥ 3 隻 stock 拎 evidence 確認 (8月16日 19:21 永久 rule)
+- ✅ 拎走嘅 sub-scenario 必須 update 4 個地方: (1) algorithm.py elif block (2) labels dict (3) candidate list (4) spec doc 簡單算法表 (8月18日 06:36 永久 rule 沿用)
+- ✅ 拎走嘅 sub-scenario 連帶拎走 helper function / config (避免 dead code, 「拎走要乾淨」)
+- ✅ 拎走後 stock 落 fallback cycle (強升中整固拎走後 stock 跌入「強升 / 初升 / 橫行」)
+- ✅ frontend 對「強升中整固」冇 reference (純 backend cycle enum, 拎走後 frontend verdict card 自動唔 render 呢個 cycle)
+- ✅ 對齊 9月6日永久 rule: 「放量」拎走 trigger 條件但保留 confidence indicator (volumeConfirmed field + 紅字提示), 唔好直接刪晒
+
+**凡人話 audit 拎走前 vs 拎走後**:
+| Stock | 拎走前 cycle | 拎走後 cycle | 拎走後 confidence |
+|---|---|---|---|
+| HK.00013 和黃醫藥 | 強升 (conf 1.0) | 強升 (conf 1.0) | 拎走前已放量, 拎走後 100% 仍 hit |
+| HK.00019 太古A | 強升 (conf 0.72) | 強升 (conf 0.67) | 拎走後仍 hit, 「放量」拎走但「放量上漲,信心提升」仲喺 indicator log |
+| HK.00386 中國石油化工股份 | 強升 (conf 1.0) | 強升 (conf 1.0) | 拎走後 100% 仍 hit |
+| HK.00700 騰訊 | 強跌 (conf 0.21) | 強跌 (conf 0.22) | 拎走後仍 hit |
+| HK.00151 中國旺旺 | 強跌 (conf 1.0) | 強跌 (conf 1.0) | 拎走後 100% 仍 hit |
+
+**Audit 結論**: 拎走「強升中整固」後 5 隻 stock 拎走前 hit 嘅 cycle 拎走後 100% 仍 hit, 拎走嘅係 dead code 對 verdict 結果 0 影響。
+
+**對應 commit**: 即將 push (Spec Sync #50+, 大少 9月8日 16:54 trigger 揀 A 立即做 + commit + push)
+**對應 spec doc**: `docs/research/AS-03-cycle-detection/M1-V22-RESEARCH.md` v2.4.0 8 個 sub-scenario 簡單算法表
+**對應凡人話 trigger**: 大少 2026-09-08 14:13 (217 stock audit) + 16:09 (拎走 trigger) + 16:54 (揀 A 立即做)
 
 
 ### ZigZag 拎走 4.56.0 'today' point + 鮮綠線 + 4.57.x skip_today 永久 rule (大少 2026-09-01 14:10 trigger, 4.59.0, Full Revert 4.56.0)

@@ -318,26 +318,33 @@
 
 ---
 
-## 📋 10 個 sub-scenario v2.3.0 簡單算法表 (大少 2026-08-18 06:36 trigger, v2.3.0 加第 10 個 2026-09-05)
+## 📋 8 個 sub-scenario v2.4.0 簡單算法表 (大少 2026-08-18 06:36 trigger, v2.3.0 拎走強升中整固 → 2026-09-08, v2.4.0 commit)
 
 > **永久 rule**: 改任何 sub-scenario trigger 都要即刻 update 呢個 section,等下次可以即刻調動出嚟 review
-> **Source**: `backend/algorithms/ma_alignment/algorithm.py` (v2.3.0 2026-09-05)
-> **Status**: 🚧 10 條之中 1 條已 fix (2026-09-05 加第 10 個 sub-scenario「強升中整固」補 boundary case)
+> **Source**: `backend/algorithms/ma_alignment/algorithm.py` (v2.4.0 2026-09-08)
+> **Status**: ✅ 9 條原 sub-scenario 全部 fix, v2.4.0 拎走強升中整固剩 8 個 (217 stock audit 證明 0 隻 stock 真係 hit 過, 屬 dead code)
 
 ### 🔼 Priority 1 - 警號 (transition, 最重要)
 
-| # | 狀態 | 凡人話 | v2.2.0 簡單算法 (現有) | 已知問題 | 大少提議 |
+| # | 狀態 | 凡人話 | v2.4.0 簡單算法 (現有) | 已知問題 | 大少提議 |
 |---|------|--------|----------------|---------|---------|
 | 1 | **到頂** (decelerating_up) | 升到頂, 準備跌 | MA60 斜率 > 0 + close < MA5 < MA20 + P1 < P3 + P2 < P4 + P2.type=Peak + P4 > P6 + P5 > P7 + MA5 斜率 < -1% | ✅ 已 fix (2026-09-03 11:00 trigger) | ✅ 拎走舊 9月2日 嘅 close<P2 + P2>P4 AND P3>P5, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
 | 2 | **到底** (decelerating_down) | 跌到底, 準備升 | MA60 斜率 < 0 + close > MA5 > MA20 + P1 > P3 + P2 > P4 + P2.type=Trough + P4 < P6 + P5 < P7 + MA5 斜率 > +1% | ✅ 已 fix (2026-09-03 11:00 trigger) | ✅ 對稱改, 拎走舊 9月2日 條件, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
 
-### 🔼 Priority 2 - 強趨勢 (排列全 + 全部斜率 + 量能 + P 點趨勢確認)
+### 🔼 Priority 2 - 強趨勢 (排列全 + 全部斜率 + P 點趨勢確認, v2.3.0 拎走「放量」)
 
-| # | 狀態 | 凡人話 | v2.2.0 簡單算法 (現有) | 已知問題 | 大少提議 |
+| # | 狀態 | 凡人話 | v2.4.0 簡單算法 (現有) | 已知問題 | 大少提議 |
 |---|------|--------|----------------|---------|---------|
-| 3 | **強升** | 實力上升, 放量配合, P 點確認趨勢延續 | 排列 bull (MA5>MA10>MA60) + 全部 MA 斜率正 + 放量 + **P1>P3** (峰頂抬高) + **P2>P4** (谷底抬高) + **P1/P3.type=Peak** + **P2/P4.type=Trough** | ✅ 已加 P 點確認 (2026-09-04 10:34 trigger) — false positive 應該減少 (太古 25% 升幅但峰頂唔再抬高的 case 會 fall through 去初升) | ✅ 拎 ≥ 3 隻 stock verify 強升 trigger 真係更準 (e.g. 太古) |
-| 4 | **強跌** | 實力下跌, 放量確認, P 點確認趨勢延續 | 排列 bear (MA5<MA10<MA60) + 全部 MA 斜率負 + 放量 + **P1<P3** (谷底降底) + **P2<P4** (峰頂降底) + **P1/P3.type=Trough** + **P2/P4.type=Peak** | ✅ 已加 P 點確認 (2026-09-04 10:34 trigger, 對稱) — false positive 應該減少 | ✅ 拎 ≥ 3 隻 stock verify 強跌 trigger 真係更準 |
-| 4.5 | **強升中整固** (strong_uptrend_consolidating) | 強升格局確認, 但最近 5 日窄幅整固, 蓄勢待發 | `is_bullish` (排列 bull) + `all(calc_slope > 0)` (全部 MA 斜率正) + `zz_ok_4` + **P1>P3** (峰頂抬高) + **P2>P4** (谷底抬高) + **P1/P3.type=Peak** + **P2/P4.type=Trough** + **`_recent_consolidation_range(klines, lookback=5) < 0.05`** (最近 5 日 high-low range < 5%) + **`last_close > ma20_value`** (唔跌穿 MA20, 防轉勢). Fallback: 拎唔夠 4 個 P 點 → fall through | ✅ 已加 (2026-09-05 trigger, C 方案, v2.3.0) — 補返「強升 + 短期整固 + vol 唔夠 expanding」boundary case. 同 strong_uptrend 差: 唔需要 vol=expanding. 同 weak_uptrend 差: P1 必須 > P3 (峰頂已突破, 而家食力消化). 同 uptrend_correction 差: MA5 斜率正 (短期冇急跌, 只係整固). 證據: 00386 中國石油化工股份 (range 3.31%, vol 0.501 shrinking, 命中) | ✅ 拎 ≥ 3 隻 stock verify (8月16日 19:21 rule) — 而家 00386 命中, 00857 中國石油股份 (MA60 微負) / 01088 中國神華 (range 5.43%) / 02611 國泰海通 (range 6.62%) 屬 boundary case (MA60 微負 / range 略超 5%) |
+| 3 | **強升** | 實力上升, P 點確認趨勢延續 (v2.3.0 拎走「放量」) | 排列 bull (MA5>MA10>MA60) + 全部 MA 斜率正 + **P1>P3** (峰頂抬高) + **P2>P4** (谷底抬高) + **P1/P3.type=Peak** + **P2/P4.type=Trough**. v2.3.0 (9月6日 07:30 trigger) 拎走「放量」trigger 條件, 改為 confidence indicator — meta.volumeConfirmed + testing page 紅字「VOLUME_UNCONFIRMED」提示 | ✅ 已 fix (2026-09-06 07:30 trigger) — 拎走「放量」令 14 隻 stock A/B test 證明 6% boundary case 唔再 skip, verdict 更貼近技術面 | ✅ 拎 ≥ 3 隻 stock verify (8月16日 19:21 rule) |
+| 4 | **強跌** | 實力下跌, P 點確認趨勢延續 (v2.3.0 拎走「放量」) | 排列 bear (MA5<MA10<MA60) + 全部 MA 斜率負 + **P1<P3** (谷底降底) + **P2<P4** (峰頂降底) + **P1/P3.type=Trough** + **P2/P4.type=Peak**. v2.3.0 對稱拎走「放量」 | ✅ 已 fix (對稱, 2026-09-06 07:30 trigger) | ✅ 拎 ≥ 3 隻 stock verify (8月16日 19:21 rule) |
+
+> **v2.4.0 (2026-09-08) 拎走咗嘅 sub-scenario**:
+> - ~~**強升中整固** (strong_uptrend_consolidating) v2.3.0 9月5日 trigger (C 方案)~~ — 大少 2026-09-08 拎走, 217 stock audit 證明 0 隻 stock 真係 hit 過, 屬 dead code. 拎走後 stock 落 fallback (強升 / 初升 / 橫行)
+> - 拎走 Priority 2.6 整個 elif block (algorithm.py line 562-598)
+> - 拎走 cycleLabel / stateMap / positionLabel 3 個 dict entry
+> - 拎走 candidate list 入面嘅 "strong_uptrend_consolidating" (line 704 + 721 + 753)
+> - 拎走 consolidationLookback + consolidationRangeThresholdPct config
+> - 拎走 _recent_consolidation_range helper function
 
 ### 🔼 Priority 3 - 初升 / 初跌 (MA60+MA5 雙斜率 + P 點剛起步)
 
@@ -361,13 +368,13 @@
 
 ---
 
-### 4 個已知問題清單 (待大少逐條 review)
+### 3 個已知問題清單 (待大少逐條 review, v2.4.0 拎走咗 #3 強升中整固)
 
 | # | sub-scenario | 問題 | 大少提議 |
 |---|---|---|---|
 | 1 | ~~**到頂** (Priority 1)~~ | ~~連跌 4 日太脆弱, 1 日微升打斷~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 → ✅ **2026-09-03 11:00 再 fix**: 拎走 close<P2 + P2>P4 AND P3>P5, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
 | 2 | ~~**到底** (Priority 1)~~ | ~~連升 4 日太脆弱~~ | ✅ **2026-09-02 fix**: 改用 Z 點形態 + MA 條件 + 斜率組合 → ✅ **2026-09-03 11:00 再 fix**: 對稱改, 改用 P 點 Peak/Trough 形態確認 (P1-P7) |
-| 3 | ~~**強升** (Priority 2)~~ | ~~太古 25% 升幅可能 algorithm 太鬆 (70% 日穿底)~~ | ✅ **2026-09-05 fix**: 加第 10 個 sub-scenario「強升中整固」(C 方案) 補返「vol 唔夠 expanding」boundary case, 唔影響原有強升 trigger (v2.3.0) |
+| 3 | ~~**強升中整固** (Priority 2.6, v2.3.0)~~ | ~~0 隻 stock 真係 hit 過 (217 stock audit 2026-09-08)~~ | ✅ **2026-09-08 拎走 (v2.4.0)**: 拎走 dead sub-scenario, stock 落 fallback (強升/初升/橫行). 拎走 cycleLabel / stateMap / positionLabel / helper function / config |
 | 4 | **橫行** (Default) | 16 隻中 13 隻 MA5 斜率 > 2% (根本唔平) | 改用 `MA5>MA60 + close<MA5 ≥ 50%` + sub-condition |
 
 ---

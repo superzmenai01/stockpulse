@@ -1,11 +1,11 @@
 """
-backend/algorithms/ma-alignment/config.py — M1 algorithm config (大少 2026-08-20 20:05 Phase 2, v2.2.0 adaptive 2026-08-21)
+backend/algorithms/ma-alignment/config.py — M1 algorithm config v2.4.0 (大少 2026-08-20 20:05 Phase 2, v2.2.0 adaptive 2026-08-21, v2.4.0 拎走強升中整固 2026-09-08)
 
 凡人話: M1 algorithm 嘅 default 參數, 大少可經 options 覆寫
 對應 source: algorithms/AS-03-cycle-detection/modules/ma-alignment.ts 嘅 MAAlignmentV2Config
 """
 
-# 凡人話: M1 algorithm 嘅 9 個 step 對應嘅 default config
+# 凡人話: M1 algorithm 嘅 8 個 step 對應嘅 default config (v2.4.0 拎走強升中整固剩 8 個 sub-scenario)
 # 全部用 dict (唔用 dataclass), 因為 Algorithm contract options 入面直接拎
 DEFAULT_MA_ALIGNMENT_V2_CONFIG: dict = {
     # MA 週期
@@ -35,9 +35,6 @@ DEFAULT_MA_ALIGNMENT_V2_CONFIG: dict = {
     "spreadConfidenceScale": 0.10,
     "sidewaysBaseConfidence": 0.3,
 
-    # 強升中整固 sub-scenario 參數 (大少 2026-09-05 trigger, C 方案)
-    # 凡人話: 補返「強升 + 短期整固 + vol 唔夠 expanding」嘅 boundary case
-    # 例如 00019 太古 過去 6 個月升 34.6% + 最近 5 日整固 3.68% + vol 1.2285 (差 0.0215 唔夠 expanding)
-    "consolidationLookback": 5,              # 整固判定回看天數 (預設 5 日 = 1 週)
-    "consolidationRangeThresholdPct": 0.05,  # 整固判定 high-low range 閾值 (預設 5%, 強升股自然整固範圍)
+    # v2.4.0 (大少 2026-09-08): 拎走 consolidationLookback + consolidationRangeThresholdPct
+    # 原本畀「強升中整固」sub-scenario 用, 9月8日 audit 217 stock 證明 0 隻 stock 真係 hit 過
 }

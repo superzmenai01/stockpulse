@@ -1,11 +1,11 @@
 """
-backend/algorithms/ma-alignment/algorithm.py — M1 MA Alignment v2.0 (大少 2026-08-20 20:05 Phase 2, v2.2.0 adaptive 2026-08-21, v2.3.0 第 10 個 sub-scenario 2026-09-05)
+backend/algorithms/ma-alignment/algorithm.py — M1 MA Alignment v2.4.0 (大少 2026-09-08 拎走強升中整固 sub-scenario + 強升/強跌 trigger 拎走放量 v2.3.0 已 9月6日 commit)
 
-凡人話: 拎 K 線 → 計算 MA5/MA10/MA20/MA60 → 判定 10 個 sub-scenario cycle + 9 個 cycle position
+凡人話: 拎 K 線 → 計算 MA5/MA10/MA20/MA60 → 判定 8 個 sub-scenario cycle + 8 個 cycle position
 
 對應 backup: backups/zigzag-frontend-2026-08-20/(adapter.mjs / ma-alignment.ts)
-對應 source: algorithms/AS-03-cycle-detection/modules/ma-alignment.ts (551 行, v0.3.0 + 9 個 sub-scenario, v2.3.0 加第 10 個)
-對應 ref code: 大少 2026-08-15 9 個 sub-scenario 永久 rule + 大少 2026-09-05 第 10 個 sub-scenario trigger (C 方案, M1-V22-RESEARCH.md)
+對應 source: algorithms/AS-03-cycle-detection/modules/ma-alignment.ts (v0.4.0 + 8 個 sub-scenario)
+對應 ref code: 大少 2026-08-15 9 個 sub-scenario 永久 rule + 大少 2026-09-08 拎走強升中整固 trigger (M1-V22-RESEARCH.md)
 對應 framework: backend/algorithms/base.py Verdict contract
 
 Algorithm: 8 個 step (跟 ma-alignment.ts 嘅 detect() method 1:1 port 去 Python)
@@ -14,7 +14,7 @@ Algorithm: 8 個 step (跟 ma-alignment.ts 嘅 detect() method 1:1 port 去 Pyth
 - Step 3: MA ranks + candidate (uptrend / downtrend / sideways)
 - Step 4: Spread + 橫行精細判定 (v2.2.0: adaptive thresholdPct)
 - Step 5: Volume trend + signal
-- Step 5.5: 10 個 sub-scenario 細分判定 (大少 2026-08-15 9 個 + 2026-09-05 1 個永久 rule)
+- Step 5.5: 8 個 sub-scenario 細分判定 (大少 2026-08-15 9 個永久 rule, v2.4.0 拎走強升中整固剩 8 個)
 - Step 6: MA slopes + momentum score
 - Step 7: Confidence (base × vol × slope, 三階段調整)
 - Step 8: 組裝 verdict (跟 frontend verdict shape 100% 兼容)
@@ -24,17 +24,16 @@ v2.2.0 改動 (大少 2026-08-21 18:37):
 - 每隻股用自己嘅 20 日 ATR 自動計 threshold
 - Verdict meta 加 thresholdPctUsed / thresholdPctSource / adaptiveAtrPct 顯示
 
-v2.3.0 改動 (大少 2026-09-05, C 方案):
-- 新加第 10 個 sub-scenario: strong_uptrend_consolidating (強升中整固 / 蓄勢)
-- 條件: 排列 bull + 全部 slope 正 + P 點 higher high + P 點 higher low + 最近 5 日 range < 5% + close > MA20
-- 唔強制 volume=expanding (boundary case 通常 vol 中性, 唔夠 expanding 但接近)
-- STATE_MAP: UP (仍算上升), CYCLE_LABELS: 強升中整固, POSITION_LABELS: 強升後整固 (蓄勢)
-- Step 7a/7b/7c 加入強升 sub-class (用強升公式)
-- Config 加 2 個 option: consolidationLookback (5), consolidationRangeThresholdPct (0.05)
-- 補返「強升 + 短期整固 + vol 唔夠 expanding」boundary case (e.g. 00019 9月4日 vol 1.2285 跌入橫行 → 改為強升中整固)
-- 對齊 2026-09-03 07:23 sub-scenario 流程永久 rule (P 點全部由 recent_zz 拎)
-- 對齊 2026-08-16 19:21 永久 rule (拎 ≥3 個 stock 例子 confirm trigger)
-  證據: 00386 中石化 (range 3.31%, vol 0.501 shrinking) + 00857 中石油 (range 4.67%, vol 1.2496 neutral)
+v2.4.0 改動 (大少 2026-09-08 拎走強升中整固):
+- 拎走第 10 個 sub-scenario: strong_uptrend_consolidating (強升中整固 / 蓄勢) — v2.3.0 加咗, 9月5日 spec doc, 但 audit 217 stock (2026-09-08 14:13) 證明 0 隻 stock 真係 hit 過, 屬 dead code
+- 拎走 Priority 2.6 整個 elif block (algorithm.py line 562-598)
+- 拎走 cycleLabel / stateMap / positionLabel 3 個 dict entry
+- 拎走 candidate list 入面嘅 "strong_uptrend_consolidating" (line 704 + 721 + 753)
+- 拎走 consolidationLookback + consolidationRangeThresholdPct config (config.py line 38-42)
+- 拎走 _recent_consolidation_range helper function (algorithm.py line 283-289, 只係強升中整固 trigger 用)
+- 8 個 sub-scenario 簡單算法表 update: 10 → 8
+- 對齊 8月16日 19:21 永久 rule (拎 ≥3 隻 stock 例子 confirm trigger)
+  證據: 217 stock audit (HK 209 + US 8) 0 隻 hit strong_uptrend_consolidating, 同 9月6日 trigger 拎走強升/強跌「放量」一齊 commit (v2.4.0)
 """
 
 import numpy as np
@@ -141,7 +140,6 @@ CYCLE_LABELS: Dict[str, str] = {
     "downtrend_bounce":            "下跌反彈中",
     "decelerating_up":             "到頂轉勢中",
     "decelerating_down":           "到底轉勢中",
-    "strong_uptrend_consolidating": "強升中整固",  # 大少 2026-09-05 trigger (C 方案)
 }
 
 POSITION_LABELS: Dict[str, str] = {
@@ -153,7 +151,6 @@ POSITION_LABELS: Dict[str, str] = {
     "bounce_in_progress":          "反彈進行中",
     "late_stage_topping":          "到頂轉勢中 (見頂跡象)",
     "late_stage_bottoming":        "到底轉勢中 (見底跡象)",
-    "consolidating_after_rally":   "強升後整固 (蓄勢)",  # 大少 2026-09-05 trigger (C 方案)
 }
 
 VOLUME_SIGNAL_LABELS: Dict[str, str] = {
@@ -162,8 +159,8 @@ VOLUME_SIGNAL_LABELS: Dict[str, str] = {
     "neutral":   "持平",
 }
 
-# 10 個 sub-scenario map 返 3 個 high-level state (M7 Synthesizer 用)
-# 凡人話: 大少 2026-09-05 trigger 加第 10 個 sub-scenario「強升中整固」(C 方案)
+# 8 個 sub-scenario map 返 3 個 high-level state (M7 Synthesizer 用)
+# 凡人話: 大少 2026-09-08 拎走「強升中整固」sub_scenario, v2.4.0 剩 8 個 cycle
 STATE_MAP: Dict[str, str] = {
     "strong_uptrend":              "UP",
     "weak_uptrend":                "UP",
@@ -174,7 +171,6 @@ STATE_MAP: Dict[str, str] = {
     "downtrend_bounce":            "DOWN",       # 下跌反彈中, 仍算下跌
     "decelerating_up":             "SIDEWAYS",   # 到頂轉勢中, 算過渡
     "decelerating_down":           "SIDEWAYS",   # 到底轉勢中, 算過渡
-    "strong_uptrend_consolidating": "UP",        # 強升中整固, 仍算上升 (大少 9月5日 C 方案 trigger)
 }
 
 
@@ -278,25 +274,6 @@ def _get_recent_zigzag_points(klines: List[Dict[str, Any]], options: Dict[str, A
     points = zz_verdict.points or []
     selected = points[:n]  # 拎頭 n 個 (已經係新→舊, list[0]=P1=最新)
     return [_normalize_type(p) for p in selected]
-
-
-def _recent_consolidation_range(klines: List[Dict[str, Any]], lookback: int = 5) -> float:
-    """凡人話: 拎最近 N 日 high-low range, 判斷整固程度
-
-    整固 = 窄幅上落, range 細
-    用最近 N 日嘅 high_max - low_min / low_min
-    例如 00019 太古最近 5 日 (9月1日-9月5日):
-      high_max = 107.0, low_min = 105.4 → range = 1.52% (整固)
-
-    大少 2026-09-05 trigger (C 方案): 強升中整固 sub-scenario 用呢個 helper 判定
-    預設 5% threshold, 對齊強升股自然整固範圍 (3-7%)
-    """
-    if not klines or lookback <= 0 or len(klines) < lookback:
-        return 0.0
-    recent = klines[-lookback:]
-    high_max = max(k["high"] for k in recent)
-    low_min = min(k["low"] for k in recent)
-    return (high_max - low_min) / low_min if low_min > 0 else 0.0
 
 
 class MAAlignmentV2Algorithm(Algorithm):
@@ -540,7 +517,7 @@ class MAAlignmentV2Algorithm(Algorithm):
             sub_scenario = "strong_uptrend"
             cycle_position = "mid_stage"
             adjustment_log.append(
-                f"強上升跡象 (大少 2026-09-04 10:34 trigger): 排列 bull + 全部均線斜率正 + 放量, 加上 P 點趨勢確認 (峰頂抬高 P1={p1_value:.2f}>P3={p3_value:.2f} + 谷底抬高 P2={p2_value:.2f}>P4={p4_value:.2f}, P1/P3.type=Peak + P2/P4.type=Trough) → 上升趨勢真係延續緊"
+                f"強上升跡象 (大少 2026-09-04 10:34 trigger + 2026-09-06 拎走放量 v2.3.0): 排列 bull + 全部均線斜率正, 加上 P 點趨勢確認 (峰頂抬高 P1={p1_value:.2f}>P3={p3_value:.2f} + 谷底抬高 P2={p2_value:.2f}>P4={p4_value:.2f}, P1/P3.type=Peak + P2/P4.type=Trough) → 上升趨勢真係延續緊"
             )
         # Priority 2.5: 初升 (大少 9月4日 17:12 trigger, 拎走舊 fall through 初升, 改用獨立 trigger)
         # 條件: MA60 正 + MA5 正 + P2=Trough + P1<=P3 + P2>P4
@@ -559,43 +536,8 @@ class MAAlignmentV2Algorithm(Algorithm):
             adjustment_log.append(
                 f"初升跡象 (大少 2026-09-04 17:12 trigger): 上升趨勢中 (MA60 斜率 {slope_ma60*100:.2f}% + MA5 斜率 {slope_ma5*100:.2f}%), 谷底抬高 (P2={p2_value:.2f}>P4={p4_value:.2f}, P2.type=Trough), 峰頂未突破 (P1={p1_value:.2f}<=P3={p3_value:.2f}) → 趨勢剛起步 / 整固中"
             )
-        # Priority 2.6: 強升中整固 (大少 2026-09-05 trigger, C 方案, 加 sub-scenario 補 boundary case)
-        # 條件: 強升 + 短期整固 + 唔跌穿
-        #   - 排列 bull + 全部 slope 正 (大方向強升)
-        #   - P 點 higher high + P 點 higher low (峰頂抬高 + 谷底抬高, 確認上升趨勢延續緊)
-        #   - 最近 N 日 high-low range < 5% (短期整固, 強升中消化)
-        #   - close > MA20 (唔跌穿, 防轉勢)
-        #   - 唔強制 volume=expanding (boundary case 通常 vol 中性, 唔夠 expanding 但接近)
-        # 凡人話: 強升格局確認, 但最近 5 日喺窄幅整固, 唔係真橫行, 屬「強升中整固 / 蓄勢待發」
-        # 同 strong_uptrend 差: 唔需要 expanding (boundary case)
-        # 同 weak_uptrend 差: P1 必須 > P3 (峰頂已突破, 而家食力消化)
-        # 同 uptrend_correction 差: MA5 斜率正 (短期冇急跌, 只係整固)
-        # 對齊 2026-09-03 07:23 sub-scenario 流程永久 rule: P 點全部由 recent_zz 拎 (helper 拎好)
-        # 對齊 2026-08-16 19:21 永久 rule: 拎 ≥3 個 stock 例子 confirm trigger
-        #   證據: 00386 中石化 (range 3.31%, vol 0.501 shrinking) + 00857 中石油 (range 4.67%, vol 1.2496 neutral, MA60 微負 -0.009% boundary case)
-        #   註: 00857 因為 MA60 微負 (-0.009%) 唔命中, MA60 平滑特性, 強升中短期微升拉唔起 MA60 升, 屬 trigger 設計取捨
-        # Fallback: 拎唔夠 4 個 P 點 (新股 / Z 點太短) → 條件 skip, fall through 去下一個 elif
-        elif (
-            is_bullish
-            and all(calc_slope(p) > 0 for p in cfg["maPeriods"])
-            and zz_ok_4
-            # P 點 type 確認 (alternating sequence: P1/P3 同 type, P2/P4 同 type)
-            and p1_type == "Peak" and p3_type == "Peak"
-            and p2_type == "Trough" and p4_type == "Trough"
-            # 峰頂抬高 + 谷底抬高 (確認強升趨勢真係延續緊, 唔係假強升)
-            and p1_value > p3_value
-            and p2_value > p4_value
-            # 短期整固: 最近 N 日 high-low range < 5% (強升股自然整固範圍 3-7%)
-            and _recent_consolidation_range(klines, lookback=cfg["consolidationLookback"]) < cfg["consolidationRangeThresholdPct"]
-            # 唔跌穿: close 仲喺 MA20 上面 (防轉勢, 確認真係整固唔係見頂)
-            and last_close > ma20_value
-        ):
-            sub_scenario = "strong_uptrend_consolidating"
-            cycle_position = "consolidating_after_rally"
-            consolidation_range = _recent_consolidation_range(klines, lookback=cfg["consolidationLookback"])
-            adjustment_log.append(
-                f"強升中整固跡象 (大少 2026-09-05 trigger, C 方案): 大方向強升格局 (排列 bull + 全部均線斜率正) + P 點趨勢確認 (峰頂抬高 P1={p1_value:.2f}>P3={p3_value:.2f} + 谷底抬高 P2={p2_value:.2f}>P4={p4_value:.2f}, P1/P3.type=Peak + P2/P4.type=Trough) + 短期整固 (最近 {cfg['consolidationLookback']} 日 range {consolidation_range*100:.2f}% < {cfg['consolidationRangeThresholdPct']*100:.1f}%) + 唔跌穿 (close={last_close:.2f} > MA20={ma20_value:.2f}) → 強升中嘅健康消化, 蓄勢待發"
-            )
+        # Priority 2.6: 強升中整固 — v2.4.0 (大少 2026-09-08 trigger) 拎走, 217 stock audit 證明 0 隻 stock 真係 hit 過
+        # Fallback 落去 Priority 3 強跌 / Priority 3.5 初跌 / Priority 4 上升回調 / Priority 4 下跌回彈 / Default 橫行
         # Priority 3: 強下跌 / 初下跌 (大少 9月4日 10:34 trigger, 對稱, 加 P 點趨勢確認)
         # 強跌原 trigger: 排列 bear + 全部斜率負 + 放量
         # 強跌新 trigger (大少 9月4日 10:34): 加 谷底降底 (P1<P3 + P1.type=P3.type=Trough) + 峰頂降底 (P2<P4 + P2.type=P4.type=Peak)
@@ -617,7 +559,7 @@ class MAAlignmentV2Algorithm(Algorithm):
             sub_scenario = "strong_downtrend"
             cycle_position = "mid_stage"
             adjustment_log.append(
-                f"強下跌跡象 (大少 2026-09-04 10:34 trigger): 排列 bear + 全部均線斜率負 + 放量, 加上 P 點趨勢確認 (谷底降底 P1={p1_value:.2f}<P3={p3_value:.2f} + 峰頂降底 P2={p2_value:.2f}<P4={p4_value:.2f}, P1/P3.type=Trough + P2/P4.type=Peak) → 下跌趨勢真係延續緊"
+                f"強下跌跡象 (大少 2026-09-04 10:34 trigger + 2026-09-06 拎走放量 v2.3.0): 排列 bear + 全部均線斜率負, 加上 P 點趨勢確認 (谷底降底 P1={p1_value:.2f}<P3={p3_value:.2f} + 峰頂降底 P2={p2_value:.2f}<P4={p4_value:.2f}, P1/P3.type=Trough + P2/P4.type=Peak) → 下跌趨勢真係延續緊"
             )
         # Priority 3.5: 初跌 (大少 9月4日 17:12 trigger, 拎走舊 fall through 初跌, 改用獨立 trigger, 對稱初升)
         # 條件: MA60 負 + MA5 負 + P2=Peak + P1>=P3 + P2<P4
@@ -700,8 +642,7 @@ class MAAlignmentV2Algorithm(Algorithm):
 
         # ============ Step 7: Confidence (三階段調整) ============
         # 7a. 基礎信心
-        # 大少 2026-09-05 trigger: 強升中整固加入強升 sub-class (本質係強升 sub-class, 只係短期整固消化)
-        if candidate in ("strong_uptrend", "strong_downtrend", "uptrend_correction", "downtrend_bounce", "decelerating_up", "decelerating_down", "strong_uptrend_consolidating"):
+        if candidate in ("strong_uptrend", "strong_downtrend", "uptrend_correction", "downtrend_bounce", "decelerating_up", "decelerating_down"):
             base_confidence = min(1.0, max_spread_pct / cfg["spreadConfidenceScale"])
             if max_spread_pct < 0.05:
                 base_confidence *= 0.7
@@ -714,11 +655,9 @@ class MAAlignmentV2Algorithm(Algorithm):
             )
 
         # 7b. 成交量加權
-        # 大少 2026-09-05 trigger: 強升中整固加入上升 sub-class, 用強升 vol multiplier 邏輯
-        # (boundary case 通常 vol 中性/微縮, 信心略打折, 但仍用強升公式)
         vol_multiplier = 1.0
         if cfg["enableVolumeWeight"]:
-            if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction", "strong_uptrend_consolidating"):
+            if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction"):
                 if volume_signal == "expanding":
                     vol_multiplier = min(1.25, 1.0 + (volume_trend_ratio - 1.0) * 0.5)
                     adjustment_log.append("放量上漲，信心提升")
@@ -750,7 +689,7 @@ class MAAlignmentV2Algorithm(Algorithm):
             long_period = max(cfg["maPeriods"])
             negative_count = sum(1 for p in cfg["maPeriods"] if ma_slopes.get(f"MA{p}", 0) < 0)
 
-            if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction", "strong_uptrend_consolidating"):
+            if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction"):
                 if any(ma_slopes.get(f"MA{p}", 0) < 0 for p in short_periods):
                     slope_multiplier = cfg["slopeDiscountFactor"]
                     adjustment_log.append("短期均線斜率為負，上升動能減弱")
