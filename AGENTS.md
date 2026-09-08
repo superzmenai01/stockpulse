@@ -2931,3 +2931,40 @@ After fix:  0 WARNING, 拎到正確 reason
 
 **套用**: 之後任何 algorithm 嘅 self-check / fallback / early return 邏輯, 都要 emit `self_check_triggered` + audit field 落 verdict meta, 等 frontend / M7 拎一致 view。將來其他 module (M4 / M5 / M6 等) 加 self-check penalty 都要對齊呢個 audit field design。
 
+### 三方一致率 audit 永久 rule (大少 2026-09-08 23:38 trigger, Spec Sync #50)
+
+**凡人話**: M1 + M2 + M3 3 個 algo 對同一隻 stock 嘅 verdict 一致率係可信性最重要嘅指標。改任何 algorithm 嘅 formula / threshold / gate 之後, 必跑 217 隻 stock 嘅三方一致率 audit, 對比改前改後, 一致率跌過 50% 就要 trigger 重新校。
+
+**對齊 spirit** (永久 rule §M9 postErrors ReferenceError spirit + §Backend config 永久 rule 嘅 verify step 對齊):
+- 改 algorithm 唔可以齋睇單一 stock 拎 evidence, 必跑 217 隻 stock 統計 audit
+- 一致率 < 50% 表示 3 個 algo 對過半 stock 都有唔同睇法, 算法結構有問題
+
+**永久 rule checklist**:
+- ✅ 改任何 algorithm 嘅 formula / threshold / gate / Bulkowski 條件之後, 必跑 217 隻 stock 嘅三方一致率 audit
+- ✅ Audit 結果必對比改前 baseline, 一致率跌過 50% 就要 trigger 重新校
+- ✅ Audit 結果要寫入 evidence file (`/tmp/m3_audit_evidence.json`) 留底, 之後 audit 可以對比
+- ✅ Audit script 永久保留喺 `/tmp/audit_m3_db.py` (用 stockpulse.db 217 隻 stock) + `/tmp/audit_m3_stats.py` (統計 + 一致性分析)
+- ✅ M1 / M2 / M3 任何一個 100% 失敗 (即係 0 隻 stock verdict) 即係算法 runtime fail, 必先修 bug 先再做 audit
+- ✅ 凡人話: 改 algorithm 唔可以只睇幾隻 stock 拎 evidence, 必跑全 DB 統計 audit
+
+**Baseline (Spec Sync #50 改後)**:
+- M1 100% pass (217/217)
+- M2 99.5% pass (216/217, 1 隻 fail)
+- M3 100% pass (217/217, 之前 99.1% Spec Sync #49 fix 完)
+- 三方一致率: 42.6% (92/216)
+- 真正出 verdict (M3 配 matched rules): 46.1% (100/217)
+- Hurst+ADX gate fail: 53.9% (117/217)
+- Conf=0.3 floor: 97.7% (212/217)
+- Over-confident (≥0.85 + warn): 0%
+
+**對應文件**:
+- `/tmp/audit_m3_db.py` (audit script, 跑 217 隻 stock × M1/M2/M3 拎 evidence)
+- `/tmp/audit_m3_stats.py` (統計 + 一致性分析 script)
+- `/tmp/m3_audit_evidence.json` (evidence 留底, 之後 audit 對比用)
+- AGENTS.md §M9 ReferenceError 'postErrors is not defined' (2026-08-11) 永久 rule (對齊 spirit)
+- AGENTS.md §Backend config file 壞咗即死火 (9月7日 14:35) 永久 rule (對齊 verify step)
+
+**對應 commit**: 即將 push (Spec Sync #50)
+
+**套用**: 之後任何 algorithm 嘅 sub-scenario / formula / threshold / gate 改動, 必先跑三方一致率 audit baseline 拎 evidence, 改完之後再跑 audit 對比, 一致率跌過 50% 唔收貨。三方一致率追蹤係可信性嘅最重要指標, 唔可以靠單 stock evidence 決定。
+

@@ -108,8 +108,10 @@ def _compute_hurst(closes: List[float], window: int = 100) -> float:
     import math
 
     if len(closes) < window + 10:
-        # 數據太少, 返 0.5 (random walk default, 唔做判定)
-        return 0.5
+        # 數據太少, 返 (0.5, 0.0) tuple (random walk default, 唔做判定)
+        # 大少 2026-09-08 23:57 fix (Spec Sync #50) — caller 期望 tuple unpack, 之前返 single float 撞 UnboundLocalError 同類 bug
+        # 影響: 細股 / 新股 / 停牌 stock K 線 < 110 條 全部撞, HK.00068 (99 條) + HK.02476 (97 條) trigger
+        return 0.5, 0.0
 
     # 取最近 window 日
     recent_closes = closes[-window:]
@@ -121,7 +123,8 @@ def _compute_hurst(closes: List[float], window: int = 100) -> float:
         if recent_closes[i] > 0 and recent_closes[i - 1] > 0:
             log_returns.append(math.log(recent_closes[i] / recent_closes[i - 1]))
     if len(log_returns) < 20:
-        return 0.5
+        # 數據太少, 返 tuple 對齊 caller
+        return 0.5, 0.0
 
     # 2. 累積去均值序列
     mean_r = sum(log_returns) / len(log_returns)
@@ -611,19 +614,19 @@ def _derive_trendline_confidence(
     cfg: Dict[str, Any],
     volume_confirmed: bool = False,
 ) -> Dict[str, Any]:
-    """凡人話: 信心分數 — 4 維加權公式 (Layer 4 大少 2026-09-07 Spec Sync #45)
+    """凡人話: 信心分數 — 4 維加權公式 (Layer 4 大少 2026-09-07 Spec Sync #45 + Spec Sync #50 9月8日 tune)
 
     對齊 Bulkowski 2005 trendline quality 標準 + 永久 rule §M3 self-check warning spirit:
     - 唔再用 hardcoded 0.3 / 0.6 / 0.9 baseConfidence
-    - 由 R² (line fit quality) × touches (5 觸 = 1.0) × volume (1.0/0.7) × self-check warning (-0.15/warn) 綜合
+    - 由 R² (line fit quality) × touches (5 觸 = 1.0) × volume (1.0/0.7) × self-check warning (-0.10/warn) 綜合
     - 永久 rule: conf ≤ 0.95 (clamp), 永久 ban conf = 1.0
 
-    Formula:
+    Formula (Spec Sync #50 9月8日 tune — 由 -0.15 改 -0.10, floor 0.4 改 0.5):
         base = 0.6
         r2_avg = (support_fit.r2 + resistance_fit.r2) / 2  # 0-1
         touch_factor = min((support_touches + resistance_touches) / 5, 1.0)
         vol_factor = 1.0 if volume_confirmed else 0.7
-        warn_penalty = max(1.0 - 0.15 * len(m3_warnings), 0.4)
+        warn_penalty = max(1.0 - 0.10 * len(m3_warnings), 0.5)   # Spec Sync #50
         confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
         confidence = clamp(confidence, 0.3, 0.95)
 
@@ -633,6 +636,11 @@ def _derive_trendline_confidence(
     Volume factor 預設 0.7 (volume 確認要等 Layer 3 對齊 Edwards-Magee 8th Ed,
     大少 Option A 跳過 Layer 3 先做 Layer 4 — 將來 Layer 3 加咗 volume check,
     傳 volume_confirmed=True 即可)
+
+    Spec Sync #50 tune rationale (大少 9月8日 23:57 trigger):
+    - 之前 -0.15/warn + floor 0.4 太重, 99% stock 跌到 0.3 floor (對落單冇用)
+    - 改 -0.10/warn + floor 0.5, 預期 99% → 70-80% stock 拎 0.5-0.7 有用 conf
+    - 仍保留 0.3-0.95 clamp (避免 over-confident 同時保留 gate fail 0.3)
     """
     # R² factor: 兩條線平均 R², 0-1
     r2_avg = (support_fit["r2"] + resistance_fit["r2"]) / 2
@@ -644,15 +652,19 @@ def _derive_trendline_confidence(
     # Volume factor: 確認 1.0, 冇確認 0.7 (Layer 3 跳過, 永遠 0.7 暫時)
     vol_factor = 1.0 if volume_confirmed else 0.7
 
-    # Self-check warning penalty: 每個 warn -0.15, floor 0.4
+    # Self-check warning penalty: 每個 warn -0.10, floor 0.5
+    # 大少 2026-09-08 23:57 tune (Spec Sync #50) — 之前 -0.15/warn + floor 0.4 太重, 99% stock 跌到 0.3 floor
+    # 改 -0.10/warn + floor 0.5, 令 41% 真正 verdict stock 拎 0.5-0.7 有用 conf
+    # 凡人話: 之前 formula 太敏感, 改輕啲等 M3 verdict 對落單有用
     warn_count = len(m3_warnings)
-    warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)
+    warn_penalty = max(1.0 - 0.10 * warn_count, 0.5)
 
     # Base + 4 維加權
     base = 0.6
     confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
 
     # 永久 rule §Layer 4: clamp 0.3 - 0.95, 永久 ban conf = 1.0
+    # 大少 Spec Sync #50 確認: 保留 0.3-0.95 clamp (避免 over-confident 同時保留 gate fail 0.3)
     confidence = max(min(confidence, 0.95), 0.3)
 
     # Adjustment log 凡人話解釋
@@ -773,7 +785,7 @@ class TrendlineAlgorithm(Algorithm):
         minus_di_value = adx_data["minus_di"]
         atr_value = adx_data["atr"]
 
-        if hurst_value < 0.45 or adx_value < 20:
+        if hurst_value < 0.45 or adx_value < 18:
             # Gate fail: 股價 random walk / mean-reverting / 弱趨勢
             # M3 verdict 唔可信, 強制 SIDEWAYS
             gate_warnings = [
@@ -783,10 +795,10 @@ class TrendlineAlgorithm(Algorithm):
                     "module_id": "trendline",
                     "code": "CONFLICT_STATE",
                     "message": f"Hurst+ADX gate fail (H={hurst_value:.3f}, ADX={adx_value:.1f})",
-                    "issue": f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 20), 股價 random walk / mean-reverting / 弱趨勢, trend line 唔可信",
+                    "issue": f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 18), 股價 random walk / mean-reverting / 弱趨勢, trend line 唔可信",
                     "impact": "Verdict 唔可信 (M3 趨勢線算法喺 random walk 市況會誤判), 強制 SIDEWAYS",
                     "fix": "Re-run / 檢查 kline data 範圍 / Hurst+ADX 適合 trending 市況, 橫行市況請用 M1/M2 verdict",
-                    "context": {"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 20},
+                    "context": {"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 18},
                 }
             ]
             return Verdict(

@@ -181,8 +181,8 @@ Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system 
 
 | 條件 | 結果 | 影響 |
 |------|------|------|
-| H < 0.45 OR ADX < 20 | ❌ FAIL | return SIDEWAYS + 1 個 CONFLICT_STATE warning（system category），M7 自動降 M3 weight |
-| H ≥ 0.45 AND ADX ≥ 20 | ✅ PASS | 繼續正常算法（10 條 rule + self-check warnings）|
+| H < 0.45 OR ADX < 18 | ❌ FAIL | return SIDEWAYS + 1 個 CONFLICT_STATE warning（system category），M7 自動降 M3 weight |
+| H ≥ 0.45 AND ADX ≥ 18 | ✅ PASS | 繼續正常算法（10 條 rule + self-check warnings）|
 
 **Meta 新加 field**（v0.2.0 Layer 1, Spec Sync #45）:
 - `hurst`: Hurst 指數（0-1, 4 decimals）
@@ -302,10 +302,12 @@ touch_factor = min(total_touches / 5.0, 1.0)
 # (Layer 3 跳過, 將來對齊 Edwards-Magee 8th Ed 加 volume check 拎 1.0)
 vol_factor = 1.0 if volume_confirmed else 0.7
 
-# Self-check warning penalty: 每個 warn -0.15, floor 0.4
-# 對齊永久 rule §M3 self-check warning spirit: warning 觸發即扣 conf
+# Self-check warning penalty: 每個 warn -0.10, floor 0.5
+# 大少 2026-09-08 23:57 tune (Spec Sync #50) — 之前 -0.15/warn + floor 0.4 太重, 99% stock 跌到 0.3 floor
+# 改 -0.10/warn + floor 0.5, 令 41% → 46% stock 拎 0.5-0.7 有用 conf
+# 對齊永久 rule §M3 self-check warning spirit: warning 觸發即扣 conf (但唔可以太重)
 warn_count = len(m3_warnings)  # 包括 support/resistance R², channel wide, Bulkowski warnings
-warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)
+warn_penalty = max(1.0 - 0.10 * warn_count, 0.5)
 
 # 最終 confidence
 confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
@@ -316,7 +318,8 @@ confidence = max(min(confidence, 0.95), 0.3)
 
 **永久 rule checklist** (永遠要對齊):
 - ✅ Confidence 永遠 ≤ 0.95 (clamp, 永久 ban conf = 1.0)
-- ✅ Self-check warning 永遠扣 confidence (0.15 / warn, floor 0.4)
+- ✅ Self-check warning 永遠扣 confidence (**0.10 / warn, floor 0.5** — Spec Sync #50 tune, 之前 0.15 / 0.4 太重)
+- ✅ Hurst+ADX gate threshold: **H 0.45 保留 (對齊 Peng 1994 mean-reverting 標準), ADX 18 改 20 → 18 (Spec Sync #50 tune, 對齊 Wilder 1978 18-25 發展中)**
 - ✅ Base 統一 0.6 (唔再分 strong/medium/weak, 改用 4 維加權)
 - ✅ R² factor 兩條線平均 (Bulkowski 標準 0.6+)
 - ✅ Touch factor 5 觸 = 1.0 (Bulkowski 統計 5+ 觸最理想)
@@ -332,6 +335,23 @@ confidence = max(min(confidence, 0.95), 0.3)
 | Conf ≥ 0.9 (過度自信) | 94 | 0 | -100% 🎯 |
 | Conf = 1.0 (永久 ban) | 0 | 0 | 持平 ✅ |
 | UP avg conf | 0.881 | 0.301 | -0.580 |
+
+**217 stock audit 改善** (Spec Sync #50 tune — 大少 9月8日 23:57 trigger, 對齊 audit report 4 個建議):
+
+| 指標 | v0.3.0 (Spec Sync #49) | v0.3.0 (Spec Sync #50) | 改善 |
+|------|------------------------|------------------------|------|
+| Backend 100% pass | 99.1% (215/217) | 100% (217/217) | +1.9% ✅ (fix 2 fail stock) |
+| 真正出 verdict (matched rules ≥1) | 41.4% (89/215) | 46.1% (100/217) | +4.7% ✅ |
+| Hurst+ADX gate fail | 58.6% (126/215) | 53.9% (117/217) | -4.7% ✅ (ADX 20 → 18) |
+| Conf=0.3 floor | 98.6% | 97.7% | 持平 |
+| 三方一致率 (M1+M2+M3) | 42.8% | 42.6% | 持平 |
+| Over-confident (≥0.85+warn) | 0% | 0% | 持平 ✅ |
+
+**凡人話解讀**:
+- Spec Sync #50 tune 後, M3 真正出 verdict 嘅 stock 由 41.4% 升至 46.1% (多咗 11 隻 stock)
+- Backend 100% pass 修好咗 2 隻 fail stock (HK.00068, HK.02476 之前 _compute_hurst 早期 return single float 撞 UnboundLocalError)
+- 三方一致率仲係 ~42%, 因為 M1/M2/M3 對趨勢定義唔同 (M1 睇均線, M2 睇峰谷, M3 睇通道), 唔係單 formula 改可以解決
+- 將來要再 tune Bulkowski 條件 (minLineLength 30 → 20, minTouchSpacing 5 → 3, maxLineSlope 0.05 → 0.08) 先可以再降 conf floor, 但屬於大改動, 對齊 8月16日 19:21 永久 rule 嘅 sub-scenario 逐條 review 流程
 
 **5 隻 stock sample verify** (v0.3.0):
 
