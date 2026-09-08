@@ -764,18 +764,17 @@ class TrendlineAlgorithm(Algorithm):
         if hurst_value < 0.45 or adx_value < 20:
             # Gate fail: 股價 random walk / mean-reverting / 弱趨勢
             # M3 verdict 唔可信, 強制 SIDEWAYS
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段 + 統一 debug 結構
             gate_warnings = [
-                {
-                    "level": "warning",
-                    "category": "system",
-                    "module_id": "trendline",
-                    "code": "CONFLICT_STATE",
-                    "message": f"Hurst+ADX gate fail (H={hurst_value:.3f}, ADX={adx_value:.1f})",
-                    "issue": f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 20), 股價 random walk / mean-reverting / 弱趨勢, trend line 唔可信",
-                    "impact": "Verdict 唔可信 (M3 趨勢線算法喺 random walk 市況會誤判), 強制 SIDEWAYS",
-                    "fix": "Re-run / 檢查 kline data 範圍 / Hurst+ADX 適合 trending 市況, 橫行市況請用 M1/M2 verdict",
-                    "context": {"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 20},
-                }
+                make_warning(
+                    level="warning",
+                    module_id="M3",
+                    code="CONFLICT_STATE",
+                    message=f"Hurst+ADX gate fail (H={hurst_value:.3f}, ADX={adx_value:.1f})",
+                    issue=f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 20), 股價 random walk / mean-reverting / 弱趨勢, trend line 唔可信",
+                    # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
+                    context={"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 20},
+                ).to_dict()
             ]
             return Verdict(
                 ok=True,
@@ -872,17 +871,16 @@ class TrendlineAlgorithm(Algorithm):
 
         # 極值點不足 → fallback SIDEWAYS
         if len(peaks) < cfg["minLinePoints"] or len(troughs) < cfg["minLinePoints"]:
-            fallback_warnings = [{
-                "level": "warning",
-                "category": "system",
-                "module_id": "trendline",
-                "code": "FALLBACK_USED",
-                "message": f"極值點不足 (peaks={len(peaks)}, troughs={len(troughs)})",
-                "issue": f"需要 ≥ {cfg['minLinePoints']} 個 peak 同 trough",
-                "impact": "Verdict 默認 SIDEWAYS, 對 M7 影響有限",
-                "fix": "正常, 屬於橫行市況; 如果市況明顯趨勢但 verdict SIDEWAYS, 檢查 kline data",
-                "context": {"peak_count": len(peaks), "trough_count": len(troughs), "min_points": cfg["minLinePoints"]},
-            }]
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            fallback_warnings = [make_warning(
+                level="warning",
+                module_id="M3",
+                code="FALLBACK_USED",
+                message=f"極值點不足 (peaks={len(peaks)}, troughs={len(troughs)})",
+                issue=f"需要 ≥ {cfg['minLinePoints']} 個 peak 同 trough",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={"peak_count": len(peaks), "trough_count": len(troughs), "min_points": cfg["minLinePoints"]},
+            ).to_dict()]
             return Verdict(
                 ok=True,
                 points=[],
@@ -1064,80 +1062,74 @@ class TrendlineAlgorithm(Algorithm):
         # 3. **Channel 太寬** (channel.widthPct > 0.15) → CONFLICT_STATE
         # 影響 HK.01347 個 case: support numPoints = 3 < 4 → emit CONFLICT_STATE warning (M7/M8 見到自動降 M3 weight)
         if support_fit["numPoints"] < 4 or support_fit["r2"] < 0.6:
-            m3_warnings.append({
-                "level": "warning",
-                "category": "system",
-                "module_id": "trendline",
-                "code": "CONFLICT_STATE",
-                "message": "支撐線太脆弱 (numPoints/R² 唔合格)",
-                "issue": f"support numPoints={support_fit['numPoints']} (< 4) OR R²={support_fit['r2']:.3f} (< 0.6)",
-                "impact": "Verdict 唔可信 (支撐線 fit 唔穩, 可能誤判趨勢)",
-                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term fit",
-                "context": {"support_num_points": support_fit["numPoints"], "support_r2": _round(support_fit["r2"], 4)},
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m3_warnings.append(make_warning(
+                level="warning",
+                module_id="M3",
+                code="CONFLICT_STATE",
+                message="支撐線太脆弱 (numPoints/R² 唔合格)",
+                issue=f"support numPoints={support_fit['numPoints']} (< 4) OR R²={support_fit['r2']:.3f} (< 0.6)",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
+                context={"support_num_points": support_fit["numPoints"], "support_r2": _round(support_fit["r2"], 4)},
+            ).to_dict())
         if resistance_fit["numPoints"] < 4 or resistance_fit["r2"] < 0.6:
-            m3_warnings.append({
-                "level": "warning",
-                "category": "system",
-                "module_id": "trendline",
-                "code": "CONFLICT_STATE",
-                "message": "阻力線太脆弱 (numPoints/R² 唔合格)",
-                "issue": f"resistance numPoints={resistance_fit['numPoints']} (< 4) OR R²={resistance_fit['r2']:.3f} (< 0.6)",
-                "impact": "Verdict 唔可信 (阻力線 fit 唔穩, 可能誤判突破信號)",
-                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term fit",
-                "context": {"resistance_num_points": resistance_fit["numPoints"], "resistance_r2": _round(resistance_fit["r2"], 4)},
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m3_warnings.append(make_warning(
+                level="warning",
+                module_id="M3",
+                code="CONFLICT_STATE",
+                message="阻力線太脆弱 (numPoints/R² 唔合格)",
+                issue=f"resistance numPoints={resistance_fit['numPoints']} (< 4) OR R²={resistance_fit['r2']:.3f} (< 0.6)",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
+                context={"resistance_num_points": resistance_fit["numPoints"], "resistance_r2": _round(resistance_fit["r2"], 4)},
+            ).to_dict())
         if channel_width_pct > 0.15:
-            m3_warnings.append({
-                "level": "warning",
-                "category": "system",
-                "module_id": "trendline",
-                "code": "CONFLICT_STATE",
-                "message": f"通道太闊 ({channel_width_pct*100:.2f}% > 15%)",
-                "issue": f"channel.widthPct={channel_width_pct:.4f} (> 0.15 闊通道閾值)",
-                "impact": "Verdict 唔可信 (通道闊, support/resistance 唔 solid, 趨勢唔清晰)",
-                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term 短通道",
-                "context": {"channel_width_pct": _round(channel_width_pct, 4)},
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m3_warnings.append(make_warning(
+                level="warning",
+                module_id="M3",
+                code="CONFLICT_STATE",
+                message=f"通道太闊 ({channel_width_pct*100:.2f}% > 15%)",
+                issue=f"channel.widthPct={channel_width_pct:.4f} (> 0.15 闊通道閾值)",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
+                context={"channel_width_pct": _round(channel_width_pct, 4)},
+            ).to_dict())
         if len(matched_rules) == 0:
-            m3_warnings.append({
-                "level": "warning",
-                "category": "system",
-                "module_id": "trendline",
-                "code": "FALLBACK_USED",
-                "message": "趨勢線全部 fail, 拎唔到 supportLine / resistanceLine",
-                "issue": "matchedRules.length = 0 (趨勢線無突破信號)",
-                "impact": "M3 verdict 默認 SIDEWAYS, 對 M7 影響有限",
-                "fix": "正常, 屬於橫行市況; 如果市況明顯趨勢但 verdict SIDEWAYS, 檢查 kline data",
-                "context": {"matched_rules": 0, "period": options.get("period")},
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m3_warnings.append(make_warning(
+                level="warning",
+                module_id="M3",
+                code="FALLBACK_USED",
+                message="趨勢線全部 fail, 拎唔到 supportLine / resistanceLine",
+                issue="matchedRules.length = 0 (趨勢線無突破信號)",
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={"matched_rules": 0, "period": options.get("period")},
+            ).to_dict())
 
         # Layer 2 emit (大少 2026-09-07 Spec Sync #45): Bulkowski checks warnings propagate
         # 凡人話: support/resistance 嘅 Bulkowski check (line length / spacing / slope) 唔合格時 emit warning
         for bw in support_fit.get("bulkowskiWarnings", []):
-            m3_warnings.append({
-                "level": "warning",
-                "category": "system",
-                "module_id": "trendline",
-                "code": bw["code"],
-                "message": f"支撐線 Bulkowski check 唔合格 ({bw['line_type']})",
-                "issue": bw["issue"],
-                "impact": "Verdict 唔可信 (Bulkowski 標準: 線太短 / spacing 太密 / slope 太陡), trend line 唔穩",
-                "fix": "Re-run / 用 dataWindowDays 100 拎 short-term 短 trendline / 接受 short-term 弱信號",
-                "context": {"line_type": bw["line_type"], "detail": bw.get("detail", "")},
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m3_warnings.append(make_warning(
+                level="warning",
+                module_id="M3",
+                code=bw["code"],
+                message=f"支撐線 Bulkowski check 唔合格 ({bw['line_type']})",
+                issue=bw["issue"],
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={"line_type": bw["line_type"], "detail": bw.get("detail", "")},
+            ).to_dict())
         for bw in resistance_fit.get("bulkowskiWarnings", []):
-            m3_warnings.append({
-                "level": "warning",
-                "category": "system",
-                "module_id": "trendline",
-                "code": bw["code"],
-                "message": f"阻力線 Bulkowski check 唔合格 ({bw['line_type']})",
-                "issue": bw["issue"],
-                "impact": "Verdict 唔可信 (Bulkowski 標準: 線太短 / spacing 太密 / slope 太陡), trend line 唔穩",
-                "fix": "Re-run / 用 dataWindowDays 100 拎 short-term 短 trendline / 接受 short-term 弱信號",
-                "context": {"line_type": bw["line_type"], "detail": bw.get("detail", "")},
-            })
+            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
+            m3_warnings.append(make_warning(
+                level="warning",
+                module_id="M3",
+                code=bw["code"],
+                message=f"阻力線 Bulkowski check 唔合格 ({bw['line_type']})",
+                issue=bw["issue"],
+                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
+                context={"line_type": bw["line_type"], "detail": bw.get("detail", "")},
+            ).to_dict())
 
         cycle_label = {"UP": "上升", "DOWN": "下跌", "SIDEWAYS": "橫行", "TRANSITION": "轉折"}[state]
 
