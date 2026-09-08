@@ -60,12 +60,10 @@
 > - `fix(m2): v0.5.1 4 個 audit fix — early return audit field + WARNING_CODES CONFLICT_STATE + Path A confidence 0.5` (0e9d794f)
 > - `docs(spec): Spec Sync #50 module-02 v0.5.1 + warning system v1.4.0` (本 section)
 >
-> **對應 Sscript 還原點** (對齊 §15.54 純 branch 還原點永久 rule, 大少 9月8日 21:00 trigger):
-> - annotated tag: `restore-2026-09-08-m2-pre-v051-audit-fix` (commit c11b4bef = v0.5.1 改動之前)
-> - backup branch: `backup-2026-09-08-m2-pre-v051-audit-fix` (由 c11b4bef 開始)
-> - working branch: `m2-v0.5.1-audit-fix` (由 0e9d794f 開始)
-> - 還原方法: `git checkout restore-2026-09-08-m2-pre-v051-audit-fix` 拎返 v0.5.0 stable state
-> - 對齊 §15.54: 拎走 restore script 同 Backup Admin Page, 純 branch 還原 (大少 9月8日 21:00 trigger)
+> **還原方法** (對齊 §15.54 純 branch 還原點永久 rule, 大少 9月8日 21:00 trigger):
+> - v0.5.1 改動之前嘅 commit = `c11b4bef` (M1 v2.5.0 + 拎走 Backup Admin Page merge commit)
+> - 需要還原返 v0.5.0 stable state 嘅話, 用 `git checkout c11b4bef` 拎返, 或者用 `git revert 0e9d794f` 拎走 v0.5.1 改動
+> - 對齊 §15.54: 拎走 annotated tag + restore script + Backup Admin Page, 純 branch 還原 (commit SHA 即係還原點)
 >
 > **凡人話總結**:
 > - M2 算法之前 3 個 return path 漏咗 emit audit field, 150 隻 stock 拎唔到 self-check audit data — Fix 1 補返
