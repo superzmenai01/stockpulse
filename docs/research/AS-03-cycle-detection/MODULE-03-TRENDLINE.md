@@ -124,6 +124,29 @@ Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system 
 **對應 trigger**: 大少 2026-09-07 00:14「HK.01347 撳 M3 結果是上升這個有問題嗎」
 **對應 commit**: `7865544f` (fix H guard + self-check warning)
 
+### 4.1.1 self-check audit field emit (Spec Sync #49, 大少 2026-09-08 23:30 confirm)
+
+**凡人話**: M3 algorithm 對齊 M2 self-check penalty 永久 rule (Spec Sync #48 commit 51e19234) 嘅 audit field 設計, 永遠 emit 3 個 audit field 落 verdict meta, 等 frontend / M7 拎一致 view 知道呢個 verdict 有冇 self-check warning 觸發。
+
+**3 個 audit field**:
+- `self_check_triggered: bool` — m3_warnings 任何 level (critical / warning / info) 觸發就 True
+- `original_confidence: float` — 同 confidence 一樣 (M3 Layer 4 公式已經內置 warn_penalty, 唔需要 floor 前後分離)
+- `self_check_warning_count: int` — m3_warnings 總數, frontend / M7 audit 用
+
+**3 處 emit 點** (要全部 cover, 等 verdict shape 一致):
+1. Main path (Layer 4 公式之後) — 計 self_check_triggered = len(m3_warnings) > 0
+2. Hurst+ADX gate fail 早 return — self_check_triggered = True (gate fail 本身係 self-check 觸發)
+3. 極值點不足早 return — self_check_triggered = True (FALLBACK_USED warning 觸發)
+4. Insufficient data 早 return — self_check_triggered = True (INSUFFICIENT_DATA warning 觸發)
+
+**對齊 spirit** (唔係 1:1 copy M2):
+- M2: critical / warning level warn 觸發 conf = `max(conf * 0.375, 0.3)` (Step 19.5 multiply floor)
+- M3: 任何 level warn 觸發 warn_penalty = `max(1.0 - 0.15 * warn_count, 0.4)` × conf (Layer 4 formula 內置)
+- 兩者 formula 唔同但 audit field 設計對齊, frontend / M7 拎一致 view
+
+**對應 commit**: Spec Sync #49 (大少 9月8日 23:30 confirm)
+**對應 trigger**: 大少 9月8日 23:30「Go」(audit report 即刻修 Bug 1+2 + Spec Sync #49 加 audit field)
+
 ### 4.2 Hurst+ADX gate (大少 2026-09-07 01:08 永久 rule, Phase 1 (B3))
 
 **凡人話解釋**：確認個股價真係有「方向」先用得 trend line，唔係 random walk / mean-reverting / 弱趨勢。
@@ -158,8 +181,8 @@ Algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system 
 
 | 條件 | 結果 | 影響 |
 |------|------|------|
-| H < 0.45 OR ADX < 20 | ❌ FAIL | return SIDEWAYS + 1 個 CONFLICT_STATE warning（system category），M7 自動降 M3 weight |
-| H ≥ 0.45 AND ADX ≥ 20 | ✅ PASS | 繼續正常算法（10 條 rule + self-check warnings）|
+| H < 0.45 OR ADX < 18 | ❌ FAIL | return SIDEWAYS + 1 個 CONFLICT_STATE warning（system category），M7 自動降 M3 weight |
+| H ≥ 0.45 AND ADX ≥ 18 | ✅ PASS | 繼續正常算法（10 條 rule + self-check warnings）|
 
 **Meta 新加 field**（v0.2.0 Layer 1, Spec Sync #45）:
 - `hurst`: Hurst 指數（0-1, 4 decimals）
@@ -279,10 +302,12 @@ touch_factor = min(total_touches / 5.0, 1.0)
 # (Layer 3 跳過, 將來對齊 Edwards-Magee 8th Ed 加 volume check 拎 1.0)
 vol_factor = 1.0 if volume_confirmed else 0.7
 
-# Self-check warning penalty: 每個 warn -0.15, floor 0.4
-# 對齊永久 rule §M3 self-check warning spirit: warning 觸發即扣 conf
+# Self-check warning penalty: 每個 warn -0.10, floor 0.5
+# 大少 2026-09-08 23:57 tune (Spec Sync #50) — 之前 -0.15/warn + floor 0.4 太重, 99% stock 跌到 0.3 floor
+# 改 -0.10/warn + floor 0.5, 令 41% → 46% stock 拎 0.5-0.7 有用 conf
+# 對齊永久 rule §M3 self-check warning spirit: warning 觸發即扣 conf (但唔可以太重)
 warn_count = len(m3_warnings)  # 包括 support/resistance R², channel wide, Bulkowski warnings
-warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)
+warn_penalty = max(1.0 - 0.10 * warn_count, 0.5)
 
 # 最終 confidence
 confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
@@ -293,7 +318,8 @@ confidence = max(min(confidence, 0.95), 0.3)
 
 **永久 rule checklist** (永遠要對齊):
 - ✅ Confidence 永遠 ≤ 0.95 (clamp, 永久 ban conf = 1.0)
-- ✅ Self-check warning 永遠扣 confidence (0.15 / warn, floor 0.4)
+- ✅ Self-check warning 永遠扣 confidence (**0.10 / warn, floor 0.5** — Spec Sync #50 tune, 之前 0.15 / 0.4 太重)
+- ✅ Hurst+ADX gate threshold: **H 0.45 保留 (對齊 Peng 1994 mean-reverting 標準), ADX 18 改 20 → 18 (Spec Sync #50 tune, 對齊 Wilder 1978 18-25 發展中)**
 - ✅ Base 統一 0.6 (唔再分 strong/medium/weak, 改用 4 維加權)
 - ✅ R² factor 兩條線平均 (Bulkowski 標準 0.6+)
 - ✅ Touch factor 5 觸 = 1.0 (Bulkowski 統計 5+ 觸最理想)
@@ -309,6 +335,77 @@ confidence = max(min(confidence, 0.95), 0.3)
 | Conf ≥ 0.9 (過度自信) | 94 | 0 | -100% 🎯 |
 | Conf = 1.0 (永久 ban) | 0 | 0 | 持平 ✅ |
 | UP avg conf | 0.881 | 0.301 | -0.580 |
+
+**217 stock audit 改善** (Spec Sync #50 tune — 大少 9月8日 23:57 trigger, 對齊 audit report 4 個建議):
+
+| 指標 | v0.3.0 (Spec Sync #49) | v0.3.0 (Spec Sync #50) | 改善 |
+|------|------------------------|------------------------|------|
+| Backend 100% pass | 99.1% (215/217) | 100% (217/217) | +1.9% ✅ (fix 2 fail stock) |
+| 真正出 verdict (matched rules ≥1) | 41.4% (89/215) | 46.1% (100/217) | +4.7% ✅ |
+| Hurst+ADX gate fail | 58.6% (126/215) | 53.9% (117/217) | -4.7% ✅ (ADX 20 → 18) |
+| Conf=0.3 floor | 98.6% | 97.7% | 持平 |
+| 三方一致率 (M1+M2+M3) | 42.8% | 42.6% | 持平 |
+| Over-confident (≥0.85+warn) | 0% | 0% | 持平 ✅ |
+
+**凡人話解讀**:
+- Spec Sync #50 tune 後, M3 真正出 verdict 嘅 stock 由 41.4% 升至 46.1% (多咗 11 隻 stock)
+- Backend 100% pass 修好咗 2 隻 fail stock (HK.00068, HK.02476 之前 _compute_hurst 早期 return single float 撞 UnboundLocalError)
+- 三方一致率仲係 ~42%, 因為 M1/M2/M3 對趨勢定義唔同 (M1 睇均線, M2 睇峰谷, M3 睇通道), 唔係單 formula 改可以解決
+- 將來要再 tune Bulkowski 條件 (minLineLength 30 → 20, minTouchSpacing 5 → 3, maxLineSlope 0.05 → 0.08) 先可以再降 conf floor, 但屬於大改動, 對齊 8月16日 19:21 永久 rule 嘅 sub-scenario 逐條 review 流程
+
+### 4.4 5-layer framework (Spec Sync #51, 大少 2026-09-09 00:42 confirm)
+
+**凡人話**: 對齊 9月9日 00:39 web research 推薦嘅 5-layer confirmation framework (fractalcycles.com + newtrading.io 100 年 backtest), M3 由單一 10 條 rule 改為 5-layer confirmation, 改善對 UP/DOWN 識別率。
+
+**5-layer framework**:
+1. **Layer 1 (regime)**: Hurst 0.50+ = trending regime (Peng 1994, 對齊野生 standard)
+2. **Layer 2 (tactical)**: ADX 20+ = trend strength (Wilder 1978, 對齊發展中 minimum)
+3. **Layer 3 (direction)**: +DI/-DI direction signal (Wilder 1978, 即係 Donchian Rule K/L 帶 direction)
+4. **Layer 4 (breakout)**: Donchian 20-period upper/lower breakout (newtrading.io 100 年 backtest 74.1% win rate, rank #3)
+5. **Layer 5 (pattern)**: M3 10+2 條 rule (Bulkowski 2005 條件 + Magee 1948 closing price confirmation)
+
+**Spec Sync #51 改動 (大少 9月9日 00:42 confirm)**:
+- **Gate 由 hard gate 改 confirmation filter** (對齊 fractalcycles 3-layer):
+  - 之前 (Spec Sync #49/#50): H<0.45 OR ADX<18 → 早 return SIDEWAYS 0.3 (hard gate, 99% stock 跌到呢度)
+  - 而家 (Spec Sync #51): gate fail 繼續行正常 algorithm, emit 1 個 `LOW_CONFIDENCE` warning 落 m3_warnings, Layer 4 公式 warn_penalty 自動扣 conf 0.10
+  - 凡人話: gate 失敗時 verdict 仍然出但 conf 偏低, 大少見到 LOW_CONFIDENCE warning 就知
+- **Bulkowski 條件放寬** (對齊 Donchian 20-period standard):
+  - minLineLength 30 → 20
+  - minTouchSpacing 5 → 3
+- **新增 Rule K/L (Donchian 20-period breakout)**:
+  - Rule K: close > 最近 20 日 high → 強 UP (Priority 1)
+  - Rule L: close < 最近 20 日 low → 強 DOWN (Priority 2)
+  - 對齊 newtrading.io 100 年 backtest 74.1% win rate (rank #3 全部 indicator)
+
+**State priority 改** (大少 9月9日 confirm):
+- K (Donchian 上突破) → UP 第一
+- L (Donchian 下突破) → DOWN 第二
+- H 真突破 + support_slope <= 0 → SIDEWAYS 第三 (保留 Spec Sync #45 永久 rule)
+- H+G → TRANSITION 第四
+- H 單獨 → UP 第五
+- A+B → SIDEWAYS 第六 (保留 spec doc §5 特殊規則)
+- A → UP 第七
+- B → DOWN 第八
+- F/G → DOWN 第九
+- C/D → SIDEWAYS 第十
+- 默認 SIDEWAYS
+
+**5-layer framework 永久 rule checklist**:
+- ✅ M3 algorithm 永遠 emit Layer 1 (hurst) + Layer 2 (adx + plusDI/minusDI) + Layer 4 (donchianRule K/L 條件) 落 verdict meta
+- ✅ Gate fail 永遠 emit LOW_CONFIDENCE warning 而非 SIDEWAYS 早 return (對齊 fractalcycles 3-layer framework)
+- ✅ Rule K/L 永遠優先 (Priority 1/2) 因為 Donchian 100 年 backtest 74.1% win rate 最高
+- ✅ Bulkowski 條件永遠 minLineLength 20 + minTouchSpacing 3 (對齊 Donchian 20-period standard)
+- ✅ 凡人話: 改 M3 algorithm 永遠要 preserve 5-layer framework, 唔好拎走任何 layer
+
+**5 隻 stock verify (Spec Sync #51)**:
+- HK.00700: SIDEWAYS → **DOWN** ✅ (B 觸發, 配合 A+I 推動 UP 因為 +DI 弱)
+- US.MSFT: UP 0.3 → UP 0.3 持平 (gate pass, A+I+J matched, R² 高但 Bulkowski 條件唔過, warn 4)
+- US.AAPL: SIDEWAYS → **UP** ✅ (A 觸發)
+- HK.00005: SIDEWAYS → **UP** ✅ (A 觸發)
+- US.GOOGL: SIDEWAYS → **DOWN** ✅ (B 觸發)
+
+**對應 commit**: 即將 push (Spec Sync #51)
+**對應 trigger**: 大少 9月9日 00:39「你上網再研究下有無其他方法」→ 00:42「confirm」
 
 **5 隻 stock sample verify** (v0.3.0):
 

@@ -2799,3 +2799,137 @@ git push origin --delete feat/xxx          # delete remote branch
 - 之後 StockPulse 任何新改動 (M1-M9 / frontend / spec doc / Sscript), 都用 Option C 流程
 - 大少直接 trigger「直接 commit + push」/「quick fix」/「1-2 行」等 keyword, 我可以跳過 Option C 直接 Option A
 - 之後 audit / Spec Sync 會 check 本永久 rule 嘅流程有冇跟
+=======
+### Algorithm `from X import Y` 必 import 喺 module level 永久 rule (大少 2026-09-08 23:30 confirm, Spec Sync #49)
+
+**凡人話**: Python 嘅 `from X import Y` 喺 function 內 scope 用嘅話, 個 `Y` name 會被 Python bytecode 標 local, 即使個 import 喺 `if` 入面從來冇 trigger, 之後喺同一個 function 內用 `Y` 都會 UnboundLocalError。所以 algorithm 寫 warning 注入點, 個 `from backend.services.warning_collector import make_warning` import **永遠喺 file 頂部 (module level)**, 唔好喺 function 入面 inner scope。
+
+**Root cause 確認 (curl evidence, 大少 9月8日 23:30 trigger)**:
+- M3 (trendline) algorithm.py 9月8日 09:17 commit `bdaf50e4` 將 7 個 self-check warning 由 raw dict 改用 `make_warning().to_dict()`, 但 `from backend.services.warning_collector import make_warning` 仍然喺 `if n < min_required:` 內 scope (line 704), 個 import 因為 `n >= 30` 從來冇 trigger
+- Python bytecode 將 `make_warning` 標 local, 之後 7 個 call (line 1067+) 全部 `UnboundLocalError: cannot access local variable 'make_warning' where it is not associated with a value`
+- M3 100% runtime fail 14 個鐘頭, 大少肉眼撳 M3 跑任何 stock 全部 backend 500 error
+- 同期 M1 (ma_alignment v2.2.0) / M2 (hl_structure v0.5.0) 都 work, 證明 backend 本身冇事, 只係 M3 algorithm.py 嘅 import 結構 bug
+
+**對齊永久 rule §M9 ReferenceError 'postErrors is not defined' (2026-08-11 Spec Sync #23) 嘅 spirit**:
+- 之前永久 rule 涵蓋: local scope 用嘅 variable 必先 `const 拎出嚟`, 唔好直接用 `fold.x` 假設 global 可用
+- 而家擴展: `from X import Y` 都係 local variable 嘅一種, 一樣要 import 喺 module level 唔好 inner scope
+
+**永久 rule checklist**:
+- ✅ Algorithm 寫 warning 注入點, `from backend.services.warning_collector import make_warning` 永遠 import 喺 **file 頂部 / module level**, 唔好喺 function 內 inner scope (包括 `if` / `try` / `for` 任何 block)
+- ✅ 對齊 pattern: `synthesizer/algorithm.py:38` 用 `from backend.services.warning_collector import WarningCollector, make_warning` (module level) 已經 work, 跟呢個 pattern
+- ✅ 改 algorithm 之後必 restart backend (`./start.sh`) + curl 5 隻 stock 拎 evidence 確認 100% pass (對齊 8月31日 11:01 Backend hot-reload 永久 rule + 9月7日 14:35 Backend config 永久 rule)
+- ✅ 凡人話: 即使個 import "睇落 OK" (例如 `if some_condition: from X import Y`) 都唔好咁寫, Python bytecode 會將 `Y` 標 local, 之後 scope 外用就 UnboundLocalError
+- ✅ 改 warning 注入點用 `make_warning().to_dict()` 之後必 curl 5 隻 stock 拎 evidence 確認 100% pass
+- ✅ 改 `backend/algorithms/*/algorithm.py` 之前必先 `python -c "from backend.algorithms.<module>.algorithm import <AlgorithmClass>"` 確認 import chain 唔會撞
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` line 60 (新加 module level `from backend.services.warning_collector import make_warning`, 對齊 synthesizer/algorithm.py:38 pattern) + line 704 (拎走 inner-scope import)
+- `backend/algorithms/synthesizer/algorithm.py` line 38 (reference pattern, 已經 work)
+- AGENTS.md §M9 ReferenceError 'postErrors is not defined' (2026-08-11) 永久 rule (spirit 對齊)
+- AGENTS.md §Backend hot-reload (8月31日 11:01) 永久 rule (verify step 對齊)
+- AGENTS.md §Backend config file 壞咗即死火 (9月7日 14:35) 永久 rule (curl verify step 對齊)
+
+**對應 commit**: 即將 push (Spec Sync #49)
+
+**套用**: 之後任何 algorithm 寫 `from backend.services.warning_collector import make_warning` / `from <任何 service> import <任何 helper>`, 全部要 import 喺 module level。改 import 結構之後必 restart backend + curl 5 隻 stock 拎 evidence 確認 100% pass。
+
+### M3 audit field (self_check_triggered + original_confidence) emit 永久 rule (Spec Sync #49, 大少 2026-09-08 23:30 confirm)
+
+**凡人話**: M3 algorithm 跑完之後, 對齊 M2 self-check penalty 永久 rule (Spec Sync #48 commit 51e19234) 嘅 audit field 設計, 永遠 emit 3 個 audit field 落 verdict meta, 等 frontend / M7 拎一致 view:
+- `self_check_triggered: bool` — m3_warnings 任何 level (critical / warning / info) 觸發就 True
+- `original_confidence: float` — 同 confidence 一樣 (M3 嘅 Layer 4 公式已經內置 warn_penalty, 唔需要 floor 前後分離)
+- `self_check_warning_count: int` — m3_warnings 總數, frontend / M7 audit 用
+
+**對齊 spirit** (唔係 1:1 copy):
+- M2: critical / warning level warn 觸發 conf = `max(conf * 0.375, 0.3)` (Step 19.5 multiply floor)
+- M3: 任何 level warn 觸發 warn_penalty = `max(1.0 - 0.15 * warn_count, 0.4)` × conf (Layer 4 formula 內置)
+- 兩者 formula 唔同但 audit field 設計對齊, frontend / M7 拎一致 view
+
+**永久 rule checklist**:
+- ✅ M3 algorithm 永遠 emit `self_check_triggered` + `original_confidence` + `self_check_warning_count` 3 個 audit field 落 verdict meta
+- ✅ 3 處早 return 路徑 (insufficient_data / Hurst+ADX gate fail / 極值點不足) 都要 emit, 等 verdict shape 一致
+- ✅ Main algorithm path (Layer 4 公式之後) 都要 emit, `self_check_triggered = len(m3_warnings) > 0`
+- ✅ 改 M3 algorithm 必 restart backend + curl 5 隻 stock 拎 evidence 確認 5/5 stock 都拎到 audit field (冇 None)
+- ✅ 對齊 §M2 self-check penalty 永久 rule (Spec Sync #48) 嘅 spirit
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` line 1165-1170 (Step 9.5 audit field compute) + line 1245-1247 (main path emit) + line 723-735 (insufficient_data emit) + line 837-839 (Hurst+ADX gate fail emit) + line 939-941 (極值點不足 emit)
+- AGENTS.md §M2 self-check penalty 永久 rule (Spec Sync #48, commit 51e19234) 嘅 spirit 對齊
+- AGENTS.md §M3 self-check warning 永久 rule (大少 9月7日 00:14) 對齊
+
+**對應 commit**: 即將 push (Spec Sync #49)
+
+**套用**: 之後任何 algorithm 嘅 self-check / fallback / early return 邏輯, 都要 emit `self_check_triggered` + audit field 落 verdict meta, 等 frontend / M7 拎一致 view。將來其他 module (M4 / M5 / M6 等) 加 self-check penalty 都要對齊呢個 audit field design。
+
+### M3 5-layer framework 永久 rule (大少 2026-09-09 00:42 confirm, Spec Sync #51)
+
+**凡人話**: 對齊 9月9日 web research 推薦嘅 5-layer confirmation framework (fractalcycles.com 3-layer + newtrading.io 100 年 backtest), M3 algorithm 永遠要對齊 5-layer framework, 唔可以拎走任何 layer。
+
+**5-layer framework**:
+1. **Layer 1 (regime)**: Hurst 0.50+ = trending regime (Peng 1994 標準)
+2. **Layer 2 (tactical)**: ADX 20+ = trend strength (Wilder 1978 發展中 minimum)
+3. **Layer 3 (direction)**: +DI/-DI direction signal (Wilder 1978, 由 Donchian Rule K/L 帶 direction)
+4. **Layer 4 (breakout)**: Donchian 20-period upper/lower breakout (newtrading.io 100 年 backtest 74.1% win rate)
+5. **Layer 5 (pattern)**: M3 10+2 條 rule (Bulkowski 2005 條件 + Magee 1948 closing price confirmation)
+
+**對應 spec doc**: docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md §4.4
+
+**永久 rule checklist**:
+- ✅ M3 algorithm 永遠 emit Layer 1 (hurst + hurstLogR2) + Layer 2 (adx + plusDI + minusDI + atr) + Layer 4 (matched rules K/L) 落 verdict meta
+- ✅ Gate (H<0.45 OR ADX<18) 永遠 emit LOW_CONFIDENCE warning 而非 SIDEWAYS 早 return (對齊 fractalcycles 3-layer framework)
+- ✅ Rule K/L (Donchian 20-period breakout) 永遠 priority 第一/二位, 因為 Donchian 100 年 backtest 74.1% win rate 最高
+- ✅ Bulkowski 條件永遠 minLineLength 20 + minTouchSpacing 3 (對齊 Donchian 20-period standard, 之前 30/5 太嚴)
+- ✅ 改 M3 algorithm 永遠要 preserve 5-layer framework, 唔好拎走任何 layer
+- ✅ 凡人話: 5-layer framework 對齊權威 source 推薦, 拎走任何 layer 等於 拎走 confirmation, 會令對齊率跌
+
+**對應 trigger**:
+- 大少 9月9日 00:39「你上網再研究下有無其他方法」trigger web research
+- 大少 9月9日 00:42「confirm」trigger 即刻實作 5-layer framework
+- 對齊 AGENTS.md §三方一致率 audit 永久 rule (Spec Sync #50) 嘅 spirit: 改 algorithm 必跑 audit 對比 baseline
+
+**對應文件**:
+- `backend/algorithms/trendline/algorithm.py` line 990-1011 (12 條 rule check) + line 553-606 (_derive_trendline_state priority)
+- `backend/algorithms/trendline/config.py` line 22-23 (Bulkowski 條件 20/3, Spec Sync #51)
+- `backend/algorithms/trendline/algorithm.py` line 788-807 (gate 改 confirmation filter, LOW_CONFIDENCE warning)
+- `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §4.4 (5-layer framework 描述)
+
+**對應 commit**: 即將 push (Spec Sync #51)
+
+**套用**: 之後任何 algorithm 改動, 永遠要對齊 5-layer framework (regime / tactical / direction / breakout / pattern)。拎走任何 layer 屬於 Spec Sync 範圍, 必先 web research 拎權威 source 確認先做。改之後必跑 217 stock audit + 對比 baseline, 一致率跌過 50% 唔收貨。
+
+### 三方一致率 audit 永久 rule (大少 2026-09-08 23:38 trigger, Spec Sync #50)
+
+**凡人話**: M1 + M2 + M3 3 個 algo 對同一隻 stock 嘅 verdict 一致率係可信性最重要嘅指標。改任何 algorithm 嘅 formula / threshold / gate 之後, 必跑 217 隻 stock 嘅三方一致率 audit, 對比改前改後, 一致率跌過 50% 就要 trigger 重新校。
+
+**對齊 spirit** (永久 rule §M9 postErrors ReferenceError spirit + §Backend config 永久 rule 嘅 verify step 對齊):
+- 改 algorithm 唔可以齋睇單一 stock 拎 evidence, 必跑 217 隻 stock 統計 audit
+- 一致率 < 50% 表示 3 個 algo 對過半 stock 都有唔同睇法, 算法結構有問題
+
+**永久 rule checklist**:
+- ✅ 改任何 algorithm 嘅 formula / threshold / gate / Bulkowski 條件之後, 必跑 217 隻 stock 嘅三方一致率 audit
+- ✅ Audit 結果必對比改前 baseline, 一致率跌過 50% 就要 trigger 重新校
+- ✅ Audit 結果要寫入 evidence file (`/tmp/m3_audit_evidence.json`) 留底, 之後 audit 可以對比
+- ✅ Audit script 永久保留喺 `/tmp/audit_m3_db.py` (用 stockpulse.db 217 隻 stock) + `/tmp/audit_m3_stats.py` (統計 + 一致性分析)
+- ✅ M1 / M2 / M3 任何一個 100% 失敗 (即係 0 隻 stock verdict) 即係算法 runtime fail, 必先修 bug 先再做 audit
+- ✅ 凡人話: 改 algorithm 唔可以只睇幾隻 stock 拎 evidence, 必跑全 DB 統計 audit
+
+**Baseline (Spec Sync #50 改後)**:
+- M1 100% pass (217/217)
+- M2 99.5% pass (216/217, 1 隻 fail)
+- M3 100% pass (217/217, 之前 99.1% Spec Sync #49 fix 完)
+- 三方一致率: 42.6% (92/216)
+- 真正出 verdict (M3 配 matched rules): 46.1% (100/217)
+- Hurst+ADX gate fail: 53.9% (117/217)
+- Conf=0.3 floor: 97.7% (212/217)
+- Over-confident (≥0.85 + warn): 0%
+
+**對應文件**:
+- `/tmp/audit_m3_db.py` (audit script, 跑 217 隻 stock × M1/M2/M3 拎 evidence)
+- `/tmp/audit_m3_stats.py` (統計 + 一致性分析 script)
+- `/tmp/m3_audit_evidence.json` (evidence 留底, 之後 audit 對比用)
+- AGENTS.md §M9 ReferenceError 'postErrors is not defined' (2026-08-11) 永久 rule (對齊 spirit)
+- AGENTS.md §Backend config file 壞咗即死火 (9月7日 14:35) 永久 rule (對齊 verify step)
+
+**對應 commit**: 即將 push (Spec Sync #50)
+
+**套用**: 之後任何 algorithm 嘅 sub-scenario / formula / threshold / gate 改動, 必先跑三方一致率 audit baseline 拎 evidence, 改完之後再跑 audit 對比, 一致率跌過 50% 唔收貨。三方一致率追蹤係可信性嘅最重要指標, 唔可以靠單 stock evidence 決定。

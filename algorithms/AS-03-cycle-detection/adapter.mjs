@@ -3496,7 +3496,7 @@ function renderTrendlineResult(verdict) {
   const stateLabel = stateLabels[verdict.meta.state] || verdict.meta.state;
   const confidencePct = (verdict.meta.confidence * 100).toFixed(1);
   const confidenceExplain = verdict.meta.confidence >= 0.7 ? '高信心, 信號強' : verdict.meta.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
-  const matchedRules = verdict.meta.meta?.matchedRules || [];
+  const matchedRules = verdict.meta.matchedRules || [];
   const evidence = verdict.meta.evidence || [];
 
   const matchedRulesHtml = matchedRules.length === 0
@@ -3605,7 +3605,7 @@ function renderTrendlineResult(verdict) {
 // 大少 #11056 (2026-08-07) — 永久 rule,所有 Module 都要有詳細解讀/策略建議/點用點睇 (用人話)
 function renderDetailedExplanationTrendline(verdict) {
   const confidencePct = (verdict.meta.confidence * 100).toFixed(0);
-  const matchedRules = verdict.meta.meta?.matchedRules || [];
+  const matchedRules = verdict.meta.matchedRules || [];
   const support = verdict.meta.supportLine || {};
   const resistance = verdict.meta.resistanceLine || {};
   const channel = verdict.meta.channel || { widthPct: 0, percentB: 0.5 };
@@ -3773,7 +3773,7 @@ function renderStrategyAdviceTrendline(verdict) {
       <h4>🎯 策略建議 (點做)</h4>
       ${stateAdvice}
       ${confidenceNote}
-      <p class="caveat">⚠️ 觸發 ${(verdict.meta.meta?.matchedRules || []).length} 條 rule, 每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
+      <p class="caveat">⚠️ 觸發 ${(verdict.meta.matchedRules || []).length} 條 rule, 每條 rule 嘅具體解釋睇「📖 詳細解讀」section</p>
     </div>
   `;
 }
@@ -4023,9 +4023,9 @@ function renderIndicatorsResult(verdict) {
   const stateLabel = stateLabels[verdict.meta.state] || verdict.meta.state;
   const confidencePct = (verdict.meta.confidence * 100).toFixed(1);
   const confidenceExplain = verdict.meta.confidence >= 0.7 ? '高信心, 信號強' : verdict.meta.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
-  const signal = verdict.meta.meta?.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
-  const ms = verdict.meta.meta?.momentumState || {};
-  const div = verdict.meta.meta?.divergence || { totalCount: 0 };
+  const signal = verdict.meta.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
+  const ms = verdict.meta.momentumState || {};
+  const div = verdict.meta.divergence || { totalCount: 0 };
 
   const actionColor = signal.type === 'buy' ? '#52c41a' : signal.type === 'sell' ? '#ff4d4f' : '#faad14';
   const actionEmoji = signal.type === 'buy' ? '🟢' : signal.type === 'sell' ? '🔴' : '🟡';
@@ -4036,7 +4036,7 @@ function renderIndicatorsResult(verdict) {
 
   // 📌 解讀 + 觀望 box 詳細解說 (plain language)
   const signalStrengthPct = (signal.strength * 100).toFixed(0);
-  const winProbPct = ((verdict.meta.meta?.winProbability || 0.5) * 100).toFixed(0);
+  const winProbPct = ((verdict.meta.winProbability || 0.5) * 100).toFixed(0);
   const interpretationDetail = signal.type === 'buy' ? `
     <p>📌 <strong>簡單講</strong>: RSI 同 MACD 兩條動能指標都出現買入訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向上。</p>
     <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
@@ -4074,7 +4074,7 @@ function renderIndicatorsResult(verdict) {
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>時間週期:</span> <strong>${verdict.meta.timeframe}</strong></div>
-          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.meta?.dataDays || 0}</strong></div>
+          <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays || 0}</strong></div>
           <div class="summary-row"><span>背馳數:</span> <strong>${div.totalCount}</strong></div>
         </div>
       </div>
@@ -4113,7 +4113,7 @@ function renderIndicatorsResult(verdict) {
       </div>
 
       <div class="exhaustion-score" style="margin-top: 12px; padding: 8px 12px; background: #f5f5f5; border-radius: 4px;">
-        <strong>💨 衰竭分數:</strong> ${((verdict.meta.meta?.exhaustionScore || 0) * 100).toFixed(0)}%
+        <strong>💨 衰竭分數:</strong> ${((verdict.meta.exhaustionScore || 0) * 100).toFixed(0)}%
         <small style="color: #888;"> (越高越接近轉勢, >60% 為明顯衰竭)</small>
       </div>
 
@@ -4123,7 +4123,7 @@ function renderIndicatorsResult(verdict) {
 
       <details class="meta-details">
         <summary>🔧 配置（debug 用）</summary>
-        <pre>${JSON.stringify(verdict.meta.meta?.configUsed, null, 2)}</pre>
+        <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
       </details>
     </div>
   `;
@@ -4133,11 +4133,11 @@ function renderIndicatorsResult(verdict) {
 // 大少 #11056 — 永久 rule,所有 Module 都要有詳細解讀/策略建議/點用點睇 (用人話)
 function renderDetailedExplanationIndicators(verdict) {
   const confidencePct = (verdict.meta.confidence * 100).toFixed(0);
-  const signal = verdict.meta.meta?.signal || {};
-  const ms = verdict.meta.meta?.momentumState || {};
-  const div = verdict.meta.meta?.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
-  const exhaustion = verdict.meta.meta?.exhaustionScore || 0;
-  const winProb = verdict.meta.meta?.winProbability || 0.5;
+  const signal = verdict.meta.signal || {};
+  const ms = verdict.meta.momentumState || {};
+  const div = verdict.meta.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
+  const exhaustion = verdict.meta.exhaustionScore || 0;
+  const winProb = verdict.meta.winProbability || 0.5;
 
   return `
     <div class="detailed-explanation">
@@ -4154,12 +4154,12 @@ function renderDetailedExplanationIndicators(verdict) {
         <li><strong>🔍 背馳 (Divergence) 數量:</strong> ${div.totalCount} 條。頂背馳 = 價格創新高但動能未新高 (跌警),底背馳 = 價格創新低但動能未新低 (升機)。RSI 背馳通常 5-10 日見效,MACD 背馳通常 10-20 日。</li>
         <li><strong>💨 衰竭分數 (exhaustion):</strong> ${(exhaustion * 100).toFixed(0)}%,綜合 RSI 極端 + MACD 柱狀體縮小 + 背馳強度,越高越接近趨勢尾聲。> 60% = 明顯衰竭,通常預示 1-2 週內反轉。</li>
         <li><strong>🎲 勝率估算 (winProbability):</strong> ${(winProb * 100).toFixed(0)}%,基於歷史統計 + 當前條件推算「5 日後升嘅機率」。Base 55%,底背馳 +12%,超賣 +8%,macd_decelerating +5%,cap 85%。</li>
-        <li><strong>📅 數據日數 (dataDays):</strong> ${verdict.meta.meta?.dataDays || 0} 條 K 線,最少 119 條 (14 RSI + 35 MACD + 60 lookback + 10 buffer) 先夠用。</li>
+        <li><strong>📅 數據日數 (dataDays):</strong> ${verdict.meta.dataDays || 0} 條 K 線,最少 119 條 (14 RSI + 35 MACD + 60 lookback + 10 buffer) 先夠用。</li>
         <li><strong>⏰ 時間週期 (timeframe):</strong> ${verdict.meta.timeframe}。日線睇中線 (幾週),週線睇長線 (幾月)。</li>
         <li><strong>📜 訊號觸發原因 (signal.reasons):</strong> ${(signal.reasons || []).join('、') || '暫無明確觸發'}。每個 reason 對應一個 score 累加,例如「底背馳 +0.35」「RSI 超賣回升 +0.25」,總分 ≥ 0.6 = 明確 buy。</li>
         <li><strong>⚠️ 數據不足警告:</strong> ${verdict.meta.warnings && verdict.meta.warnings.length > 0 ? verdict.meta.warnings[0] : '無'}。</li>
         <li><strong>🔄 統一 cycle 派生規則:</strong> buy → UP, sell → DOWN, hold → SIDEWAYS (TRANSITION 由 Synthesizer 判)。呢個 module 唔 emit TRANSITION。</li>
-        <li><strong>📂 過去錯過的買點 (historicalOpportunities):</strong> ${(verdict.meta.meta?.historicalOpportunities || []).length} 個。回顧過去 lookbackDays 內曾經出現過嘅買入訊號,計算到今日嘅回報。Top 3 strongest。可以用嚟訓練盤感。</li>
+        <li><strong>📂 過去錯過的買點 (historicalOpportunities):</strong> ${(verdict.meta.historicalOpportunities || []).length} 個。回顧過去 lookbackDays 內曾經出現過嘅買入訊號,計算到今日嘅回報。Top 3 strongest。可以用嚟訓練盤感。</li>
       </ul>
     </div>
   `;
@@ -4167,11 +4167,11 @@ function renderDetailedExplanationIndicators(verdict) {
 
 // ===== 策略建議 section (Indicators) =====
 function renderStrategyAdviceIndicators(verdict) {
-  const signal = verdict.meta.meta?.signal || {};
+  const signal = verdict.meta.signal || {};
   const signalType = signal.type;
-  const ms = verdict.meta.meta?.momentumState || {};
-  const winProb = verdict.meta.meta?.winProbability || 0.5;
-  const exhaustion = verdict.meta.meta?.exhaustionScore || 0;
+  const ms = verdict.meta.momentumState || {};
+  const winProb = verdict.meta.winProbability || 0.5;
+  const exhaustion = verdict.meta.exhaustionScore || 0;
 
   let strategy;
   if (signalType === 'buy') {
@@ -4194,7 +4194,7 @@ function renderStrategyAdviceIndicators(verdict) {
     strategy = `
       <li>🟡 <strong>等方向</strong>: hold = 觀望, 唔 buy 唔 sell, 因為冇明確反轉觸發</li>
       <li>📍 <strong>睇大方向</strong>: 配合 M1 (MA Alignment) 判斷大方向, 如果 M1 = UP, 呢個 hold 暗示「升但等回調」, 密切 monitor RSI 接近 30 或底背馳出現</li>
-      <li>🔍 <strong>留意背馳</strong>: 背馳數 = ${verdict.meta.meta?.divergence?.totalCount || 0} 條, 0 背馳 = 純粹跟趨勢, ≥1 背馳 = 可能有反轉, 預警</li>
+      <li>🔍 <strong>留意背馳</strong>: 背馳數 = ${verdict.meta.divergence?.totalCount || 0} 條, 0 背馳 = 純粹跟趨勢, ≥1 背馳 = 可能有反轉, 預警</li>
       <li>💨 <strong>睇衰竭</strong>: 衰竭分數 = ${(exhaustion * 100).toFixed(0)}%, > 60% = 即將見頂/見底, 開始收緊止損或準備入新倉</li>
       <li>⏸️ <strong>唔好勉強</strong>: 冇明確訊號 = 冇 edge, 強行 trade 通常輸錢, 等清晰訊號先動</li>
     `;
@@ -4225,7 +4225,7 @@ function renderUsageGuideIndicators(verdict) {
         <li>🎯 <strong>睇勝率估算</strong>: > 70% = 高勝率 trade, 60-70% = 中等, < 60% = 唔好亂動。勝率 base 55%, 加底背馳 + 12%, 加超賣 + 8%</li>
         <li>📂 <strong>睇歷史錯過嘅買點</strong>: 「1 個月前邊日買最好」可以訓練你嘅盤感, 知道點樣嘅 setup 通常會 work</li>
         <li>🔄 <strong>配合其他 module 一齊睇</strong>: M1 (MA) 講大方向, M2 (HL) 講結構, M3 (TL) 講支撐壓力, M4 (呢個) 講買賣時機。4 個 module 都同方向 = 高信心 trade</li>
-        <li>⚠️ <strong>注意數據限制</strong>: 數據日數 = ${verdict.meta.meta?.dataDays || 0} 條, < 119 條會 warning, 數據唔夠 = 結果唔可靠</li>
+        <li>⚠️ <strong>注意數據限制</strong>: 數據日數 = ${verdict.meta.dataDays || 0} 條, < 119 條會 warning, 數據唔夠 = 結果唔可靠</li>
         <li>📌 <strong>記住: M4 答「幾時該行動」, 唔答「而家係咩 season」</strong>: 配合 M1 用, M1 = UP + M4 = buy = 高勝率買入; M1 = UP + M4 = hold = 等回調, 唔好追</li>
       </ol>
     </div>

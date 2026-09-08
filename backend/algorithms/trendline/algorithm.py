@@ -56,6 +56,14 @@ from typing import List, Dict, Any, Tuple
 from ..base import Algorithm, Verdict
 from ..registry import register
 from .config import DEFAULT_TRENDLINE_CONFIG
+# 大少 2026-09-08 23:30 fix — 將 make_warning import 拎出 function 內 inner scope
+# Root cause: 之前 `from backend.services.warning_collector import make_warning` 喺
+# `if n < min_required:` 內 scope (line 704), 個 import 從來冇 trigger (n 一定 >= 30),
+# Python 將 make_warning 標 local, 之後 7 個 self-check warning 全部 call make_warning().to_dict()
+# 時 UnboundLocalError, M3 100% runtime fail
+# 對齊永久 rule §M9 postErrors ReferenceError spirit (大少 2026-08-11 Spec Sync #23)
+# 對齊 synthesizer/algorithm.py:38 pattern
+from backend.services.warning_collector import make_warning
 
 
 # ============================================================
@@ -100,8 +108,10 @@ def _compute_hurst(closes: List[float], window: int = 100) -> float:
     import math
 
     if len(closes) < window + 10:
-        # 數據太少, 返 0.5 (random walk default, 唔做判定)
-        return 0.5
+        # 數據太少, 返 (0.5, 0.0) tuple (random walk default, 唔做判定)
+        # 大少 2026-09-08 23:57 fix (Spec Sync #50) — caller 期望 tuple unpack, 之前返 single float 撞 UnboundLocalError 同類 bug
+        # 影響: 細股 / 新股 / 停牌 stock K 線 < 110 條 全部撞, HK.00068 (99 條) + HK.02476 (97 條) trigger
+        return 0.5, 0.0
 
     # 取最近 window 日
     recent_closes = closes[-window:]
@@ -113,7 +123,8 @@ def _compute_hurst(closes: List[float], window: int = 100) -> float:
         if recent_closes[i] > 0 and recent_closes[i - 1] > 0:
             log_returns.append(math.log(recent_closes[i] / recent_closes[i - 1]))
     if len(log_returns) < 20:
-        return 0.5
+        # 數據太少, 返 tuple 對齊 caller
+        return 0.5, 0.0
 
     # 2. 累積去均值序列
     mean_r = sum(log_returns) / len(log_returns)
@@ -568,6 +579,14 @@ def _derive_trendline_state(rules: List[Dict[str, str]], support_fit: Dict[str, 
     - default SIDEWAYS 第十
     """
     ids = {r["id"] for r in rules}
+    # Spec Sync #51 (大少 2026-09-09 00:42 confirm): Donchian Rule K/L 入 priority 第一/二位
+    # 對齊 newtrading.io 100 年 backtest Donchian win rate 74.1% (rank #3 全部 indicator)
+    # Rule K = Donchian 上突破 20 日 high → 強 UP
+    # Rule L = Donchian 下突破 20 日 low → 強 DOWN
+    if "K" in ids:
+        return "UP"
+    if "L" in ids:
+        return "DOWN"
     # 大少 2026-09-07 00:14 fix: H 真突破 guard — H fire + support_slope <= 0 → SIDEWAYS
     # 短線突破但 long-term 兩個 support/resistance 都 downtrend → over-confident 改判 SIDEWAYS
     if support_fit is not None and "H" in ids and support_fit["slope"] <= 0:
@@ -603,19 +622,19 @@ def _derive_trendline_confidence(
     cfg: Dict[str, Any],
     volume_confirmed: bool = False,
 ) -> Dict[str, Any]:
-    """凡人話: 信心分數 — 4 維加權公式 (Layer 4 大少 2026-09-07 Spec Sync #45)
+    """凡人話: 信心分數 — 4 維加權公式 (Layer 4 大少 2026-09-07 Spec Sync #45 + Spec Sync #50 9月8日 tune)
 
     對齊 Bulkowski 2005 trendline quality 標準 + 永久 rule §M3 self-check warning spirit:
     - 唔再用 hardcoded 0.3 / 0.6 / 0.9 baseConfidence
-    - 由 R² (line fit quality) × touches (5 觸 = 1.0) × volume (1.0/0.7) × self-check warning (-0.15/warn) 綜合
+    - 由 R² (line fit quality) × touches (5 觸 = 1.0) × volume (1.0/0.7) × self-check warning (-0.10/warn) 綜合
     - 永久 rule: conf ≤ 0.95 (clamp), 永久 ban conf = 1.0
 
-    Formula:
+    Formula (Spec Sync #50 9月8日 tune — 由 -0.15 改 -0.10, floor 0.4 改 0.5):
         base = 0.6
         r2_avg = (support_fit.r2 + resistance_fit.r2) / 2  # 0-1
         touch_factor = min((support_touches + resistance_touches) / 5, 1.0)
         vol_factor = 1.0 if volume_confirmed else 0.7
-        warn_penalty = max(1.0 - 0.15 * len(m3_warnings), 0.4)
+        warn_penalty = max(1.0 - 0.10 * len(m3_warnings), 0.5)   # Spec Sync #50
         confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
         confidence = clamp(confidence, 0.3, 0.95)
 
@@ -625,6 +644,11 @@ def _derive_trendline_confidence(
     Volume factor 預設 0.7 (volume 確認要等 Layer 3 對齊 Edwards-Magee 8th Ed,
     大少 Option A 跳過 Layer 3 先做 Layer 4 — 將來 Layer 3 加咗 volume check,
     傳 volume_confirmed=True 即可)
+
+    Spec Sync #50 tune rationale (大少 9月8日 23:57 trigger):
+    - 之前 -0.15/warn + floor 0.4 太重, 99% stock 跌到 0.3 floor (對落單冇用)
+    - 改 -0.10/warn + floor 0.5, 預期 99% → 70-80% stock 拎 0.5-0.7 有用 conf
+    - 仍保留 0.3-0.95 clamp (避免 over-confident 同時保留 gate fail 0.3)
     """
     # R² factor: 兩條線平均 R², 0-1
     r2_avg = (support_fit["r2"] + resistance_fit["r2"]) / 2
@@ -636,15 +660,19 @@ def _derive_trendline_confidence(
     # Volume factor: 確認 1.0, 冇確認 0.7 (Layer 3 跳過, 永遠 0.7 暫時)
     vol_factor = 1.0 if volume_confirmed else 0.7
 
-    # Self-check warning penalty: 每個 warn -0.15, floor 0.4
+    # Self-check warning penalty: 每個 warn -0.10, floor 0.5
+    # 大少 2026-09-08 23:57 tune (Spec Sync #50) — 之前 -0.15/warn + floor 0.4 太重, 99% stock 跌到 0.3 floor
+    # 改 -0.10/warn + floor 0.5, 令 41% 真正 verdict stock 拎 0.5-0.7 有用 conf
+    # 凡人話: 之前 formula 太敏感, 改輕啲等 M3 verdict 對落單有用
     warn_count = len(m3_warnings)
-    warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)
+    warn_penalty = max(1.0 - 0.10 * warn_count, 0.5)
 
     # Base + 4 維加權
     base = 0.6
     confidence = base * r2_avg * touch_factor * vol_factor * warn_penalty
 
     # 永久 rule §Layer 4: clamp 0.3 - 0.95, 永久 ban conf = 1.0
+    # 大少 Spec Sync #50 確認: 保留 0.3-0.95 clamp (避免 over-confident 同時保留 gate fail 0.3)
     confidence = max(min(confidence, 0.95), 0.3)
 
     # Adjustment log 凡人話解釋
@@ -701,7 +729,7 @@ class TrendlineAlgorithm(Algorithm):
             # 對齊 RC-3 永久 fix: algorithm 跑完成但 verdict 唔可信 → 200 + warning, 唔再 400
             # 對齊永久 rule §Module Warning v1.1.0 — category "system" 因為 verdict 可能唔可信
             # 對齊永久 rule §dataWindowDays frontend inputs 表單 audit (2026-09-07 17:23)
-            from backend.services.warning_collector import make_warning
+            # 大少 2026-09-08 23:30 fix — 拎走 inner-scope import, make_warning 已經喺 file 頂部 import
             insufficient_warning = make_warning(
                 level="info",
                 module_id="M3",
@@ -722,6 +750,10 @@ class TrendlineAlgorithm(Algorithm):
                     "dataDays": n,
                     "minRequired": min_required,
                     "reason": "insufficient_data",
+                    # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
+                    "self_check_triggered": True,  # INSUFFICIENT_DATA warning 觸發
+                    "original_confidence": 0.3,    # 早 return 強制 0.3
+                    "self_check_warning_count": 1,  # 1 個 INSUFFICIENT_DATA warning
                 },
                 warnings=[insufficient_warning],
             )
@@ -747,10 +779,12 @@ class TrendlineAlgorithm(Algorithm):
         #   - ADX 20-25 = 發展中
         #   - ADX < 20 = 弱 / 橫行
         #
-        # Gate 規則:
-        #   - H >= 0.50 AND ADX >= 22: pass (有方向有強度, 正常算法)
-        #   - H < 0.45 OR ADX < 20: fail (random walk / 橫行, SIDEWAYS + 2 warnings)
-        #   - 其他 (灰色地帶 0.45-0.50 / 20-22): pass 但 emit 1 個 LOW_CONFIDENCE warning
+        # Gate 規則 (大少 2026-09-09 00:42 confirm Spec Sync #51 — gate 由 hard gate 改 confirmation filter):
+        #   - 之前: H<0.45 OR ADX<18 → 早 return SIDEWAYS 0.3 (hard gate, 99% stock 跌到呢度)
+        #   - Spec Sync #51: gate 失敗時繼續出 verdict, 但 emit 1 個 LOW_CONFIDENCE warning,
+        #     由 Layer 4 公式 warn_penalty 自動扣 conf 0.10
+        #   - 對齊 fractalcycles.com 3-layer framework: Hurst + ADX 應該係 confirmation 而非 hard gate
+        #   - 對齊權威 source: AInvest 建議 H>0.65 strong, 0.5-0.6 maybe, <0.4 mean-reverting
         closes = [bar["close"] for bar in recent]
         # Layer 1 (大少 2026-09-07 Spec Sync #45): _compute_hurst 返 (hurst, log_r2) tuple, 用 Peng 1994 pitfall check
         hurst_value, hurst_log_r2 = _compute_hurst(closes, window=100)
@@ -761,73 +795,29 @@ class TrendlineAlgorithm(Algorithm):
         minus_di_value = adx_data["minus_di"]
         atr_value = adx_data["atr"]
 
-        if hurst_value < 0.45 or adx_value < 20:
-            # Gate fail: 股價 random walk / mean-reverting / 弱趨勢
-            # M3 verdict 唔可信, 強制 SIDEWAYS
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段 + 統一 debug 結構
-            gate_warnings = [
-                make_warning(
-                    level="warning",
-                    module_id="M3",
-                    code="CONFLICT_STATE",
-                    message=f"Hurst+ADX gate fail (H={hurst_value:.3f}, ADX={adx_value:.1f})",
-                    issue=f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 20), 股價 random walk / mean-reverting / 弱趨勢, trend line 唔可信",
-                    # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
-                    context={"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 20},
-                ).to_dict()
-            ]
-            return Verdict(
-                ok=True,
-                points=[],
-                meta={
-                    "moduleId": "trendline",
-                    "symbol": options.get("symbol", "TEST"),
-                    "timeframe": options.get("period", "1d"),
-                    "state": "SIDEWAYS",
-                    "cycle_label": "橫行",
-                    "confidence": 0.3,
-                    "interpretation": f"Hurst+ADX gate fail (H={hurst_value:.3f}, ADX={adx_value:.1f}), 股價 random walk / 弱趨勢, 強制 SIDEWAYS",
-                    "evidence": [
-                        {
-                            "type": "hurst",
-                            "label": f"Hurst 指數 (DFA): {hurst_value:.3f}",
-                            "value": hurst_value,
-                            "threshold": 0.45,
-                            "passed": hurst_value >= 0.45,
-                        },
-                        {
-                            "type": "adx",
-                            "label": f"ADX (14 日): {adx_value:.1f}",
-                            "value": adx_value,
-                            "threshold": 20,
-                            "passed": adx_value >= 20,
-                        },
-                    ],
-                    "_warnings": gate_warnings,
-                    "matchedRules": [],
-                    "ruleLabels": [],
-                    "baseConfidence": 0.3,
-                    "supportLine": None,
-                    "resistanceLine": None,
-                    "channel": None,
-                    "breakout": {"support": {"type": "none", "daysSince": -1}, "resistance": {"type": "none", "daysSince": -1}},
-                    "latestClose": _round(recent[-1]["close"], 2) if recent else 0.0,
-                    "latestExtremeAge": -1,
-                    "projection": {"days": cfg["projectionDays"], "supportFuture": 0.0, "resistanceFuture": 0.0, "midFuture": 0.0},
-                    "adjustmentLog": [f"Hurst+ADX gate fail: H={hurst_value:.3f}, ADX={adx_value:.1f}"],
-                    "dataDays": recent_n,
-                    "configUsed": cfg,
-                    "hurst": _round(hurst_value, 4),
-                    "adx": _round(adx_value, 4),
-                    # Layer 1 emit: Peng 1994 DFA log-r² 確認 self-similarity
-                    "hurstLogR2": _round(hurst_log_r2, 4),
-                    # Layer 1 emit: Wilder 1978 +DI / -DI / ATR
-                    "plusDI": _round(plus_di_value, 4),
-                    "minusDI": _round(minus_di_value, 4),
-                    "atr": _round(atr_value, 4),
-                },
-                warnings=gate_warnings,
-            )
+        if hurst_value < 0.45 or adx_value < 18:
+            # Spec Sync #51 (大少 2026-09-09 00:42 confirm): gate 由 hard gate 改 confirmation filter
+            # 之前: 早 return SIDEWAYS 0.3 (99% stock 跌到呢度, 對 UP/DOWN 識別差)
+            # 而家: emit 1 個 LOW_CONFIDENCE warning 落 m3_warnings (Layer 4 公式 warn_penalty 自動扣 conf 0.10)
+            # 繼續行正常 algorithm (10 + 2 條 rule + self-check)
+            gate_soft_warning = {
+                "level": "info",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "LOW_CONFIDENCE",
+                "message": f"Hurst+ADX gate 偏弱 (H={hurst_value:.3f}, ADX={adx_value:.1f})",
+                "issue": f"Hurst 指數 {hurst_value:.3f} (< 0.45) 或 ADX {adx_value:.1f} (< 18), 股價 random walk / mean-reverting / 弱趨勢, trend line 偏弱但繼續 verdict (Spec Sync #51 改 confirmation filter)",
+                "impact": "Verdict 偏弱 (Hurst+ADX 偏低, trend line 唔太可信), conf 自動扣 0.10",
+                "fix": "Re-run / 對齊 M1/M2 verdict 確認 / 接受低 conf 但繼續判斷",
+                "context": {"hurst": _round(hurst_value, 4), "adx": _round(adx_value, 4), "threshold_hurst": 0.45, "threshold_adx": 18},
+            }
+        else:
+            gate_soft_warning = None
+
+        # Spec Sync #51 (大少 2026-09-09 00:42 confirm): Hurst+ADX gate 由 hard gate 改 confirmation filter
+        # 之前: gate fail 早 return SIDEWAYS 0.3, 99% stock 跌到呢度 (對 UP/DOWN 識別差)
+        # 而家: gate fail 繼續行正常 algorithm (10 + 2 條 rule + self-check)
+        # gate_soft_warning 喺 main path m3_warnings 嗰度 append, Layer 4 公式 warn_penalty 自動扣 conf 0.10
 
         # ============ Step 2: 識別極值點 (peaks + troughs) ============
         peaks = []
@@ -871,16 +861,17 @@ class TrendlineAlgorithm(Algorithm):
 
         # 極值點不足 → fallback SIDEWAYS
         if len(peaks) < cfg["minLinePoints"] or len(troughs) < cfg["minLinePoints"]:
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
-            fallback_warnings = [make_warning(
-                level="warning",
-                module_id="M3",
-                code="FALLBACK_USED",
-                message=f"極值點不足 (peaks={len(peaks)}, troughs={len(troughs)})",
-                issue=f"需要 ≥ {cfg['minLinePoints']} 個 peak 同 trough",
-                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
-                context={"peak_count": len(peaks), "trough_count": len(troughs), "min_points": cfg["minLinePoints"]},
-            ).to_dict()]
+            fallback_warnings = [{
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "FALLBACK_USED",
+                "message": f"極值點不足 (peaks={len(peaks)}, troughs={len(troughs)})",
+                "issue": f"需要 ≥ {cfg['minLinePoints']} 個 peak 同 trough",
+                "impact": "Verdict 默認 SIDEWAYS, 對 M7 影響有限",
+                "fix": "正常, 屬於橫行市況; 如果市況明顯趨勢但 verdict SIDEWAYS, 檢查 kline data",
+                "context": {"peak_count": len(peaks), "trough_count": len(troughs), "min_points": cfg["minLinePoints"]},
+            }]
             return Verdict(
                 ok=True,
                 points=[],
@@ -922,6 +913,10 @@ class TrendlineAlgorithm(Algorithm):
                     "plusDI": _round(plus_di_value, 4),
                     "minusDI": _round(minus_di_value, 4),
                     "atr": _round(atr_value, 4),
+                    # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
+                    "self_check_triggered": True,  # 極值點不足 = self-check 觸發 (FALLBACK_USED warning)
+                    "original_confidence": 0.3,    # 早 return 強制 0.3
+                    "self_check_warning_count": len(fallback_warnings),
                 },
                 warnings=fallback_warnings,
             )
@@ -952,7 +947,8 @@ class TrendlineAlgorithm(Algorithm):
         resistance_future = resistance_fit["intercept"] + resistance_fit["slope"] * future_idx
         mid_future = (support_future + resistance_future) / 2
 
-        # ============ 10 條 rule check (Step 7) ============
+        # ============ 12 條 rule check (Step 7, Spec Sync #51 對齊權威 source 加 2 條) ============
+        # 大少 2026-09-09 00:42 confirm Spec Sync #51: 加 Rule K/L (Donchian 20-period breakout 對齊 newtrading 74.1% win rate)
         matched_rules = []
         if support_fit["slope"] > 0 and support_fit["r2"] >= cfg["minR2"]:
             matched_rules.append({"id": "A", "label": "支撐線上升", "strength": "strong"})
@@ -974,6 +970,19 @@ class TrendlineAlgorithm(Algorithm):
             matched_rules.append({"id": "I", "label": "支撐有效", "strength": "weak"})
         if resistance_touch["touches"] >= 2 and resistance_touch["avgBouncePct"] >= 0.01:
             matched_rules.append({"id": "J", "label": "壓力有效", "strength": "weak"})
+
+        # Rule K (新, Spec Sync #51): Donchian 20-period upper breakout (close > 20 日 high)
+        # 對齊 newtrading.io 100 年 backtest 74.1% win rate (Donchian rank #3)
+        # 對齊 Magee 1948 closing price confirmation
+        donchian_window = cfg.get("donchianWindow", 20)
+        if len(recent) >= donchian_window + 1:
+            upper_donchian = max(bar["high"] for bar in recent[-(donchian_window + 1):-1])
+            lower_donchian = min(bar["low"] for bar in recent[-(donchian_window + 1):-1])
+            latest_close = recent[-1]["close"]
+            if latest_close > upper_donchian:
+                matched_rules.append({"id": "K", "label": "Donchian 上突破 (20 日 high)", "strength": "strong"})
+            elif latest_close < lower_donchian:
+                matched_rules.append({"id": "L", "label": "Donchian 下突破 (20 日 low)", "strength": "strong"})
 
         # ============ Step 8: State derivation ============
         state = _derive_trendline_state(matched_rules, support_fit)
@@ -1053,6 +1062,12 @@ class TrendlineAlgorithm(Algorithm):
 
         # Warnings (跟 Module Warning System v1.1.0)
         m3_warnings = []
+
+        # Spec Sync #51 (大少 2026-09-09 00:42 confirm): Hurst+ADX gate 改 confirmation filter
+        # gate fail 唔再 SIDEWAYS 0.3, 而係 emit 1 個 LOW_CONFIDENCE warning 落 m3_warnings
+        # Layer 4 公式 warn_penalty 自動扣 conf 0.10
+        if gate_soft_warning is not None:
+            m3_warnings.append(gate_soft_warning)
         # 大少 2026-09-07 00:14 fix: M3 self-check warning system (對齊 M2 self-check warning 永久 rule 嘅 spirit)
         # 凡人話: M3 algorithm 跑完之後, 自己診斷個 verdict 係咪可信, emit 1 個 system warning
         # 跟 M2 self-check warning 永久 rule 嘅 pattern (M2 emit 5 個 self-check conditions, M7 Synthesizer 拎 M2 warning 自動降 weight)
@@ -1062,74 +1077,80 @@ class TrendlineAlgorithm(Algorithm):
         # 3. **Channel 太寬** (channel.widthPct > 0.15) → CONFLICT_STATE
         # 影響 HK.01347 個 case: support numPoints = 3 < 4 → emit CONFLICT_STATE warning (M7/M8 見到自動降 M3 weight)
         if support_fit["numPoints"] < 4 or support_fit["r2"] < 0.6:
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
-            m3_warnings.append(make_warning(
-                level="warning",
-                module_id="M3",
-                code="CONFLICT_STATE",
-                message="支撐線太脆弱 (numPoints/R² 唔合格)",
-                issue=f"support numPoints={support_fit['numPoints']} (< 4) OR R²={support_fit['r2']:.3f} (< 0.6)",
-                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
-                context={"support_num_points": support_fit["numPoints"], "support_r2": _round(support_fit["r2"], 4)},
-            ).to_dict())
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "CONFLICT_STATE",
+                "message": "支撐線太脆弱 (numPoints/R² 唔合格)",
+                "issue": f"support numPoints={support_fit['numPoints']} (< 4) OR R²={support_fit['r2']:.3f} (< 0.6)",
+                "impact": "Verdict 唔可信 (支撐線 fit 唔穩, 可能誤判趨勢)",
+                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term fit",
+                "context": {"support_num_points": support_fit["numPoints"], "support_r2": _round(support_fit["r2"], 4)},
+            })
         if resistance_fit["numPoints"] < 4 or resistance_fit["r2"] < 0.6:
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
-            m3_warnings.append(make_warning(
-                level="warning",
-                module_id="M3",
-                code="CONFLICT_STATE",
-                message="阻力線太脆弱 (numPoints/R² 唔合格)",
-                issue=f"resistance numPoints={resistance_fit['numPoints']} (< 4) OR R²={resistance_fit['r2']:.3f} (< 0.6)",
-                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
-                context={"resistance_num_points": resistance_fit["numPoints"], "resistance_r2": _round(resistance_fit["r2"], 4)},
-            ).to_dict())
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "CONFLICT_STATE",
+                "message": "阻力線太脆弱 (numPoints/R² 唔合格)",
+                "issue": f"resistance numPoints={resistance_fit['numPoints']} (< 4) OR R²={resistance_fit['r2']:.3f} (< 0.6)",
+                "impact": "Verdict 唔可信 (阻力線 fit 唔穩, 可能誤判突破信號)",
+                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term fit",
+                "context": {"resistance_num_points": resistance_fit["numPoints"], "resistance_r2": _round(resistance_fit["r2"], 4)},
+            })
         if channel_width_pct > 0.15:
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
-            m3_warnings.append(make_warning(
-                level="warning",
-                module_id="M3",
-                code="CONFLICT_STATE",
-                message=f"通道太闊 ({channel_width_pct*100:.2f}% > 15%)",
-                issue=f"channel.widthPct={channel_width_pct:.4f} (> 0.15 闊通道閾值)",
-                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
-                context={"channel_width_pct": _round(channel_width_pct, 4)},
-            ).to_dict())
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "CONFLICT_STATE",
+                "message": f"通道太闊 ({channel_width_pct*100:.2f}% > 15%)",
+                "issue": f"channel.widthPct={channel_width_pct:.4f} (> 0.15 闊通道閾值)",
+                "impact": "Verdict 唔可信 (通道闊, support/resistance 唔 solid, 趨勢唔清晰)",
+                "fix": "Re-run / 檢查 kline data 範圍 / 考慮用 dataWindowDays 100 拎 short-term 短通道",
+                "context": {"channel_width_pct": _round(channel_width_pct, 4)},
+            })
         if len(matched_rules) == 0:
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
-            m3_warnings.append(make_warning(
-                level="warning",
-                module_id="M3",
-                code="FALLBACK_USED",
-                message="趨勢線全部 fail, 拎唔到 supportLine / resistanceLine",
-                issue="matchedRules.length = 0 (趨勢線無突破信號)",
-                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
-                context={"matched_rules": 0, "period": options.get("period")},
-            ).to_dict())
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": "FALLBACK_USED",
+                "message": "趨勢線全部 fail, 拎唔到 supportLine / resistanceLine",
+                "issue": "matchedRules.length = 0 (趨勢線無突破信號)",
+                "impact": "M3 verdict 默認 SIDEWAYS, 對 M7 影響有限",
+                "fix": "正常, 屬於橫行市況; 如果市況明顯趨勢但 verdict SIDEWAYS, 檢查 kline data",
+                "context": {"matched_rules": 0, "period": options.get("period")},
+            })
 
         # Layer 2 emit (大少 2026-09-07 Spec Sync #45): Bulkowski checks warnings propagate
         # 凡人話: support/resistance 嘅 Bulkowski check (line length / spacing / slope) 唔合格時 emit warning
         for bw in support_fit.get("bulkowskiWarnings", []):
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
-            m3_warnings.append(make_warning(
-                level="warning",
-                module_id="M3",
-                code=bw["code"],
-                message=f"支撐線 Bulkowski check 唔合格 ({bw['line_type']})",
-                issue=bw["issue"],
-                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
-                context={"line_type": bw["line_type"], "detail": bw.get("detail", "")},
-            ).to_dict())
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": bw["code"],
+                "message": f"支撐線 Bulkowski check 唔合格 ({bw['line_type']})",
+                "issue": bw["issue"],
+                "impact": "Verdict 唔可信 (Bulkowski 標準: 線太短 / spacing 太密 / slope 太陡), trend line 唔穩",
+                "fix": "Re-run / 用 dataWindowDays 100 拎 short-term 短 trendline / 接受 short-term 弱信號",
+                "context": {"line_type": bw["line_type"], "detail": bw.get("detail", "")},
+            })
         for bw in resistance_fit.get("bulkowskiWarnings", []):
-            # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
-            m3_warnings.append(make_warning(
-                level="warning",
-                module_id="M3",
-                code=bw["code"],
-                message=f"阻力線 Bulkowski check 唔合格 ({bw['line_type']})",
-                issue=bw["issue"],
-                # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[system] template
-                context={"line_type": bw["line_type"], "detail": bw.get("detail", "")},
-            ).to_dict())
+            m3_warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "trendline",
+                "code": bw["code"],
+                "message": f"阻力線 Bulkowski check 唔合格 ({bw['line_type']})",
+                "issue": bw["issue"],
+                "impact": "Verdict 唔可信 (Bulkowski 標準: 線太短 / spacing 太密 / slope 太陡), trend line 唔穩",
+                "fix": "Re-run / 用 dataWindowDays 100 拎 short-term 短 trendline / 接受 short-term 弱信號",
+                "context": {"line_type": bw["line_type"], "detail": bw.get("detail", "")},
+            })
 
         cycle_label = {"UP": "上升", "DOWN": "下跌", "SIDEWAYS": "橫行", "TRANSITION": "轉折"}[state]
 
@@ -1145,6 +1166,19 @@ class TrendlineAlgorithm(Algorithm):
         base_confidence = conf["baseConfidence"]
         confidence = conf["confidence"]
         adjustment_log = conf["adjustmentLog"]
+
+        # ============ Step 9.5 (Spec Sync #49): self-check audit field emit (對齊 M2 永久 rule spirit) ============
+        # 凡人話: M3 對齊 M2 self-check penalty 永久 rule (大少 2026-09-07 22:00 confirm, Spec Sync #48 commit 51e19234)
+        # 嘅 audit field 設計 — frontend / M7 拎到 self_check_triggered 就知道呢個 verdict 有冇 self-check warning 觸發
+        # M3 同 M2 唔同: M3 嘅 Layer 4 公式 (warn_penalty = max(1.0 - 0.15 * warn_count, 0.4)) 已經內置 self-check penalty,
+        # 唔需要 Step 19.5 multiply 0.375。但 audit field emit 對齊 M2 spirit, 等 frontend / M7 拎一致 view
+        # - self_check_triggered: m3_warnings 任何 level (critical / warning / info) 觸發就 True
+        # - original_confidence: 同 confidence 一樣 (M3 formula 已經內置 warn_penalty, 唔需要 floor 前後分離)
+        # - self_check_warning_count: m3_warnings 總數, frontend / M7 audit 用
+        self_check_triggered = len(m3_warnings) > 0
+        self_check_warning_count = len(m3_warnings)
+        original_confidence = confidence  # M3 formula 已經內置 warn_penalty, 唔需要分離
+
 
         meta = {
             "moduleId": "trendline",
@@ -1214,6 +1248,11 @@ class TrendlineAlgorithm(Algorithm):
                 "fallback": resistance_fit.get("bulkowskiFallback", False),
                 "warningCodes": [w["code"] for w in resistance_fit.get("bulkowskiWarnings", [])],
             },
+            # Spec Sync #49 (大少 2026-09-08 23:30 confirm): self-check audit field emit 對齊 M2 永久 rule spirit
+            # 凡人話: frontend / M7 拎呢 3 個 field 就知道呢個 verdict 有冇 self-check warning 觸發
+            "self_check_triggered": self_check_triggered,
+            "original_confidence": _round(original_confidence, 4),
+            "self_check_warning_count": self_check_warning_count,
         }
 
         return Verdict(
