@@ -1,6 +1,7 @@
 # MODULE-02-HL-STRUCTURE — 高低點結構法 (Peak-Trough Structure Cycle Detector)
 
 > **Module ID**: `hl-structure`
+> **v0.5.1** (2026-09-08, 大少 + MiniMax Code) — **升級記錄**: 4 個 audit fix (217 隻 stock 對比 M1 audit 揭發) — (1) 3 個 early return path (Path A Hurst+ADX gate fail / Path B 完全平 data / Path C 峰谷唔夠清晰) 統一 emit `self_check_triggered` + `original_confidence` 2 個 audit field (Fix 150 隻 stock audit 鏈斷), (2) `WARNING_CODES['CONFLICT_STATE']` 由 `warning` 改 `info` 對齊 §Module Warning v1.1.0 stock_state spirit (Fix 70% CONFLICT_STATE 警告觸發 0.3 floor), (3) Path A confidence hardcode 0.3 → 0.5 對齊 stock_state 中等信心提示
 > **v0.5.0** (2026-09-08, 大少 + MiniMax Code) — **升級記錄**: 對齊永久 rule §Module Warning v1.1.0 + v1.3.0 — 10 個 self-check warning 注入點全部用 `make_warning()` helper 統一 (auto-emit `category` 字段 + auto-apply CATEGORY_DISPLAY template + 統一 `module_id="M2"`), 對齊 backend `services/warning_collector.py` v1.3.0 升級
 > **v0.4.0** (2026-09-07, 大少 + MiniMax Code) — **升級記錄**: 5 個 layer evidence-based 優化 (Savitzky-Golay + prominence 過濾 / Linear regression + R² / 5-point H&S + neckline / BB-KC Squeeze / Hurst+ADX gate), 對齊 evidence-based 算法 (SciPy find_peaks / pomegra.io / tradersweek.com / deepwiki.com / thinkcapital.com / marketopia.org), 唔引入 scipy 依賴 (跟 M3 pattern), 22 隻 conflict stock evidence 拎返
 > **v0.3.0** (2026-09-06, 大少 + MiniMax Code) — **升級記錄**: 加 5 個 self-check warning (形態預警 / 峰谷太舊 / 5年vs短線矛盾 / 信心過低 / 結構破壞), 通知 M7/M8/M9 M2 verdict 唔可信, M7 自動降 weight 0.15→0.05 + banner 提示 (大少 15:08 confirm 做法 A + C 混合)
@@ -8,6 +9,63 @@
 > **v0.1.0** (2026-08-07, 大少 + MiniMax Code) — 初版 18 步算法
 > **Spec source**: `docs/演算法概念SPECS/高低點結構法.docx` (v2.0)
 
+> ## 🔥 v0.5.1 改動摘要 (2026-09-08, 22:14 trigger, M1 vs M2 audit 揭發)
+>
+> **觸發原因**: 大少 9月8日 17:09 trigger「你去檢查M2 對比 M1 的結果」, 拎 217 隻 stock 對比 evidence 揭發 3 個 M2 算法問題:
+> 1. **Audit 鏈斷**: 150 隻 stock 嘅 `meta.self_check_triggered` 同 `meta.original_confidence` 兩個 audit field 拎唔到 (None), 大少冇辦法 trace 邊隻 stock 真正觸發 self-check penalty — Root cause: M2 4 個 return path 入面, 3 個 early return path (Hurst+ADX gate fail / 完全平 data / 峰谷唔夠清晰) 漏咗 emit 呢 2 個 audit field
+> 2. **0.3 floor bias 94%**: 202 隻 stock 信心踩 0.3 floor, 94% stock 對自己判定都唔 sure, 信心完全冇鑑別度 — Root cause: (a) WARNING_CODES 入面 `CONFLICT_STATE='warning'` 自動 override caller 嘅 level, 即係 stock_state category warning 都會觸發 self-check penalty, 違反 §Module Warning v1.1.0 spirit; (b) Path A (Hurst+ADX gate fail) hardcode confidence=0.3
+> 3. **CONFLICT_STATE 警告 70% 觸發**: 151 隻 stock 都有 CONFLICT_STATE warning, 但 state 仲出 SIDEWAYS/UP/DOWN, 邏輯矛盾
+>
+> **改動範圍 (2 個 file)**:
+> - `backend/algorithms/hl_structure/algorithm.py` (Path A 加 audit field + 改 confidence 0.3→0.5 + Path B/C 加 audit field + version bump 0.4.0→0.5.1)
+> - `backend/services/warning_collector.py` (WARNING_CODES 'CONFLICT_STATE' 由 'warning' 改 'info', 對齊 §Module Warning v1.1.0 spirit, version v1.3.0→v1.4.0)
+>
+> **4 個 Fix**:
+>
+> | Fix | 影響 stock 數 | 改動詳情 |
+> |-----|-------------|----------|
+> | **Fix 1**: 3 個 early return path 加 `self_check_triggered` + `original_confidence` audit field | 150 隻 stock 拎唔到 audit field → 0 隻 (100% 拎到) | Path A: False+0.3 / Path B: True+0.3 / Path C: True+0.5 |
+> | **Fix 2+3**: `WARNING_CODES['CONFLICT_STATE']` 由 `warning` 改 `info` | 影響 M2 + M3 兩個 algo (M3 Step 0.5 Hurst+ADX gate 都用 CONFLICT_STATE) | 對齊 §Module Warning v1.1.0 spirit — stock_state category 唔應該 floor conf |
+> | **Fix 4**: Path A confidence hardcode 0.3 → 0.5 | 144 隻 stock 信心由 0.3 升到 0.5 (中等橫行信心) | 對齊 stock_state 提示中等信心 spirit |
+>
+> **217 隻 stock evidence 對比 (v0.4.0 → v0.5.1)**:
+>
+> | 指標 | v0.4.0 (改前) | v0.5.1 (改後) | 變化 |
+> |------|--------------|--------------|------|
+> | M2 conf 0.2-0.4 (踩 0.3 floor) | 202 隻 (94%) | 62 隻 (29%) | **-140 ✅** |
+> | M2 conf 0.4-0.6 (中等) | 10 隻 (5%) | 150 隻 (69%) | +140 ✅ |
+> | M2 self_check_triggered=None (audit 拎唔到) | 150 隻 (69%) | 0 隻 | **-150 ✅** |
+> | M2 self_check_triggered=True | 61 隻 | 68 隻 | +7 |
+> | M2 self_check_triggered=False | 4 隻 | 148 隻 | +144 |
+> | State agreement (M1 vs M2) | 56.5% | 55.6% | -0.9% |
+>
+> **殘留 62 隻 conf 0.3 stock 分析** (對齊 §M2 self-check penalty 永久 rule, 真正 self-check 觸發):
+> - 42 隻 THRESHOLD_BREACH (Step 18 信心 < 0.3, 算法原本就低)
+> - 30 隻 FALLBACK_USED (Step 16/17 短線 override 救返)
+> - 凡人話: 呢啲係「算法自己都唔 sure」嘅 case, 對齊永久 rule 應該 floor 0.3, 合理殘留
+>
+> **永久 rule (v0.5.1 新加 + 沿用)**:
+> - ✅ M2 algorithm 永遠喺 4 個 return path (Path A/B/C 早期 return + Path D 正常 return) 統一 emit `self_check_triggered` + `original_confidence` 2 個 audit field (對齊 §M2 self-check penalty 永久 rule 沿用, 補返 v0.4.0 嘅 emit bug)
+> - ✅ `WARNING_CODES['CONFLICT_STATE']` 永久係 `info` level (v1.4.0 改動, 對齊 §Module Warning v1.1.0 stock_state spirit), frontend 自動分流做「📊 股票狀態提醒」banner
+> - ✅ Path A Hurst+ADX gate fail 嘅 stock 默認信心 0.5 (對齊 stock_state 中等信心提示)
+> - ✅ 改 algorithm / warning_collector 之後必 restart backend + curl `/api/algorithms/run?algo=hl_structure&symbol=HK.00005` 拎 evidence 確認 fix work (對齊 §Backend hot-reload 永久 rule)
+> - ✅ WARNING_CODES 改動會影響所有用呢個 code 嘅 algo (M2 + M3 等), 改前必 audit 全部影響範圍
+>
+> **Frontend 影響**:
+> - 151 隻 stock 嘅 CONFLICT_STATE warning 由「🟡 Warning」自動分流做「🔵 Info」(📊 股票狀態提醒)
+> - 4 隻 stock (HK.00013 和黃醫藥 / HK.00005 匯豐 / HK.00038 / HK.00066) 之前 verdict 信心 0.3 (Path A hardcode), 修完升到 0.5, 大少肉眼睇到「中等橫行」而唔係「強橫行 30%」誤信
+> - 凡人話: 大少見到 CONFLICT_STATE banner 由「我口話唔 sure, 我答案就係 UP 0.3」變返「verdict 已經準確, 留意股票狀態」, 邏輯唔再矛盾
+>
+> **對應 commit** (1 個 fix + 1 個 Spec Sync):
+> - `fix(m2): v0.5.1 4 個 audit fix — early return audit field + WARNING_CODES CONFLICT_STATE + Path A confidence 0.5`
+> - `docs(spec): Spec Sync #50 module-02 v0.5.1 + warning system v1.4.0`
+>
+> **凡人話總結**:
+> - M2 算法之前 3 個 return path 漏咗 emit audit field, 150 隻 stock 拎唔到 self-check audit data — Fix 1 補返
+> - WARNING_CODES 入面 CONFLICT_STATE 寫 warning 但 category 寫 stock_state, 兩個講唔同嘢, 違反 v1.1.0 spirit — Fix 2+3 統一做 info
+> - Path A 默認 0.3 信心偏細, 對齊 stock_state 中等信心改 0.5 — Fix 4
+> - 凡人話: 大少落單睇 M2 verdict 信心, 而家 7 成 stock 係 0.4-0.6 中等 (之前 9 成係 0.3 偏低), 信心分佈正常咗
+>
 > ## 🔥 v0.5.0 改動摘要 (2026-09-08, Spec Sync #49)
 >
 > **觸發原因**: 大少 9月8日 09:02 trigger「你去檢查M2 對比 M1 的結果」audit, 拎 evidence 發現 M2 hl_structure algorithm 嘅 7 個 self-check warning 注入點 (Step 19 嗰 5 個 + Step 0.5 Hurst+ADX gate + 兩個峰谷不足 case) 全部用 raw dict 寫, 違反永久 rule §Module Warning v1.1.0 (大少 2026-08-14 11:33 Spec Sync #18)

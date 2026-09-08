@@ -886,7 +886,7 @@ class HLStructureAlgorithm(Algorithm):
     """
 
     name = "hl_structure"
-    version = "0.4.0"  # v0.4.0 (大少 2026-09-07 11:45): 5-layer evidence-based 優化 (Layer 1-5)
+    version = "0.5.0"  # v0.5.0 (大少 2026-09-08 22:14): 3 個 early return path 加 audit field + Hurst+ADX gate warning level warning→info
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -932,8 +932,10 @@ class HLStructureAlgorithm(Algorithm):
             if not hurst_adx_gate_pass:
                 # v1.3.0: 用 make_warning() helper, 自動 emit category 字段 + apply CATEGORY_DISPLAY template
                 # 永久 rule §Module Warning v1.1.0 — Backend emit category = source of truth
+                # v0.5.0 (大少 2026-09-08 22:14 trigger): Hurst+ADX gate 屬「股價冇方向」stock_state 提示
+                # 唔觸發 self-check penalty (對齊 §Module Warning v1.1.0 spirit, info level 唔 floor conf)
                 _gate_warnings = [make_warning(
-                    level="warning",
+                    level="info",
                     module_id="M2",
                     code="CONFLICT_STATE",
                     message=f"Hurst+ADX gate 唔通過 (H={hurst_value:.4f}, ADX={adx_value:.2f})",
@@ -956,8 +958,10 @@ class HLStructureAlgorithm(Algorithm):
                         "cycle": "sideways",
                         "state": "SIDEWAYS",
                         "cycle_label": "橫行週期",
-                        "confidence": 0.3,
-                        "base_confidence": 0.3,
+                        # v0.5.0 (大少 2026-09-08 22:14): 0.3 → 0.5, 對齊 stock_state category 提示中等信心
+                        # 對齊 §Module Warning v1.1.0 spirit, 「verdict 已經準確, 留意股票狀態」
+                        "confidence": 0.5,
+                        "base_confidence": 0.5,
                         "peaks": [],
                         "troughs": [],
                         "peak_trend": "mixed",
@@ -981,7 +985,11 @@ class HLStructureAlgorithm(Algorithm):
                             "hurst_pass": hurst_pass,
                             "adx_pass": adx_pass,
                         },
-                        "version": "0.4.0",
+                        "version": "0.5.0",
+                        # v0.5.0 (大少 2026-09-08 22:14 trigger): 對齊 §M2 self-check penalty 永久 rule,
+                        # 3 個 early return path (Path A/B/C) 統一 emit audit field
+                        "self_check_triggered": False,  # info level 唔觸發 penalty (對齊 §Module Warning v1.1.0)
+                        "original_confidence": 0.3,  # 默認 confidence, 唔受 penalty 影響
                         "_warnings": _gate_warnings,
                     },
                     warnings=_gate_warnings,
@@ -1046,6 +1054,10 @@ class HLStructureAlgorithm(Algorithm):
                     "adjustment_log": ["價格完全無變化,無法識別峰谷"],
                     "reason": "價格完全無變化,預設橫行",
                     "last_date": str(recent[-1].get("time") or recent[-1].get("date") or recent[-1].get("timestamp") or ""),
+                    # v0.5.0 (大少 2026-09-08 22:14 trigger): 對齊 §M2 self-check penalty 永久 rule,
+                    # 3 個 early return path (Path A/B/C) 統一 emit audit field
+                    "self_check_triggered": True,  # VERDICT_MISSING critical 屬 trigger code
+                    "original_confidence": 0.3,  # hardcode 0.3 已經係 floor 後值
                     "_warnings": _flat_warnings,
                 },
                 warnings=_flat_warnings,
@@ -1105,6 +1117,10 @@ class HLStructureAlgorithm(Algorithm):
                     "adjustment_log": [f"峰谷結構唔夠清晰 ({len(alternated)} < {cfg['minPairs'] * 2})"],
                     "reason": f"峰谷結構唔夠清晰 (只有 {len(alternated)} 個交替峰谷,需要至少 {cfg['minPairs'] * 2}),預設橫行",
                     "last_date": str(recent[-1].get("time") or recent[-1].get("date") or recent[-1].get("timestamp") or ""),
+                    # v0.5.0 (大少 2026-09-08 22:14 trigger): 對齊 §M2 self-check penalty 永久 rule,
+                    # 3 個 early return path (Path A/B/C) 統一 emit audit field
+                    "self_check_triggered": True,  # FALLBACK_USED warning 屬 trigger code
+                    "original_confidence": 0.5,  # hardcode 0.5 (高過 0.3 floor, 唔觸發 floor)
                     "_warnings": [make_warning(
                         level="warning",
                         module_id="M2",
@@ -1714,7 +1730,7 @@ class HLStructureAlgorithm(Algorithm):
                 "enabled": True,
                 "passed": hurst_adx_gate_pass,
             },
-            "version": "0.4.0",                       # v0.4.0 (大少 2026-09-07 11:45): 5-layer evidence-based 優化, version 寫入 meta 等 frontend 對齊
+            "version": "0.5.0",                       # v0.5.0 (大少 2026-09-08 22:14): 3 個 early return path 加 audit field + Hurst+ADX gate warning level warning→info, version 寫入 meta 等 frontend 對齊
             "_warnings": m2_warnings,
         }
 

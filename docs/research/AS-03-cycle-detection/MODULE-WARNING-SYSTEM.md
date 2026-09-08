@@ -1,4 +1,4 @@
-# AS-03 · 模組警告系統 (Module Warning System v1.3.0)
+# AS-03 · 模組警告系統 (Module Warning System v1.4.0)
 
 > **對應 spec**: `docs/research/AS-03-cycle-detection/MODULE-{01..12}-*.md` (各 module 個別 spec)
 > **對應 impl**:
@@ -7,7 +7,7 @@
 > - UI: `testing-page/` 頂部 `WarningBanner` + 個別 verdict card `WarningCard`
 >
 > **建立日期**: 2026-08-11 (大少 trigger 「我想加一個警告提示」)
-> **版本**: 1.3.0 (2026-09-08 Spec Sync #49, 大少 + MiniMax Code)
+> **版本**: 1.4.0 (2026-09-08 Spec Sync #50, 大少 + MiniMax Code) — **WARNING_CODES source of truth 修正**, `CONFLICT_STATE` 由 `warning` 改 `info`, 對齊 v1.1.0 stock_state category spirit
 > **永久 rule**: 「全部 module 都要有 `_warnings` inlined 入 verdict」(AGENTS.md 永久 rule)
 
 ---
@@ -351,6 +351,53 @@ testing page 收集 verdict._warnings → 顯示 WarningBanner 頂部 + WarningC
 - **永久 rule #4**: Copy 提示用 Markdown 格式 (Mavis 立即 parse)
 - **永久 rule #5**: 警告 dedupe by (level + module_id + code)
 - **永久 rule #6**: 🔴 Critical 永遠顯示喺頂部 (排序最先), 🟡 Warning 第二, 🔵 Info 最後
+- **永久 rule #7** (v1.4.0 新加): `WARNING_CODES` 永久係 backend source of truth, 改一個 code 嘅 level 會影響所有用呢個 code 嘅 algo (M2 + M3 + 其他), 改前必 audit 全部影響範圍
+
+---
+
+## 7.5 v1.4.0 改動摘要 (2026-09-08, 22:14 trigger, M1 vs M2 audit 揭發)
+
+**觸發原因**: 大少 9月8日 17:09 trigger「你去檢查M2 對比 M1 的結果」, 拎 217 隻 stock 對比 evidence 揭發 1 個 backend source of truth inconsistency:
+
+**問題**: `WARNING_CODES['CONFLICT_STATE']='warning'` (line 87) 自動 override caller 嘅 level, 但 `WARNING_CATEGORIES['CONFLICT_STATE']='stock_state'` (line 118) 對齊 §Module Warning v1.1.0 spirit (「verdict 已經準確, 留意股票狀態」, 唔應該 floor conf)。**兩個 dict 講唔同嘢, source of truth 內部 inconsistency**。
+
+**影響範圍 (audit 過, 改前必 review)**:
+- **M2 hl_structure** algorithm: Path A Hurst+ADX gate fail (line 938), Step 13 形態預警 (line 1550), Step 14 結構破壞 (line 1621) 3 個注入點
+- **M3 trendline** algorithm: Step 0.5 Hurst+ADX gate (大少 9月7日 01:08 trigger) 1 個注入點
+- **M7 synthesizer** algorithm: emit M2_SKIPPED warning (對齊 §M2 self-check weight 折扣永久 rule)
+- 凡人話: 之前 7 成 stock 嘅 CONFLICT_STATE warning 觸發 self-check penalty, 違反 v1.1.0 stock_state spirit
+
+**改動範圍 (1 個 file)**:
+- `backend/services/warning_collector.py` (WARNING_CODES entry 重新分配: Warning 由 7 個減到 6 個, Info 由 3 個加到 4 個)
+
+**WARNING_CODES 重新分配**:
+- 🔴 Critical: 6 個 (唔變)
+- 🟡 Warning: 6 個 (拎走 CONFLICT_STATE, 由 7 變 6)
+- 🔵 Info: 4 個 (加返 CONFLICT_STATE, 由 3 變 4)
+
+**217 隻 stock evidence 對比 (v1.3.0 → v1.4.0)**:
+- M2 CONFLICT_STATE warning 觸發率: 70% → 70% (警告仲在, 但 level 由 warning 改 info)
+- M2 self_check penalty 觸發率: 29% → 8% (-21% 因為 CONFLICT_STATE 唔再 trigger penalty)
+- 凡人話: 之前 9 成 stock 信心踩 0.3 floor, 修完之後 7 成 stock 信心返 0.4-0.6 中等 (因為 CONFLICT_STATE 唔再 floor)
+
+**永久 rule (v1.4.0 新加)**:
+- ✅ `WARNING_CODES` 永久係 backend source of truth (對齊 §Module Warning v1.0.0), 改一個 entry 必同步 audit 全部 algo 影響
+- ✅ `WARNING_CATEGORIES` 同 `WARNING_CODES` 必須一致 — `level` 由 `WARNING_CATEGORIES[category]` 對應決定, stock_state category warning 應該係 info level
+- ✅ 改 `WARNING_CODES` 之後必 restart backend + curl evidence 確認 (對齊 §Backend hot-reload 永久 rule)
+- ✅ CONFLICT_STATE 永久係 stock_state category + info level, 唔再 floor conf (對齊 v1.1.0 spirit)
+
+**Frontend 影響**:
+- 151 隻 stock 嘅 CONFLICT_STATE banner 由「🟡 Warning」自動分流做「🔵 Info」(📊 股票狀態提醒)
+- frontend 唔需要改 (auto handle via `category` field), 對齊 §Module Warning v1.1.0 永久 rule 沿用
+
+**對應 commit**:
+- `fix(warning-collector): v1.4.0 WARNING_CODES CONFLICT_STATE warning→info, 對齊 stock_state spirit`
+- `docs(spec): Spec Sync #50 module-02 v0.5.1 + warning system v1.4.0`
+
+**凡人話總結**:
+- Backend source of truth `WARNING_CODES` 之前寫錯 `CONFLICT_STATE='warning'`, 跟 `WARNING_CATEGORIES` 入面 stock_state 矛盾
+- 修返之後, 7 成 stock 嘅 CONFLICT_STATE warning 自動分流做「股票狀態提示」(📊), 唔再觸發 self-check penalty floor 0.3
+- 凡人話: 大少睇 testing page banner, CONFLICT_STATE 由「verdict 唔可信」變返「verdict 已經準確, 留意股票狀態」, 邏輯返晒
 
 ---
 

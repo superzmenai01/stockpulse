@@ -71,6 +71,10 @@ logger = logging.getLogger(__name__)
 WarningLevel = Literal['critical', 'warning', 'info']
 
 # 16 個 warning codes (跟 frontend TS WarningCode mirror, 大少 2026-08-31 P0-6 加 OPEN_D_UNAVAILABLE)
+# v1.4.0 (大少 2026-09-08 22:14 trigger): CONFLICT_STATE 由 'warning' 改 'info'
+# 對齊 §Module Warning v1.1.0 spirit — CONFLICT_STATE 屬 stock_state category (line 118),
+# 「verdict 已經準確, 留意股票狀態」, 唔應該 floor conf (對齊 §M2 self-check penalty spirit)
+# 影響 M2 (Path A Hurst+ADX gate) + M3 (Step 0.5 Hurst+ADX gate) 兩個 algo
 WARNING_CODES = {
     # 🔴 Critical (6, 大少 P0-6 加 OPEN_D_UNAVAILABLE)
     'INSUFFICIENT_DATA': 'critical',
@@ -79,16 +83,16 @@ WARNING_CODES = {
     'CACHE_INVALID': 'critical',
     'KLINE_MISSING': 'critical',
     'OPEN_D_UNAVAILABLE': 'critical',
-    # 🟡 Warning (7)
+    # 🟡 Warning (6) — v1.4.0 拎走 CONFLICT_STATE 落 Info
     'MODULE_PARTIAL': 'warning',
     'OUTLIER_VALUE': 'warning',
     'LOW_SAMPLE_SIZE': 'warning',
     'THRESHOLD_BREACH': 'warning',
-    'CONFLICT_STATE': 'warning',
     'POST_FAILED': 'warning',
     'FALLBACK_USED': 'warning',
     'LLM_RATE_LIMIT': 'warning',
-    # 🔵 Info (3)
+    # 🔵 Info (4) — v1.4.0 加 CONFLICT_STATE 入 Info
+    'CONFLICT_STATE': 'info',  # v1.4.0: stock_state category 唔 floor conf
     'CACHE_EXPIRING': 'info',
     'CONFIG_DEFAULTS': 'info',
     'DATA_AGE': 'info',
