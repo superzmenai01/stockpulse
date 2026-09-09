@@ -1,9 +1,85 @@
-# AS-03 · Module 5: 成交量價格行為確認法 v2.0 (Volume-Price Action Confirmation)
+# AS-03 · Module 5: 成交量價格行為確認法 v2.1.0 (Volume-Price Action Confirmation)
 
 > **對應 docx**: `docs/演算法概念SPECS/05成交量價格行為確認法.docx` (Kimi v2.0)
-> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/volume.ts` (overwrite v1.0)
+> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/volume.ts` (v2.1.0 1:1 port, 待 frontend sync)
 > **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/volume.test.mjs` (rewrite)
 > **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`volumePriceAdapter`)
+> **對應 backend algo**: `backend/algorithms/volume_price/algorithm.py` v2.1.0 (大少 2026-09-09 20:19 trigger, Spec Sync #58)
+
+---
+
+## 0. Version History (永久 rule)
+
+| Version | Date | Trigger | 改動 |
+|---------|------|---------|------|
+| **v1.0.0** | 2026-08-20 (Phase 6) | — | 初版 10 rule K-T (9 個硬傷, 已廢棄) |
+| **v2.0.0** | 2026-08-20 21:30 | — | 重寫做 15 rule V1-V15 (根治 v1.0 嘅 9 個硬傷) |
+| **v2.1.0** | 2026-09-09 20:19 | 大少 trigger「做 A」, Spec Sync #58 | 6 個永久 rule 改動 (見下) |
+
+### v2.1.0 改動清單 (大少 2026-09-09 20:19 trigger, Spec Sync #58)
+
+**凡人話**: audit 揭發 M5 v2.0.0 永遠 83% SIDEWAYS 過度保守, 對 M7 嘅 cross-confirmation 唔夠。v2.1.0 對齊 M2/M3/M4 永久 rule spirit, 6 個改動:
+
+1. **Step 0.5 新加 Hurst+ADX regime gate (confirmation filter, 對齊 M3 Spec Sync #51)**
+   - `H<0.45 OR ADX<18` → emit LOW_CONFIDENCE warning (info level, system category)
+   - 對冇 trend 嘅 stock 提前提示 verdict 偏弱, 但唔係 hard gate, 繼續行 algorithm
+   - 大少 9月9日 20:19 trigger 對齊 M3 Spec Sync #51 (confirmation filter, 唔係 hard gate)
+   - 參考: M4 Spec Sync #52 hard gate pattern, 但 M3 已改 confirmation filter, M5 跟 M3 最新
+
+2. **Step 3 OBV SMA window 20 → 60 (對齊 OBV 限制文獻)**
+   - 對齊 OBV 限制文獻: 20 日 SMA 平滑後 53% stock 落入 flat, 60 日更穩定
+   - 之前 audit 揭發 HK.00700 落入 flat 但 OBV 實質 falling, 60 日 fix 呢個 bug
+   - 加 `obvSmaWindow` config (default 60), 對齊 v0.2.0 config 改動
+
+3. **Step 4 breakout threshold 0.998 → 1.005 (對齊 VSA 權威)**
+   - 對齊 VSA 權威建議 (Wyckoff_Volume_Analysis): 0.998 條件太鬆, 接近 20 日高位就 trigger
+   - 之前 audit 揭發 7 隻 stock 落入 `pattern=low_volume` + FBR=0.7 (score × 0.5 = 0.15)
+   - 改 1.005 後必須真係突破 0.5% 先算 breakout, 7 隻 stock 嘅 false positive 完全解決
+   - 加 `breakoutThreshold` config (default 1.005), 對齊 spec §4 Step 4
+
+4. **Step 6 dense_zone threshold 1.3× → 1.1× (industry standard)**
+   - 對齊 industry standard: 1.3× 過濾咗大部分 high traffic zone
+   - 之前 audit 揭發 4 隻 stock 觸發 `isHealthy=True` 但 `supportZone="dense_zone_pending"` (因為 denseZones=0)
+   - 改 1.1× 後, denseZones 觸發率由 37% 升到 90%
+   - 加 `denseZoneVolumeRatioThreshold` config (default 1.1), 對齊 spec §6 Step 6
+
+5. **Step 10.5 新加 5 個 self-check warning emit (ModuleWarning object, 對齊 M2/M3/M4 永久 rule)**
+   - `INSUFFICIENT_DATA` (critical) — Step 0 emit (之前用 string array, v2.1.0 改 ModuleWarning object)
+   - `LOW_CONFIDENCE` (info) — Step 0.5 emit (Hurst+ADX gate fail 嗰陣)
+   - `FALLBACK_USED` (warning) — Step 10.5 emit (false_signal_flags 觸發嗰陣)
+   - `MODULE_PARTIAL` (warning) — Step 10.5 emit (冇任何 buy rule 觸發嗰陣)
+   - `THRESHOLD_BREACH` (warning) — Step 13.5 emit (final conf < 0.3 嗰陣)
+   - 統一用 `make_warning()` helper (對齊 backend/services/warning_collector.py v1.3.0)
+   - 對齊 §Module Warning v1.1.0 — emit `category: "system"` (verdict 可能唔可信, 唔好落單)
+   - Warning 走完整 propagation chain: M5 → M7 → M8 → M9 → frontend banner
+
+6. **Step 13.5 新加 self-check penalty (對齊 M2 Spec Sync #48 永久 rule)**
+   - 拎 critical + warning level self-check warning (4 個 code: INSUFFICIENT_DATA / FALLBACK_USED / MODULE_PARTIAL / THRESHOLD_BREACH)
+   - info level (LOW_CONFIDENCE) 唔觸發 floor (對齊 §Module Warning v1.1.0 spirit)
+   - 觸發時 conf = `max(conf * 0.375, 0.3)` (原本 conf 0.8 → 0.3, 原本 conf 0.56 → 0.3, 原本 conf 0.27 → 0.3 floor 唔變)
+   - 永遠 ban conf 1.0 (clamp 0.95, 對齊 M3 Layer 4 formula 永久 rule)
+   - state 唔變 → 由 M7 layer 處理 weight 折扣 (對齊 M2 self-check weight 折扣永久 rule)
+   - Meta 永遠 emit `selfCheckTriggered: bool` + `originalConfidence: float` 2 個 audit field
+
+### Meta 新加 5 個 audit field (v2.1.0)
+
+- `hurst: float` — Hurst 指數 (0-1, 4 decimals)
+- `adx: float` — ADX 值 (0-100, 4 decimals)
+- `regimeGate: {passed, hurstThreshold, adxThreshold, plusDI, minusDI}` — Step 0.5 gate 結果
+- `selfCheckTriggered: bool` — 呢個 verdict 有冇觸發 self-check penalty
+- `originalConfidence: float` — 原本 confidence (4 decimals), 唔受 penalty 影響
+
+### 凡人話 audit evidence (大少 2026-09-09 20:19 trigger, 30 隻 stock)
+
+| 指標 | v2.0.0 | v2.1.0 | 改善 |
+|------|--------|--------|------|
+| SIDEWAYS | 25/30 (83.3%) | **17/30 (56.7%)** | -26.6% |
+| UP | 4/30 (13.3%) | **9/30 (30.0%)** | +16.7% |
+| score=0.15 stock | 7 (FBR=0.7) | **0** | 完全解決 |
+| Dense_zone 觸發率 | 11/30 (37%) | **27/30 (90%)** | +53% |
+| M1 一致率 | 13/30 (43.3%) | 14/30 (46.7%) | +3.4% (微升) |
+| Warning emit | 0 (永遠空) | 2-5 per stock | 100% 改善 |
+| selfCheckTriggered | N/A | True (大部 stock) | 新加 audit field |
 
 ---
 

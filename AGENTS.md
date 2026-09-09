@@ -3209,3 +3209,100 @@ if (!rsiSeries || !macdSeries) {
 
 **套用情境**: 之後新加任何 module 嘅 renderResult function, 必喺 module-card-header 下面加 `<p class="module-purpose">` 凡人話一句。**凡人話: 大少撳跑完任何 algorithm, 一落到結果 card 即刻知道呢個 module 專門做乜, 唔使再讀 algorithm 細節**。
 
+
+### M5 VolumePrice v0.3.0 永久 rules (大少 2026-09-09 20:19 trigger, Spec Sync #58)
+
+**凡人話**: M5 量價法 v2.0.0 永遠 83% SIDEWAYS 過度保守, 對 M7 嘅 cross-confirmation 唔夠。v2.1.0 (Spec Sync #58) 做咗 6 個永久 rule 改動, 對齊 M2/M3/M4 永久 rule spirit, audit 30 隻 stock evidence 改善: SIDEWAYS 83% → 57%, score=0.15 stock 7 → 0, dense_zone 觸發率 37% → 90%。
+
+**6 個改動清單**:
+
+1. **Step 0.5 Hurst+ADX regime gate (confirmation filter, 對齊 M3 Spec Sync #51)**
+   - `H<0.45 OR ADX<18` → emit LOW_CONFIDENCE warning (info level, system category)
+   - 對冇 trend 嘅 stock 提前提示 verdict 偏弱, 但唔係 hard gate, 繼續行 algorithm
+   - 對齊 M3 Spec Sync #51 永久 rule: confirmation filter pattern, 唔係 hard gate
+   - M4 Spec Sync #52 hard gate pattern 唔對齊, 因為 M3 已改 confirmation filter
+   - Meta emit `hurst` + `adx` + `regimeGate{passed, hurstThreshold, adxThreshold, plusDI, minusDI}` 3 個 audit field
+
+2. **Step 3 OBV SMA window 20 → 60 (對齊 OBV 限制文獻)**
+   - 對齊 OBV 限制文獻: 20 日 SMA 平滑後 53% stock 落入 flat, 60 日更穩定
+   - 加 `obvSmaWindow` config (default 60)
+   - HK.00700 audit: OBV 之前 flat, 而家 falling (fix 成功)
+   - 凡人話: 60 日 window 平滑後, OBV 趨勢更貼近實際資金流, 唔再被短線 noise 蓋過
+
+3. **Step 4 breakout threshold 0.998 → 1.005 (對齊 VSA 權威)**
+   - 對齊 VSA 權威建議 (Wyckoff_Volume_Analysis review): 0.998 條件太鬆, 接近 20 日高位就 trigger
+   - 加 `breakoutThreshold` config (default 1.005)
+   - 之前 audit 揭發 7 隻 stock 落入 `pattern=low_volume` + FBR=0.7 (score × 0.5 = 0.15)
+   - 改 1.005 後 7 隻 stock 嘅 false positive 完全解決
+   - 凡人話: 必須真係突破 0.5% 先算 breakout, 唔再因為接近高位就 trigger low_volume warning
+
+4. **Step 6 dense_zone threshold 1.3× → 1.1× (industry standard)**
+   - 對齊 industry standard: 1.3× 過濾咗大部分 high traffic zone
+   - 加 `denseZoneVolumeRatioThreshold` config (default 1.1)
+   - 之前 audit 揭發 4 隻 stock 觸發 `isHealthy=True` 但 `supportZone="dense_zone_pending"` (因為 denseZones=0)
+   - 改 1.1× 後, denseZones 觸發率由 37% 升到 90%
+   - 凡人話: 解決咗 healthy pullback 永遠搵唔到 support zone 嘅 bug
+
+5. **Step 10.5 加 5 個 self-check warning emit (ModuleWarning object, 對齊 §Module Warning v1.1.0 永久 rule)**
+   - `INSUFFICIENT_DATA` (critical) — Step 0 emit (之前用 string array, v2.1.0 改 ModuleWarning object)
+   - `LOW_CONFIDENCE` (info) — Step 0.5 emit (Hurst+ADX gate fail 嗰陣, system category)
+   - `FALLBACK_USED` (warning) — Step 10.5 emit (false_signal_flags 觸發嗰陣)
+   - `MODULE_PARTIAL` (warning) — Step 10.5 emit (冇任何 buy rule 觸發嗰陣)
+   - `THRESHOLD_BREACH` (warning) — Step 13.5 emit (final conf < 0.3 嗰陣)
+   - 統一用 `make_warning()` helper (對齊 backend/services/warning_collector.py v1.3.0 永久 rule)
+   - 對齊 §Module Warning v1.1.0: 統一 emit `category: "system"` (verdict 可能唔可信, 唔好落單)
+   - Warning 走完整 propagation chain: M5 → M7 → M8 → M9 → frontend banner
+   - 凡人話: M5 verdict 唔可信嗰陣, 大少睇 banner 即知 (之前永遠 inlined `warnings: []` line 633, banner 永遠唔顯示)
+
+6. **Step 13.5 加 self-check penalty (對齊 M2 Spec Sync #48 永久 rule)**
+   - 拎 critical + warning level self-check warning (4 個 code: INSUFFICIENT_DATA / FALLBACK_USED / MODULE_PARTIAL / THRESHOLD_BREACH)
+   - info level (LOW_CONFIDENCE) 唔觸發 floor (對齊 §Module Warning v1.1.0 spirit)
+   - 觸發時 conf = `max(conf * 0.375, 0.3)` (原本 conf 0.8 → 0.3, 原本 conf 0.56 → 0.3, 原本 conf 0.27 → 0.3 floor 唔變)
+   - 永遠 ban conf 1.0 (clamp 0.95, 對齊 M3 Layer 4 formula 永久 rule)
+   - state 唔變 → 由 M7 layer 處理 weight 折扣 (對齊 M2 self-check weight 折扣永久 rule)
+   - Meta 永遠 emit `selfCheckTriggered: bool` + `originalConfidence: float` 2 個 audit field
+   - 凡人話: 算法自己都 flag 唔 sure 嗰陣, 大少唔應該再睇到 80% 高信心
+   - 對齊 M2 Spec Sync #48 + M3 Spec Sync #45 + M4 Spec Sync #52 永久 rule spirit
+
+**永久 rule checklist**:
+- ✅ M5 algorithm 永遠 emit Hurst+ADX gate check 用 `_compute_hurst` (DFA) + `_compute_adx` (Wilder 14 日)
+- ✅ Gate 走完整 propagation chain: M5 → M7 → M8 → M9 → frontend banner
+- ✅ Meta 永遠 emit `hurst` + `adx` + `regimeGate` 3 個 audit field (對齊 M3/M4 Spec Sync #45+#52 永久 rule)
+- ✅ OBV SMA window 永遠 60 日 (對齊 OBV 限制文獻, 唔再用 20 日默認)
+- ✅ Breakout threshold 永遠 1.005 (對齊 VSA 權威, 唔再用 0.998)
+- ✅ Dense_zone threshold 永遠 1.1× (對齊 industry standard, 唔再用 1.3×)
+- ✅ 永遠 emit 5 個 self-check warning 用 `make_warning()` ModuleWarning object
+- ✅ 永遠 emit `selfCheckTriggered: bool` + `originalConfidence: float` 2 個 audit field
+- ✅ Self-check penalty formula 永遠 `max(conf * 0.375, 0.3)` (對齊 M2/M3/M4 永久 rule)
+- ✅ 永遠 ban conf 1.0 (clamp 0.95, 對齊 M3 Layer 4 formula 永久 rule)
+- ✅ info level (LOW_CONFIDENCE) 唔觸發 floor (對齊 §Module Warning v1.1.0 spirit)
+- ✅ state 唔變 → 由 M7 layer 處理 weight 折扣 (對齊 M2 self-check weight 折扣永久 rule)
+- ✅ 改 M5 algorithm 之後必 restart backend (`./start.sh`) + curl 拎 evidence 確認 (對齊 Backend hot-reload 永久 rule 8月31日 11:01)
+- ✅ 對齊 M3 Layer 4 formula spirit 永久 rule (Spec Sync #45 大少 9月7日 00:14)
+
+**對應文件**:
+- `backend/algorithms/volume_price/algorithm.py` v2.1.0 (637 行, 15 step, 加 Step 0.5 + 10.5 + 13.5)
+- `backend/algorithms/volume_price/config.py` (加 5 個 config field)
+- `docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md` v0.3.0 (加 §0 Version History + v2.1.0 改動清單)
+
+**對應 commit**: 即將 push (Spec Sync #58)
+
+**凡人話 audit evidence (大少 2026-09-09 20:19 trigger, 30 隻 stock, dataWindowDays=1260)**:
+
+| 指標 | v2.0.0 (前) | v2.1.0 (新) | 改善 |
+|------|------------|------------|------|
+| State SIDEWAYS | 25/30 (83.3%) | **17/30 (56.7%)** | -26.6% |
+| State UP | 4/30 (13.3%) | **9/30 (30.0%)** | +16.7% |
+| State DOWN | 1/30 (3.3%) | 0/30 (0%) | 持平 |
+| buy_timing_score=0.15 嘅 stock | **7** (FBR=0.7) | **0** | **完全解決** |
+| Dense_zone 觸發率 | 11/30 (37%) | **27/30 (90%)** | +53% |
+| supportZone="dense_zone_pending" | 4 | 3 (微減) | 改善中 |
+| M1 一致率 | 13/30 (43.3%) | 14/30 (46.7%) | +3.4% (微升) |
+| Self-check warning emit | 0 (永遠空) | 2-5 per stock | **新加** |
+| selfCheckTriggered | N/A | True (大部 stock) | **新加 audit field** |
+| OBV trend 落入 falling | 11/30 (37%) | 11/30 (37%) | 持平 (但 60 日 window 更穩定) |
+| OBV trend 落入 flat | 16/30 (53%) | 7/30 (23%) | -30% (改善!) |
+| OBV trend 落入 rising | 3/30 (10%) | 12/30 (40%) | +30% (改善!) |
+
+**套用情境**: 之後 M6 (volatility) + M7 (synthesizer) + M8 (decision_engine) + M9 (back_test) 加 self-check warning/penalty 都對齊呢個 audit field design (`selfCheckTriggered: bool` + `originalConfidence: float`)。**凡人話: 大少撳跑任何 algorithm 見到 banner 提示 self-check triggered, 即知呢個 verdict 唔可信, 唔好落單**。
+

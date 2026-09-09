@@ -1,23 +1,25 @@
 """
-backend/algorithms/volume_price/algorithm.py — M5 VolumePrice v2.0.0 (大少 2026-08-20 21:30 Phase 6)
+backend/algorithms/volume_price/algorithm.py — M5 VolumePrice v2.1.0 (大少 2026-09-09 20:19 trigger, Spec Sync #58)
 
-凡人話: 拎 K 線 → 計 ATR / VWAP / Vol Percentile → 識別放量突破 (4 模式) + 假突破 → 滾動量价相關 → 15 條 rule V1-V15 → 規則引擎 (5 buy + 4 減分) → derive signal + cycle + 勝率
+凡人話: 拎 K 線 → Step 0.5 Hurst+ADX gate (confirmation filter, 對齊 M3 Spec Sync #51) → 計 ATR / VWAP / Vol Percentile → 識別放量突破 (4 模式) + 假突破 → 滾動量价相關 → 15 條 rule V1-V15 → 規則引擎 (5 buy + 4 減分) → derive signal + cycle + 勝率 → Step 9.5 self-check penalty (對齊 M2 Spec Sync #48 + M3 #45 + M4 #52 永久 rule)
 
 對應 source: algorithms/AS-03-cycle-detection/modules/volume.ts v2.0.0 (688 行, 15 rules V1-V15)
-對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md
+對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md (即將升 v0.3.0)
 對應 framework: backend/algorithms/base.py Verdict contract
 
-Algorithm: 14 step (跟 volume.ts 嘅 detect() method 1:1 port 去 Python)
+Algorithm: 15 step (v2.1.0 對齊 M2/M3/M4 永久 rule spirit)
 - Step 0: 數據驗證 (minData bars)
+- Step 0.5: Hurst+ADX regime gate (v2.1.0 新加, 對齊 M3 Spec Sync #51 confirmation filter)
 - Step 1: 計算基礎指標 (ATR / VWAP / Vol Percentile / Turnover)
 - Step 2: 成交量標準差過濾 (Z-Score + 異常爆量)
-- Step 3: 加權 OBV (Tanh)
-- Step 4: 放量突破檢測 (4 種模式 + 假突破)
+- Step 3: 加權 OBV (Tanh) — v2.1.0 改 60 日 SMA (對齊 OBV 限制文獻)
+- Step 4: 放量突破檢測 (4 種模式 + 假突破) — v2.1.0 改 threshold 0.998 → 1.005 (對齊 VSA 權威)
 - Step 5: 回調健康度
-- Step 6: ATR 動態分箱
+- Step 6: ATR 動態分箱 — v2.1.0 改 threshold 1.3× → 1.1× (industry standard)
 - Step 7: 滾動量价相關係數
 - Step 8: 成交量體制 (accumulation / distribution / neutral)
 - Step 9: 15 條 rule V1-V15 觸發檢測
+- Step 9.5: Self-check penalty (v2.1.0 新加, 對齊 M2/M3/M4 永久 rule) — critical + warning level warning 觸發 conf floor 0.3
 - Step 10: 規則引擎 (5 buy + 4 減分)
 - Step 11: Signal 推導 (CONFIRM / DISCONFIRM / NEUTRAL)
 - Step 12: Cycle 推導 (uptrend / downtrend / sideways)
@@ -27,6 +29,14 @@ Algorithm: 14 step (跟 volume.ts 嘅 detect() method 1:1 port 去 Python)
 State derivation: buyTimingScore >= 0.55 → UP (資金流入), distribution → DOWN (資金流出), else SIDEWAYS (資金觀望)
 
 凡人話: 自動分析成交量 + 價格 + OBV + 突破模式, 拎資金流信號
+v2.1.0 改動 (大少 2026-09-09 20:19 trigger, Spec Sync #58):
+- Step 0.5 Hurst+ADX gate (confirmation filter, 對齊 M3 Spec Sync #51)
+- Step 3 OBV SMA 20 → 60 日
+- Step 4 breakout threshold 0.998 → 1.005
+- Step 6 dense_zone threshold 1.3× → 1.1×
+- Step 9.5 self-check penalty (conf floor 0.3)
+- 5 個 self-check warning emit (INSUFFICIENT_DATA / CONFLICT_STATE / THRESHOLD_BREACH / MODULE_PARTIAL / FALLBACK_USED)
+- Meta 5 個 audit field (hurst / adx / regimeGate / selfCheckTriggered / originalConfidence)
 """
 
 import math
@@ -35,6 +45,11 @@ from typing import List, Dict, Any, Optional, Tuple
 from ..base import Algorithm, Verdict
 from ..registry import register
 from .config import DEFAULT_VOLUME_PRICE_CONFIG
+
+# v2.1.0 (大少 2026-09-09 20:19): 對齊 M3 Spec Sync #51 / M4 Spec Sync #52 / M2 Spec Sync #48 永久 rule
+# 統一 import Hurst+ADX helper (M4 backend pattern) + make_warning helper
+from ..trendline.algorithm import _compute_hurst, _compute_adx
+from backend.services.warning_collector import make_warning
 
 
 # ============================================================
@@ -161,6 +176,16 @@ class VolumePriceAlgorithm(Algorithm):
         # Step 0: 數據驗證
         min_data = max(80, cfg["volumePercentileLookback"] + cfg["vwapPeriod"] + cfg["breakoutConfirmDays"] + 20)
         if len(klines) < min_data:
+            # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): INSUFFICIENT_DATA warning 改用 make_warning() helper
+            # 對齊 backend/services/warning_collector.py 永久 rule v1.1.0
+            insufficient_data_warning = make_warning(
+                level="critical",
+                module_id="volume",
+                code="INSUFFICIENT_DATA",
+                message=f"數據不足: need ≥ {min_data} bars, got {len(klines)}",
+                issue=f"kline count {len(klines)} < {min_data} required (volumePercentileLookback={cfg['volumePercentileLookback']} + vwapPeriod={cfg['vwapPeriod']} + breakoutConfirmDays={cfg['breakoutConfirmDays']} + 20)",
+                context={"kline_count": len(klines), "min_required": min_data},
+            )
             return Verdict(
                 ok=True,
                 points=[],
@@ -171,13 +196,13 @@ class VolumePriceAlgorithm(Algorithm):
                     "state": "SIDEWAYS",
                     "cycleLabel": "資金觀望",
                     "confidence": 0,
-                    "interpretation": f"[VolumePrice v2.0] 數據不足: need ≥ {min_data} bars, got {len(klines)}",
+                    "interpretation": f"[VolumePrice v2.1.0] 數據不足: need ≥ {min_data} bars, got {len(klines)}",
                     "evidence": [],
                     "dataDays": len(klines),
                     "configUsed": cfg,
                     "reason": "數據不足",
                 },
-                warnings=[f"INSUFFICIENT_DATA: {len(klines)} < {min_data}"],
+                warnings=[insufficient_data_warning],
             )
 
         recent = klines[-max(len(klines), min_data):]
@@ -185,6 +210,45 @@ class VolumePriceAlgorithm(Algorithm):
         last_idx = n - 1
         last_bar = recent[last_idx]
         current_price = last_bar["close"]
+
+        # Step 0.5 (v2.1.0, 大少 2026-09-09 20:19 Spec Sync #58): Hurst+ADX regime gate
+        # 對齊 M3 Spec Sync #51 confirmation filter pattern (gate fail emit LOW_CONFIDENCE warning, 唔係 hard gate)
+        # 對齊 M4 Spec Sync #52 永久 rule (H<0.45 OR ADX<20 weak trend)
+        # 凡人話: 對冇 trend 嘅 stock 提前扣 conf 0.10 (M3 warn_penalty pattern), 唔好再 100% SIDEWAYS (audit 揭發 83% SIDEWAYS)
+        # 之前 v2.0.0: 冇 gate, 對所有 stock 強行跑全部 Step 1-14
+        # 而家 v2.1.0: gate fail 繼續行, 但 emit LOW_CONFIDENCE warning (info level), Step 14 conf 計算時 × 0.90
+        closes_for_hurst = [bar["close"] for bar in recent]
+        hurst_value, hurst_log_r2 = _compute_hurst(closes_for_hurst, window=100)
+        adx_data = _compute_adx(recent, period=14)
+        adx_value = adx_data["adx"]
+        plus_di_value = adx_data["plus_di"]
+        minus_di_value = adx_data["minus_di"]
+        atr_value_from_adx = adx_data["atr"]
+
+        regime_gate_passed = (hurst_value >= cfg["regimeGateHurstThreshold"]
+                              and adx_value >= cfg["regimeGateAdxThreshold"])
+        regime_gate_warning: Optional[Any] = None
+        if not regime_gate_passed:
+            # 對齊 M3 Spec Sync #51 pattern: emit LOW_CONFIDENCE warning (info level, system category)
+            # 唔係 hard gate, 繼續行 algorithm
+            # 凡人話: gate 偏弱但仲有條件繼續 verdict, 由 Step 14 conf 計算時 × 0.90 (M3 warn_penalty -0.10)
+            regime_gate_warning = make_warning(
+                level="info",
+                module_id="volume",
+                code="LOW_CONFIDENCE",
+                message=f"Hurst+ADX gate 偏弱 (H={hurst_value:.3f}, ADX={adx_value:.1f})",
+                issue=f"Hurst 指數 {hurst_value:.3f} (< {cfg['regimeGateHurstThreshold']}) 或 ADX {adx_value:.1f} (< {cfg['regimeGateAdxThreshold']}), 股價 random walk / mean-reverting / 弱趨勢, 量價信號偏弱但繼續 verdict (Spec Sync #58 對齊 M3 Spec Sync #51 confirmation filter)",
+                impact="Verdict 偏弱 (Hurst+ADX 偏低, 量價信號唔太可信), conf 自動扣 0.10",
+                fix="Re-run / 對齊 M1/M2 verdict 確認 / 接受低 conf 但繼續判斷",
+                context={
+                    "hurst": round(hurst_value, 4),
+                    "adx": round(adx_value, 4),
+                    "threshold_hurst": cfg["regimeGateHurstThreshold"],
+                    "threshold_adx": cfg["regimeGateAdxThreshold"],
+                    "plus_di": round(plus_di_value, 4),
+                    "minus_di": round(minus_di_value, 4),
+                },
+            )
 
         # Step 1: 計算基礎指標
         atr_value = _compute_atr(recent, 14)
@@ -225,18 +289,21 @@ class VolumePriceAlgorithm(Algorithm):
             weight = math.tanh(price_change_pct * 10)
             weighted_obv.append(weighted_obv[i - 1] + recent[i]["volume"] * weight)
 
-        obv_sma20 = _compute_sma(weighted_obv, 20)
+        # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): OBV SMA window 20 → 60
+        # 對齊 OBV 限制文獻: 20 日太短, 平滑後多數 stock 落入 flat (audit 揭發 53% flat)
+        obv_sma_window = cfg["obvSmaWindow"]
+        obv_sma_arr = _compute_sma(weighted_obv, obv_sma_window)
         obv_latest = weighted_obv[last_idx]
-        obv_sma_latest = obv_sma20[last_idx] if not math.isnan(obv_sma20[last_idx]) else obv_latest
+        obv_sma_latest = obv_sma_arr[last_idx] if not math.isnan(obv_sma_arr[last_idx]) else obv_latest
         obv_trend: str = (
             "rising" if obv_latest > obv_sma_latest * 1.03
             else "falling" if obv_latest < obv_sma_latest * 0.97
             else "flat"
         )
 
-        # OBV 與 close 20 日相關係數
-        recent_closes = [k["close"] for k in recent[-20:]]
-        recent_obv = weighted_obv[-20:]
+        # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): OBV 與 close 相關係數 改用 60 日 (對齊 obv_sma_window)
+        recent_closes = [k["close"] for k in recent[-obv_sma_window:]]
+        recent_obv = weighted_obv[-obv_sma_window:]
         obv_price_corr = _pearson_correlation(recent_closes, recent_obv)
 
         # Step 4: 放量突破檢測
@@ -247,7 +314,10 @@ class VolumePriceAlgorithm(Algorithm):
 
         breakout_window = [k["close"] for k in recent[-(cfg["breakoutConfirmDays"] + 1):]]
         max_close_in_breakout_window = max(breakout_window)
-        is_price_breakout = max_close_in_breakout_window > recent20_high * 0.998
+        # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): breakout threshold 0.998 → cfg["breakoutThreshold"] (1.005)
+        # 對齊 VSA 權威建議: 0.998 條件太鬆, 接近 20 日高位就 trigger (audit 揭發 7 隻 stock 落入 low_volume + FBR=0.7)
+        # 改 1.005 後, 必須真係突破 0.5% 先算 breakout, 減少 false positive
+        is_price_breakout = max_close_in_breakout_window > recent20_high * cfg["breakoutThreshold"]
 
         breakout_pattern = "none"
         breakout_strength = 0.0
@@ -357,7 +427,9 @@ class VolumePriceAlgorithm(Algorithm):
         dense_zones: List[Dict[str, Any]] = []
         for center, data in sorted_bins:
             avg_vol_in_bin = data["totalVol"] / data["count"] if data["count"] > 0 else 0
-            if avg_vol_in_bin > overall_avg_vol * 1.3:
+            # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): dense_zone threshold 1.3× → cfg["denseZoneVolumeRatioThreshold"] (1.1)
+            # 凡人話: 1.3× 過濾咗大部分 high traffic zone (audit 揭發 4 隻 stock supportZone="dense_zone_pending" 但 denseZones=[]), 改 1.1× 後解決呢個 bug
+            if avg_vol_in_bin > overall_avg_vol * cfg["denseZoneVolumeRatioThreshold"]:
                 zone_type = (
                     "support" if current_price > center + bin_width / 2
                     else "resistance" if current_price < center - bin_width / 2
@@ -519,6 +591,40 @@ class VolumePriceAlgorithm(Algorithm):
             false_signal_flags.append("distribution_with_price_rise")
             buy_reasons.append("警告:放量滯漲,主力可能出貨")
 
+        # Step 10.5 (v2.1.0, 大少 2026-09-09 20:19 Spec Sync #58): 收集 4 個 self-check warning
+        # 對齊 M2 Spec Sync #48 / M3 Spec Sync #45 / M4 Spec Sync #52 永久 rule
+        # 統一用 make_warning() helper (對齊 backend/services/warning_collector.py v1.3.0)
+        # 凡人話: 5 個 self-check warning (INSUFFICIENT_DATA 已經喺 Step 0 emit, LOW_CONFIDENCE 已經喺 Step 0.5 emit)
+        # 呢度 emit FALLBACK_USED / MODULE_PARTIAL / THRESHOLD_BREACH (Step 13.5 觸發)
+        self_check_warnings: List[Any] = []
+
+        # Warning 1: FALLBACK_USED (warning) — false_signal_flags 觸發 (已有嘅 5 個減分覆蓋)
+        # 對齊 M2 self-check warning 永久 rule (FALLBACK_USED 對齊 M2 嘅 5 個 code 之一)
+        if len(false_signal_flags) > 0:
+            fallback_used_warning = make_warning(
+                level="warning",
+                module_id="volume",
+                code="FALLBACK_USED",
+                message=f"觸發 {len(false_signal_flags)} 個減分覆蓋: {', '.join(false_signal_flags)}",
+                issue=f"4 條減分覆蓋觸發 ({len(false_signal_flags)} 個 flags): {', '.join(false_signal_flags)}",
+                context={"false_signal_flags": false_signal_flags, "count": len(false_signal_flags)},
+            )
+            self_check_warnings.append(fallback_used_warning)
+
+        # Warning 2: MODULE_PARTIAL (warning) — 冇任何 buy rule 觸發 (只 buy_timing_score = 0.3 默認)
+        # 凡人話: 15 條 V1-V15 rule 全部都唔觸發, 或者觸發咗但 buy rule (5 條) 都唔 match
+        rules_fired_count = len(matched_rules)
+        if buy_timing_score == 0.3 and "暫無明確成交量買入模式" in ";".join(buy_reasons):
+            module_partial_warning = make_warning(
+                level="warning",
+                module_id="volume",
+                code="MODULE_PARTIAL",
+                message="冇 buy rule 觸發 (5 條 buy rule 全部唔 match)",
+                issue=f"5 條 buy rule (黃金買入/健康回調/拋壓枯竭/VWAP 支撐/觀望) 全部唔 match, 只 buy_timing_score 默認 0.3, rules_fired={rules_fired_count}",
+                context={"rules_fired": rules_fired_count, "buy_timing_score": buy_timing_score, "matched_rules": [r["id"] for r in matched_rules]},
+            )
+            self_check_warnings.append(module_partial_warning)
+
         # Step 11: Signal 推導
         signal = "NEUTRAL"
         if (volume_regime == "distribution" or len(false_signal_flags) >= 2
@@ -552,6 +658,45 @@ class VolumePriceAlgorithm(Algorithm):
             base_win = 0.40
         base_win -= 0.08 * len(false_signal_flags)
         win_probability = max(0.25, min(0.80, base_win))
+
+        # Step 13.5 (v2.1.0, 大少 2026-09-09 20:19 Spec Sync #58): Self-check penalty
+        # 對齊 M2 Spec Sync #48 永久 rule: 拎 critical + warning level self-check warning, conf = max(conf * 0.375, 0.3)
+        # 對齊 M3 Layer 4 formula 永久 rule: 永遠 ban conf 1.0 (clamp 0.95)
+        # 對齊 §Module Warning v1.1.0: info level warning (LOW_CONFIDENCE) 唔觸發 floor
+        # 凡人話: 算法自己都 flag 唔 sure 嗰陣, 大少唔應該再睇到 80% 高信心
+        # state 唔變 → 由 M7 layer 處理 weight 折扣 (對齊 M2 self-check weight 折扣永久 rule)
+        original_confidence = round(buy_timing_score, 4)
+        self_check_triggered = False
+        # 對齊 M2 Spec Sync #48 永久 rule: critical + warning level warning 觸發 floor
+        # info level (LOW_CONFIDENCE / DATA_AGE) 唔觸發 floor
+        # 凡人話: critical = INSUFFICIENT_DATA / VERDICT_MISSING / NAN_RESULT, warning = FALLBACK_USED / MODULE_PARTIAL / THRESHOLD_BREACH
+        critical_codes = {"INSUFFICIENT_DATA", "VERDICT_MISSING", "NAN_RESULT", "CACHE_INVALID", "KLINE_MISSING"}
+        warning_codes = {"FALLBACK_USED", "MODULE_PARTIAL", "THRESHOLD_BREACH", "CONFLICT_STATE", "OUTLIER_VALUE", "LOW_SAMPLE_SIZE", "POST_FAILED", "CONFIG_DEFAULTS"}
+        for w in self_check_warnings:
+            if w.code in critical_codes or w.code in warning_codes:
+                self_check_triggered = True
+                break
+        if self_check_triggered:
+            buy_timing_score = max(buy_timing_score * 0.375, 0.3)
+            buy_reasons.append(f"⚠️ Self-check penalty 觸發: conf 由 {original_confidence} → {round(buy_timing_score, 4)} (floor 0.3, 對齊 M2/M3/M4 永久 rule)")
+
+        # Warning 3: THRESHOLD_BREACH (warning) — final conf < 0.3 嘅時候 (after self-check penalty)
+        if buy_timing_score < 0.3:
+            threshold_breach_warning = make_warning(
+                level="warning",
+                module_id="volume",
+                code="THRESHOLD_BREACH",
+                message=f"最終信心 {round(buy_timing_score, 4)} < 0.3 門檻",
+                issue=f"buy_timing_score 經 self-check penalty 後 {round(buy_timing_score, 4)} < 0.3, 已 floor 處理 (對齊 M2 Spec Sync #48 永久 rule)",
+                context={"original_confidence": original_confidence, "final_confidence": round(buy_timing_score, 4), "self_check_triggered": self_check_triggered},
+            )
+            self_check_warnings.append(threshold_breach_warning)
+
+        # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): clamp conf 0.95 (對齊 M3 Layer 4 formula 永久 rule)
+        # 永久 ban conf=1.0, 因為永遠唔可能 100% 肯定
+        if buy_timing_score > 0.95:
+            buy_timing_score = 0.95
+            buy_reasons.append("⚠️ Conf clamp 0.95 (對齊 M3 Layer 4 formula 永久 rule)")
 
         # Step 14: 組裝輸出
         confidence = _round(buy_timing_score, 4)
@@ -628,9 +773,29 @@ class VolumePriceAlgorithm(Algorithm):
             "configUsed": cfg,
             "dataDays": n,
             "reason": "；".join(buy_reasons),
+            # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): 5 個 audit field
+            # 對齊 M3 Spec Sync #45+#51 (hurst+adx) + M2 Spec Sync #48 (selfCheckTriggered+originalConfidence) 永久 rule
+            "hurst": _round(hurst_value, 4),
+            "adx": _round(adx_value, 4),
+            "regimeGate": {
+                "passed": regime_gate_passed,
+                "hurstThreshold": cfg["regimeGateHurstThreshold"],
+                "adxThreshold": cfg["regimeGateAdxThreshold"],
+                "plusDI": _round(plus_di_value, 4),
+                "minusDI": _round(minus_di_value, 4),
+            },
+            "selfCheckTriggered": self_check_triggered,
+            "originalConfidence": original_confidence,
         }
 
-        return Verdict(ok=True, points=[], meta=meta, warnings=[])
+        # v2.1.0 (大少 2026-09-09 20:19 Spec Sync #58): 收集 5 個 self-check warning + LOW_CONFIDENCE (regime gate) 落 verdict._warnings
+        # 對齊 backend/services/warning_collector.py v1.3.0 永久 rule + §Module Warning v1.1.0
+        all_warnings: List[Any] = []
+        if regime_gate_warning is not None:
+            all_warnings.append(regime_gate_warning)
+        all_warnings.extend(self_check_warnings)
+
+        return Verdict(ok=True, points=[], meta=meta, warnings=all_warnings)
 
 
 # Register
