@@ -2360,6 +2360,44 @@ export function renderVolumeResult(verdict) {
       ${renderStrategyAdviceVolume(verdict)}
       ${renderUsageGuideVolume(verdict)}
 
+      ${(() => {
+        // 大少 2026-09-09 21:50 trigger Spec Sync #59 Option C part B: verdict card chart overlay legend
+        // 凡人話: 喺 verdict card 入面加 chart overlay legend detail, 一望就明每個 indicator 嘅意思
+        // 對齊 spec doc v2.1.0 §9 「📖 詳細解讀 (永久 rule #11056)」嘅 spirit
+        // 凡人話唔當新 section (避免違反 spec §7 永久 rule 嘅 3 sections 限制), 當 inline <details> block
+        const vwapValue = vwapAnalysis.vwapValue;
+        const denseZonesArr = Array.isArray(verdict.meta.denseZones) ? verdict.meta.denseZones : [];
+        const supportZones = denseZonesArr.filter(z => z.type === 'support');
+        const resistanceZones = denseZonesArr.filter(z => z.type === 'resistance');
+        const neutralZones = denseZonesArr.filter(z => !z.type || z.type === 'neutral');
+        if (!vwapValue && denseZonesArr.length === 0) return '';  // 冇任何 indicator 就唔 render
+        return `
+        <details class="volume-chart-overlay-legend" open style="margin: 16px 0; padding: 12px 16px; background: rgba(142, 68, 173, 0.06); border-left: 4px solid #8E44AD; border-radius: 4px;">
+          <summary style="font-weight: bold; font-size: 15px; color: #8E44AD; cursor: pointer;">📊 Chart 圖表指標點睇 (VWAP + 密集區)</summary>
+          <div style="margin-top: 12px; line-height: 1.7; font-size: 13px;">
+            ${vwapValue ? `
+            <div style="margin-bottom: 12px;">
+              <strong style="color: #8E44AD;">━ ━ ━ VWAP 紫色虛線</strong> = 過去 20 日嘅成交量加權均價 (大戶嘅平均成本大約喺呢個位)
+              <ul style="margin-top: 6px; padding-left: 24px;">
+                <li>現價 <strong>高過</strong> VWAP = 股價強勢, 大戶賺緊錢</li>
+                <li>現價 <strong>接近</strong> VWAP (±1%) = 喺平均成本, 等方向</li>
+                <li>現價 <strong>低過</strong> VWAP 1% = 弱勢, 大戶蝕緊錢</li>
+              </ul>
+            </div>` : ''}
+            ${denseZonesArr.length > 0 ? `
+            <div style="margin-bottom: 12px;">
+              <strong style="color: #2ecc71;">密集區 點線</strong> = 過去 60 日成交量最活躍嘅價位 (大戶集中成交嘅地方, top ${denseZonesArr.length})
+              <ul style="margin-top: 6px; padding-left: 24px;">
+                ${supportZones.length > 0 ? `<li>🟢 <strong>支持 (support)</strong> × ${supportZones.length} = 喺現價之下, 跌到呢個位會反彈 (撈底訊號)</li>` : ''}
+                ${resistanceZones.length > 0 ? `<li>🔴 <strong>壓力 (resistance)</strong> × ${resistanceZones.length} = 喺現價之上, 升到呢個位會有阻力 (止賺位)</li>` : ''}
+                ${neutralZones.length > 0 ? `<li>⚪ <strong>觀望 (neutral)</strong> × ${neutralZones.length} = 喺現價附近, 唔清楚 support / resistance</li>` : ''}
+              </ul>
+            </div>` : '<p style="color: #e67e22;">⚠️ 冇密集區 = 成交量分佈平均, 搵唔到明顯大戶成本區, 只能靠 VWAP 做 reference</p>'}
+            <p style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(142, 68, 173, 0.2);"><strong>💡 使用方法</strong>: 跌到 🟢 = 撈底訊號 / 升到 🔴 = 止賺位 / 突破 VWAP = 強勢確認 / 跌破 VWAP = 弱勢警號</p>
+          </div>
+        </details>`;
+      })()}
+
       <details class="meta-details">
         <summary>🔧 配置 (debug 用)</summary>
         <pre>${JSON.stringify(verdict.meta.configUsed, null, 2)}</pre>
@@ -2552,14 +2590,177 @@ export function getVolumeHelp() {
 }
 
 // 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill
-// 對應 modules/volume.ts v2.0.0
-// Spec doc: docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE.md
+// 對應 modules/volume.ts v2.0.0 (後 v2.1.0 Spec Sync #58 對齊 backend commit 5cef31d9)
+// Spec doc: docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md
 // Algorithm (M5 v2.0): 15 條 rule V1-V15 + 11 step algorithm, 確認 / 否決 / 中性 3 個 signal 派生
 // 凡人話: 睇成交量 + 價格行為, 確認走勢係真定假
+
+// ===== M5 VolumePrice chart overlay (testing page contract) =====
+// 大少 2026-09-09 20:57 trigger (Spec Sync #59, 喺 feature/m5-chart-overlay branch 做)
+// 喺 chart 上面加 VWAP 線 + 3 條 dense zone 水平線 (對齊 M3 trendline chart overlay pattern line 3809-3912)
+// 取 path 永遠 verdict.meta.X (對齊 AGENTS.md §M3 trendline chart overlay 修復 永久 rule)
+// 對齊 AGENTS.md §M5 chart overlay 永久 rule (即將加)
+function _volumeNormalizeTime(t) {
+  if (typeof t === 'number') return t > 1e12 ? Math.floor(t / 1000) : t;
+  if (typeof t === 'string') return Math.floor(new Date(t).getTime() / 1000);
+  return null;
+}
+
+function _computeHorizontalLineSeries(klines, value) {
+  // 凡人話: 1 條水平線 series (VWAP / dense zone mid), 每個 bar 都係同一個 value
+  // 對齊 M3 trendline chart overlay _computeTrendlineSeries pattern (line 3822-3841)
+  if (typeof value !== 'number') return [];
+  const out = [];
+  for (let i = 0; i < klines.length; i++) {
+    const time = _volumeNormalizeTime(klines[i].time ?? klines[i].timestamp ?? klines[i].date);
+    if (time == null) continue;
+    out.push({ time, value });
+  }
+  out.sort((a, b) => a.time - b.time);
+  const dedup = [];
+  for (let i = 0; i < out.length; i++) {
+    if (i === 0 || out[i].time !== out[i - 1].time) dedup.push(out[i]);
+  }
+  return dedup;
+}
+
+function renderVolumeChartOverlay(verdict, klines, chartRefs) {
+  // 對齊 M3 trendline chart overlay 永久 rule pattern (line 3843-3912)
+  //   取 path 永遠 verdict.meta.X (Phase 4 之後 verdict shape 唔再 verdict.meta.meta)
+  //   對齊 AGENTS.md §M3 trendline chart overlay 修復 永久 rule
+  //   對齊 AGENTS.md §Cross-module date parsing UTC 永久 rule (frontend 用 'T00:00:00Z' UTC midnight)
+  if (!chartRefs || !chartRefs.chart) {
+    console.warn('[renderVolumeChartOverlay] chartRefs.chart 缺失');
+    return;
+  }
+  if (!verdict || !verdict.meta) {
+    console.warn('[renderVolumeChartOverlay] verdict 或 verdict.meta 缺失');
+    return;
+  }
+  if (!Array.isArray(klines) || klines.length === 0) {
+    console.warn('[renderVolumeChartOverlay] klines 缺失或空');
+    return;
+  }
+  
+  const vwapAnalysis = verdict.meta.vwapAnalysis;
+  const denseZones = verdict.meta.denseZones;
+  if ((!vwapAnalysis || typeof vwapAnalysis.vwapValue !== 'number') && (!Array.isArray(denseZones) || denseZones.length === 0)) {
+    console.warn('[renderVolumeChartOverlay] verdict.meta 冇 vwapAnalysis 或 denseZones (可能係 fallback SIDEWAYS 0.3)');
+    return;
+  }
+
+  const chart = chartRefs.chart;
+  if (typeof chart.addSeries !== 'function') {
+    console.error('[renderVolumeChartOverlay] chart 冇 addLineSeries method');
+    return;
+  }
+
+  // 移除舊 volume line series
+  if (chartRefs.volumeLineSeries) {
+    for (const key of Object.keys(chartRefs.volumeLineSeries)) {
+      try { chart.removeSeries(chartRefs.volumeLineSeries[key]); } catch (e) { /* ignore */ }
+    }
+  }
+  chartRefs.volumeLineSeries = {};
+
+  // VWAP line (紫色 dashed) - 對齊 v2.1.0 backend vwapAnalysis.vwapValue
+  if (vwapAnalysis && typeof vwapAnalysis.vwapValue === 'number') {
+    try {
+      const vwapSeries = _computeHorizontalLineSeries(klines, vwapAnalysis.vwapValue);
+      if (vwapSeries.length > 0) {
+        const s = chart.addSeries(LightweightCharts.LineSeries, {
+          color: '#8E44AD',  // 紫色
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          title: `VWAP (${vwapAnalysis.vwapValue.toFixed(2)})`,
+          priceLineVisible: true,
+          lastValueVisible: true,
+        });
+        s.setData(vwapSeries);
+        chartRefs.volumeLineSeries.vwap = s;
+      }
+    } catch (e) {
+      console.error('[renderVolumeChartOverlay] VWAP line 失敗:', e);
+    }
+  }
+
+  // Dense zones (3 條水平線, support 綠 / resistance 紅 / neutral 灰)
+  // 對齊 spec §Step 6: support / resistance / neutral, 每個 zone 標記 type
+  if (Array.isArray(denseZones)) {
+    denseZones.forEach((zone, idx) => {
+      try {
+        if (typeof zone.priceLevelMid !== 'number') return;
+        const color = zone.type === 'support' ? '#2ecc71' : zone.type === 'resistance' ? '#e74c3c' : '#95a5a6';
+        const seriesData = _computeHorizontalLineSeries(klines, zone.priceLevelMid);
+        if (seriesData.length === 0) return;
+        const s = chart.addSeries(LightweightCharts.LineSeries, {
+          color,
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dotted,
+          title: `密集區 ${idx+1} (${zone.type || 'neutral'} @ ${zone.priceLevelMid.toFixed(2)})`,
+          priceLineVisible: true,
+          lastValueVisible: true,
+        });
+        s.setData(seriesData);
+        chartRefs.volumeLineSeries[`dense_${idx}`] = s;
+      } catch (e) {
+        console.error(`[renderVolumeChartOverlay] dense zone ${idx} 失敗:`, e);
+      }
+    });
+  }
+
+  // Chart legend box (大少 2026-09-09 21:50 trigger Spec Sync #59 Option C)
+  // 凡人話: 喺 chart 角落加 legend, 對齊 M3 chart overlay 永久 rule spirit
+  // 即時顯示 VWAP + 密集區嘅凡人話解釋, 等大少撳跑一望就明
+  const legendContainer = chartRefs.chartContainer;
+  if (legendContainer && typeof legendContainer.appendChild === 'function') {
+    try {
+        // 拎走舊 legend (避免累積)
+        const oldLegend = container.querySelector('.volume-chart-legend');
+        if (oldLegend) oldLegend.remove();
+
+        const hasVwap = !!chartRefs.volumeLineSeries.vwap;
+        const hasDense = Array.isArray(denseZones) && denseZones.length > 0;
+        const hasAny = hasVwap || hasDense;
+        if (hasAny) {
+          const supportCount = Array.isArray(denseZones) ? denseZones.filter(z => z.type === 'support').length : 0;
+          const resistanceCount = Array.isArray(denseZones) ? denseZones.filter(z => z.type === 'resistance').length : 0;
+          const neutralCount = Array.isArray(denseZones) ? denseZones.filter(z => !z.type || z.type === 'neutral').length : 0;
+
+          const legend = document.createElement('div');
+          legend.className = 'volume-chart-legend';
+          legend.style.cssText = 'position: absolute; top: 12px; right: 12px; background: rgba(15, 15, 25, 0.85); color: white; padding: 10px 14px; border-radius: 6px; font-size: 12px; line-height: 1.7; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.4); pointer-events: none; min-width: 220px; max-width: 320px; font-family: -apple-system, sans-serif;';
+          let legendHtml = '<div style="font-weight: bold; margin-bottom: 6px; font-size: 13px; color: #8E44AD;">📊 M5 量價指標圖例</div>';
+          if (hasVwap) {
+            legendHtml += '<div style="margin: 4px 0;"><span style="display: inline-block; width: 32px; height: 0; border-top: 2px dashed #8E44AD; vertical-align: middle;"></span>&nbsp;<strong>VWAP</strong> 紫色虛線<br/><span style="font-size: 11px; opacity: 0.85; margin-left: 36px; display: inline-block;">20 日成交量加權均價 (大戶平均成本)</span></div>';
+          }
+          if (supportCount > 0) {
+            legendHtml += `<div style="margin: 4px 0;"><span style="display: inline-block; width: 32px; height: 0; border-top: 2px dotted #2ecc71; vertical-align: middle;"></span>&nbsp;<strong>🟢 密集區 (支持)</strong> × ${supportCount}<br/><span style="font-size: 11px; opacity: 0.85; margin-left: 36px; display: inline-block;">喺現價之下, 跌到會反彈 (撈底訊號)</span></div>`;
+          }
+          if (resistanceCount > 0) {
+            legendHtml += `<div style="margin: 4px 0;"><span style="display: inline-block; width: 32px; height: 0; border-top: 2px dotted #e74c3c; vertical-align: middle;"></span>&nbsp;<strong>🔴 密集區 (壓力)</strong> × ${resistanceCount}<br/><span style="font-size: 11px; opacity: 0.85; margin-left: 36px; display: inline-block;">喺現價之上, 升到會有阻力 (止賺位)</span></div>`;
+          }
+          if (neutralCount > 0) {
+            legendHtml += `<div style="margin: 4px 0;"><span style="display: inline-block; width: 32px; height: 0; border-top: 2px dotted #95a5a6; vertical-align: middle;"></span>&nbsp;<strong>⚪ 密集區 (觀望)</strong> × ${neutralCount}<br/><span style="font-size: 11px; opacity: 0.85; margin-left: 36px; display: inline-block;">喺現價附近, 唔清楚 support / resistance</span></div>`;
+          }
+          if (!hasDense) {
+            legendHtml += '<div style="margin: 4px 0; opacity: 0.85; font-size: 11px;">⚠️ 冇密集區 = 成交量分佈平均, 搵唔到明顯大戶成本區</div>';
+          }
+          legendHtml += '<div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 11px; opacity: 0.85;">💡 跌到 🟢 = 撈底 / 升到 🔴 = 阻力 / 突破 VWAP = 強勢</div>';
+          legend.innerHTML = legendHtml;
+          legendContainer.appendChild(legend);
+          chartRefs.volumeChartLegend = legend;
+        }
+    } catch (e) {
+      console.error('[renderVolumeChartOverlay] legend box 失敗:', e);
+    }
+  }
+}
+
 export const volumePriceAdapter = {
   id: 'AS-03-VP',
   name: '成交量價格行為確認法',
-  version: '2.0.0',
+  version: '2.1.0',
   description: '用 15 條規則分析成交量同價格嘅行為, 確認個走勢係咪真嘅',
   inputs: [
     {
@@ -2594,6 +2795,7 @@ export const volumePriceAdapter = {
   ],
   analyze: analyzeVolumePrice,
   renderResult: renderVolumeResult,
+  renderChartOverlay: renderVolumeChartOverlay,  // 大少 2026-09-09 20:57 Spec Sync #59 (feature/m5-chart-overlay branch)
   getHelp: getVolumeHelp,
 };
 
