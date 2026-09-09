@@ -694,9 +694,13 @@ pre {
   display: block;
 }
 
+/* 大少 2026-09-09 09:32 — M4 multi-pane 副圖: height 600px → 800px
+   凡人話: 800px = pane 0 (K 線 + volume) 60% + pane 1 (RSI) 20% + pane 2 (MACD) 20%
+   對齊 streamlit-lightweight-charts-v5 Recommended Height Ratios 永久 rule
+   對齊 LWC v5 panes 永久 rule: 3 個 pane 共享同一個 time scale, 大少撳 K 線 pan/zoom 嗰陣 RSI/MACD 自動跟住 */
 #chart-container {
   width: 100%;
-  height: 600px;
+  height: 800px;
   background: white;
   border-radius: 6px;
   border: 1px solid #e8e8e8;
