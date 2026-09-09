@@ -124,6 +124,8 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 - ✅ 改 `adapter.mjs` 之後必同步 bump `testing-page.js` 嘅 `ALGO_CACHE_BUST` + `testing-page/index.html` 嘅 `?v=2.3.X` (cache bust self-check 永久 rule 21:24)
 - ✅ Testing page chart overlay 嘅 silent return (`console.warn + return` 唔 throw) testing page 嗰個 try/catch catch 唔到 → 撳跑算法之後必肉眼 verify chart overlay 有冇 render (**唔可以** 淨靠 console log 確認)
 - ✅ M3 trendline toggle 跟 MA toggle 同樣 pattern (lineSeries.applyOptions + localStorage 自動記住 + 出圖 sync), 之後 M4/M5/M6 等加 chart overlay 嘅 module 都跟呢個 pattern
+- ✅ **大少 2026-09-09 07:20 加**: 改 `renderXxxResult` / `renderDetailedExplanationXxx` 加 v0.2.0 audit field 必喺 function 開頭加 local variable 拎 `verdict.meta.*` (唔可以假設攞到 caller 嘅 local var — `renderDetailedExplanationIndicators` 係獨立 function, 同 `renderIndicatorsResult` 唔共享 scope, 凡 7 個 audit field 都要喺 function 開頭重新拎)
+- ✅ **大少 2026-09-09 07:20 加**: 凡用 audit field 嘅 render line, 必加 falsy guard 兜 backend 唔 emit 嘅 case (e.g. reg gate fail 早 return verdict 唔行 Step 9.5 → `m1State` / `selfCheckTriggered` / `originalConfidence` 全部 `None`, 用 `?:` 或 `!= null` ternary 兜底, 唔可以直接 `originalConfidence * 100` 會 TypeError)
 
 **對應文件**:
 - `algorithms/AS-03-cycle-detection/adapter.mjs` line 3775-3876 嘅 `renderTrendlineChartOverlay`
@@ -368,6 +370,111 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 - `docs/research/AS-03-cycle-detection/MODULE-02-HL-STRUCTURE.md` v0.4.0 (待更新)
 
 對應 commit: `51e19234` (feat(m2-self-check-penalty): Step 19.5 auto floor confidence 0.3 when self-check warning 觸發)
+
+### M4 Indicators v0.2.0 永久 rules (大少 2026-09-09 01:55 confirm, Spec Sync #52)
+
+**凡人話**: M4 (動能背馳法) 算法 v1.0.0 永遠 100% SIDEWAYS 係錯嘅, 2026-09-09 01:55 Spec Sync #52 做咗 12 個 fix — 加 Hurst+ADX regime gate + M1 state filter + self-check warning + self-check penalty + cross-confirm bonus + meta.symbol + 改 lookbackDays 60→250 + signalThreshold 0.6→0.5 + ban conf 1.0 + confirmation candle + RSI 5 日 linear slope, 對齊 M2/M3 永久 rule pattern。
+
+**Stage 2 audit 結果** (214 隻 stock, v0.2.0 vs v1.0.0):
+- v1.0.0 baseline: 211/214 SIDEWAYS (98.6%), 0 UP verdict, 0 warning
+- v0.2.0: **188/214 (87.9%) 有 warning**, **2 UP verdict (新!)**
+- Warning code 分布: CONFLICT_STATE 101, INSUFFICIENT_DATA 44, THRESHOLD_BREACH 43
+- M1 一致率: 56.5% (v0.2.0, A3 M1 filter 持續改善)
+
+**§M4 Hurst+ADX regime gate (A1, 對齊 M3 Spec Sync #45 永久 rule)**
+- ✅ M4 algorithm Step 0.5 永遠 emit Hurst+ADX gate check
+- ✅ H < 0.45 OR ADX < 20 → 強制 return SIDEWAYS + emit 1 個 CONFLICT_STATE warning (info level, 唔 floor conf)
+- ✅ Backend `indicators/algorithm.py` + Frontend `modules/indicators.ts` 1:1 port 同步
+- ✅ Meta 永遠 emit `hurst` + `adx` + `regimeGate` 3 個 audit field
+- ✅ Backend import `_compute_hurst` (返 tuple) + `_compute_adx` (返 dict) from `trendline.algorithm` (有底線 prefix)
+- ✅ Frontend import `computeHurst` (返 number) + `computeAdx` (返 number) from `./trendline.ts` (冇底線, frontend 簡化版)
+- ✅ 對齊 Module Warning v1.1.0 — `CONFLICT_STATE` info level, 唔 floor conf
+
+**§M4 M1 state trend filter cross-module alignment (A3)**
+- ✅ algorithm_runner.py 統一 inject `options["m1State"]` 落 M4 (對齊 9月7日 08:30 meta.symbol 永久 rule pattern)
+- ✅ M4 見到 M1=DOWN 但 M4 出 buy → bull_score × 0.5 + emit FALLBACK_USED warning
+- ✅ M4 見到 M1=UP 但 M4 出 sell → bear_score × 0.5 + emit FALLBACK_USED warning
+- ✅ Signal emit `m1FilterApplied: bool` flag 畀 caller audit
+- ✅ Meta 永遠 emit `m1State: 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION'` 4 個 value
+- ✅ 凡人話: 大環境 DOWN 嗰陣唔好亂話 buy, 大環境 UP 嗰陣唔好亂話 sell, 由 M1 過濾
+
+**§M4 self-check warning emit (A4, 5 個 code)**
+- ✅ `INSUFFICIENT_DATA` (critical) — K 線唔夠 min data 295 條
+- ✅ `CONFLICT_STATE` (info) — Regime gate 唔過, 唔 floor conf
+- ✅ `FALLBACK_USED` (warning) — M1 state 同 M4 signal 矛盾, 已降權 50%
+- ✅ `THRESHOLD_BREACH` (warning) — 最終 conf < 0.3 門檻
+- ✅ `MODULE_PARTIAL` (warning) — 冇背馳 evidence 但有 buy/sell signal
+- ✅ 統一用 `make_warning()` helper (對齊 §Module Warning v1.1.0 spirit)
+- ✅ Frontend indicators.ts 對齊用 `warnings: string[]` 落 verdict (永久 rule v1.1.0 spirit, 永遠 inlined 唔入 DB)
+
+**§M4 self-check penalty (A5, 對齊 M2 9月7日 22:00 永久 rule spirit)**
+- ✅ M4 algorithm Step 9.5 永遠拎 critical + warning level self-check warning 觸發 conf floor 0.3
+- ✅ 公式 `max(conf * 0.375, 0.3)` — 原本 conf 0.8 → 0.3, 0.56 → 0.3, 0.27 → 0.3 (floor 唔變)
+- ✅ info level (CONFLICT_STATE) 唔觸發 floor (對齊 §Module Warning v1.1.0 spirit)
+- ✅ state 唔變, 由 M7 layer 處理 weight 折扣
+- ✅ Meta 永遠 emit `selfCheckTriggered: bool` + `originalConfidence: float` 2 個 audit field
+- ✅ 對齊 M2 / M3 Layer 4 formula 永久 rule spirit (Spec Sync #45+#48)
+
+**§M4 cross-confirm bonus (A7)**
+- ✅ RSI + MACD 同時出現同一類背馳 (cross-confirm) → bull_score / bear_score +0.10 bonus
+- ✅ Signal emit `crossConfirmed: bool` flag 畀 caller audit
+- ✅ 凡人話: 兩個獨立指標同時確認, 信心提升 (對齊 Tradealgo 71% win rate research)
+
+**§M4 Layer 4 formula ban conf 1.0 (B1, 對齊 M3 Layer 4 永久 rule)**
+- ✅ Signal strength clamp 0.95 (永久 ban 1.0)
+- ✅ Confidence clamp 0.95
+- ✅ 對齊 M3 Layer 4 永久 rule (Spec Sync #45, 2026-09-07 00:14)
+
+**§M4 confirmation candle (B2)**
+- ✅ B2 放量必須同時 收 > MA5 (對齊 Arxum 67% win rate research)
+- ✅ 之前 v1.0.0 純粹放量 (volume > 10d avg × 1.2), v0.2.0 加 `close > MA5` 確認
+- ✅ 同時觸發先 +0.15 score
+
+**§M4 RSI 5 日 linear slope (B3)**
+- ✅ 用 `rsi[-1] - rsi[-6]` raw difference, threshold ±5.0 (0-100 scale 嘅 5% 變化)
+- ✅ 之前 v1.0.0 單點 vs 5 日 average 唔穩, v0.2.0 改 linear slope
+
+**§M4 meta.symbol caller symbol (A6, 對齊 9月7日 08:30 永久 rule)**
+- ✅ Algorithm 永遠用 `options.get("symbol", "UNKNOWN")` 拎 caller symbol
+- ✅ algorithm_runner.py 統一 inject `options["symbol"] = caller_symbol`
+- ✅ Meta 永遠 emit `symbol` field, 唔好 hardcode "TEST" / "UNKNOWN" / 其他 default
+- ✅ Frontend indicators.ts 對齊用 `ctx.symbol` 拎 caller symbol (永久 rule 9月7日 08:30 spirit)
+
+**§M4 config 改動 (A2 + A8)**
+- ✅ `signalThreshold` 0.6 → 0.5 (對齊業界 momentum win rate 35-45%, 之前 0.6 太嚴 98.6% 永遠 hold)
+- ✅ `lookbackDays` 60 → 250 (1 年尺度, 凡人話: 60 日太短, 永遠 0 個 historical opportunity)
+- ✅ Min data 119 條 → 295 條 (14 RSI + 35 MACD + 250 lookback + 10 buffer)
+- ✅ Backend `config.py` + Frontend `config.ts` 同步 (1:1 port)
+
+**永久 rule checklist** (對齊 M2/M3 永久 rule pattern):
+- ✅ Backend `indicators/algorithm.py` v0.2.0 + Frontend `modules/indicators.ts` v0.2.0 1:1 port 同步
+- ✅ Backend `config.py` v0.2.0 + Frontend `config.ts` v0.2.0 同步
+- ✅ `algorithm_runner.py` 統一 inject `m1State` + `symbol` 落 M4 options (對齊 9月7日 08:30 + A3 永久 rule)
+- ✅ Adapter `renderIndicatorsResult` 對齊 v0.2.0 verdict shape (加 Hurst/ADX/regimeGate/M1 state/self-check/cross-confirm 顯示)
+- ✅ `renderDetailedExplanationIndicators` 加 Hurst/ADX/M1/regimeGate/cross-confirm/self-check 詳細解讀 line
+- ✅ Spec doc `MODULE-04-MOMENTUM-DIVERGENCE.md` v0.2.0 update (12 個 fix 全部寫入 §5 algorithm step + §8 永久 rules)
+- ✅ 改 backend / frontend / adapter / config / spec doc 任何一個, 必對齊其他 4 個 (1:1 port 永久 rule)
+- ✅ 改 backend 之後必 restart backend (`./start.sh`) + curl `/api/algorithms/run?algo=indicators&symbol=HK.00700&data_window_days=1260` 拎 evidence 確認
+- ✅ 改 adapter.mjs / testing-page.js 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (cache bust 永久 rule)
+- ✅ 凡人話: M4 v0.2.0 12 個 fix 對齊 M2/M3 永久 rule pattern, 凡 backend algorithm 改 self-check warning 嗰陣, frontend + adapter + spec doc 全部要一齊改 (1:1 port 永久 rule)
+
+**5 隻 stock verify 結果** (Stage 2 curl evidence, 對齊 9月5日 stock evidence 永久 rule):
+- **HK.00700 騰訊**: state=SIDEWAYS conf=0.3 Hurst=0.428 ADX=9.25 emit 1 個 CONFLICT_STATE (regime gate 唔過) ✅
+- **HK.00005 匯豐**: state=SIDEWAYS conf=0.0 INSUFFICIENT_DATA (144 K 線 < 295 min_required) ✅
+- **US.AAPL**: state=SIDEWAYS conf=0.3 Hurst=0.674 ADX=14.22 CONFLICT_STATE ✅
+- **US.MSFT**: state=SIDEWAYS conf=0.35 signal=hold Hurst=0.649 ADX=37.04 (regime pass, score < 0.5) ✅
+- **US.GOOGL**: state=SIDEWAYS conf=0.3 Hurst=0.686 ADX=6.68 CONFLICT_STATE ✅
+
+**對應文件**:
+- `backend/algorithms/indicators/algorithm.py` v0.2.0 (936 行, 12 個 fix 全部 implement)
+- `backend/algorithms/indicators/config.py` v0.2.0 (A2 + A8, 2 個 value 改)
+- `backend/services/algorithm_runner.py` (A3 + A6: 統一 inject `m1State` + `symbol` 落 M4 options)
+- `algorithms/AS-03-cycle-detection/modules/indicators.ts` v0.2.0 (~870 行, 1:1 port backend)
+- `algorithms/AS-03-cycle-detection/config.ts` v0.2.0 (A2 + A8, 2 個 value 改)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` v0.2.0 (對齊 backend shape 加 Hurst/ADX/M1/self-check/cross-confirm 顯示)
+- `docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md` v0.2.0 (12 個 fix 全部寫入 §5 + §8)
+
+對應 commit: `e342e4b` (M4 v0.2.0 backend, 261 line 改) + Spec Sync #52 即將 push (frontend sync + cache bust + spec doc update)
 
 ### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
 
@@ -2933,3 +3040,64 @@ git push origin --delete feat/xxx          # delete remote branch
 **對應 commit**: 即將 push (Spec Sync #50)
 
 **套用**: 之後任何 algorithm 嘅 sub-scenario / formula / threshold / gate 改動, 必先跑三方一致率 audit baseline 拎 evidence, 改完之後再跑 audit 對比, 一致率跌過 50% 唔收貨。三方一致率追蹤係可信性嘅最重要指標, 唔可以靠單 stock evidence 決定。
+
+### Verdict meta shape 統一永久 rule (大少 2026-09-09 09:21 confirm, Spec Sync #53)
+
+**凡人話解釋**: 大少 09:19 trigger「這些問題不停出現, 有沒有徹底可以解決既方法」— 過去 1.5 個鐘(7:23 → 9:19) frontend `renderIndicatorsChartOverlay` 一連出 4 次同樣 pattern 嘅 false positive warning bug:
+
+| 時間 | Bug | Root cause |
+|------|-----|-----------|
+| 7:23 | 拎 `verdict.meta.meta` 永遠 true, RSI/MACD line series 永遠唔 render | frontend guard 拎 path 錯 |
+| 7:27 | reg gate fail 早 return 冇 emit rsiSeries/macdSeries, frontend trigger silent fail warning | backend 嗰個 early return path 漏 emit |
+| 7:33 | frontend 改分 2 個 case 仍然 false positive | backend INSUFFICIENT_DATA 嗰個 path 仲有 shape inconsistency |
+| 7:36 | INSUFFICIENT_DATA path 加返 emit `rsiSeries: []` 但仲有 K 線完全空 / network error / 其他 silent fail path 唔知有冇漏 | backend 唔統一保證 shape |
+
+**Root cause (systemic)**: backend verdict 嘅 meta shape 冇統一 contract,每個 algorithm 嘅每個 early return path(正常行 / reg gate fail / K 線唔夠 / network error / 其他)都要 developer 記住 emit 一致 shape。漏咗 1 個就 frontend 撞 false positive warning。**治本方法**:backend 統一保證 shape,frontend 簡化 guard,1 個地方改全部 algorithm 即時受惠。
+
+**Fix (1 個地方改 — backend algorithm_runner.py verdict 序列化階段, Spec Sync #53)**:
+
+```python
+# backend/services/algorithm_runner.py line 437-441 (Phase 4 v0.2.2)
+# 統一 verdict meta shape, 任何 algorithm 都受惠
+meta_normalized = dict(verdict.meta or {})
+for field in ("rsiSeries", "macdSeries"):
+    meta_normalized.setdefault(field, [])
+```
+
+**凡人話**: 任何 algorithm 嘅 verdict 經過 `algorithm_runner.py` 嗰度, `meta` dict 永遠保證有 `rsiSeries` + `macdSeries` 2 個 field。Algorithm 本身 emit 咗就用 algorithm 嗰個 value,algorithm 冇 emit (early return path 漏咗) 自動 inject `[]`(empty array)。Frontend 拎到 `[]` 自動 skip render(凡人話正常,例如 reg gate fail / K 線唔夠嗰陣冇 series 數據),frontend 拎到 `undefined` / `null` 先係真係 silent fail 觸發 warning(呢個 case 極少出現,例如 backend bug 真係 emit 唔到)。
+
+**Frontend guard 簡化 (Spec Sync #53)**:
+
+```js
+// algorithms/AS-03-cycle-detection/adapter.mjs line 4294-4296 (Phase 4 v0.2.2)
+// 因為 backend 統一保證 shape, frontend 簡化返 1 個 guard
+const rsiSeries = verdict.meta.rsiSeries;
+const macdSeries = verdict.meta.macdSeries;
+if (!rsiSeries || !macdSeries) {
+  console.warn('[renderIndicatorsChartOverlay] rsiSeries/macdSeries 缺失 (backend silent fail)');
+  return;
+}
+```
+
+之前 v0.2.1 分 2 個 case(`undefined` vs `[]`)仍然 false positive,因為 backend 唔同 early return path 仲有 shape inconsistency。而家 backend 統一保證,frontend 拎到 `[]` 自然 pass guard 唔 trigger warning,拎到 `undefined` / `null` 先係 silent fail 觸發 warning(真正嘅 bug 提示)。
+
+**永久 rule checklist**:
+- ✅ `backend/services/algorithm_runner.py` verdict 序列化階段(line 437-441)永遠 setdefault `rsiSeries: []` + `macdSeries: []` 落 meta dict
+- ✅ Algorithm 內部 early return path 唔需要再 emit rsiSeries/macdSeries(runner 統一保證),但保留 emit 嘅 algorithm (e.g. M4 reg gate fail path) 仍然 work 因為 setdefault 唔會 override 已有 value
+- ✅ Frontend `renderIndicatorsChartOverlay` guard 永遠 `if (!rsiSeries || !macdSeries) return`(拎到 `[]` 自然 pass,拎到 `undefined` 先 trigger warning)
+- ✅ 之後新加 algorithm 唔需要再諗 verdict meta shape 一致性, runner 統一保證
+- ✅ 之後新加 frontend chart overlay 跟同一個 pattern(`!rsiSeries || !macdSeries` 1 個 guard 兜底)
+- ✅ 改 algorithm_runner.py 之後必 restart backend (`./start.sh`, 對齊 §Backend Hot-Reload 永久 rule)
+- ✅ Restart 之後必 curl 5 隻 stock 拎 evidence 確認 `meta.rsiSeries` + `meta.macdSeries` 永遠係 array(`[]` 或有數據)
+- ✅ 對齊 §M3 trendline chart overlay 修復永久 rule(2026-09-06 16:47)— frontend 拎 path 永遠 `verdict.meta.X`
+- ✅ 對齊 §M4 v0.2.0 永久 rule(9月9日 01:55)— backend shape consistency intent 從 algorithm 層升級到 runner 層
+- ✅ 對齊 §Module Warning v1.0.0(8月11日)— verdict shape 同 warning shape 兩者獨立,唔互相影響
+
+**對應文件**:
+- `backend/services/algorithm_runner.py` line 437-441 (verdict 序列化階段 setdefault 2 個 field)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 4294-4296 (`renderIndicatorsChartOverlay` 簡化 guard)
+- 之後新加 algorithm / chart overlay 跟同一個 pattern
+
+**對應 commit**: 即將 push (Spec Sync #53)
+
+**套用情境**: 之後任何 backend algorithm 嘅 verdict 序列化、任何 frontend chart overlay 嘅 meta field 拎取, 永遠用呢個統一 pattern。Frontend 拎到 array 自動 skip render, 拎到 undefined 先係 silent fail 提示。**凡人話: 1 個地方改, 之後新加 module 自動受惠, 唔需要再諗 shape 一致性**。

@@ -4026,6 +4026,13 @@ function renderIndicatorsResult(verdict) {
   const signal = verdict.meta.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
   const ms = verdict.meta.momentumState || {};
   const div = verdict.meta.divergence || { totalCount: 0 };
+  // v0.2.0 (大少 2026-09-09 Spec Sync #52): 拎 Hurst / ADX / regimeGate / M1 state / selfCheck 顯示
+  const hurst = verdict.meta.hurst;
+  const adx = verdict.meta.adx;
+  const regimeGate = verdict.meta.regimeGate;
+  const m1State = verdict.meta.m1State;
+  const selfCheckTriggered = verdict.meta.selfCheckTriggered;
+  const originalConfidence = verdict.meta.originalConfidence;
 
   const actionColor = signal.type === 'buy' ? '#52c41a' : signal.type === 'sell' ? '#ff4d4f' : '#faad14';
   const actionEmoji = signal.type === 'buy' ? '🟢' : signal.type === 'sell' ? '🔴' : '🟡';
@@ -4034,15 +4041,28 @@ function renderIndicatorsResult(verdict) {
     ? signal.reasons.map(r => `<li>${r}</li>`).join('')
     : '<li style="color: #888;">無觸發條件 (hold / 觀望)</li>';
 
+  // v0.2.0 A7: cross-confirm 標記 (凡人話: RSI + MACD 兩條 indicator 同時背馳, 高信心)
+  const crossConfirmBadge = signal.crossConfirmed
+    ? '<span style="background: #52c41a22; color: #52c41a; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 6px;">✅ RSI+MACD cross-confirmed</span>'
+    : '';
+  // v0.2.0 A3: M1 filter 標記 (凡人話: M1 state 同 M4 signal 矛盾, 已降權 50%)
+  const m1FilterBadge = signal.m1FilterApplied
+    ? '<span style="background: #faad1422; color: #faad14; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 6px;">⚠️ M1 filter 降權 50%</span>'
+    : '';
+  // v0.2.0 A5: self-check penalty 提示
+  const selfCheckNote = selfCheckTriggered && originalConfidence != null && Math.abs(originalConfidence - verdict.meta.confidence) > 0.001
+    ? `<small style="color: #faad14; display: block; margin-top: 4px;">⚠️ Self-check penalty: conf 由 ${(originalConfidence * 100).toFixed(0)}% 折到 ${confidencePct}% (floor 0.3)</small>`
+    : '';
+
   // 📌 解讀 + 觀望 box 詳細解說 (plain language)
   const signalStrengthPct = (signal.strength * 100).toFixed(0);
   const winProbPct = ((verdict.meta.winProbability || 0.5) * 100).toFixed(0);
   const interpretationDetail = signal.type === 'buy' ? `
-    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 兩條動能指標都出現買入訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向上。</p>
+    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 兩條動能指標都出現買入訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向上。${crossConfirmBadge}${m1FilterBadge}</p>
     <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
     <p>💡 <strong>點睇呢個結果</strong>: 動能向上確認, 高勝率買入時機, 可考慮入市, 但留意 RSI 超買可能係短期見頂警號, 配合 M1 MA 確認大方向 + M5 量价確認資金跟進。</p>
   ` : signal.type === 'sell' ? `
-    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 都出現賣出訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向下。</p>
+    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 都出現賣出訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向下。${crossConfirmBadge}${m1FilterBadge}</p>
     <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
     <p>💡 <strong>點睇呢個結果</strong>: 動能向下確認, 觀望 / 減倉, 配合 M1 MA 確認下跌趨勢 + M2 HL 確認結構轉弱。</p>
   ` : `
@@ -4054,14 +4074,14 @@ function renderIndicatorsResult(verdict) {
     <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 10 條 buy/sell rules 嘅觸發數量同權重, 0% = 完全冇 rules 觸發, 100% = 全部 rules 觸發。強度越高, 信號越強, 越值得參考。</p>
     <p>💡 <strong>勝率估算 ${winProbPct}% 點嚟?</strong> 勝率估算係根據 RSI + MACD 狀態 (超買/超賣/中性) 同歷史 backtest 統計得出嘅歷史勝率, 代表同類訊號過去嘅表現, 唔係未來保證。</p>
   ` : `
-    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 10 條 buy/sell rules 嘅觸發數量同權重, ${signalStrengthPct}% = ${signal.reasons.length} 條 rules 觸發嘅綜合分數。</p>
+    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 10 條 buy/sell rules 嘅觸發數量同權重, ${signalStrengthPct}% = ${signal.reasons.length} 條 rules 觸發嘅綜合分數。${signal.crossConfirmed ? '<strong style="color: #52c41a;">(已加 cross-confirm bonus ×1.2)</strong>' : ''}</p>
     <p>💡 <strong>勝率估算 ${winProbPct}% 點嚟?</strong> 勝率估算係根據 RSI + MACD 狀態 (超買/超賣/中性) 同歷史 backtest 統計得出, ${winProbPct}% 代表同類訊號過去嘅平均勝率, 唔係未來保證。</p>
   `;
 
   return `
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
-        <h3 class="module-header">⚡ 動能背馳與衰竭檢測法 (Indicators)</h3>
+        <h3 class="module-header">⚡ 動能背馳與衰竭檢測法 (Indicators) <span class="version-tag">v0.2.0</span></h3>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -4071,11 +4091,16 @@ function renderIndicatorsResult(verdict) {
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
           <div class="conf-label">信心指數 — ${confidenceExplain}</div>
+          ${selfCheckNote}
         </div>
         <div class="data-summary">
           <div class="summary-row"><span>時間週期:</span> <strong>${verdict.meta.timeframe}</strong></div>
           <div class="summary-row"><span>數據日數:</span> <strong>${verdict.meta.dataDays || 0}</strong></div>
           <div class="summary-row"><span>背馳數:</span> <strong>${div.totalCount}</strong></div>
+          ${hurst != null ? `<div class="summary-row"><span>Hurst:</span> <strong>${hurst.toFixed(4)}</strong> <small>(≥0.45 過 gate)</small></div>` : ''}
+          ${adx != null ? `<div class="summary-row"><span>ADX(14):</span> <strong>${adx.toFixed(2)}</strong> <small>(≥20 過 gate)</small></div>` : ''}
+          ${regimeGate ? `<div class="summary-row"><span>Regime gate:</span> <strong style="color: ${regimeGate === 'FAILED' ? '#faad14' : '#52c41a'};">${regimeGate}</strong></div>` : ''}
+          ${m1State ? `<div class="summary-row"><span>M1 state:</span> <strong>${m1State}</strong> ${signal.m1FilterApplied ? '<small style="color: #faad14;">(觸發 cross-module filter)</small>' : ''}</div>` : ''}
         </div>
       </div>
 
@@ -4088,7 +4113,7 @@ function renderIndicatorsResult(verdict) {
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="font-size: 28px;">${actionEmoji}</div>
           <div>
-            <div style="font-size: 18px; font-weight: bold; color: ${actionColor};">${signal.action || '觀望'}</div>
+            <div style="font-size: 18px; font-weight: bold; color: ${actionColor};">${signal.action || '觀望'}${crossConfirmBadge}${m1FilterBadge}</div>
             <div style="font-size: 12px; color: #888;">訊號強度: ${signalStrengthPct}% · 勝率估算: ${winProbPct}%</div>
           </div>
         </div>
@@ -4138,6 +4163,15 @@ function renderDetailedExplanationIndicators(verdict) {
   const div = verdict.meta.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
   const exhaustion = verdict.meta.exhaustionScore || 0;
   const winProb = verdict.meta.winProbability || 0.5;
+  // v0.2.0 (大少 2026-09-09 Spec Sync #52): 拎 Hurst/ADX/regimeGate/M1 state/self-check audit field
+  // 對齊 9月9日 07:20 ReferenceError fix — renderDetailedExplanationIndicators 係獨立 function,
+  // 唔可以攞 renderIndicatorsResult 嘅 local var, 一定要喺呢度重新拎 verdict.meta.*
+  const hurst = verdict.meta.hurst;
+  const adx = verdict.meta.adx;
+  const regimeGate = verdict.meta.regimeGate;
+  const m1State = verdict.meta.m1State;
+  const selfCheckTriggered = verdict.meta.selfCheckTriggered;
+  const originalConfidence = verdict.meta.originalConfidence;
 
   return `
     <div class="detailed-explanation">
@@ -4160,6 +4194,12 @@ function renderDetailedExplanationIndicators(verdict) {
         <li><strong>⚠️ 數據不足警告:</strong> ${verdict.meta.warnings && verdict.meta.warnings.length > 0 ? verdict.meta.warnings[0] : '無'}。</li>
         <li><strong>🔄 統一 cycle 派生規則:</strong> buy → UP, sell → DOWN, hold → SIDEWAYS (TRANSITION 由 Synthesizer 判)。呢個 module 唔 emit TRANSITION。</li>
         <li><strong>📂 過去錯過的買點 (historicalOpportunities):</strong> ${(verdict.meta.historicalOpportunities || []).length} 個。回顧過去 lookbackDays 內曾經出現過嘅買入訊號,計算到今日嘅回報。Top 3 strongest。可以用嚟訓練盤感。</li>
+        <li><strong>📈 Hurst 指數 (v0.2.0 新加):</strong> ${hurst != null ? hurst.toFixed(4) : 'N/A'},量度股價 trending 持續性。&ge; 0.45 = 有方向,&lt; 0.45 = random walk / mean-reverting, M4 唔准話 buy/sell 直接 SIDEWAYS。</li>
+        <li><strong>📊 ADX(14) (v0.2.0 新加):</strong> ${adx != null ? adx.toFixed(2) : 'N/A'},Wilder 14 日量度趨勢強度。&ge; 20 = 有趨勢,&lt; 20 = 弱趨勢 / 橫行, M4 唔准話 buy/sell 直接 SIDEWAYS。</li>
+        <li><strong>🚧 Regime gate (v0.2.0 新加):</strong> ${regimeGate || 'PASSED'},Hurst + ADX 兩招同時過先繼續算法, 唔過即 SIDEWAYS + 1 個 CONFLICT_STATE warning。</li>
+        <li><strong>🔗 M1 cross-module filter (v0.2.0 新加):</strong> ${m1State ? `M1 state = ${m1State}${signal.m1FilterApplied ? ', 與 M4 signal 矛盾, 降權 50%' : ', 同 M4 同步'}` : 'N/A'}。凡人話: M1 講大方向, M4 講買賣時機, 大環境 DOWN 嗰陣唔好亂 buy。</li>
+        <li><strong>✅ RSI+MACD cross-confirm (v0.2.0 新加):</strong> ${signal.crossConfirmed ? '兩條 indicator 同時背馳, 信心 +0.10 bonus' : '只有單一 indicator 背馳'}。凡人話: 兩個獨立指標都確認, 信號強好多。</li>
+        <li><strong>⚠️ Self-check penalty (v0.2.0 新加):</strong> ${selfCheckTriggered ? `已觸發, conf 由 ${(originalConfidence * 100).toFixed(0)}% 折到 ${confidencePct}%` : '未觸發'}。凡人話: 算法自己都 flag 唔 sure 嗰陣, conf 自動 floor 0.3。</li>
       </ul>
     </div>
   `;
@@ -4239,7 +4279,11 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
     console.warn('[renderIndicatorsChartOverlay] chartRefs.chart 缺失');
     return;
   }
-  if (!verdict || !verdict.meta.meta) {
+  if (!verdict || !verdict.meta) {
+    // v0.2.0 (大少 2026-09-09 07:23 fix): 拎 verdict.meta 而唔係 verdict.meta.meta
+    // 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) spirit
+    // Backend Phase 4 拎走 frontend 改 fetch backend 之後 verdict shape 已經係 verdict.meta.X
+    // 之前 commit d663ef01 (9月8日 23:30) 拎走 18 處 verdict.meta.meta?.X 漏修呢個 guard
     console.warn('[renderIndicatorsChartOverlay] verdict 缺失');
     return;
   }
@@ -4250,7 +4294,14 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
   const rsiSeries = verdict.meta.rsiSeries;
   const macdSeries = verdict.meta.macdSeries;
   if (!rsiSeries || !macdSeries) {
-    console.warn('[renderIndicatorsChartOverlay] rsiSeries/macdSeries 缺失');
+    // v0.2.2 (大少 2026-09-09 09:21 fix): 對齊 §Verdict meta shape 統一永久 rule
+    // (Spec Sync #53) — backend algorithm_runner.py 統一 inject rsiSeries: [] + macdSeries: []
+    // 落 meta dict, 拎到 [] 自動 pass guard (凡人話正常: reg gate fail / K 線唔夠 / network
+    // error 嗰陣都拎到 []), 拎到 undefined / null 先係 silent fail 觸發 warning
+    // 之前 v0.2.1 分 2 個 case 仍然 false positive, 因為 backend 唔同 early return path
+    // 仲有 shape inconsistency. 而家 backend 統一保證, frontend 簡化返 1 個 guard
+    // 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) spirit
+    console.warn('[renderIndicatorsChartOverlay] rsiSeries/macdSeries 缺失 (backend silent fail)');
     return;
   }
 

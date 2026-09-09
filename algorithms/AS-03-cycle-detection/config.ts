@@ -280,31 +280,35 @@ export interface CycleConfig {
 }
 
 /**
- * Indicators module config (大少 + MiniMax Code 2026-08-07 — Module 4 v1.0.0)
+ * Indicators module config (大少 + MiniMax Code 2026-08-07 — Module 4 v0.2.0)
  *
  * 跟 docx `docs/演算法概念SPECS/04動能背馳與衰竭檢測法.docx` v1.0 (Kimi spec)
- * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md`
+ * Spec doc: `docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md` v0.2.0
+ *
+ * v0.2.0 改動 (大少 2026-09-09 01:55 Spec Sync #52, 對齊 backend config.py):
+ * - lookbackDays 60 → 250 (1 年尺度, 凡人話: 60 日太短, 永遠 0 個 historical opportunity)
+ * - signalThreshold 0.6 → 0.5 (對齊業界 momentum win rate 35-45%, 之前 0.6 太嚴 98.6% 永遠 hold)
  */
 export interface IndicatorsConfig {
-  lookbackDays: number;              // 60 — 背馳 + 歷史機會回顧天數
+  lookbackDays: number;              // 250 — 背馳 + 歷史機會回顧天數 (v0.2.0, 1 年尺度)
   rsiPeriod: number;                 // 14 — RSI Wilder smoothing period
   macdFast: number;                  // 12 — MACD 快線 EMA period
   macdSlow: number;                  // 26 — MACD 慢線 EMA period
   macdSignal: number;                // 9 — MACD 信號線 EMA period
   divergenceTolerance: number;       // 0.03 — 背馳判定容忍度 (3%)
   minSwingPct: number;               // 0.03 — 最小波動幅度 (過濾雜訊)
-  signalThreshold: number;           // 0.6 — 「明確訊號」最低分 (買入/賣出)
+  signalThreshold: number;           // 0.5 — 「明確訊號」最低分 (買入/賣出, v0.2.0 由 0.6 降 0.5)
 }
 
 export const DEFAULT_INDICATORS_CONFIG: IndicatorsConfig = {
-  lookbackDays: 60,
+  lookbackDays: 250,                 // v0.2.0: 60 → 250
   rsiPeriod: 14,
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
   divergenceTolerance: 0.03,
   minSwingPct: 0.03,
-  signalThreshold: 0.6,
+  signalThreshold: 0.5,              // v0.2.0: 0.6 → 0.5
 };
 
 export const DEFAULT_CYCLE_CONFIG: CycleConfig = {

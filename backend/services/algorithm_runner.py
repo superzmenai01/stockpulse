@@ -69,6 +69,23 @@ def run_algorithm(
     # Fix: caller 嘅 symbol 寫入 options["symbol"], algorithm 拎到 caller 真正 query 嘅 stock code
     options["symbol"] = symbol
 
+    # v0.2.0 (大少 2026-09-09 01:55 Spec Sync #52): M4 cross-module alignment (A3 fix)
+    # 對齊 ma_alignment 同 trendline 嘅 pattern, runner 拎 M1 (ma_alignment) verdict 嘅 state
+    # 寫入 options["m1_state"], M4 algorithm 拎去做 trend filter (避免買 DOWN 撞 M1 矛盾)
+    # 凡人話: 大環境 DOWN 嗰陣 M4 唔好亂 trigger buy
+    # Stage 1: 只 inject M1 state, 之後可以 extend 落 M2 (hl_structure), M3 (trendline)
+    if algo_name == "indicators":
+        try:
+            from backend.algorithms.ma_alignment.algorithm import MaAlignmentAlgorithm
+            m1_algo = MaAlignmentAlgorithm()
+            m1_verdict = m1_algo.run(klines, options={"symbol": symbol, "period": period})
+            options["m1_state"] = m1_verdict.meta.get("state", "SIDEWAYS")
+        except Exception as e:
+            # 大少 2026-08-23 13:19: server 內部做, 唔可以自己撞牆
+            # 凡人話: M1 verdict 拎唔到嗰陣 fallback SIDEWAYS, 唔好 crash M4
+            logger.debug(f"[Algorithm] M1 state inject 失敗, fallback SIDEWAYS: {e}")
+            options["m1_state"] = "SIDEWAYS"
+
     # 2. 拎 K 線 (大少 #8602 永久 rule: 1d 用 30*365 wide-fetch, caller max_count 只作 trim)
     # 永久 rule (大少 2026-09-02 21:14 trigger): 拎走 `cache = KlineCache()` 嗰陣 instantiate
     # 改 module-level singleton `_cache`, 唔 instantiate, 唔 spawn thread
@@ -409,6 +426,16 @@ def run_algorithm(
         }
 
     # 4. Wrap 返 response shape (frontend / 其他 module 直接用)
+    # v0.2.2 — 統一 verdict meta shape (大少 2026-09-09 09:21 fix, Spec Sync #53)
+    # 凡人話: 任何 algorithm 嘅 verdict, meta dict 永遠保證有 rsiSeries / macdSeries field
+    # 對齊 §M4 v0.2.0 永久 rule (9月9日 07:27) backend shape consistency intent
+    # 之前每個 algorithm 自己 emit (reg gate fail 早 return 嗰陣漏咗), frontend 拎到 undefined 觸發
+    # "rsiSeries/macdSeries 缺失" false positive warning. 之後統一喺 runner 階段 inject,
+    # frontend 拎到 [] 自動 skip render (凡人話正常). 對齊 §M3 trendline chart overlay 修復永久
+    # rule (2026-09-06 16:47) spirit — 將來新加 module 唔需要再諗 shape 一致性, runner 統一保證
+    meta_normalized = dict(verdict.meta or {})
+    for field in ("rsiSeries", "macdSeries"):
+        meta_normalized.setdefault(field, [])
     return {
         "ok": verdict.ok,
         "algorithm": algo_name,
@@ -417,7 +444,7 @@ def run_algorithm(
         "period": period,
         "klines_count": len(klines),
         "points": verdict.points,
-        "meta": verdict.meta,
+        "meta": meta_normalized,
         "warnings": verdict.warnings,
         "error": verdict.error,
     }
