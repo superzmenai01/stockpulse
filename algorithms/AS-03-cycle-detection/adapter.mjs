@@ -4017,13 +4017,52 @@ async function analyzeIndicators(klines, options = {}) {
 }
 
 function renderIndicatorsResult(verdict) {
-  const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
-  const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
-  const color = stateColors[verdict.meta.state] || '#666';
-  const stateLabel = stateLabels[verdict.meta.state] || verdict.meta.state;
+  // ==============================================================================
+  // v0.4.0 (大少 2026-09-09 13:56 Spec Sync #55 Option 1) — Signal-based output
+  // 凡人話: 拎走舊 UP/DOWN/SIDEWAYS 3-state, 改用 8 個主信號 (見頂 / 見底 / 金叉 / 死叉 / 等)
+  // 對齊 backend algorithm.py _derive_signal 1:1 port
+  // 對齊大少 4th condition: M1 / M2 / M3 一律唔改 (只改 M4 frontend display)
+  // ==============================================================================
+  const stateColors = {
+    // 8 個主信號 color (凡人話: 對齊凡人話 trading 邏輯)
+    top_reversal: '#ff4d4f',        // 見頂 — 紅色 (警告)
+    bottom_reversal: '#52c41a',     // 見底 — 綠色 (信號)
+    macd_golden_cross: '#73d13d',   // 金叉 — 淺綠 (留意)
+    macd_death_cross: '#ff7875',    // 死叉 — 淺紅 (留意)
+    momentum_strong: '#1890ff',     // 動力強 — 藍色 (持有)
+    momentum_weak: '#faad14',      // 動力弱 — 橙色 (減持)
+    exhausted_neutral: '#bfbfbf',   // 失方向 — 灰色 (觀望)
+    no_signal: '#d9d9d9',          // 冇信號 — 淺灰 (觀望)
+  };
+  const stateLabels = {
+    top_reversal: '見頂',
+    bottom_reversal: '見底',
+    macd_golden_cross: 'MACD 金叉',
+    macd_death_cross: 'MACD 死叉',
+    momentum_strong: '動力強',
+    momentum_weak: '動力弱',
+    exhausted_neutral: '失方向',
+    no_signal: '冇信號',
+  };
+  // v0.4.0 拎走 state: UP/DOWN/SIDEWAYS, 改用 signal id (對齊 backend _derive_signal)
+  const v40Signal = verdict.meta.signal || 'no_signal';
+  const v40SignalLabel = verdict.meta.signalLabel || stateLabels[v40Signal] || v40Signal;
+  const v40SignalAction = verdict.meta.signalAction || '觀望';
+  const v40SubSignals = verdict.meta.subSignals || [];
+  const v40Strength = verdict.meta.strength != null ? verdict.meta.strength : 0;
+  const v40Version = verdict.meta.version || 'v0.4.0';
+
+  // 向後兼容: 對齊舊 UP/DOWN/SIDEWAYS caller 仍然拎 state 拎個 signal id (拎走 UP/DOWN/SIDEWAYS)
+  // 凡人話: 舊 caller 拎 verdict.meta.state 拎 UP/DOWN/SIDEWAYS 嘅, 而家拎 signal id (top_reversal 等)
+  // 對齊 §M4 v0.4.0 永久 rule: 拎走舊 cycle 3-state, 改用 signal-based
+  const color = stateColors[v40Signal] || '#666';
+  const stateLabel = v40SignalLabel;
+  const stateCode = v40Signal;
+
   const confidencePct = (verdict.meta.confidence * 100).toFixed(1);
   const confidenceExplain = verdict.meta.confidence >= 0.7 ? '高信心, 信號強' : verdict.meta.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
-  const signal = verdict.meta.signal || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
+  // v0.4.0 改拎 signalLegacy (舊 buy/sell/hold 顯示) 而唔係 signal (新 8 主信號)
+  const signal = verdict.meta.signalLegacy || { type: 'hold', strength: 0, action: '觀望', reasons: [] };
   const ms = verdict.meta.momentumState || {};
   const div = verdict.meta.divergence || { totalCount: 0 };
   // v0.2.0 (大少 2026-09-09 Spec Sync #52): 拎 Hurst / ADX / regimeGate / M1 state / selfCheck 顯示
@@ -4054,39 +4093,100 @@ function renderIndicatorsResult(verdict) {
     ? `<small style="color: #faad14; display: block; margin-top: 4px;">⚠️ Self-check penalty: conf 由 ${(originalConfidence * 100).toFixed(0)}% 折到 ${confidencePct}% (floor 0.3)</small>`
     : '';
 
-  // 📌 解讀 + 觀望 box 詳細解說 (plain language)
-  const signalStrengthPct = (signal.strength * 100).toFixed(0);
+  // v0.4.0 (大少 13:56 Spec Sync #55) — Sub-signal HTML (凡人話: 8 個主信號嘅細粒度副信號顯示)
+  const subSignalsHtml = v40SubSignals.length > 0
+    ? v40SubSignals.map(s => {
+        const colors = {
+          rsi_overbought: '#ff4d4f', rsi_oversold: '#52c41a',
+          rsi_50_70: '#1890ff', rsi_30_50: '#faad14',
+          rsi_rising: '#52c41a', rsi_falling: '#ff4d4f',
+          macd_above_zero: '#52c41a', macd_below_zero: '#ff4d4f',
+          macd_shrinking: '#faad14',
+          macd_golden_cross: '#73d13d', macd_death_cross: '#ff7875',
+          rsi_bearish_divergence: '#ff4d4f', rsi_bullish_divergence: '#52c41a',
+          macd_bearish_divergence: '#ff4d4f', macd_bullish_divergence: '#52c41a',
+          regime_gate_failed: '#bfbfbf', no_trending: '#bfbfbf',
+        };
+        const c = colors[s] || '#666';
+        return `<span style="display: inline-block; background: ${c}22; color: ${c}; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin: 2px;">${s}</span>`;
+      }).join('')
+    : '<span style="color: #888;">無 sub-signal 觸發</span>';
+
+  // 📌 解讀 + 觀望 box 詳細解說 (v0.4.0 對齊 8 個主信號凡人話)
+  // 凡人話: M4 唔再用 buy/sell/hold 3-action, 改用 8 個主信號每個獨立 description
+  const signalStrengthPct = (v40Strength * 100).toFixed(0);
   const winProbPct = ((verdict.meta.winProbability || 0.5) * 100).toFixed(0);
-  const interpretationDetail = signal.type === 'buy' ? `
-    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 兩條動能指標都出現買入訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向上。${crossConfirmBadge}${m1FilterBadge}</p>
-    <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 動能向上確認, 高勝率買入時機, 可考慮入市, 但留意 RSI 超買可能係短期見頂警號, 配合 M1 MA 確認大方向 + M5 量价確認資金跟進。</p>
-  ` : signal.type === 'sell' ? `
-    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 都出現賣出訊號, 識別到 ${div.totalCount} 個背馳/衰竭點, 動能確認向下。${crossConfirmBadge}${m1FilterBadge}</p>
-    <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 動能向下確認, 觀望 / 減倉, 配合 M1 MA 確認下跌趨勢 + M2 HL 確認結構轉弱。</p>
-  ` : `
-    <p>📌 <strong>簡單講</strong>: RSI 同 MACD 都冇明確買入或賣出訊號, 動能中性, 識別到 ${div.totalCount} 個背馳/衰竭點 (如果有)。</p>
-    <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 動能中性, 等待方向確認。背馳點出現時要特別留意, 可能係見頂 / 見底嘅早期警號, 配合 M1 MA 確認大方向。</p>
-  `;
+
+  // v0.4.0 interpretation detail (8 個主信號每個獨立 description)
+  let interpretationDetail = '';
+  if (v40Signal === 'top_reversal') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 見頂警號, 識別到 ${div.totalCount} 個背馳/衰竭點, RSI 過熱 + MACD 柱狀圖縮短, 升勢用完。${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。價升但 RSI / MACD 唔跟, 「有價無動力」嘅典型見頂信號。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 準備跌, 沽貨 / 觀望, 配合 M1 MA 確認大方向 + M2 HL 確認結構轉弱。</p>
+    `;
+  } else if (v40Signal === 'bottom_reversal') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 見底警號, 識別到 ${div.totalCount} 個背馳/衰竭點, RSI 過冷 + MACD 柱狀圖縮短, 跌勢用完。${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。價跌但 RSI / MACD 唔跟, 「有跌無動力」嘅典型見底信號。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 準備升, 入貨 / 留意, 配合 M1 MA 確認大方向 + M2 HL 確認結構轉強。</p>
+    `;
+  } else if (v40Signal === 'macd_golden_cross') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: MACD 金叉 (DIF 升穿 DEA), 跌勢轉升勢嘅早期信號。${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 留意, 升勢初期未確認, 等 RSI 同步上揚先算 confirm。</p>
+    `;
+  } else if (v40Signal === 'macd_death_cross') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: MACD 死叉 (DIF 跌穿 DEA), 升勢轉跌勢嘅早期信號。${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 留意, 跌勢初期未確認, 等 RSI 同步下跌先算 confirm。</p>
+    `;
+  } else if (v40Signal === 'momentum_strong') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 動力強, RSI 喺 50-70 偏強區 + MACD 0 軸上面, 升勢有動力。${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 持有, 但留意 RSI 升到 70 嘅見頂風險。</p>
+    `;
+  } else if (v40Signal === 'momentum_weak') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 動力弱, RSI 喺 30-50 偏弱區 + MACD 0 軸下面, 跌勢有動力。${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 留意沽貨, 配合 M1 MA 確認大方向。</p>
+    `;
+  } else if (v40Signal === 'exhausted_neutral') {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 動能耗盡, MACD 柱狀圖縮短, 之前升 / 跌咗一輪, 失方向。${regimeGate === 'FAILED' ? '⚠️ Regime gate 唔過 (random walk)。' : ''}${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 觀望, 等下個 trend 出現。</p>
+    `;
+  } else {
+    interpretationDetail = `
+      <p>📌 <strong>簡單講</strong>: 冇明確信號, RSI 30-70 中性 + MACD 0 軸附近, 動能中性。${regimeGate === 'FAILED' ? '⚠️ Regime gate 唔過 (random walk)。' : ''}${crossConfirmBadge}${m1FilterBadge}</p>
+      <p>📊 <strong>咩意思</strong>: RSI(14) = ${(ms.rsi ?? 0).toFixed(2)} (${ms.isOverbought ? '超買區' : ms.isOversold ? '超賣區' : '中性區'}), MACD 柱狀體 = ${(ms.macd ?? 0).toFixed(4)} (${ms.macdState || 'N/A'})。</p>
+      <p>💡 <strong>點睇呢個結果</strong>: 觀望, 等信號 trigger。</p>
+    `;
+  }
+
+  // signal box detail (保持不變, 用 signalLegacy 拎 buy/sell/hold)
   const signalBoxDetail = signal.type === 'hold' ? `
-    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 10 條 buy/sell rules 嘅觸發數量同權重, 0% = 完全冇 rules 觸發, 100% = 全部 rules 觸發。強度越高, 信號越強, 越值得參考。</p>
+    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 8 個主信號嘅 sub-signal 觸發數量同權重, 0% = 完全冇 sub-signal 觸發, 100% = 全部 sub-signal 觸發。強度越高, 信號越強, 越值得參考。</p>
     <p>💡 <strong>勝率估算 ${winProbPct}% 點嚟?</strong> 勝率估算係根據 RSI + MACD 狀態 (超買/超賣/中性) 同歷史 backtest 統計得出嘅歷史勝率, 代表同類訊號過去嘅表現, 唔係未來保證。</p>
   ` : `
-    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 10 條 buy/sell rules 嘅觸發數量同權重, ${signalStrengthPct}% = ${signal.reasons.length} 條 rules 觸發嘅綜合分數。${signal.crossConfirmed ? '<strong style="color: #52c41a;">(已加 cross-confirm bonus ×1.2)</strong>' : ''}</p>
+    <p>💡 <strong>訊號強度 ${signalStrengthPct}% 點解?</strong> 訊號強度反映 8 個主信號嘅 sub-signal 觸發數量同權重, ${signalStrengthPct}% = ${v40SubSignals.length} 個 sub-signal 觸發嘅綜合分數。${signal.crossConfirmed ? '<strong style="color: #52c41a;">(已加 cross-confirm bonus ×1.2)</strong>' : ''}</p>
     <p>💡 <strong>勝率估算 ${winProbPct}% 點嚟?</strong> 勝率估算係根據 RSI + MACD 狀態 (超買/超賣/中性) 同歷史 backtest 統計得出, ${winProbPct}% 代表同類訊號過去嘅平均勝率, 唔係未來保證。</p>
   `;
 
   return `
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
-        <h3 class="module-header">⚡ 動能背馳與衰竭檢測法 (Indicators) <span class="version-tag">v0.2.0</span></h3>
+        <h3 class="module-header">⚡ 動能背馳與衰竭檢測法 (Indicators) <span class="version-tag">${v40Version}</span></h3>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
           <span class="state-label">${stateLabel}</span>
-          <span class="state-code">${verdict.meta.state}</span>
+          <span class="state-code">${stateCode}</span>
         </div>
         <div class="confidence">
           <div class="conf-pct">${confidencePct}%</div>
@@ -4158,7 +4258,15 @@ function renderIndicatorsResult(verdict) {
 // 大少 #11056 — 永久 rule,所有 Module 都要有詳細解讀/策略建議/點用點睇 (用人話)
 function renderDetailedExplanationIndicators(verdict) {
   const confidencePct = (verdict.meta.confidence * 100).toFixed(0);
-  const signal = verdict.meta.signal || {};
+  // v0.4.0 (大少 2026-09-09 13:56 Spec Sync #55) — 拎 signal / signalLabel 唔再拎舊 signal.type
+  // 對齊 §M3 trendline chart overlay 修復永久 rule: renderDetailedExplanation 獨立 function 必喺開頭拎 verdict.meta.*
+  const v40Signal = verdict.meta.signal || 'no_signal';
+  const v40SignalLabel = verdict.meta.signalLabel || '冇明確信號';
+  const v40SignalAction = verdict.meta.signalAction || '觀望';
+  const v40SubSignals = verdict.meta.subSignals || [];
+  const v40Strength = verdict.meta.strength != null ? verdict.meta.strength : 0;
+  // 向後兼容: 拎 signalLegacy 拎舊 buy/sell/hold + reasons (frontend chart 仲用呢個)
+  const signal = verdict.meta.signalLegacy || {};
   const ms = verdict.meta.momentumState || {};
   const div = verdict.meta.divergence || { rsiDivergences: [], macdDivergences: [], totalCount: 0 };
   const exhaustion = verdict.meta.exhaustionScore || 0;
@@ -4173,33 +4281,56 @@ function renderDetailedExplanationIndicators(verdict) {
   const selfCheckTriggered = verdict.meta.selfCheckTriggered;
   const originalConfidence = verdict.meta.originalConfidence;
 
+  // v0.4.0 sub-signals 凡人話解讀
+  const subSignalDocs = {
+    rsi_overbought: 'RSI > 70 (超買)',
+    rsi_oversold: 'RSI < 30 (超賣)',
+    rsi_50_70: 'RSI 50-70 (偏強)',
+    rsi_30_50: 'RSI 30-50 (偏弱)',
+    rsi_rising: 'RSI 5 日上升',
+    rsi_falling: 'RSI 5 日下跌',
+    macd_above_zero: 'MACD 喺 0 軸上面',
+    macd_below_zero: 'MACD 喺 0 軸下面',
+    macd_shrinking: 'MACD 柱狀圖縮短 (衰竭)',
+    macd_golden_cross: 'MACD 金叉 (跌轉升)',
+    macd_death_cross: 'MACD 死叉 (升轉跌)',
+    rsi_bearish_divergence: 'RSI 頂背馳',
+    rsi_bullish_divergence: 'RSI 底背馳',
+    macd_bearish_divergence: 'MACD 頂背馳',
+    macd_bullish_divergence: 'MACD 底背馳',
+    regime_gate_failed: 'H<0.45 OR ADX<20 (冇方向)',
+    no_trending: '冇明確 trend',
+  };
+
   return `
     <div class="detailed-explanation">
-      <h4>📖 詳細解讀 (動能指標 + 背馳 + 衰竭 點解讀)</h4>
+      <h4>📖 詳細解讀 (動能指標 + 背馳 + 衰竭 點解讀) — v0.4.0 Signal-based</h4>
       <ul>
-        <li><strong>📌 整體 cycle 點解:</strong> Verdict state = <code>${verdict.meta.state}</code>,代表「<strong>${verdict.meta.interpretation.split(' / ')[0] || '動能中性'}</strong>」。呢個 cycle 係由訊號 (buy/sell/hold) 直接 derive,唔係睇大方向 (嗰個係 M1 MA Alignment 嘅工作)。</li>
-        <li><strong>📈 訊號類型 (signal.type):</strong> ${signal.type === 'buy' ? '<span style="color: #52c41a;">🟢 buy (買入)</span>' : signal.type === 'sell' ? '<span style="color: #ff4d4f;">🔴 sell (賣出)</span>' : '<span style="color: #faad14;">🟡 hold (觀望)</span>'}。代表「而家係咪行動嘅時候」, 唔代表「而家係咩 season」(要 M1/M2/M3 確認大方向)。</li>
-        <li><strong>💪 訊號強度 (signal.strength):</strong> ${(signal.strength * 100).toFixed(0)}%,加權分數 (0-1)。每個觸發條件加 0.15-0.35 分,超過 0.6 先算明確訊號。詳細 score breakdown 見下面「訊號觸發原因」。</li>
+        <li><strong>📌 v0.4.0 主信號 (signal):</strong> <code>${v40Signal}</code>「<strong>${v40SignalLabel}</strong>」。建議動作: <strong>${v40SignalAction}</strong>。信號強度: <strong>${(v40Strength * 100).toFixed(0)}%</strong>。M4 拎走舊 UP/DOWN/SIDEWAYS 3-state, 改用 8 個主信號 (top_reversal / bottom_reversal / macd_golden_cross / macd_death_cross / momentum_strong / momentum_weak / exhausted_neutral / no_signal)。</li>
+        <li><strong>📊 v0.4.0 副信號 (subSignals):</strong> ${v40SubSignals.length > 0 ? v40SubSignals.map(s => `${s} (${subSignalDocs[s] || s})`).join('、') : '無副信號觸發'}。副信號係細粒度指標, 8 個主信號都係由呢啲 sub-signal 組成。</li>
+        <li><strong>📈 舊 signal (signalLegacy, 向後兼容):</strong> ${signal.type === 'buy' ? '<span style="color: #52c41a;">🟢 buy (買入)</span>' : signal.type === 'sell' ? '<span style="color: #ff4d4f;">🔴 sell (賣出)</span>' : '<span style="color: #faad14;">🟡 hold (觀望)</span>'}。Frontend chart overlay 仍然用呢個拎 trade 訊號 display, 但 M4 主 verdict 改為 signal-based。</li>
+        <li><strong>💪 信號強度 (strength):</strong> ${(v40Strength * 100).toFixed(0)}%,加權分數 (0-1)。每個 sub-signal 加 0.10-0.20 分, 背馳 +0.20-0.40 分, 強度越高, 信號越值得參考。</li>
         <li><strong>🎯 信心指數 (confidence):</strong> ${confidencePct}%,由 signal.strength × 多個 boost 計算。背馳數 ≥ 2 會 ×1.15,衰竭分數 > 0.6 會 ×1.10,cap 喺 0-1。信心高 = 訊號強 + 多個條件 corroborate。</li>
         <li><strong>📊 RSI(14):</strong> ${(ms.rsi ?? 0).toFixed(2)},Relative Strength Index 量度「最近 14 日升跌嘅相對強度」。> 70 = 超買 (overbought, 升太多可能回落),< 30 = 超賣 (oversold, 跌太多可能反彈)。</li>
         <li><strong>📉 MACD 柱狀體:</strong> ${(ms.macd ?? 0).toFixed(4)},EMA12 - EMA26 - EMA(EMA12-EMA26, 9)。正 = 短期動能強過長期,負 = 短期動能弱過長期。柱狀體由負翻正 = 金叉 (黃金交叉, 買入信號),由正翻負 = 死叉 (死亡交叉, 賣出信號)。</li>
-        <li><strong>↗️ RSI 趨勢 (5 日):</strong> ${ms.rsiTrend === 'rising' ? '<span style="color: #52c41a;">上升中</span>' : '<span style="color: #ff4d4f;">下降中</span>'},比較 RSI 最新值同 5 日前平均。rising = 動能強化中,falling = 動能減弱中。</li>
+        <li><strong>↗️ RSI 趨勢 (5 日):</strong> ${ms.rsiTrend === 'rising' ? '<span style="color: #52c41a;">上升中</span>' : '<span style="color: #ff4d4f;">下降中</span>'},比較 RSI 最新值同 5 日前。rising = 動能強化中,falling = 動能減弱中。</li>
         <li><strong>⚙️ MACD 狀態:</strong> <code>${ms.macdState || 'N/A'}</code>,4 個狀態:bullish_accelerating (升 + 加速中) / bullish_decelerating (升 + 減速) / bearish_accelerating (跌 + 加速) / bearish_decelerating (跌 + 減速, 即將見底)。</li>
         <li><strong>🔍 背馳 (Divergence) 數量:</strong> ${div.totalCount} 條。頂背馳 = 價格創新高但動能未新高 (跌警),底背馳 = 價格創新低但動能未新低 (升機)。RSI 背馳通常 5-10 日見效,MACD 背馳通常 10-20 日。</li>
         <li><strong>💨 衰竭分數 (exhaustion):</strong> ${(exhaustion * 100).toFixed(0)}%,綜合 RSI 極端 + MACD 柱狀體縮小 + 背馳強度,越高越接近趨勢尾聲。> 60% = 明顯衰竭,通常預示 1-2 週內反轉。</li>
         <li><strong>🎲 勝率估算 (winProbability):</strong> ${(winProb * 100).toFixed(0)}%,基於歷史統計 + 當前條件推算「5 日後升嘅機率」。Base 55%,底背馳 +12%,超賣 +8%,macd_decelerating +5%,cap 85%。</li>
         <li><strong>📅 數據日數 (dataDays):</strong> ${verdict.meta.dataDays || 0} 條 K 線,最少 119 條 (14 RSI + 35 MACD + 60 lookback + 10 buffer) 先夠用。</li>
         <li><strong>⏰ 時間週期 (timeframe):</strong> ${verdict.meta.timeframe}。日線睇中線 (幾週),週線睇長線 (幾月)。</li>
-        <li><strong>📜 訊號觸發原因 (signal.reasons):</strong> ${(signal.reasons || []).join('、') || '暫無明確觸發'}。每個 reason 對應一個 score 累加,例如「底背馳 +0.35」「RSI 超賣回升 +0.25」,總分 ≥ 0.6 = 明確 buy。</li>
+        <li><strong>📜 訊號觸發原因 (signalLegacy.reasons):</strong> ${(signal.reasons || []).join('、') || '暫無明確觸發'}。每個 reason 對應一個 score 累加,例如「底背馳 +0.35」「RSI 超賣回升 +0.25」,總分 ≥ 0.6 = 明確 buy。</li>
         <li><strong>⚠️ 數據不足警告:</strong> ${verdict.meta.warnings && verdict.meta.warnings.length > 0 ? verdict.meta.warnings[0] : '無'}。</li>
-        <li><strong>🔄 統一 cycle 派生規則:</strong> buy → UP, sell → DOWN, hold → SIDEWAYS (TRANSITION 由 Synthesizer 判)。呢個 module 唔 emit TRANSITION。</li>
+        <li><strong>🔄 v0.4.0 8 個主信號 priority (由高到低):</strong> top_reversal (見頂) → bottom_reversal (見底) → macd_golden_cross → macd_death_cross → momentum_strong → momentum_weak → exhausted_neutral → no_signal。優先級高嘅信號觸發即 return, 低優先級 fallback。</li>
         <li><strong>📂 過去錯過的買點 (historicalOpportunities):</strong> ${(verdict.meta.historicalOpportunities || []).length} 個。回顧過去 lookbackDays 內曾經出現過嘅買入訊號,計算到今日嘅回報。Top 3 strongest。可以用嚟訓練盤感。</li>
         <li><strong>📈 Hurst 指數 (v0.2.0 新加):</strong> ${hurst != null ? hurst.toFixed(4) : 'N/A'},量度股價 trending 持續性。&ge; 0.45 = 有方向,&lt; 0.45 = random walk / mean-reverting, M4 唔准話 buy/sell 直接 SIDEWAYS。</li>
         <li><strong>📊 ADX(14) (v0.2.0 新加):</strong> ${adx != null ? adx.toFixed(2) : 'N/A'},Wilder 14 日量度趨勢強度。&ge; 20 = 有趨勢,&lt; 20 = 弱趨勢 / 橫行, M4 唔准話 buy/sell 直接 SIDEWAYS。</li>
-        <li><strong>🚧 Regime gate (v0.2.0 新加):</strong> ${regimeGate || 'PASSED'},Hurst + ADX 兩招同時過先繼續算法, 唔過即 SIDEWAYS + 1 個 CONFLICT_STATE warning。</li>
+        <li><strong>🚧 Regime gate (v0.2.0 新加 / v0.3.0 soft fail):</strong> ${regimeGate || 'PASSED'},Hurst + ADX 兩招同時過先繼續算法。v0.3.0 拎走早 return, 改為 soft fail (regime fail 仍然 emit RSI/MACD series 畀 chart render)。</li>
         <li><strong>🔗 M1 cross-module filter (v0.2.0 新加):</strong> ${m1State ? `M1 state = ${m1State}${signal.m1FilterApplied ? ', 與 M4 signal 矛盾, 降權 50%' : ', 同 M4 同步'}` : 'N/A'}。凡人話: M1 講大方向, M4 講買賣時機, 大環境 DOWN 嗰陣唔好亂 buy。</li>
         <li><strong>✅ RSI+MACD cross-confirm (v0.2.0 新加):</strong> ${signal.crossConfirmed ? '兩條 indicator 同時背馳, 信心 +0.10 bonus' : '只有單一 indicator 背馳'}。凡人話: 兩個獨立指標都確認, 信號強好多。</li>
         <li><strong>⚠️ Self-check penalty (v0.2.0 新加):</strong> ${selfCheckTriggered ? `已觸發, conf 由 ${(originalConfidence * 100).toFixed(0)}% 折到 ${confidencePct}%` : '未觸發'}。凡人話: 算法自己都 flag 唔 sure 嗰陣, conf 自動 floor 0.3。</li>
+        <li><strong>🔌 v0.4.0 M7 整合 (TODO):</strong> M7 Synthesizer v1.2.0 暫時抽離 M4 verdict (大少 13:56 3rd condition), 日後 M7 優化時要處理 M4 signal-based 配合 — 見 AGENTS.md §M7 Synthesizer 永久 rule + TODO comment。</li>
       </ul>
     </div>
   `;
@@ -4387,8 +4518,17 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
       for (let i = 0; i < rsiSeries.length; i++) {
         const k = klines[rsiOffset + i];
         if (!k) continue;
-        const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
-        rsiData.push({ time: t, value: rsiSeries[i] });
+        // 大少 9月9日 17:24 trigger fix: backend response 拎 K 線 timestamp field 用 `time` (YYYY-MM-DD string),
+        // 唔係 `timestamp` (unix seconds number)。Frontend `candleData` 用 `k.timestamp ?? k.time ?? k.date`
+        // 拎 fallback 所以 work, 但 `renderIndicatorsChartOverlay` 直接拎 `k.timestamp` 拎 undefined 觸發
+        // silent fail。對齊 §Cross-module 統一 date parsing 永久 rule (2026-08-29 22:35)「凡 frontend 任何
+        // date/time string 解析永遠 strip `' '` 拎 date-only + 加 `'T00:00:00Z'` 強制 UTC midnight」。
+        // 對齊 §Array evidence 永久 rule: 改之前 curl backend 拎 evidence 確認 backend 用 `time` 唔用 `timestamp`。
+        const t = (k.timestamp ?? k.time ?? k.date ?? '');
+        const tStr = typeof t === 'number'
+          ? new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0] + 'T00:00:00Z'
+          : String(t).split(' ')[0] + 'T00:00:00Z';
+        rsiData.push({ time: tStr, value: rsiSeries[i] });
       }
       if (rsiData.length > 0) {
         // addSeries 第三個 arg = pane index, 1 = 第二個 pane (Pane 0 = K 線 + volume)
@@ -4473,8 +4613,13 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
       for (let i = 0; i < macdSeries.length; i++) {
         const k = klines[macdOffset + i];
         if (!k) continue;
-        const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
-        macdData.push({ time: t, value: macdSeries[i] });
+        // 大少 9月9日 17:24 trigger fix: 對齊 RSI line 拎 timestamp fallback + UTC midnight 拎法
+        // 對齊 §Cross-module 統一 date parsing 永久 rule (2026-08-29 22:35)
+        const t = (k.timestamp ?? k.time ?? k.date ?? '');
+        const tStr = typeof t === 'number'
+          ? new Date(t > 1e12 ? t : t * 1000).toISOString().split('T')[0] + 'T00:00:00Z'
+          : String(t).split(' ')[0] + 'T00:00:00Z';
+        macdData.push({ time: tStr, value: macdSeries[i] });
       }
       if (macdData.length > 0) {
         // Pane index 2 = MACD

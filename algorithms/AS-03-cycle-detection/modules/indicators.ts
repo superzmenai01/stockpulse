@@ -1,30 +1,109 @@
-// modules/indicators.ts — AS-03 · 點 4: 動能背馳與衰竭檢測法 v0.2.0
-// (Momentum Divergence & Exhaustion Detector)
+// modules/indicators.ts — AS-03 · 點 4: 動能背馳與衰竭檢測法 v0.4.0
+// (Momentum Divergence & Exhaustion Detector, Signal-based Output)
 //
-// 對應 spec: `docs/research/AS-03-cycle-detection/MODULE-04-MOMENTUM-DIVERGENCE.md` v0.2.0
-// 對應 backend: backend/algorithms/indicators/algorithm.py v0.2.0 (1:1 port, 2026-09-09 01:55 Spec Sync #52)
+// ==================================================================================================
+// 凡人話 (一句話總結)
+// ==================================================================================================
+// M4 係「動能轉勢偵測器」, 用 RSI(14) + MACD(12/26/9) 兩個指標, 集中搵「背馳 + 衰竭」呢類
+// 轉勢信號。M4 唔係 trend follower, 唔係用嚟判斷股票會升 / 跌 / 橫, 係用嚟講「呢個 trend 嘅
+// 氣力用晒啦」。
 //
-// 從 docx `docs/演算法概念SPECS/04動能背馳與衰竭檢測法.docx` (Kimi v1.0) 落地:
-// - 計算 RSI(14) + MACD(12/26/9) 內部計
-// - 3-window local extremum detection
-// - 背馳檢測 (頂背馳 / 底背馳, RSI + MACD)
-// - 衰竭分數 (RSI 極端 + MACD 縮小 + 背馳)
-// - 交易訊號 (買入 / 賣出 / 觀望)
-// - 勝率估算 + 歷史機會回顧
-// - 統一 cycle state 派生: buy→UP, sell→DOWN, hold→SIDEWAYS
+// 大少 2026-09-09 13:56 觸發嘅 spec 重寫 (Option 1, v0.2.0 → v0.4.0):
+// - 拎走舊 verdict `state: UP/DOWN/SIDEWAYS` 嘅 3-state 框架
+// - 改用 signal-based output, 8 個主信號 + 多個 sub-signal
+// - M7 Synthesizer 暫時唔再用 M4 verdict (大少 3rd condition), 日後優化 M7 時再 incorporate
+// - 全中文 docstring / 註解 (大少 1st condition)
+// - M1 / M2 / M3 一律唔改 (大少 4th condition)
 //
-// v0.2.0 改動 (大少 2026-09-09 Spec Sync #52, 12 個 fix):
-// - A1 Hurst+ADX regime gate (import computeHurst + computeAdx from trendline, 對齊 M3 Spec Sync #45 永久 rule)
-// - A2 signalThreshold 0.6 → 0.5 (config.ts 對齊)
-// - A3 M1 state trend filter (caller inject 落 ctx.m1State, M1 state 矛盾即降權 50% + emit FALLBACK_USED warning)
-// - A4 emit 5 個 self-check warning (INSUFFICIENT_DATA / CONFLICT_STATE / FALLBACK_USED / THRESHOLD_BREACH / MODULE_PARTIAL)
-// - A5 self-check penalty 公式 max(conf * 0.375, 0.3) floor (對齊 M2 9月7日 22:00 永久 rule spirit)
-// - A6 meta.symbol caller symbol (從 ctx.symbol 拎, 唔好 hardcode "TEST" / "UNKNOWN")
-// - A7 RSI + MACD 背馳 cross-confirm bonus × 1.2 (兩條 indicator 同時 trigger 信心提升)
-// - A8 lookbackDays 60 → 250 (config.ts 對齊, 1 年尺度)
-// - B1 永久 ban confidence 1.0, clamp 0.95 (對齊 M3 Layer 4 formula 永久 rule)
-// - B2 confirmation candle (放量 + 收 > MA5, 對齊 Arxum 67% win rate research)
-// - B3 RSI 5 日 linear slope (rsi[-1] - rsi[-6], 對齊 trend, 唔再用單點 vs 5 日 average)
+// ==================================================================================================
+// 對應 (Source-of-truth chain)
+// ==================================================================================================
+// 對應 spec:    docs/research/AS-03-cycle-detection/MODULE-04-INDICATORS.md v0.4.0
+// 對應 backend: backend/algorithms/indicators/algorithm.py v0.4.0 (1:1 port, 2026-09-09 13:56 Spec Sync #55)
+// 對應永久 rule: AGENTS.md §M4 Indicators 永久 rule
+//
+// ==================================================================================================
+// 8 個主信號 (v0.4.0 signal-based output, 對齊凡人話 trading 邏輯)
+// ==================================================================================================
+// 優先級由高到低 (見 _deriveSignal() 函數) —
+//
+// 1. top_reversal       見頂 (沽貨 / 觀望) — 頂背馳 + RSI > 70 + MACD 縮短
+//                       凡人話: 價升到新高位, 但 RSI 唔跟 + MACD 柱狀圖縮短, 升勢用完
+// 2. bottom_reversal    見底 (入貨 / 留意) — 底背馳 + RSI < 30 + MACD 縮短
+//                       凡人話: 價跌到新低位, 但 RSI 唔跌 + MACD 柱狀圖縮短, 跌勢用完
+// 3. macd_golden_cross   MACD 金叉 (留意) — DIF 升穿 DEA, 即係 macd 線由負轉正
+//                       凡人話: 跌勢轉升勢嘅早期信號
+// 4. macd_death_cross    MACD 死叉 (留意) — DIF 跌穿 DEA, 即係 macd 線由正轉負
+//                       凡人話: 升勢轉跌勢嘅早期信號
+// 5. momentum_strong     動力強 (持有) — RSI 50-70 + MACD 0 軸上面
+//                       凡人話: 升勢有動力, 持有中
+// 6. momentum_weak       動力弱 (減持 / 觀望) — RSI 30-50 + MACD 0 軸下面
+//                       凡人話: 跌勢有動力, 留意沽貨
+// 7. exhausted_neutral   過熱後失方向 (觀望) — RSI 接近 50 + MACD 縮短
+//                       凡人話: 之前升 / 跌咗一輪, 動能耗盡, 失方向
+// 8. no_signal           冇明確信號 (觀望) — RSI 30-70 中性 + MACD 0 軸附近
+//                       凡人話: 觀望, 等信號
+//
+// ==================================================================================================
+// 用法 (Usage) — 同 backend
+// ==================================================================================================
+// 1. Backend call:
+//    POST /api/algorithms/run?algo=indicators&symbol=HK.00700&dataWindowDays=1260
+//
+// 2. Verdict meta 拎法:
+//    verdict.meta.signal         # 主信號 (top_reversal / bottom_reversal / 等)
+//    verdict.meta.signalLabel    # 凡人話標籤 (見頂 / 見底 / 等)
+//    verdict.meta.signalAction   # 建議動作 (沽貨 / 入貨 / 持有 / 觀望 / 留意)
+//    verdict.meta.subSignals     # 副信號 array (rsi_overbought, macd_shrinking, etc)
+//    verdict.meta.strength       # 信號強度 0-1
+//    verdict.meta.rsiLatest      # RSI 而家數值
+//    verdict.meta.macdLatest     # MACD 而家數值
+//    verdict.meta.regimeGate     # PASSED / FAILED (對齊 v0.3.0 soft fail 永久 rule)
+//
+// 3. Frontend 對齊: algorithms/AS-03-cycle-detection/adapter.mjs renderIndicatorsChartOverlay
+//    拎 verdict.meta.signal / signalLabel / subSignals 渲染 UI 文案
+//
+// ==================================================================================================
+// 例子 (Examples) — 同 backend
+// ==================================================================================================
+// 例子 1: HK.01888 建滔積層板 (regime PASSED, 凡人話 trending 強)
+//    RSI 56.62 (升緊) + MACD +1.1549 (0 軸上面, 跌緊) + 冇背馳
+//    → signal: exhausted_neutral (因為 MACD 0 軸上面縮短 + RSI 接近 50, 但 rsi 跌緊 唔算 strong)
+//    → subSignals: [rsi_50_70, rsi_falling, macd_above_zero, macd_shrinking]
+//    → strength: 0.38
+//
+// 例子 2: HK.00700 騰訊 (regime FAILED, 凡人話 random walk)
+//    RSI 41.86 (持平) + MACD -1.0230 (0 軸下面, 持平) + 冇背馳
+//    → signal: exhausted_neutral (regime gate fail override)
+//    → subSignals: [regime_gate_failed, no_trending, rsi_30_50, rsi_falling, macd_below_zero]
+//    → strength: 0.30
+//
+// 例子 3: 假設 case — RSI 78 + MACD 縮短 + 頂背馳 (睇 0.85 strength)
+//    → signal: top_reversal
+//    → subSignals: [rsi_overbought, rsi_bearish_divergence, macd_shrinking]
+//    → strength: 0.85
+//
+// ==================================================================================================
+// v0.4.0 改動 (大少 2026-09-09 13:56 Spec Sync #55, Option 1)
+// ==================================================================================================
+// - 拎走舊 `state: UP/DOWN/SIDEWAYS` 3-state 框架, 改用 `signal` 8 個主信號
+// - 加 `signalLabel` / `signalAction` / `subSignals` / `strength` 4 個新 field
+// - 加 `_deriveSignal()` 函數 (8 個主信號 priority 揀, 對齊 backend 1:1 port)
+// - evidence 拎走 `cycle` 依賴, 改為 sub-signal based passed
+// - meta `state` 改用 signal id (拎走 UP/DOWN/SIDEWAYS 兼容性)
+// - meta 保留 `signalLegacy` field (畀 frontend chart overlay 拎 buy/sell/hold 舊 display)
+//
+// 沿用 v0.2.0 + v0.3.0 永久 rule:
+// - A1 Hurst+ADX regime gate
+// - A3 M1 state trend filter
+// - A4 5 個 self-check warning
+// - A5 self-check penalty formula
+// - A6 meta.symbol caller symbol
+// - A7 RSI + MACD 背馳 cross-confirm bonus
+// - B1 永久 ban conf 1.0
+// - B2 confirmation candle
+// - B3 RSI 5 日 linear slope
+// - v0.3.0 reg gate soft fail (emit RSI/MACD 任何情況下都睇到)
 //
 // 跟 ma-alignment.ts / hl-structure.ts / trendline.ts / volume.ts
 // pattern 一致 (rule-based + additive confidence + list all matched rules)
@@ -33,11 +112,12 @@
 // 永久 Rules:
 // - Rule-based + additive confidence (大少 #10097)
 // - List all matched rules (唔好 silently pick 一個)
-// - State 統一: UP/DOWN/SIDEWAYS (TRANSITION 由 Synthesizer 判)
+// - v0.4.0: Signal-based output 代替 State 統一 (拎走 UP/DOWN/SIDEWAYS, 由 _deriveSignal 揀 8 個主信號)
 // - Plain language 解讀 (大少 #10299)
 // - _warnings 永遠 inlined 落 verdict (永久 rule v1.1.0 spirit)
 // - 永遠 emit symbol 從 ctx.symbol (永久 rule 9月7日 08:30 verdict.meta.symbol)
 // - 永遠 ban conf 1.0, clamp 0.95 (M3 Layer 4 永久 rule)
+// - 大少 13:56 4th condition: M1 / M2 / M3 一律唔改 (呢個 file 只改 v0.4.0 part)
 // - Self-check warning 觸發即 floor conf 0.3 (M2 9月7日 22:00 永久 rule spirit)
 
 import type {
@@ -694,6 +774,93 @@ export class IndicatorsModule implements CycleModule<KLine[]> {
     return round(clamp(conf, 0, 0.95), 4);  // v0.2.0 B1: clamp 0.95 (永久 ban 1.0)
   }
 
+  // ==============================================================================
+  // v0.4.0 (大少 2026-09-09 13:56 Spec Sync #55 Option 1) — Step 10 揀信號
+  // ==============================================================================
+  // 凡人話: 根據 RSI / MACD / 背馳 / 衰竭 揀 8 個主信號其中之一, 對齊大少 13:56 trigger
+  // "M4 其實比較適合睇轉勢" 嘅 user intent, 1:1 port backend algorithm.py _derive_signal
+  //
+  // 信號 priority (由高到低) — 對齊大少 13:56 trigger「見頂 / 見底 / 動力強 / 動力弱
+  // / 金叉 / 死叉 / 失方向 / 冇信號」嘅凡人話 trading 邏輯
+  // ==============================================================================
+  private _deriveSignal(
+    momentum: MomentumInternal,
+    rsiDiv: DivergenceResult[],
+    macdDiv: DivergenceResult[],
+    exhaustionScore: number,
+    regimePassed: boolean,
+  ): { signal: string; label: string; action: string; subSignals: string[]; strength: number } {
+    const rsiLatest = momentum.rsiLatest;
+    const macdLatest = momentum.macdLatest;
+    const rsiSeries = momentum.rsiSeries;
+    const macdSeries = momentum.macdSeries;
+
+    // 副信號 sub-signal 收集 (凡人話: 細粒度指標, 8 個主信號都係由呢啲 sub-signal 組成)
+    const subSignals: string[] = [];
+
+    if (momentum.isOverbought) subSignals.push('rsi_overbought');
+    if (momentum.isOversold) subSignals.push('rsi_oversold');
+    if (rsiLatest >= 50 && rsiLatest <= 70) subSignals.push('rsi_50_70');
+    if (rsiLatest >= 30 && rsiLatest < 50) subSignals.push('rsi_30_50');
+    if (momentum.rsiTrend === 'rising') subSignals.push('rsi_rising');
+    else if (momentum.rsiTrend === 'falling') subSignals.push('rsi_falling');
+
+    if (macdLatest > 0) subSignals.push('macd_above_zero');
+    else if (macdLatest < 0) subSignals.push('macd_below_zero');
+
+    const last10 = macdSeries.slice(-10).map((v) => Math.abs(v));
+    const recentMax = last10.length > 0 ? Math.max(...last10) : 0;
+    if (recentMax > 0 && Math.abs(macdLatest) < recentMax * 0.6) subSignals.push('macd_shrinking');
+
+    if (macdSeries.length >= 6) {
+      const prev5 = macdSeries[macdSeries.length - 6];
+      if (prev5 < 0 && macdLatest > 0) subSignals.push('macd_golden_cross');
+      else if (prev5 > 0 && macdLatest < 0) subSignals.push('macd_death_cross');
+    }
+
+    const hasRsiTopDiv = rsiDiv.some((d) => d.type === 'bearish' && d.indicator === 'rsi');
+    const hasRsiBottomDiv = rsiDiv.some((d) => d.type === 'bullish' && d.indicator === 'rsi');
+    const hasMacdTopDiv = macdDiv.some((d) => d.type === 'bearish' && d.indicator === 'macd');
+    const hasMacdBottomDiv = macdDiv.some((d) => d.type === 'bullish' && d.indicator === 'macd');
+    if (hasRsiTopDiv) subSignals.push('rsi_bearish_divergence');
+    if (hasRsiBottomDiv) subSignals.push('rsi_bullish_divergence');
+    if (hasMacdTopDiv) subSignals.push('macd_bearish_divergence');
+    if (hasMacdBottomDiv) subSignals.push('macd_bullish_divergence');
+
+    if (!regimePassed) subSignals.push('regime_gate_failed');
+
+    // 優先級 1: 見頂 (top_reversal)
+    if ((hasRsiTopDiv || hasMacdTopDiv) && momentum.isOverbought && subSignals.includes('macd_shrinking')) {
+      return { signal: 'top_reversal', label: '見頂', action: '沽貨 / 觀望', subSignals, strength: clamp(0.6 + exhaustionScore * 0.4, 0, 1) };
+    }
+    // 優先級 2: 見底 (bottom_reversal)
+    if ((hasRsiBottomDiv || hasMacdBottomDiv) && momentum.isOversold && subSignals.includes('macd_shrinking')) {
+      return { signal: 'bottom_reversal', label: '見底', action: '入貨 / 留意', subSignals, strength: clamp(0.6 + exhaustionScore * 0.4, 0, 1) };
+    }
+    // 優先級 3: MACD 金叉 (macd_golden_cross)
+    if (subSignals.includes('macd_golden_cross') && subSignals.includes('rsi_oversold')) {
+      return { signal: 'macd_golden_cross', label: 'MACD 金叉 (跌轉升早期)', action: '留意', subSignals, strength: clamp(0.5 + exhaustionScore * 0.3, 0, 1) };
+    }
+    // 優先級 4: MACD 死叉 (macd_death_cross)
+    if (subSignals.includes('macd_death_cross') && subSignals.includes('rsi_overbought')) {
+      return { signal: 'macd_death_cross', label: 'MACD 死叉 (升轉跌早期)', action: '留意', subSignals, strength: clamp(0.5 + exhaustionScore * 0.3, 0, 1) };
+    }
+    // 優先級 5: 動力強 (momentum_strong)
+    if (subSignals.includes('rsi_50_70') && subSignals.includes('macd_above_zero') && subSignals.includes('rsi_rising')) {
+      return { signal: 'momentum_strong', label: '動力強 (持有)', action: '持有', subSignals, strength: clamp(0.4 + exhaustionScore * 0.3, 0, 1) };
+    }
+    // 優先級 6: 動力弱 (momentum_weak)
+    if (subSignals.includes('rsi_30_50') && subSignals.includes('macd_below_zero') && subSignals.includes('rsi_falling')) {
+      return { signal: 'momentum_weak', label: '動力弱 (留意沽貨)', action: '減持 / 觀望', subSignals, strength: clamp(0.4 + exhaustionScore * 0.3, 0, 1) };
+    }
+    // 優先級 7: 過熱後失方向 (exhausted_neutral)
+    if (subSignals.includes('macd_shrinking') && rsiLatest >= 40 && rsiLatest <= 60) {
+      return { signal: 'exhausted_neutral', label: '動能耗盡失方向', action: '觀望', subSignals, strength: clamp(0.3 + exhaustionScore * 0.3, 0, 1) };
+    }
+    // 優先級 8: 冇明確信號 (no_signal)
+    return { signal: 'no_signal', label: '冇明確信號', action: '觀望', subSignals, strength: clamp(0.2 + exhaustionScore * 0.2, 0, 1) };
+  }
+
   async detect(klines: KLine[], ctx: CycleContext): Promise<CycleVerdict> {
     // v0.2.0 A6: 拎 caller symbol 對齊 9月7日 08:30 verdict.meta.symbol 永久 rule
     // 凡人話: ctx.symbol 由 caller inject 落 (frontend testing page / api), 唔好 hardcode "TEST" / "UNKNOWN"
@@ -814,29 +981,57 @@ export class IndicatorsModule implements CycleModule<KLine[]> {
       selfCheckWarnings.push(`[MODULE_PARTIAL] M4 冇背馳 evidence 但有 signal, 純靠其他 sub-signal 推算, 信心弱`);
     }
 
-    // 統一 cycle state
-    let cycle: CycleState;
-    let cycleLabel: string;
-    if (signal.type === 'buy') { cycle = 'UP'; cycleLabel = '動能偏多'; }
-    else if (signal.type === 'sell') { cycle = 'DOWN'; cycleLabel = '動能偏空'; }
-    else { cycle = 'SIDEWAYS'; cycleLabel = '動能中性'; }
+    // ==========================================================================================
+    // v0.4.0 (大少 2026-09-09 13:56 Spec Sync #55 Option 1) — Step 10 揀信號
+    // 凡人話: 拎走舊 cycle (UP/DOWN/SIDEWAYS) 3-state 框架, 改用 8 個主信號其中之一
+    // 對齊 backend 1:1 port, M7 Synthesizer 暫時唔再用 M4 verdict (大少 3rd condition)
+    // ==========================================================================================
+    let signalResult = this._deriveSignal(
+      momentum,
+      rsiDiv,
+      macdDiv,
+      exhaustionScore,
+      regimePassed,
+    );
+    // signalResult: { signal, label, action, subSignals, strength }
 
-    // Evidence 收集
+    // v0.3.0 reg gate soft fail override (大少 11:26 Option 1 trigger)
+    // 凡人話: 即使 reg gate fail, 仍然拎 RSI/MACD series 畀 chart render, 但 signal 拎 exhausted_neutral
+    if (!regimePassed) {
+      signalResult = {
+        signal: 'exhausted_neutral',
+        label: '動能失方向 (reg gate 唔過)',
+        action: '觀望',
+        subSignals: ['regime_gate_failed', 'no_trending', ...signalResult.subSignals],
+        strength: 0.3,
+      };
+      confidence = Math.min(confidence, 0.3);  // 永久 ban 1.0 + 對齊 §M4 self-check penalty 永久 rule
+    }
+
+    // Evidence 收集 (v0.4.0 拎走 cycle 依賴, 改用 sub-signal based passed)
     const evidence: Evidence[] = [
       { type: 'hurst', label: 'Hurst 指數', value: round(hurstValue, 4), threshold: 0.45, passed: hurstValue >= 0.45 },
       { type: 'adx', label: 'ADX(14)', value: round(adxValue, 2), threshold: 20, passed: adxValue >= 20 },
       { type: 'rsi', label: 'RSI(14)', value: round(momentum.rsiLatest, 2), threshold: '30 / 70', passed: !momentum.isOverbought && !momentum.isOversold },
       { type: 'macd', label: 'MACD 柱狀體', value: round(momentum.macdLatest, 4), threshold: '0', passed: momentum.macdLatest > 0 },
-      { type: 'macd-state', label: 'MACD 動能狀態', value: momentum.macdState, passed: momentum.macdState.includes('bullish') === (cycle === 'UP') },
+      // v0.4.0 拎走 cycle 依賴, 改為「MACD bullish 動能 + RSI bullish 動能 → 升勢方向 confirm」
+      { type: 'macd-state', label: 'MACD 動能狀態', value: momentum.macdState, passed: momentum.macdState.includes('bullish') && momentum.rsiLatest >= 50 },
       { type: 'rsi-trend', label: 'RSI 5 日趨勢', value: momentum.rsiTrend, passed: true },
       { type: 'divergence', label: '背馳數量', value: totalDiv, passed: totalDiv > 0 },
       { type: 'exhaustion', label: '衰竭分數', value: round(exhaustionScore, 4), threshold: 0.6, passed: exhaustionScore > 0.6 },
     ];
 
-    // Interpretation
-    const interpretationParts: string[] = [`動能視角: ${cycleLabel}`];
+    // Interpretation (v0.4.0 改為凡人話 signal 描述)
+    const interpretationParts: string[] = [
+      `信號: ${signalResult.label} (${signalResult.signal})`,
+      `建議動作: ${signalResult.action}`,
+      `強度: ${signalResult.strength.toFixed(2)}`,
+    ];
+    if (signalResult.subSignals.length > 0) {
+      interpretationParts.push(`副信號: ${signalResult.subSignals.join('、')}`);
+    }
     if (signal.reasons.length > 0) {
-      interpretationParts.push(`訊號: ${signal.reasons.join('、')}`);
+      interpretationParts.push(`算法判斷: ${signal.reasons.join('、')}`);
     }
     if (totalDiv > 0) {
       interpretationParts.push(`背馳數 ${totalDiv} 條`);
@@ -852,7 +1047,8 @@ export class IndicatorsModule implements CycleModule<KLine[]> {
     return {
       moduleId: this.id,
       timeframe: ctx.ltf,
-      state: cycle,
+      // v0.4.0 拎走 state: UP/DOWN/SIDEWAYS, 改用 signal id (對齊舊 caller compatibility, 拎信號 id 唔係 cycle)
+      state: signalResult.signal as CycleState,
       confidence,
       interpretation,
       evidence,
@@ -860,9 +1056,15 @@ export class IndicatorsModule implements CycleModule<KLine[]> {
       meta: {
         inputBars: klines.length,
         symbol,  // v0.2.0 A6
-        cycleLabel,
+        // v0.4.0: 拎走 cycleLabel, 改用 signalLabel
+        signal: signalResult.signal,  // v0.4.0 新加 (主信號)
+        signalLabel: signalResult.label,  // v0.4.0 新加 (凡人話標籤)
+        signalAction: signalResult.action,  // v0.4.0 新加 (建議動作)
+        subSignals: signalResult.subSignals,  // v0.4.0 新加 (副信號 array)
+        strength: round(signalResult.strength, 4),  // v0.4.0 新加 (信號強度 0-1)
         hurst: round(hurstValue, 4),  // v0.2.0 A1: audit field
         adx: round(adxValue, 2),  // v0.2.0 A1: audit field
+        regimeGate: regimePassed ? 'PASSED' : 'FAILED',  // v0.3.0: audit field
         m1State,  // v0.2.0 A3: audit field
         selfCheckTriggered,  // v0.2.0 A5: audit field
         originalConfidence,  // v0.2.0 A5: audit field
@@ -880,13 +1082,16 @@ export class IndicatorsModule implements CycleModule<KLine[]> {
           isOverbought: momentum.isOverbought,
           isOversold: momentum.isOversold,
         },
-        signal: {
+        // 保留舊 v0.2.0 signal block (A3/A7) — 畀 frontend chart overlay 拎 trade 訊號
+        // frontend 仍用呢個拎 buy/sell/hold action display, 但 M4 主 verdict 改為 signal-based
+        signalLegacy: {
           type: signal.type,
           strength: round(signal.strength, 4),
           action: signal.type === 'buy' ? '買入' : signal.type === 'sell' ? '賣出' : '觀望',
           reasons: signal.reasons,
           m1FilterApplied: signal.m1FilterApplied,  // v0.2.0 A3
           crossConfirmed: signal.crossConfirmed,  // v0.2.0 A7
+        },
         },
         winProbability,
         exhaustionScore: round(exhaustionScore, 4),

@@ -1,5 +1,5 @@
 """
-backend/algorithms/synthesizer/algorithm.py — M7 Synthesizer v1.0.0 (大少 2026-08-20 21:30 Phase 8)
+backend/algorithms/synthesizer/algorithm.py — M7 Synthesizer v1.2.0 (大少 2026-09-09 13:56 Spec Sync #55)
 
 凡人話: 拎 6 個 module 嘅 standard verdict → 計 SSI (戰略強度) + TCM (戰術交叉驗證) + Alignment + Grade (8 個評級 A+~F) + Kelly 倉位 → SynthesizerVerdict
 
@@ -7,10 +7,31 @@ backend/algorithms/synthesizer/algorithm.py — M7 Synthesizer v1.0.0 (大少 20
 對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md
 對應 framework: backend/algorithms/base.py Verdict contract
 
+==================================================================================================
+v1.2.0 永久改動 (大少 2026-09-09 13:56 3rd condition: 暫時從 M7 抽離 M4)
+==================================================================================================
+- M4 verdict 拎走舊 state: UP/DOWN/SIDEWAYS 3-state, 改用 signal: top_reversal / bottom_reversal / 等 8 個主信號
+- 對齊大少 13:56 trigger「Option 1 + 3rd condition: 暫時從 M7 抽離 M4, 日後 M7 優化時要處理 M4 signal-based 配合」
+- M7 暫時唔再用 M4 verdict 做 Alignment / TCM 計算, 對應改動:
+  - _compute_tcm 拎 M4 verdict 嗰陣 skip 唔計 (永遠 alignment = 0 + trap_penalty = 0.2)
+  - _compute_alignment 拎 M4 verdict 嗰陣 skip 唔計 (alignment_score 計 5 個 module, 唔再 6 個)
+  - 凡人話: M7 暫時只睇 M1 / M2 / M3 / M5 / M6 嘅 alignment, M4 獨立 render 畀大少睇
+
+TODO (日後 M7 優化時要處理):
+  - M4 signal-based 配合: 大少日後 trigger 拎 M4 嘅 signal (top_reversal/bottom_reversal/momentum_strong 等) 對應到 M7 嘅 alignment 點計
+    - 方案 A: M4 嘅 top_reversal / bottom_reversal 對應 DOWN / UP (凡人話: 見頂 = 跌, 見底 = 升)
+    - 方案 B: M4 嘅 momentum_strong / momentum_weak 直接對應 UP / DOWN
+    - 方案 C: M7 加一個 signal_quality_score, M4 強信號 (strength > 0.7) 直接 override 綜合判定
+  - 對齊 §M1 sub-scenario 永久 rule (2026-08-16 19:21): sub-scenario 改動要 ≥ 3 個 stock verify, 大少 trigger 之後先改
+  - 對齊 §改完先 ask 修正先 Commit (2026-09-09 07:23): 改完必先 present fix 結果 + 等大少 trigger commit
+
+==================================================================================================
 Algorithm: 5 sub-step (跟 synthesizer.ts 嘅 synthesize() 1:1 port 去 Python)
+==================================================================================================
 - Step 1: SSI 戰略強度指數 (consistency × 50 + confidence_avg × 30 + rules_coverage × 20)
 - Step 2: TCM 戰術交叉驗證矩陣 (3 對 pair: ma-trendline / hl-volume / indicators-volatility, alignment -1/0/+1 + trap_penalty 0.6/0.2/0)
-- Step 3: Alignment Score 戰略戰術匹配度 (max_group_size / total_count)
+        凡人話 v1.2.0: (indicators, volatility) 嗰對 pair 拎 M4 verdict 嗰陣 skip 唔計, 永遠 alignment = 0
+- Step 3: Alignment Score 戰略戰術匹配度 (max_group_size / total_count, v1.2.0 拎 M4 唔計)
 - Step 4: Grade 評級 (ssi_score × 0.6 + alignment × 100 × 0.4, 8 個 grade: A+/A/B+/B/C+/C/D/F)
 - Step 5: Kelly 倉位分數 (跟 avg max_drawdown_estimate 自動切 half/quarter/octo)
 - Step 3.5: ZigZagSlope Cross-Module Alignment Enrichment (大少 2026-08-21 12:04 Stage 2 第一步)
@@ -18,6 +39,9 @@ Algorithm: 5 sub-step (跟 synthesizer.ts 嘅 synthesize() 1:1 port 去 Python)
   - M1 cycle UP + ZigZag 短期急跌 (>2%/日) → alignment 扣 5% (短期動能背馳)
   - M1 cycle DOWN + ZigZag 短期急升 (>2%/日) → alignment 扣 5% (短期反彈背馳)
   - 對應 spec: MODULE-07-SYNTHESIZER.md v2.1.0 Level 4 cross-module alignment enrich
+
+v1.2.0 永久 rule: M4 verdict 拎 skip logic (見 _compute_tcm + _compute_alignment 改動)
+v1.2.0 TODO: 見上方 TODO section
 
 Caller inject pattern (Phase 8 permanent rule):
 - 跑 synthesizer 之後, algorithm_runner 自動跑 M1-M6 拎 verdict
@@ -102,10 +126,16 @@ def _compute_tcm(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """TCM 計算 (3 對 pair):
     - (ma-alignment, trendline) — 形態 + 趨勢線 confirm
     - (hl-structure, volume)    — 形態 + 量能 confirm
-    - (indicators, volatility)  — 情緒 + 波動 confirm
+    - (indicators, volatility)  — 情緒 + 波動 confirm (v1.2.0 暫時 skip, 對齊大少 13:56 3rd condition)
     每對:
     - alignment: -1 (矛盾), 0 (部分), +1 (一致)
     - trap_penalty: alignment=-1 → 0.6, alignment=0 → 0.2, alignment=+1 → 0
+
+    v1.2.0 (大少 2026-09-09 13:56 Spec Sync #55) — 暫時從 M7 抽離 M4
+    凡人話: M4 v0.4.0 拎走 UP/DOWN/SIDEWAYS 3-state, 改用 signal id (top_reversal / 等 8 個主信號),
+    對齊 v1.2.0 永久 rule: M7 暫時唔再用 M4 verdict 做 TCM 計算, 拎 M4 verdict 嗰對 pair
+    (indicators, volatility) 永遠 alignment = 0 + trap_penalty = 0.2
+    日後 M7 優化時要處理 M4 signal-based 配合 (見 header docstring TODO)
     """
     v_map = {v.get("module_id"): v for v in verdicts}
     pairs: List[Tuple[str, str]] = [
@@ -118,6 +148,16 @@ def _compute_tcm(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for id1, id2 in pairs:
         v1 = v_map.get(id1)
         v2 = v_map.get(id2)
+        # v1.2.0 永久 rule: M4 (indicators) verdict skip 唔計, 永遠 alignment = 0 + trap_penalty = 0.2
+        # 對齊大少 13:56 3rd condition: 暫時從 M7 抽離 M4
+        if id1 == "indicators" or id2 == "indicators":
+            results.append({
+                "pair": [id1, id2],
+                "alignment": 0.0,  # v1.2.0: 永遠 0 (skip M4)
+                "trap_penalty": 0.2,  # v1.2.0: 永遠 0.2 (skip M4 對應中等 penalty)
+                "skipped": True,  # v1.2.0: 標記 skip, frontend display 用
+            })
+            continue
         if not v1 or not v2:
             results.append({"pair": [id1, id2], "alignment": 0, "trap_penalty": 0})
             continue
@@ -150,17 +190,22 @@ def _compute_tcm(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ============================================================
 
 def _compute_alignment(verdicts: List[Dict[str, Any]]) -> float:
-    """Alignment Score (0-1): 6 個 module state 一致程度
+    """Alignment Score (0-1): 5 個 module (M1/M2/M3/M5/M6) state 一致程度
+    v1.2.0 永久 rule: M4 (indicators) verdict skip 唔計, 只睇 5 個 module 嘅 alignment
+    對齊大少 13:56 3rd condition: 暫時從 M7 抽離 M4
+
     alignment_score = max_group_size / total_count
     """
-    if not verdicts:
+    # v1.2.0 永久 rule: skip M4 verdict 拎 alignment (大少 13:56 3rd condition 抽離 M4)
+    verdicts_filtered = [v for v in verdicts if v.get("module_id") != "indicators"]
+    if not verdicts_filtered:
         return 0.0
     state_count: Dict[str, int] = {}
-    for v in verdicts:
+    for v in verdicts_filtered:
         state = v.get("state", "SIDEWAYS")
         state_count[state] = state_count.get(state, 0) + 1
     max_count = max(state_count.values())
-    return round((max_count / len(verdicts)) * 1000) / 1000
+    return round((max_count / len(verdicts_filtered)) * 1000) / 1000
 
 
 # ============================================================

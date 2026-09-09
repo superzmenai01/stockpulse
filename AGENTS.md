@@ -476,6 +476,90 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: `e342e4b` (M4 v0.2.0 backend, 261 line 改) + Spec Sync #52 即將 push (frontend sync + cache bust + spec doc update)
 
+### M4 Indicators v0.4.0 Signal-based Output 永久 rules (大少 2026-09-09 13:56 confirm, Spec Sync #55 Option 1)
+
+**凡人話**: M4 唔係 trend follower, 拎走舊 UP/DOWN/SIDEWAYS 3-state 框架 (Spec Sync #52 對齊 M1/M2/M3 trend follower 嘅 framework), 改用 8 個主信號 signal-based output, 對齊大少 13:56 trigger「M4 其實比較適合睇轉勢」嘅 user intent。
+
+**Stage 1 audit 結果** (8 隻 stock, v0.4.0 vs v0.3.0):
+- HK.01888 建滔積層板: signal=exhausted_neutral (regime PASSED, MACD 0 軸上面縮短 + RSI 接近 50) ✅
+- HK.00700 騰訊控股: signal=exhausted_neutral (regime FAILED, soft fail override) ✅
+- HK.01347 華虹半導體: signal=exhausted_neutral (regime FAILED, soft fail override) ✅
+- HK.00021: signal=momentum_weak (regime PASSED, RSI 30-50 + MACD 0 軸下面 + RSI 跌) ✅
+- US.TSLA 特斯拉: signal=exhausted_neutral (regime PASSED, MACD 0 軸上面縮短) ✅
+- 8 個主信號 priority 邏輯 work, backend evidence 確認 5 隻 stock 拎到 `signal / signalLabel / signalAction / subSignals / strength` 5 個新 field ✅
+
+**§M4 v0.4.0 Signal-based output 8 個主信號 (優先級由高到低)**
+- ✅ 1. `top_reversal` 見頂 (沽貨/觀望) — 頂背馳 + RSI > 70 + MACD 縮短
+- ✅ 2. `bottom_reversal` 見底 (入貨/留意) — 底背馳 + RSI < 30 + MACD 縮短
+- ✅ 3. `macd_golden_cross` MACD 金叉 (留意) — DIF 升穿 DEA + RSI 過冷
+- ✅ 4. `macd_death_cross` MACD 死叉 (留意) — DIF 跌穿 DEA + RSI 過熱
+- ✅ 5. `momentum_strong` 動力強 (持有) — RSI 50-70 + MACD 0 軸上面 + RSI 上升
+- ✅ 6. `momentum_weak` 動力弱 (減持/觀望) — RSI 30-50 + MACD 0 軸下面 + RSI 下跌
+- ✅ 7. `exhausted_neutral` 動能耗盡失方向 (觀望) — MACD 縮短 + RSI 接近 50
+- ✅ 8. `no_signal` 冇明確信號 (觀望) — 默認 fallback
+
+**§M4 v0.4.0 verdict meta shape (沿用 §Verdict meta shape 統一永久 rule Spec Sync #53)**
+- ✅ `verdict.meta.signal` (8 個主信號 id) — 拎走舊 `state: UP/DOWN/SIDEWAYS`
+- ✅ `verdict.meta.signalLabel` (凡人話標籤: 見頂 / 見底 / 動力強 / 失方向 等)
+- ✅ `verdict.meta.signalAction` (建議動作: 沽貨 / 入貨 / 持有 / 觀望 / 留意)
+- ✅ `verdict.meta.subSignals` (副信號 array: rsi_overbought / macd_shrinking / rsi_bearish_divergence 等 17 個)
+- ✅ `verdict.meta.strength` (信號強度 0-1, priority 加權 + 衰竭分數)
+- ✅ `verdict.meta.signalLegacy` (向後兼容: 保留舊 buy/sell/hold + reasons, frontend chart overlay 仍用)
+- ✅ `verdict.meta.version` = "v0.4.0" (spec version tag)
+- ✅ Backend `algorithm_runner.py` 統一 inject `rsiSeries: []` / `macdSeries: []` 兜底 (Spec Sync #53, 唔受 v0.4.0 改動影響)
+- ✅ Algorithm_runner.py 統一 inject `m1State` 落 M4 options (對齊 9月7日 08:30 meta.symbol 永久 rule)
+
+**§M4 v0.4.0 v0.2.0 + v0.3.0 永久 rule 沿用 (大少 4th condition: M1/M2/M3 唔改)**
+- ✅ A1 Hurst+ADX regime gate (Spec Sync #45): 沿用 v0.2.0 永久 rule
+- ✅ A2 signalThreshold 0.5: 沿用 v0.2.0 永久 rule
+- ✅ A3 M1 state trend filter: 沿用 v0.2.0 永久 rule
+- ✅ A4 5 個 self-check warning: 沿用 v0.2.0 永久 rule
+- ✅ A5 self-check penalty formula: 沿用 v0.2.0 永久 rule
+- ✅ A6 meta.symbol caller symbol: 沿用 v0.2.0 永久 rule
+- ✅ A7 RSI + MACD 背馳 cross-confirm bonus: 沿用 v0.2.0 永久 rule
+- ✅ B1 永久 ban conf 1.0: 沿用 v0.2.0 永久 rule
+- ✅ B2 confirmation candle: 沿用 v0.2.0 永久 rule
+- ✅ B3 RSI 5 日 linear slope: 沿用 v0.2.0 永久 rule
+- ✅ v0.3.0 reg gate soft fail: 沿用 v0.3.0 永久 rule (拎走早 return, emit warning + 繼續行 algorithm)
+- ✅ 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47): 拎 `verdict.meta.X`, 唔好拎 `verdict.meta.meta.X`
+- ✅ 對齊 §數據處理 Server 內部做永久 rule (8月23日 13:19): RSI/MACD 算法 backend Python 跑, frontend 只 render verdict
+
+**§M4 v0.4.0 全中文 docstring / 註解 永久 rule (大少 13:56 1st condition)**
+- ✅ Backend `indicators/algorithm.py` header docstring 改為 v0.4.0 (凡人話 + 8 信號 priority + Usage + 5 個 Examples + 對應文件)
+- ✅ Backend `_derive_signal` 函數 docstring 改為 v0.4.0 (8 個主信號 priority + return shape)
+- ✅ Frontend `modules/indicators.ts` header comment 改為 v0.4.0 (對齊 backend 1:1 port)
+- ✅ Frontend `_deriveSignal` 函數 JSDoc 改為 v0.4.0 (TypeScript port)
+- ✅ Frontend `adapter.mjs` `renderIndicatorsResult` / `renderDetailedExplanationIndicators` 改為 v0.4.0 凡人話解讀
+
+**§M4 v0.4.0 M7 Synthesizer 抽離 永久 rule (大少 13:56 3rd condition)**
+- ✅ M7 Synthesizer v1.2.0 (`backend/algorithms/synthesizer/algorithm.py`) 暫時抽離 M4 (大少 13:56 3rd condition)
+- ✅ `_compute_tcm`: 拎 M4 (indicators) verdict 嗰對 pair 永遠 `alignment = 0.0` + `trap_penalty = 0.2` + `skipped = True`
+- ✅ `_compute_alignment`: 拎 M4 verdict 過濾掉, 只計 5 個 module (M1/M2/M3/M5/M6) 嘅 alignment
+- ✅ TCM matrix frontend display 會見到 `(indicators, volatility) pair` 拎 `skipped: true` 標記 (對齊 §改完先 ask 修正先 Commit 永久 rule, backend evidence 確認)
+- ⚠️ **TODO (日後 M7 優化時要處理)**: 大少日後 trigger 拎 M4 嘅 signal (top_reversal/bottom_reversal/momentum_strong 等) 對應到 M7 嘅 alignment 點計, 3 個方案:
+  - 方案 A: M4 嘅 `top_reversal` / `bottom_reversal` 對應 `DOWN` / `UP` (凡人話: 見頂 = 跌, 見底 = 升)
+  - 方案 B: M4 嘅 `momentum_strong` / `momentum_weak` 直接對應 `UP` / `DOWN`
+  - 方案 C: M7 加一個 `signal_quality_score`, M4 強信號 (strength > 0.7) 直接 override 綜合判定
+  - 對齊 §M1 sub-scenario 永久 rule (2026-08-16 19:21): sub-scenario 改動要 ≥ 3 個 stock verify, 大少 trigger 先改
+  - 對齊 §改完先 ask 修正先 Commit 永久 rule: 改完必先 present fix 結果 + 等大少 trigger commit
+
+**5 隻 stock v0.4.0 verify 結果** (對齊 §Stock 名 evidence 永久 rule + §Array evidence 永久 rule, 8 月 31 日 13:14):
+- **HK.01888 建滔積層板**: signal=exhausted_neutral, label=動能耗盡失方向, action=觀望, strength=0.38, subs=4 (rsi_50_70/rsi_falling/macd_above_zero/macd_shrinking) ✅
+- **HK.00700 騰訊控股**: signal=exhausted_neutral (regime gate fail override), label=動能失方向 (reg gate 唔過), action=觀望, strength=0.30, subs=6 (regime_gate_failed/no_trending/rsi_30_50/rsi_falling/macd_below_zero/...) ✅
+- **HK.01347 華虹半導體**: signal=exhausted_neutral (regime gate fail override), label=動能失方向 (reg gate 唔過), action=觀望, strength=0.30, subs=7 ✅
+- **HK.00021**: signal=momentum_weak, label=動力弱 (留意沽貨), action=減持 / 觀望, strength=0.41, subs=3 (rsi_30_50/rsi_falling/macd_below_zero) ✅
+- **US.TSLA 特斯拉**: signal=exhausted_neutral, label=動能耗盡失方向, action=觀望, strength=0.42, subs=4 ✅
+
+**對應文件**:
+- `backend/algorithms/indicators/algorithm.py` v0.4.0 (header docstring + `_derive_signal` + verdict 組成 + meta dict)
+- `algorithms/AS-03-cycle-detection/modules/indicators.ts` v0.4.0 (1:1 port backend, header + `_deriveSignal` + verdict return)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` `renderIndicatorsResult` + `renderDetailedExplanationIndicators` v0.4.0 (8 個主信號 color/label/interpretation)
+- `backend/algorithms/synthesizer/algorithm.py` v1.2.0 (M4 抽離, _compute_tcm + _compute_alignment skip M4)
+- `docs/research/AS-03-cycle-detection/MODULE-04-INDICATORS.md` v0.4.0 (徹底更新 spec doc, 凡人話 + 8 個主信號 + Usage + 5 個 Examples)
+- `AGENTS.md` (本 section) §M4 Indicators v0.4.0 Signal-based Output 永久 rules
+
+對應 commit: 即將 push (大少 13:56 4 個 conditions 全部對齊)
+
 ### AS-03 Chain Flow (大少 2026-08-11 v1.0.0)
 
 完整 chain: **M7(綜合) → M9(回測拎最佳設定) → M8(用最佳設定做最終判斷)**
