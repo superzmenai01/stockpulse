@@ -1,5 +1,5 @@
 """
-backend/services/warning_collector.py — Module Warning System v1.3.0 (大少 2026-09-08 12:10 Spec Sync #49)
+backend/services/warning_collector.py — Module Warning System v1.5.0 (大少 2026-09-09 trigger)
 
 統一收集 / dedupe / 排序 12 個 module (M1-M12) + zmen + adaptive params 嘅警告。
 Warning inlined 入 verdict (唔入 DB table, 避免 storage overhead)。
@@ -70,11 +70,15 @@ logger = logging.getLogger(__name__)
 
 WarningLevel = Literal['critical', 'warning', 'info']
 
-# 16 個 warning codes (跟 frontend TS WarningCode mirror, 大少 2026-08-31 P0-6 加 OPEN_D_UNAVAILABLE)
+# 17 個 warning codes (跟 frontend TS WarningCode mirror, 大少 2026-08-31 P0-6 加 OPEN_D_UNAVAILABLE)
 # v1.4.0 (大少 2026-09-08 22:14 trigger): CONFLICT_STATE 由 'warning' 改 'info'
 # 對齊 §Module Warning v1.1.0 spirit — CONFLICT_STATE 屬 stock_state category (line 118),
 # 「verdict 已經準確, 留意股票狀態」, 唔應該 floor conf (對齊 §M2 self-check penalty spirit)
 # 影響 M2 (Path A Hurst+ADX gate) + M3 (Step 0.5 Hurst+ADX gate) 兩個 algo
+# v1.5.0 (大少 2026-09-09 trigger): 加 LOW_CONFIDENCE warning code
+# 凡人話: M2 v0.6.0 將 Path A Hurst+ADX gate 由 hard gate 改 soft fail (confirmation filter)
+# 對齊 §M3 Spec Sync #51 永久 rule, M2 唔再 early return SIDEWAYS, 改 emit LOW_CONFIDENCE warning
+# stock_state category (verdict 已經準確, 留意股票狀態), 唔 floor conf 但 additive penalty -0.10
 WARNING_CODES = {
     # 🔴 Critical (6, 大少 P0-6 加 OPEN_D_UNAVAILABLE)
     'INSUFFICIENT_DATA': 'critical',
@@ -83,7 +87,7 @@ WARNING_CODES = {
     'CACHE_INVALID': 'critical',
     'KLINE_MISSING': 'critical',
     'OPEN_D_UNAVAILABLE': 'critical',
-    # 🟡 Warning (6) — v1.4.0 拎走 CONFLICT_STATE 落 Info
+    # 🟡 Warning (7) — v1.4.0 拎走 CONFLICT_STATE 落 Info / v1.5.0 加 LOW_CONFIDENCE
     'MODULE_PARTIAL': 'warning',
     'OUTLIER_VALUE': 'warning',
     'LOW_SAMPLE_SIZE': 'warning',
@@ -91,6 +95,7 @@ WARNING_CODES = {
     'POST_FAILED': 'warning',
     'FALLBACK_USED': 'warning',
     'LLM_RATE_LIMIT': 'warning',
+    'LOW_CONFIDENCE': 'warning',  # v1.5.0: M2 v0.6.0 Path A 改 soft fail, additive conf penalty -0.10
     # 🔵 Info (4) — v1.4.0 加 CONFLICT_STATE 入 Info
     'CONFLICT_STATE': 'info',  # v1.4.0: stock_state category 唔 floor conf
     'CACHE_EXPIRING': 'info',
@@ -117,10 +122,12 @@ WARNING_CATEGORIES: Dict[str, str] = {
     'LLM_RATE_LIMIT': 'system',
     'DATA_AGE': 'system',
     'CONFIG_DEFAULTS': 'system',
-    # 📊 Stock State (3 個) — verdict 已經準確
+    # 📊 Stock State (4 個) — verdict 已經準確
+    # v1.5.0 (大少 2026-09-09 trigger): 加 LOW_CONFIDENCE, 對齊 M2 v0.6.0 Path A 改 soft fail
     'THRESHOLD_BREACH': 'stock_state',
     'CONFLICT_STATE': 'stock_state',
     'CACHE_EXPIRING': 'stock_state',
+    'LOW_CONFIDENCE': 'stock_state',  # v1.5.0: M2 v0.6.0 Path A soft fail, verdict 已經準確只係 conf 扣減
 }
 
 # v1.3.0: CATEGORY_DISPLAY template (凡人話 string, 自動 apply 落 warning.impact / warning.fix)
@@ -161,7 +168,7 @@ class ModuleWarning:
         例如 INSUFFICIENT_DATA 永遠係 'critical', 唔可以亂填做 'info'。
         如果 caller 寫錯 level, 我哋 log debug 留底 (唔 raise, 因為有時 caller
         想 override, e.g. low severity case)。
-        永久 rule: 15 個 code 嘅 level 喺 WARNING_CODES dict 統一 mirror。
+        永久 rule: 17 個 code 嘅 level 喺 WARNING_CODES dict 統一 mirror。
         """
         # Auto-validate level (根據 code 自動 fill)
         if self.code in WARNING_CODES:

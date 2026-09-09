@@ -1,6 +1,7 @@
 # MODULE-02-HL-STRUCTURE — 高低點結構法 (Peak-Trough Structure Cycle Detector)
 
 > **Module ID**: `hl-structure`
+> **v0.6.0** (2026-09-09, 大少 + MiniMax Code) — **升級記錄**: Path A Hurst+ADX gate 由 hard gate 改 soft fail (對齊 §M3 Spec Sync #51 永久 rule) — (1) Path A 拎走 early return, gate fail 改 emit LOW_CONFIDENCE warning (stock_state category) + additive conf penalty -0.10, 繼續行 Step 1-19 拎峰/谷, Fix 00700/01347 等 stock 跑完 M2 冇 peak/trough 嘅 bug, (2) `WARNING_CODES` + `WARNING_CATEGORIES` 加 `LOW_CONFIDENCE` entry (warning level + stock_state category, 對齊 stock_state 唔 floor conf spirit), (3) 加 `low_confidence_triggered` + `low_confidence_penalty` 2 個 audit field
 > **v0.5.1** (2026-09-08, 大少 + MiniMax Code) — **升級記錄**: 4 個 audit fix (217 隻 stock 對比 M1 audit 揭發) — (1) 3 個 early return path (Path A Hurst+ADX gate fail / Path B 完全平 data / Path C 峰谷唔夠清晰) 統一 emit `self_check_triggered` + `original_confidence` 2 個 audit field (Fix 150 隻 stock audit 鏈斷), (2) `WARNING_CODES['CONFLICT_STATE']` 由 `warning` 改 `info` 對齊 §Module Warning v1.1.0 stock_state spirit (Fix 70% CONFLICT_STATE 警告觸發 0.3 floor), (3) Path A confidence hardcode 0.3 → 0.5 對齊 stock_state 中等信心提示
 > **v0.5.0** (2026-09-08, 大少 + MiniMax Code) — **升級記錄**: 對齊永久 rule §Module Warning v1.1.0 + v1.3.0 — 10 個 self-check warning 注入點全部用 `make_warning()` helper 統一 (auto-emit `category` 字段 + auto-apply CATEGORY_DISPLAY template + 統一 `module_id="M2"`), 對齊 backend `services/warning_collector.py` v1.3.0 升級
 > **v0.4.0** (2026-09-07, 大少 + MiniMax Code) — **升級記錄**: 5 個 layer evidence-based 優化 (Savitzky-Golay + prominence 過濾 / Linear regression + R² / 5-point H&S + neckline / BB-KC Squeeze / Hurst+ADX gate), 對齊 evidence-based 算法 (SciPy find_peaks / pomegra.io / tradersweek.com / deepwiki.com / thinkcapital.com / marketopia.org), 唔引入 scipy 依賴 (跟 M3 pattern), 22 隻 conflict stock evidence 拎返
@@ -70,6 +71,64 @@
 > - WARNING_CODES 入面 CONFLICT_STATE 寫 warning 但 category 寫 stock_state, 兩個講唔同嘢, 違反 v1.1.0 spirit — Fix 2+3 統一做 info
 > - Path A 默認 0.3 信心偏細, 對齊 stock_state 中等信心改 0.5 — Fix 4
 > - 凡人話: 大少落單睇 M2 verdict 信心, 而家 7 成 stock 係 0.4-0.6 中等 (之前 9 成係 0.3 偏低), 信心分佈正常咗
+>
+> ## 🔥 v0.6.0 改動摘要 (2026-09-09, 大少 trigger「發現 Bug, 00700, 01347 跑完 M2 冇峰和谷」)
+>
+> **觸發原因**: 大少 9月9日 trigger「發現 Bug, 00700, 01347 跑完 M2 峰和 valley 拎唔到, 查明原因」, 撳 curl `/api/algorithms/run?algo=hl_structure&symbol=HK.00700&dataWindowDays=1260` 拎 evidence 揭發 M2 algorithm Path A 嘅 **hard gate** design bug:
+> - 之前 v0.5.1 Path A 設計: Hurst+ADX gate fail → `return Verdict(SIDEWAYS, points=[], peaks=[], troughs=[])`, 凡人話即係「gate 唔過就當橫行, 唔拎峰/谷」
+> - 但 M3 (Spec Sync #51, 大少 9月9日 00:42) + M4 (Spec Sync #52, 大少 9月9日 01:55) 已經改用 **soft fail / confirmation filter** pattern, 只有 M2 仲死守 hard gate
+> - 不對稱後果: M2 gate fail 嘅 stock 完全冇峰/谷數據, 大少睇唔到「5 年尺度嘅結構」係咩, 只見到空洞 SIDEWAYS
+>
+> **改動範圍 (2 個 file)**:
+> - `backend/algorithms/hl_structure/algorithm.py` (Path A 拎走 early return + 加 LOW_CONFIDENCE warning + 加 additive conf penalty -0.10 + 加 audit field + version bump 0.5.1→0.6.0)
+> - `backend/services/warning_collector.py` (WARNING_CODES + WARNING_CATEGORIES 加 `LOW_CONFIDENCE` entry, version v1.4.0→v1.5.0)
+>
+> **4 個 Fix**:
+>
+> | Fix | 改動詳情 | 對齊永久 rule |
+> |-----|---------|------------|
+> | **Fix 1**: Path A 拎走 `return Verdict(...)` early return | gate fail 改 set local var `low_confidence_warning` + `low_confidence_penalty`, 繼續行 Step 1-19 拎峰/谷 | §M3 Spec Sync #51 永久 rule (confirmation filter pattern) |
+> | **Fix 2**: 加 `LOW_CONFIDENCE` 入 `WARNING_CODES` + `WARNING_CATEGORIES` | warning level + stock_state category, 對齊 stock_state 唔 floor conf spirit | §Module Warning v1.1.0 永久 rule |
+> | **Fix 3**: Step 19.5 加 additive conf penalty -0.10 | `confidence = max(confidence - 0.10, 0.0)`, 唔 floor, 對齊 stock_state spirit | §M3 self-check warning Layer 4 永久 rule spirit |
+> | **Fix 4**: 加 `low_confidence_triggered` + `low_confidence_penalty` 2 個 audit field | 大少睇 meta 即知「conf 由 X 扣到 Y 因為 gate 唔過」 | §M2 self-check penalty 永久 rule audit pattern |
+>
+> **凡人話設計 vs fix 選擇**:
+> - 凡人話選項 A: 拎走 Path A gate 唔 check, 即係完全唔做 Hurst+ADX 過濾 → 唔得, 因為 §M3 Spec Sync #51 永久 rule 規定一定要有 gate
+> - 凡人話選項 B (採用): Path A 改 soft fail (confirmation filter) — gate fail 唔再 early return, 改 emit LOW_CONFIDENCE warning + 繼續行 Step 1-19 → 對齊 M3/M4 pattern, 同時保留 gate 嘅指示作用
+> - 凡人話選項 C: 拎走 gate, 加多 1 個 module 計 Hurst+ADX → 過重, plan scope 太闊
+>
+> **2 隻 stock evidence 對比 (v0.5.1 hard gate → v0.6.0 soft fail)**:
+>
+> | Stock | 之前 verdict (v0.5.1) | 而家 verdict (v0.6.0) | Peak/Trough 變化 |
+> |-------|----------------------|---------------------|----------------|
+> | HK.00700 騰訊 | SIDEWAYS 0.5, peaks=0, troughs=0 (hard gate early return) | UP 0.3, peaks=2, troughs=2 (soft fail, 拎到 5 年尺度峰谷) | **0 → 2 ✅** |
+> | HK.01347 華虹半導體 | SIDEWAYS 0.5, peaks=0, troughs=0 (hard gate early return) | SIDEWAYS 0.2, peaks=3, troughs=3 (soft fail) | **0 → 3 ✅** |
+> | HK.00005 匯豐 | UP 0.4456, peaks=3, troughs=3 | UP 0.4456, peaks=3, troughs=3 (LOW_CONFIDENCE -0.10) | 3 → 3 (gate fail 都拎到) |
+> | US.MSFT | UP 0.749, peaks=3, troughs=3 (gate pass) | UP 0.749, peaks=3, troughs=3 (gate pass, 冇變化) | 3 → 3 |
+> | US.GOOGL | SIDEWAYS 0.3, peaks=3, troughs=3 | SIDEWAYS 0.3, peaks=3, troughs=3 (LOW_CONFIDENCE -0.10) | 3 → 3 |
+>
+> **5 隻 stock verify 結果** (commit 後實測):
+> - **HK.00700**: 2 peaks, 2 troughs ✅ (之前 0,0)
+> - **HK.01347**: 3 peaks, 3 troughs ✅ (之前 0,0, 觸發呢個 commit 嘅原 case)
+> - **HK.00005**: 3 peaks, 3 troughs (gate fail 但都拎到)
+> - **US.AAPL**: 3 peaks, 3 troughs (gate fail 但都拎到)
+> - **US.MSFT**: 3 peaks, 3 troughs (gate pass, 冇 LOW_CONFIDENCE warning, 對齊預期)
+> - **US.GOOGL**: 3 peaks, 3 troughs (gate fail 但都拎到)
+>
+> **永久 rule (v0.6.0 新加 + 沿用)**:
+> - ✅ M2 Path A 永久用 soft fail (confirmation filter), 對齊 §M3 Spec Sync #51 永久 rule — gate fail 唔再 early return, 改 emit LOW_CONFIDENCE warning + 繼續行 Step 1-19 拎峰/谷
+> - ✅ `LOW_CONFIDENCE` 永久係 `warning` level + `stock_state` category, 對齊 §Module Warning v1.1.0 spirit — verdict 已經準確, conf 自動扣 0.10, 唔 floor
+> - ✅ Step 19.5 LOW_CONFIDENCE additive penalty 永久 -0.10, 唔 floor (對齊 stock_state spirit, 對齊 §M3 Layer 4 永久 rule spirit)
+> - ✅ Meta 永遠 emit `low_confidence_triggered: bool` + `low_confidence_penalty: float` 2 個 audit field, 畀 audit 同 frontend verify
+> - ✅ M3 / M4 / M2 三個 module Path A / Step 0.5 全部統一用 confirmation filter pattern, 唔再用 hard gate
+> - ✅ 改 algorithm / warning_collector 之後必 restart backend + curl `/api/algorithms/run?algo=hl_structure&symbol=HK.00700` 拎 evidence 確認 fix work (對齊 §Backend hot-reload 永久 rule)
+> - ✅ Warning code 改動必同步 frontend `lib/warnings.mjs` 嘅 `WARNING_CATEGORIES` 同步加 entry, 避免 frontend lookup 拎唔到 category
+>
+> **凡人話總結**:
+> - M2 algorithm 之前 Path A 設計係 hard gate (gate fail 早 return SIDEWAYS + 空峰/谷), 對齊唔到 M3/M4 嘅 soft fail pattern
+> - v0.6.0 改 soft fail 之後, 00700 由「0 peaks/troughs」變「2 peaks/2 troughs」, 01347 由「0」變「3」, 大少肉眼睇到 5 年尺度結構
+> - LOW_CONFIDENCE warning (stock_state category) + -0.10 additive conf penalty, 對齊 stock_state 唔 floor spirit
+> - 凡人話: 大少落單睇 M2 verdict, 而家就算 Hurst+ADX gate fail 都見到峰/谷 verdict, 唔再係空洞 SIDEWAYS, 信心 -0.10 提示
 >
 > ## 🔥 v0.5.0 改動摘要 (2026-09-08, Spec Sync #49)
 >

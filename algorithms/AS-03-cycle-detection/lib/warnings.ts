@@ -11,7 +11,8 @@
 export type WarningLevel = 'critical' | 'warning' | 'info';
 
 /**
- * 15 個 warning codes (5 Critical / 7 Warning / 3 Info)
+ * 17 個 warning codes (5 Critical / 8 Warning / 3 Info)
+ * v1.5.0 (大少 2026-09-09 trigger): 加 LOW_CONFIDENCE warning code
  */
 export type WarningCode =
   // 🔴 Critical (5)
@@ -20,7 +21,7 @@ export type WarningCode =
   | 'NAN_RESULT'
   | 'CACHE_INVALID'
   | 'KLINE_MISSING'
-  // 🟡 Warning (7)
+  // 🟡 Warning (8) — v1.5.0 加 LOW_CONFIDENCE
   | 'MODULE_PARTIAL'
   | 'OUTLIER_VALUE'
   | 'LOW_SAMPLE_SIZE'
@@ -28,6 +29,7 @@ export type WarningCode =
   | 'CONFLICT_STATE'
   | 'POST_FAILED'
   | 'FALLBACK_USED'
+  | 'LOW_CONFIDENCE'
   // 🔵 Info (3)
   | 'CACHE_EXPIRING'
   | 'CONFIG_DEFAULTS'
@@ -60,7 +62,7 @@ export const WARNING_CODES_MAP: Record<WarningCode, WarningLevel> = {
   NAN_RESULT: 'critical',
   CACHE_INVALID: 'critical',
   KLINE_MISSING: 'critical',
-  // 🟡 Warning
+  // 🟡 Warning — v1.5.0 加 LOW_CONFIDENCE
   MODULE_PARTIAL: 'warning',
   OUTLIER_VALUE: 'warning',
   LOW_SAMPLE_SIZE: 'warning',
@@ -68,6 +70,7 @@ export const WARNING_CODES_MAP: Record<WarningCode, WarningLevel> = {
   CONFLICT_STATE: 'warning',
   POST_FAILED: 'warning',
   FALLBACK_USED: 'warning',
+  LOW_CONFIDENCE: 'warning',  // v1.5.0: M2 v0.6.0 Path A soft fail, additive conf penalty -0.10
   // 🔵 Info
   CACHE_EXPIRING: 'info',
   CONFIG_DEFAULTS: 'info',
@@ -96,10 +99,11 @@ export const WARNING_CATEGORIES_MAP: Record<WarningCode, WarningCategory> = {
   FALLBACK_USED: 'system',
   DATA_AGE: 'system',
   CONFIG_DEFAULTS: 'system',
-  // 📊 Stock state (3)
+  // 📊 Stock state (4) — v1.5.0 加 LOW_CONFIDENCE
   THRESHOLD_BREACH: 'stock_state',
   CONFLICT_STATE: 'stock_state',
   CACHE_EXPIRING: 'stock_state',
+  LOW_CONFIDENCE: 'stock_state',  // v1.5.0: M2 v0.6.0 Path A soft fail, verdict 已經準確只係 conf 扣減
 };
 
 /**

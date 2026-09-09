@@ -53,7 +53,7 @@ STATE_MAP (大少 2026-09-05 trigger — Fix A):
 """
 
 import math
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from ..base import Algorithm, Verdict
 from ..registry import register
@@ -883,10 +883,20 @@ class HLStructureAlgorithm(Algorithm):
         - 全部用 ModuleWarning object format (永久 rule 沿用, 唔用 string array)
         - 通知 M7/M8/M9: M2 verdict 唔可信, M7 自動降 weight 0.15→0.05 + banner 提示
         - 對應 commit: <即將 push>
+    v0.6.0 (大少 2026-09-09 trigger): M2 Path A 改 soft fail (對齊 §M3 Spec Sync #51 永久 rule)
+        - 凡人話: M2 之前係唯一用 hard gate 嘅 module (gate fail 早 return SIDEWAYS + 空峰/谷),
+          對齊 M3 Spec Sync #51 (大少 9月9日 00:42 trigger) 永久 rule 改 soft fail / confirmation filter
+        - 改動: Path A 拎走 early return, gate fail 改 emit LOW_CONFIDENCE warning (stock_state category)
+          + additive conf penalty -0.10 (由 Step 19.5 應用)
+        - 對齊 §Module Warning v1.1.0 spirit: stock_state 唔 floor conf, verdict 已經準確只係 conf 折扣
+        - Warning code: 加 LOW_CONFIDENCE 入 warning_collector.py WARNING_CODES + WARNING_CATEGORIES
+        - 對齊永久 rule §M3 self-check warning spirit (大少 9月7日 00:14)
+        - 對齊永久 rule §M4 soft fail override (大少 9月9日 Spec Sync #52)
+        - 對齊永久 rule §改完先 ask 修正先 commit (大少 9月9日 07:23)
     """
 
     name = "hl_structure"
-    version = "0.5.0"  # v0.5.0 (大少 2026-09-08 22:14): 3 個 early return path 加 audit field + Hurst+ADX gate warning level warning→info
+    version = "0.6.0"  # v0.6.0 (大少 2026-09-09): Path A Hurst+ADX gate 改 soft fail (對齊 §M3 Spec Sync #51 永久 rule)
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         # 合併 default config + user override
@@ -912,11 +922,23 @@ class HLStructureAlgorithm(Algorithm):
         # ============ Step 0.5: Hurst+ADX gate (v0.4.0 Layer 5, 跟 M3 永久 rule pattern) ============
         # 凡人話: 跟 M3 永久 rule (大少 9月7日 01:08) 對齊, 用 Hurst+ADX 兩招 confirm 個股價真係有方向
         # H >= hurstThreshold (default 0.45) AND ADX >= adxThreshold (default 20) 先繼續
-        # 唔通過: return SIDEWAYS + emit CONFLICT_STATE warning (system category)
+        # v0.6.0 (大少 2026-09-09 trigger): 對齊 §M3 Spec Sync #51 永久 rule, M2 Path A 由 hard gate 改 soft fail
+        # 凡人話: 唔再 early return SIDEWAYS, 改 emit LOW_CONFIDENCE warning + 繼續行 Step 1-19 拎峰/谷
+        # 對齊 M3 (Spec Sync #51) + M4 永久 rule: 兩者都用 confirmation filter / soft fail, M2 之前係唯一 hard gate
         hurst_value = 0.5
         adx_value = 0.0
         hurst_adx_gate_pass = True
-        hurst_adx_warnings = []
+        # v0.6.0: local var 記低 gate fail 嘅 warning, 之後喺 Step 19 append 落 m2_warnings
+        # 對齊 §Module Warning v1.1.0 spirit, LOW_CONFIDENCE 屬 stock_state category,
+        # 唔 floor conf 但 additive penalty -0.10
+        low_confidence_warning: Optional[Dict[str, Any]] = None
+        low_confidence_penalty = 0.0
+        hurst_adx_gate = {
+            "enabled": False,
+            "passed": True,
+            "hurst_pass": True,
+            "adx_pass": True,
+        }
 
         if cfg.get("enableHurstADXGate", True) and len(recent) >= 100:
             closes = [k["close"] for k in recent]
@@ -928,19 +950,26 @@ class HLStructureAlgorithm(Algorithm):
             hurst_pass = hurst_value >= hurst_threshold
             adx_pass = adx_value >= adx_threshold
             hurst_adx_gate_pass = hurst_pass and adx_pass
+            hurst_adx_gate = {
+                "enabled": True,
+                "passed": hurst_adx_gate_pass,
+                "hurst_pass": hurst_pass,
+                "adx_pass": adx_pass,
+            }
 
             if not hurst_adx_gate_pass:
-                # v1.3.0: 用 make_warning() helper, 自動 emit category 字段 + apply CATEGORY_DISPLAY template
-                # 永久 rule §Module Warning v1.1.0 — Backend emit category = source of truth
-                # v0.5.0 (大少 2026-09-08 22:14 trigger): Hurst+ADX gate 屬「股價冇方向」stock_state 提示
-                # 唔觸發 self-check penalty (對齊 §Module Warning v1.1.0 spirit, info level 唔 floor conf)
-                _gate_warnings = [make_warning(
-                    level="info",
+                # v0.6.0: 對齊 M3 Spec Sync #51 永久 rule, Path A 改 soft fail (confirmation filter)
+                # 凡人話: 唔再 early return SIDEWAYS, 改 emit LOW_CONFIDENCE warning + continue
+                # Step 1-19 拎峰/谷 verdict (依舊 emit peaks/troughs/state)
+                # 對齊 §Module Warning v1.1.0 spirit — LOW_CONFIDENCE 屬 stock_state category
+                # 唔 floor conf 但 additive penalty -0.10 (由 Step 19.5 應用)
+                low_confidence_warning = make_warning(
+                    level="warning",
                     module_id="M2",
-                    code="CONFLICT_STATE",
+                    code="LOW_CONFIDENCE",
                     message=f"Hurst+ADX gate 唔通過 (H={hurst_value:.4f}, ADX={adx_value:.2f})",
-                    issue=f"Hurst={hurst_value:.4f} (threshold {hurst_threshold}), ADX={adx_value:.2f} (threshold {adx_threshold})",
-                    # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state].impact_template / fix_template
+                    issue=f"Hurst={hurst_value:.4f} (threshold {hurst_threshold}), ADX={adx_value:.2f} (threshold {adx_threshold}), 對齊 M3 Spec Sync #51 confirmation filter, verdict 繼續行 Step 1-19",
+                    # impact/fix 唔填, helper 自動 apply CATEGORY_DISPLAY[stock_state] template
                     context={
                         "hurst": round(hurst_value, 4),
                         "adx": round(adx_value, 2),
@@ -948,52 +977,15 @@ class HLStructureAlgorithm(Algorithm):
                         "adx_threshold": adx_threshold,
                         "hurst_pass": hurst_pass,
                         "adx_pass": adx_pass,
+                        "additive_conf_penalty": 0.10,
                     },
-                ).to_dict()]
-                return Verdict(
-                    ok=True,
-                    points=[],
-                    meta={
-                        "symbol": options.get("code") or options.get("symbol", "TEST"),
-                        "cycle": "sideways",
-                        "state": "SIDEWAYS",
-                        "cycle_label": "橫行週期",
-                        # v0.5.0 (大少 2026-09-08 22:14): 0.3 → 0.5, 對齊 stock_state category 提示中等信心
-                        # 對齊 §Module Warning v1.1.0 spirit, 「verdict 已經準確, 留意股票狀態」
-                        "confidence": 0.5,
-                        "base_confidence": 0.5,
-                        "peaks": [],
-                        "troughs": [],
-                        "peak_trend": "mixed",
-                        "trough_trend": "mixed",
-                        "structure_score": 0,
-                        "weighted_structure_score": 0,
-                        "box_boundary": None,
-                        "pattern_alert": "none",
-                        "latest_extreme": None,
-                        "price_position": "between",
-                        "adaptive_window": cfg["baseWindow"],
-                        "effective_tolerance": _round(cfg["tolerancePct"], 6),
-                        "adjustment_log": [f"Hurst+ADX gate 唔通過: H={hurst_value:.4f} ADX={adx_value:.2f}"],
-                        "reason": f"Hurst+ADX gate 唔通過 (H={hurst_value:.4f}, ADX={adx_value:.2f}), 預設橫行",
-                        "last_date": str(recent[-1].get("time") or recent[-1].get("date") or recent[-1].get("timestamp") or ""),
-                        "hurst": round(hurst_value, 4),
-                        "adx": round(adx_value, 2),
-                        "hurst_adx_gate": {
-                            "enabled": True,
-                            "passed": False,
-                            "hurst_pass": hurst_pass,
-                            "adx_pass": adx_pass,
-                        },
-                        "version": "0.5.0",
-                        # v0.5.0 (大少 2026-09-08 22:14 trigger): 對齊 §M2 self-check penalty 永久 rule,
-                        # 3 個 early return path (Path A/B/C) 統一 emit audit field
-                        "self_check_triggered": False,  # info level 唔觸發 penalty (對齊 §Module Warning v1.1.0)
-                        "original_confidence": 0.3,  # 默認 confidence, 唔受 penalty 影響
-                        "_warnings": _gate_warnings,
-                    },
-                    warnings=_gate_warnings,
-                )
+                ).to_dict()
+                # v0.6.0: additive conf penalty -0.10, 對齊 plan spirit (stock_state 唔 floor)
+                low_confidence_penalty = 0.10
+                # v0.6.0: 對齊 §M3 Layer 4 永久 rule, gate fail 繼續 emit audit field
+                # 但唔再 early return, 繼續行 Step 1-19
+                # 凡人話: 大少睇 meta.hurst_adx_gate.passed = False 即知 gate 唔過,
+                #         verdict card 顯示 LOW_CONFIDENCE warning, conf 自動 -0.10
 
         # ============ Step 1: ATR + 自適應 Window ============
         atr = _calc_atr(recent, cfg["atrPeriod"]) if cfg["enableAtrWindow"] else 0.0
@@ -1516,6 +1508,13 @@ class HLStructureAlgorithm(Algorithm):
 
         # ============ Step 19: 組裝輸出 (frontend 兼容 shape) ============
         m2_warnings = []
+        # v0.6.0 (大少 2026-09-09 trigger): Step 0.5 Path A soft fail 注入 LOW_CONFIDENCE warning
+        # 凡人話: Path A 之前 hard gate 早 return SIDEWAYS + 空峰/谷 (大少 9月9日 trigger 揭發呢個係 bug)
+        # 而家 Path A 改 soft fail, gate fail 嗰陣 emit LOW_CONFIDENCE warning, 繼續行 Step 1-19 拎峰/谷
+        # 對齊 §M3 Spec Sync #51 永久 rule (confirmation filter pattern)
+        # 對齊 §Module Warning v1.1.0 spirit — stock_state category, 唔 floor conf 但 additive -0.10
+        if low_confidence_warning is not None:
+            m2_warnings.append(low_confidence_warning)
         if len(peak_exts) == 0 and len(trough_exts) == 0:
             # v1.3.0: 用 make_warning() helper, 自動 emit category 字段
             m2_warnings.append(make_warning(
@@ -1647,12 +1646,26 @@ class HLStructureAlgorithm(Algorithm):
         #   - VERDICT_MISSING (Step 0 峰谷全部拎唔到)
         # 永久 rule: self-check warning 觸發, confidence 自動 × 0.375 (即 0.8 × 0.375 = 0.3), floor 0.3
         # 凡人話: 對齊 M3 Layer 4 永久 rule, 永遠 ban conf=1.0, conf clamp 0.0-0.95
+        # v0.6.0 (大少 2026-09-09 trigger): 加 LOW_CONFIDENCE additive penalty -0.10
+        # 凡人話: Path A Hurst+ADX gate 唔通過嗰陣, conf 自動扣 0.10 (唔 floor, 對齊 stock_state spirit)
+        # 對齊 §M3 Spec Sync #51 永久 rule, Path A 改 soft fail (confirmation filter pattern)
+        # 對齊 §Module Warning v1.1.0 spirit, stock_state 唔 floor
         m2_self_check_penalty_trigger_codes = ("CONFLICT_STATE", "FALLBACK_USED", "THRESHOLD_BREACH", "VERDICT_MISSING")
         m2_self_check_triggered = any(
             w.get("code") in m2_self_check_penalty_trigger_codes and w.get("level") in ("critical", "warning")
             for w in m2_warnings
         )
+        # v0.6.0: LOW_CONFIDENCE trigger check (對齊 §M3 Spec Sync #51 永久 rule)
+        m2_low_confidence_triggered = any(
+            w.get("code") == "LOW_CONFIDENCE" and w.get("level") == "warning"
+            for w in m2_warnings
+        )
         original_confidence_before_penalty = confidence
+        # v0.6.0: LOW_CONFIDENCE additive penalty 先 apply (-0.10, 唔 floor, 對齊 stock_state spirit)
+        # 凡人話: gate fail 對 verdict 影響只係「conf 扣 0.10」, 唔似其他 self-check 咁需要硬 floor 0.3
+        if m2_low_confidence_triggered:
+            confidence = max(confidence - low_confidence_penalty, 0.0)
+            confidence = min(confidence, 0.95)  # ban conf=1.0, 對齊 M3 Layer 4 永久 rule
         if m2_self_check_triggered:
             # 永久 rule: confidence auto floor 0.3 (對齊 M3 Layer 4 formula spirit)
             # 凡人話: 算法自己都 flag 唔 sure 啦, 大少唔應該再見到 80% 高信心
@@ -1670,6 +1683,10 @@ class HLStructureAlgorithm(Algorithm):
             # 凡人話: 畀 audit 同 frontend 用, 等大少肉眼睇到「conf 由 X 折到 Y 因為 self-check 觸發」
             "self_check_triggered": m2_self_check_triggered,
             "original_confidence": _round(original_confidence_before_penalty, 4),
+            # v0.6.0: LOW_CONFIDENCE audit fields, 對齊 §M3 Spec Sync #51 永久 rule
+            # 凡人話: 畀 audit 同 frontend 用, 大少肉眼睇到「conf 由 X 扣到 Y 因為 gate 唔過」
+            "low_confidence_triggered": m2_low_confidence_triggered,
+            "low_confidence_penalty": _round(low_confidence_penalty, 4) if m2_low_confidence_triggered else 0.0,
             "peaks": [
                 {
                     "date": str(e["k"].get("time") or e["k"].get("date") or e["k"].get("timestamp") or ""),
@@ -1724,13 +1741,12 @@ class HLStructureAlgorithm(Algorithm):
             "short_term": short_term_result,          # Step 16 短線 mode 結果
             "breakout_override": breakout_result,    # Step 17 突破 override 結果
             # === v0.4.0 Layer 5 (大少 11:45 plan): Hurst+ADX gate field (audit 對比用, 對齊 M3 永久 rule) ===
+            # v0.6.0: 用 local var `hurst_adx_gate` (Step 0.5 已 init), 拎到 enabled=False 嘅 case
+            # (e.g. len(recent) < 100 跳過 gate check)
             "hurst": round(hurst_value, 4),
             "adx": round(adx_value, 2),
-            "hurst_adx_gate": {
-                "enabled": True,
-                "passed": hurst_adx_gate_pass,
-            },
-            "version": "0.5.0",                       # v0.5.0 (大少 2026-09-08 22:14): 3 個 early return path 加 audit field + Hurst+ADX gate warning level warning→info, version 寫入 meta 等 frontend 對齊
+            "hurst_adx_gate": hurst_adx_gate,
+            "version": "0.6.0",                       # v0.6.0 (大少 2026-09-09 trigger): Path A Hurst+ADX gate 改 soft fail (對齊 §M3 Spec Sync #51), 加 LOW_CONFIDENCE warning + additive conf penalty -0.10
             "_warnings": m2_warnings,
         }
 

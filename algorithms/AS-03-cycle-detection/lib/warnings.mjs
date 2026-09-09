@@ -32,10 +32,12 @@ export const WARNING_CATEGORIES = {
   FALLBACK_USED: 'system',      // 用咗 fallback (預設值)
   DATA_AGE: 'system',           // 數據太舊 (verdict 可能過時)
   CONFIG_DEFAULTS: 'system',    // 用咗默認 config (大少未 customize)
-  // 📊 Stock State (3 個) — verdict 已經準確, 只係提示股票狀態
+  // 📊 Stock State (4 個) — verdict 已經準確, 只係提示股票狀態
+  // v1.5.0 (大少 2026-09-09 trigger): 加 LOW_CONFIDENCE, 對齊 M2 v0.6.0 Path A 改 soft fail
   THRESHOLD_BREACH: 'stock_state',  // 信心過低 / 觸發極端 threshold (e.g. M1 sideways 0.276)
   CONFLICT_STATE: 'stock_state',    // 2 個 module 判斷矛盾
   CACHE_EXPIRING: 'stock_state',    // 30 日 cache 快過期 (將來要重校)
+  LOW_CONFIDENCE: 'stock_state',    // 信心指標偏低 (M2 Hurst+ADX gate fail, additive conf penalty -0.10)
 };
 
 /**
@@ -59,7 +61,8 @@ export const CATEGORY_DISPLAY = {
 };
 
 /**
- * 15 個 warning codes
+ * 17 個 warning codes
+ * v1.5.0 (大少 2026-09-09 trigger): 加 LOW_CONFIDENCE warning code
  */
 export const WARNING_CODES = {
   // 🔴 Critical (5)
@@ -68,7 +71,7 @@ export const WARNING_CODES = {
   NAN_RESULT: 'critical',
   CACHE_INVALID: 'critical',
   KLINE_MISSING: 'critical',
-  // 🟡 Warning (7)
+  // 🟡 Warning (8) — v1.5.0 加 LOW_CONFIDENCE
   MODULE_PARTIAL: 'warning',
   OUTLIER_VALUE: 'warning',
   LOW_SAMPLE_SIZE: 'warning',
@@ -76,6 +79,7 @@ export const WARNING_CODES = {
   CONFLICT_STATE: 'warning',
   POST_FAILED: 'warning',
   FALLBACK_USED: 'warning',
+  LOW_CONFIDENCE: 'warning',  // v1.5.0: M2 v0.6.0 Path A soft fail, additive conf penalty -0.10
   // 🔵 Info (3)
   CACHE_EXPIRING: 'info',
   CONFIG_DEFAULTS: 'info',
