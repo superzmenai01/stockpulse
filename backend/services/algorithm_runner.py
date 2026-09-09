@@ -426,6 +426,16 @@ def run_algorithm(
         }
 
     # 4. Wrap 返 response shape (frontend / 其他 module 直接用)
+    # v0.2.2 — 統一 verdict meta shape (大少 2026-09-09 09:21 fix, Spec Sync #53)
+    # 凡人話: 任何 algorithm 嘅 verdict, meta dict 永遠保證有 rsiSeries / macdSeries field
+    # 對齊 §M4 v0.2.0 永久 rule (9月9日 07:27) backend shape consistency intent
+    # 之前每個 algorithm 自己 emit (reg gate fail 早 return 嗰陣漏咗), frontend 拎到 undefined 觸發
+    # "rsiSeries/macdSeries 缺失" false positive warning. 之後統一喺 runner 階段 inject,
+    # frontend 拎到 [] 自動 skip render (凡人話正常). 對齊 §M3 trendline chart overlay 修復永久
+    # rule (2026-09-06 16:47) spirit — 將來新加 module 唔需要再諗 shape 一致性, runner 統一保證
+    meta_normalized = dict(verdict.meta or {})
+    for field in ("rsiSeries", "macdSeries"):
+        meta_normalized.setdefault(field, [])
     return {
         "ok": verdict.ok,
         "algorithm": algo_name,
@@ -434,7 +444,7 @@ def run_algorithm(
         "period": period,
         "klines_count": len(klines),
         "points": verdict.points,
-        "meta": verdict.meta,
+        "meta": meta_normalized,
         "warnings": verdict.warnings,
         "error": verdict.error,
     }

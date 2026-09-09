@@ -3040,3 +3040,64 @@ git push origin --delete feat/xxx          # delete remote branch
 **對應 commit**: 即將 push (Spec Sync #50)
 
 **套用**: 之後任何 algorithm 嘅 sub-scenario / formula / threshold / gate 改動, 必先跑三方一致率 audit baseline 拎 evidence, 改完之後再跑 audit 對比, 一致率跌過 50% 唔收貨。三方一致率追蹤係可信性嘅最重要指標, 唔可以靠單 stock evidence 決定。
+
+### Verdict meta shape 統一永久 rule (大少 2026-09-09 09:21 confirm, Spec Sync #53)
+
+**凡人話解釋**: 大少 09:19 trigger「這些問題不停出現, 有沒有徹底可以解決既方法」— 過去 1.5 個鐘(7:23 → 9:19) frontend `renderIndicatorsChartOverlay` 一連出 4 次同樣 pattern 嘅 false positive warning bug:
+
+| 時間 | Bug | Root cause |
+|------|-----|-----------|
+| 7:23 | 拎 `verdict.meta.meta` 永遠 true, RSI/MACD line series 永遠唔 render | frontend guard 拎 path 錯 |
+| 7:27 | reg gate fail 早 return 冇 emit rsiSeries/macdSeries, frontend trigger silent fail warning | backend 嗰個 early return path 漏 emit |
+| 7:33 | frontend 改分 2 個 case 仍然 false positive | backend INSUFFICIENT_DATA 嗰個 path 仲有 shape inconsistency |
+| 7:36 | INSUFFICIENT_DATA path 加返 emit `rsiSeries: []` 但仲有 K 線完全空 / network error / 其他 silent fail path 唔知有冇漏 | backend 唔統一保證 shape |
+
+**Root cause (systemic)**: backend verdict 嘅 meta shape 冇統一 contract,每個 algorithm 嘅每個 early return path(正常行 / reg gate fail / K 線唔夠 / network error / 其他)都要 developer 記住 emit 一致 shape。漏咗 1 個就 frontend 撞 false positive warning。**治本方法**:backend 統一保證 shape,frontend 簡化 guard,1 個地方改全部 algorithm 即時受惠。
+
+**Fix (1 個地方改 — backend algorithm_runner.py verdict 序列化階段, Spec Sync #53)**:
+
+```python
+# backend/services/algorithm_runner.py line 437-441 (Phase 4 v0.2.2)
+# 統一 verdict meta shape, 任何 algorithm 都受惠
+meta_normalized = dict(verdict.meta or {})
+for field in ("rsiSeries", "macdSeries"):
+    meta_normalized.setdefault(field, [])
+```
+
+**凡人話**: 任何 algorithm 嘅 verdict 經過 `algorithm_runner.py` 嗰度, `meta` dict 永遠保證有 `rsiSeries` + `macdSeries` 2 個 field。Algorithm 本身 emit 咗就用 algorithm 嗰個 value,algorithm 冇 emit (early return path 漏咗) 自動 inject `[]`(empty array)。Frontend 拎到 `[]` 自動 skip render(凡人話正常,例如 reg gate fail / K 線唔夠嗰陣冇 series 數據),frontend 拎到 `undefined` / `null` 先係真係 silent fail 觸發 warning(呢個 case 極少出現,例如 backend bug 真係 emit 唔到)。
+
+**Frontend guard 簡化 (Spec Sync #53)**:
+
+```js
+// algorithms/AS-03-cycle-detection/adapter.mjs line 4294-4296 (Phase 4 v0.2.2)
+// 因為 backend 統一保證 shape, frontend 簡化返 1 個 guard
+const rsiSeries = verdict.meta.rsiSeries;
+const macdSeries = verdict.meta.macdSeries;
+if (!rsiSeries || !macdSeries) {
+  console.warn('[renderIndicatorsChartOverlay] rsiSeries/macdSeries 缺失 (backend silent fail)');
+  return;
+}
+```
+
+之前 v0.2.1 分 2 個 case(`undefined` vs `[]`)仍然 false positive,因為 backend 唔同 early return path 仲有 shape inconsistency。而家 backend 統一保證,frontend 拎到 `[]` 自然 pass guard 唔 trigger warning,拎到 `undefined` / `null` 先係 silent fail 觸發 warning(真正嘅 bug 提示)。
+
+**永久 rule checklist**:
+- ✅ `backend/services/algorithm_runner.py` verdict 序列化階段(line 437-441)永遠 setdefault `rsiSeries: []` + `macdSeries: []` 落 meta dict
+- ✅ Algorithm 內部 early return path 唔需要再 emit rsiSeries/macdSeries(runner 統一保證),但保留 emit 嘅 algorithm (e.g. M4 reg gate fail path) 仍然 work 因為 setdefault 唔會 override 已有 value
+- ✅ Frontend `renderIndicatorsChartOverlay` guard 永遠 `if (!rsiSeries || !macdSeries) return`(拎到 `[]` 自然 pass,拎到 `undefined` 先 trigger warning)
+- ✅ 之後新加 algorithm 唔需要再諗 verdict meta shape 一致性, runner 統一保證
+- ✅ 之後新加 frontend chart overlay 跟同一個 pattern(`!rsiSeries || !macdSeries` 1 個 guard 兜底)
+- ✅ 改 algorithm_runner.py 之後必 restart backend (`./start.sh`, 對齊 §Backend Hot-Reload 永久 rule)
+- ✅ Restart 之後必 curl 5 隻 stock 拎 evidence 確認 `meta.rsiSeries` + `meta.macdSeries` 永遠係 array(`[]` 或有數據)
+- ✅ 對齊 §M3 trendline chart overlay 修復永久 rule(2026-09-06 16:47)— frontend 拎 path 永遠 `verdict.meta.X`
+- ✅ 對齊 §M4 v0.2.0 永久 rule(9月9日 01:55)— backend shape consistency intent 從 algorithm 層升級到 runner 層
+- ✅ 對齊 §Module Warning v1.0.0(8月11日)— verdict shape 同 warning shape 兩者獨立,唔互相影響
+
+**對應文件**:
+- `backend/services/algorithm_runner.py` line 437-441 (verdict 序列化階段 setdefault 2 個 field)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 4294-4296 (`renderIndicatorsChartOverlay` 簡化 guard)
+- 之後新加 algorithm / chart overlay 跟同一個 pattern
+
+**對應 commit**: 即將 push (Spec Sync #53)
+
+**套用情境**: 之後任何 backend algorithm 嘅 verdict 序列化、任何 frontend chart overlay 嘅 meta field 拎取, 永遠用呢個統一 pattern。Frontend 拎到 array 自動 skip render, 拎到 undefined 先係 silent fail 提示。**凡人話: 1 個地方改, 之後新加 module 自動受惠, 唔需要再諗 shape 一致性**。

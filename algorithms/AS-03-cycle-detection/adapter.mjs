@@ -4279,7 +4279,11 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
     console.warn('[renderIndicatorsChartOverlay] chartRefs.chart 缺失');
     return;
   }
-  if (!verdict || !verdict.meta.meta) {
+  if (!verdict || !verdict.meta) {
+    // v0.2.0 (大少 2026-09-09 07:23 fix): 拎 verdict.meta 而唔係 verdict.meta.meta
+    // 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) spirit
+    // Backend Phase 4 拎走 frontend 改 fetch backend 之後 verdict shape 已經係 verdict.meta.X
+    // 之前 commit d663ef01 (9月8日 23:30) 拎走 18 處 verdict.meta.meta?.X 漏修呢個 guard
     console.warn('[renderIndicatorsChartOverlay] verdict 缺失');
     return;
   }
@@ -4290,7 +4294,14 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
   const rsiSeries = verdict.meta.rsiSeries;
   const macdSeries = verdict.meta.macdSeries;
   if (!rsiSeries || !macdSeries) {
-    console.warn('[renderIndicatorsChartOverlay] rsiSeries/macdSeries 缺失');
+    // v0.2.2 (大少 2026-09-09 09:21 fix): 對齊 §Verdict meta shape 統一永久 rule
+    // (Spec Sync #53) — backend algorithm_runner.py 統一 inject rsiSeries: [] + macdSeries: []
+    // 落 meta dict, 拎到 [] 自動 pass guard (凡人話正常: reg gate fail / K 線唔夠 / network
+    // error 嗰陣都拎到 []), 拎到 undefined / null 先係 silent fail 觸發 warning
+    // 之前 v0.2.1 分 2 個 case 仍然 false positive, 因為 backend 唔同 early return path
+    // 仲有 shape inconsistency. 而家 backend 統一保證, frontend 簡化返 1 個 guard
+    // 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) spirit
+    console.warn('[renderIndicatorsChartOverlay] rsiSeries/macdSeries 缺失 (backend silent fail)');
     return;
   }
 

@@ -706,6 +706,14 @@ class IndicatorsAlgorithm(Algorithm):
                     "adx": round(adx_value, 2),
                     "regimeGate": "FAILED",
                     "inputBars": len(klines),
+                    # v0.2.0 (大少 2026-09-09 07:27 fix): 凡人話, 對齊 frontend renderIndicatorsChartOverlay
+                    # 拎 verdict.meta.rsiSeries / macdSeries 嘅 shape consistency, reg gate fail 早 return
+                    # 嗰陣都 emit empty array, frontend 拎到 [] 唔會再 trigger "rsiSeries/macdSeries 缺失"
+                    # warning. 之後 renderIndicatorsChartOverlay 行 line series 0 條 render (凡人話
+                    # correct, 因為 reg gate fail 冇 series 數據), 凡人話避免 silent fail warning noise.
+                    # 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) spirit
+                    "rsiSeries": [],
+                    "macdSeries": [],
                     "reason": "Regime gate 唔通過",
                 },
                 warnings=[w.to_dict() for w in warnings_list],
