@@ -4274,6 +4274,20 @@ function renderUsageGuideIndicators(verdict) {
 
 // ===== Chart overlay (Indicators) =====
 // 大少 永久 rule: renderChartOverlay 必須叫呢個名,testing page 自動 invoke
+// 大少 2026-09-09 09:32 — M4 副圖 multi-pane (ALGO_CACHE_BUST 4.78.0 → 4.79.0):
+// 改用 Lightweight Charts v5 panes API, RSI line 落 Pane 1, MACD line 落 Pane 2,
+// Pane 預設 share 同一個 time scale, 凡人話: 大少撳住 K 線 pan/zoom, RSI/MACD 副圖自動跟住同步 (TradingView 風格)
+// - Pane 結構:
+//   Pane 0: K 線 + Volume (renderChart 入面自動建)
+//   Pane 1: RSI 紫色 line, 0-100 scale + 30/70 reference line (Option A: 凡人話 tradingview 標準)
+//   Pane 2: MACD 橙色 line, auto-scale
+// - Layout options: separatorColor #d9d9d9 + enableResize true (大少可以 drag pane 邊界 resize)
+// - Pane 高度: K 線 60% / RSI 20% / MACD 20% (對齊 streamlit-lightweight-charts-v5 Recommended Height Ratios)
+// - 凡人話: backend Spec Sync #52 reg gate fail 嗰陣, verdict.meta.rsiSeries: [] / macdSeries: [] 對齊
+//   Spec Sync #53 algorithm_runner 兜底永久 rule, 拎空 array 觸發 early return 唔 add pane (避免空 pane 顯示 separator 醜樣)
+// - 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) spirit: 永遠拎 verdict.meta.X
+//   唔好再寫 verdict.meta.meta.X, 改 array/object access 之前必先 curl backend 拎 evidence 確認
+// - 對齊 §M3 trendline toggle 永久 rule pattern: 之後 M4/M5/M6 等加 chart overlay 嘅 module 都跟呢個 pattern
 function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
   if (!chartRefs || !chartRefs.chart) {
     console.warn('[renderIndicatorsChartOverlay] chartRefs.chart 缺失');
@@ -4291,6 +4305,7 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
     console.warn('[renderIndicatorsChartOverlay] klines 缺失或空');
     return;
   }
+  // 拎 audit field 必喺 function 開頭 (9月9日 07:20 永久 rule), 唔可以假設 caller scope
   const rsiSeries = verdict.meta.rsiSeries;
   const macdSeries = verdict.meta.macdSeries;
   if (!rsiSeries || !macdSeries) {
@@ -4307,69 +4322,197 @@ function renderIndicatorsChartOverlay(verdict, klines, chartRefs) {
 
   const chart = chartRefs.chart;
   if (typeof chart.addSeries !== 'function') {
-    console.error('[renderIndicatorsChartOverlay] chart 冇 addLineSeries method');
+    console.error('[renderIndicatorsChartOverlay] chart 冇 addSeries method');
     return;
   }
 
-  // 移除舊 series
+  // 移除舊 series (v0.2.3 4.79.0 multi-pane: 同時清 RSI/MACD line + reference line)
   if (chartRefs.indicatorsLineSeries) {
     for (const key of Object.keys(chartRefs.indicatorsLineSeries)) {
-      try { chart.removeSeries(chartRefs.indicatorsLineSeries[key]); } catch (e) { /* ignore */ }
+      const entry = chartRefs.indicatorsLineSeries[key];
+      // entry 可能係 { series, priceLines: [...] } 結構
+      if (entry && entry.series) {
+        try {
+          if (Array.isArray(entry.priceLines)) {
+            for (const pl of entry.priceLines) {
+              try { entry.series.removePriceLine(pl); } catch (_) { /* ignore */ }
+            }
+          }
+          chart.removeSeries(entry.series);
+        } catch (e) { /* ignore */ }
+      } else {
+        // 向下兼容舊 shape (直接係 series instance)
+        try { chart.removeSeries(entry); } catch (e) { /* ignore */ }
+      }
     }
   }
   chartRefs.indicatorsLineSeries = {};
 
-  // RSI series (紫色, 對齊到 kline index 14+ 因為 RSI 從 period=14 開始)
+  // Apply pane layout options (凡人話: tradingview 風格, 灰色分隔線, 大少可以 drag resize)
+  // 對齊 v5 panes 永久 rule: layout.panes.separatorColor / separatorHoverColor / enableResize
+  chart.applyOptions({
+    layout: {
+      panes: {
+        separatorColor: '#d9d9d9',
+        separatorHoverColor: '#bfbfbf',
+        enableResize: true,
+      },
+    },
+  });
+
+  // Pane 高度設定 (60% K 線 / 20% RSI / 20% MACD)
+  // 凡人話: chart-container height 800px 對齊, pane 0 由 autoSize 自動 fill
+  // 拎到 panes() 之後即時 setHeight, 但 LWC v5 會用 stretch factor 比例分配
+  // 因為 pane 0 已經有 candlestick + volume, 我哋 setHeight 喺 pane 1 / pane 2 反而會 override pane 0
+  // 用 setStretchFactor 控制比例 (凡人話: pane 0 60% 空間 / pane 1 20% / pane 2 20%)
   try {
-    const rsiData = [];
-    const rsiOffset = klines.length - rsiSeries.length;
-    for (let i = 0; i < rsiSeries.length; i++) {
-      const k = klines[rsiOffset + i];
-      if (!k) continue;
-      const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
-      rsiData.push({ time: t, value: rsiSeries[i] });
-    }
-    if (rsiData.length > 0) {
-      const s = chart.addSeries(LightweightCharts.LineSeries, {
-        color: '#9b59b6',
-        lineWidth: 2,
-        title: 'RSI(14)',
-        priceLineVisible: false,
-        lastValueVisible: true,
-        // RSI 範圍 0-100, 但 candlestick chart y-axis 係 price
-        // 註: lightweight-charts v4.2.3 唔支援 separate pane, 暫時疊喺 price chart 上面
-        // 大少 #11085 之後可考慮用 lightweight-charts v5 multi-pane
-      });
-      s.setData(rsiData);
-      chartRefs.indicatorsLineSeries.rsi = s;
+    const allPanes = chart.panes();
+    // 第一次 addSeries 嗰陣, panes 仲未創建, 拎唔到
+    // 用 setHeight 後 add series, 或者用 setStretchFactor 喺 addSeries 之後
+    // LWC v5 setHeight 係 px, setStretchFactor 係 ratio
+    // 凡人話: 用 setStretchFactor 控制比例 60/20/20, 大少 drag resize 之後 v5 自動 keep 用戶設定
+    if (allPanes.length >= 1) {
+      // Pane 0 (K 線 + volume) 留返 autoSize
+      allPanes[0].setStretchFactor(3);  // ratio 3
     }
   } catch (e) {
-    console.error('[renderIndicatorsChartOverlay] RSI line 失敗:', e);
+    console.warn('[renderIndicatorsChartOverlay] pane 0 stretch factor 設定失敗 (non-fatal):', e);
+  }
+
+  // RSI series (紫色, 對齊到 kline index 14+ 因為 RSI 從 period=14 開始)
+  if (rsiSeries.length > 0) {
+    try {
+      const rsiData = [];
+      const rsiOffset = klines.length - rsiSeries.length;
+      for (let i = 0; i < rsiSeries.length; i++) {
+        const k = klines[rsiOffset + i];
+        if (!k) continue;
+        const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
+        rsiData.push({ time: t, value: rsiSeries[i] });
+      }
+      if (rsiData.length > 0) {
+        // addSeries 第三個 arg = pane index, 1 = 第二個 pane (Pane 0 = K 線 + volume)
+        // v5 自動創建 Pane 1 (凡人話: 唔需要預建)
+        const rsiS = chart.addSeries(LightweightCharts.LineSeries, {
+          color: '#9b59b6',
+          lineWidth: 2,
+          title: 'RSI(14)',
+          priceLineVisible: false,
+          lastValueVisible: true,
+          priceScaleId: 'rsi',  // 副圖專用 price scale, y-axis 0-100
+        }, 1);  // Pane index 1
+        rsiS.setData(rsiData);
+
+        // RSI price scale 設定: 固定 0-100 range, 凡人話: 唔好 auto-scale 飄走
+        try {
+          rsiS.priceScale().applyOptions({
+            autoScale: false,
+            scaleMargins: { top: 0.05, bottom: 0.05 },
+            // mode: 0 = normal, 用 priceLines 控制 range
+          });
+        } catch (e) { /* ignore */ }
+
+        // 凡人話: 加 30 / 70 兩條 reference line (Option A: tradingview 標準)
+        // 30 綠色超賣 / 70 紅色超買
+        const priceLines = [];
+        try {
+          const pl30 = rsiS.createPriceLine({
+            price: 30,
+            color: '#27ae60',  // 綠色超賣
+            lineWidth: 1,
+            lineStyle: 2,  // 2 = Dashed
+            axisLabelVisible: true,
+            title: '30 超賣',
+          });
+          priceLines.push(pl30);
+        } catch (e) { /* ignore */ }
+        try {
+          const pl70 = rsiS.createPriceLine({
+            price: 70,
+            color: '#c0392b',  // 紅色超買
+            lineWidth: 1,
+            lineStyle: 2,  // 2 = Dashed
+            axisLabelVisible: true,
+            title: '70 超買',
+          });
+          priceLines.push(pl70);
+        } catch (e) { /* ignore */ }
+        // 50 中軸線 (凡人話: 多數 RSI 喺 50 上面係上升趨勢, 下面係下跌趨勢)
+        try {
+          const pl50 = rsiS.createPriceLine({
+            price: 50,
+            color: '#999999',  // 灰色中軸
+            lineWidth: 1,
+            lineStyle: 1,  // 1 = Dotted
+            axisLabelVisible: true,
+            title: '50 中軸',
+          });
+          priceLines.push(pl50);
+        } catch (e) { /* ignore */ }
+
+        chartRefs.indicatorsLineSeries.rsi = { series: rsiS, priceLines };
+
+        // Pane 1 setStretchFactor = 1 (相對 pane 0 ratio 3, 即 pane 0 75% / pane 1 25% 默認)
+        // 凡人話: pane 高度 800px, pane 0 480px / pane 1 160px / pane 2 160px
+        // 改用 setStretchFactor 1 因為 pane 0 已經用 3
+        try {
+          const p1 = chart.panes()[1];
+          if (p1) p1.setStretchFactor(1);
+        } catch (e) { /* ignore */ }
+      }
+    } catch (e) {
+      console.error('[renderIndicatorsChartOverlay] RSI line 失敗:', e);
+    }
   }
 
   // MACD series (橙色, 對齊到 kline index 33+ 因為 MACD 從 slow+signal-2 開始)
-  try {
-    const macdData = [];
-    const macdOffset = klines.length - macdSeries.length;
-    for (let i = 0; i < macdSeries.length; i++) {
-      const k = klines[macdOffset + i];
-      if (!k) continue;
-      const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
-      macdData.push({ time: t, value: macdSeries[i] });
+  if (macdSeries.length > 0) {
+    try {
+      const macdData = [];
+      const macdOffset = klines.length - macdSeries.length;
+      for (let i = 0; i < macdSeries.length; i++) {
+        const k = klines[macdOffset + i];
+        if (!k) continue;
+        const t = typeof k.timestamp === 'number' ? new Date(k.timestamp).toISOString().split('T')[0] : String(k.timestamp).split(' ')[0];
+        macdData.push({ time: t, value: macdSeries[i] });
+      }
+      if (macdData.length > 0) {
+        // Pane index 2 = MACD
+        const macdS = chart.addSeries(LightweightCharts.LineSeries, {
+          color: '#e67e22',
+          lineWidth: 2,
+          title: 'MACD',
+          priceLineVisible: false,
+          lastValueVisible: true,
+          priceScaleId: 'macd',
+        }, 2);  // Pane index 2
+        macdS.setData(macdData);
+
+        // MACD 0 軸 reference line (凡人話: 柱狀圖 0 上面 = 升勢, 0 下面 = 跌勢)
+        const priceLines = [];
+        try {
+          const pl0 = macdS.createPriceLine({
+            price: 0,
+            color: '#666666',
+            lineWidth: 1,
+            lineStyle: 1,  // 1 = Dotted
+            axisLabelVisible: true,
+            title: '0 軸',
+          });
+          priceLines.push(pl0);
+        } catch (e) { /* ignore */ }
+
+        chartRefs.indicatorsLineSeries.macd = { series: macdS, priceLines };
+
+        // Pane 2 setStretchFactor = 1 (對齊 pane 1)
+        try {
+          const p2 = chart.panes()[2];
+          if (p2) p2.setStretchFactor(1);
+        } catch (e) { /* ignore */ }
+      }
+    } catch (e) {
+      console.error('[renderIndicatorsChartOverlay] MACD line 失敗:', e);
     }
-    if (macdData.length > 0) {
-      const s = chart.addSeries(LightweightCharts.LineSeries, {
-        color: '#e67e22',
-        lineWidth: 2,
-        title: 'MACD',
-        priceLineVisible: false,
-        lastValueVisible: true,
-      });
-      s.setData(macdData);
-      chartRefs.indicatorsLineSeries.macd = s;
-    }
-  } catch (e) {
-    console.error('[renderIndicatorsChartOverlay] MACD line 失敗:', e);
   }
 }
 

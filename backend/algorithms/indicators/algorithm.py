@@ -678,7 +678,11 @@ class IndicatorsAlgorithm(Algorithm):
 
         regime_passed = hurst_value >= 0.45 and adx_value >= 20
         if not regime_passed:
-            # v0.2.0 A4: emit CONFLICT_STATE warning (v1.4.0 stock_state category, 唔 floor conf)
+            # v0.3.0 (大少 2026-09-09 11:26 Option 1 trigger): 拎走早 return, 改為 soft fail
+            # 凡人話: reg gate fail 仍然 emit CONFLICT_STATE warning + 繼續行 algorithm 拎 RSI/MACD series
+            # 等大少喺 chart 上面睇到 RSI/MACD 副圖自己判斷, 唔好 spec 幫大少決定「冇方向就唔畀睇」
+            # verdict 仍然 SIDEWAYS 0.3 (避免 random walk 亂出 BUY/SELL 影響落單), 對齊 §M4 self-check
+            # penalty 永久 rule spirit (gate fail conf floor 0.3, 由 M7 layer 處理 weight 折扣)
             warnings_list.append(make_warning(
                 level='info',
                 module_id='M4',
@@ -687,37 +691,10 @@ class IndicatorsAlgorithm(Algorithm):
                 issue=f'Hurst {hurst_value:.3f} < 0.45 OR ADX {adx_value:.1f} < 20 → random walk / mean-reverting 弱趨勢',
                 context={'hurst': round(hurst_value, 4), 'adx': round(adx_value, 2), 'symbol': symbol},
             ))
-            return Verdict(
-                ok=True,
-                points=[],
-                meta={
-                    "moduleId": self.name,
-                    "symbol": symbol,  # v0.2.0 A6
-                    "timeframe": timeframe,
-                    "state": "SIDEWAYS",
-                    "cycleLabel": "動能中性",
-                    "confidence": 0.3,  # v0.2.0: gate 唔過仍然有 base 0.3
-                    "interpretation": f"[動能背馳] Regime gate 唔通過 (Hurst={hurst_value:.3f}, ADX={adx_value:.1f}), 弱趨勢, 觀望",
-                    "evidence": [
-                        {"type": "hurst", "label": "Hurst 指數", "value": round(hurst_value, 4), "threshold": 0.45, "passed": hurst_value >= 0.45},
-                        {"type": "adx", "label": "ADX(14)", "value": round(adx_value, 2), "threshold": 20, "passed": adx_value >= 20},
-                    ],
-                    "hurst": round(hurst_value, 4),
-                    "adx": round(adx_value, 2),
-                    "regimeGate": "FAILED",
-                    "inputBars": len(klines),
-                    # v0.2.0 (大少 2026-09-09 07:27 fix): 凡人話, 對齊 frontend renderIndicatorsChartOverlay
-                    # 拎 verdict.meta.rsiSeries / macdSeries 嘅 shape consistency, reg gate fail 早 return
-                    # 嗰陣都 emit empty array, frontend 拎到 [] 唔會再 trigger "rsiSeries/macdSeries 缺失"
-                    # warning. 之後 renderIndicatorsChartOverlay 行 line series 0 條 render (凡人話
-                    # correct, 因為 reg gate fail 冇 series 數據), 凡人話避免 silent fail warning noise.
-                    # 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) spirit
-                    "rsiSeries": [],
-                    "macdSeries": [],
-                    "reason": "Regime gate 唔通過",
-                },
-                warnings=[w.to_dict() for w in warnings_list],
-            )
+            # 唔再 return, 繼續行 Step 1-9 拎 RSI/MACD series, verdict 拎 SIDEWAYS 0.3 (見下面 override)
+            # 凡人話: 大少想喺 M4 任何情況下都睇到 RSI/MACD, 即係 spec intent 改: gate fail
+            # 唔再 early return, 但 verdict 拎 SIDEWAYS 0.3 (對齊 §M4 self-check penalty 永久 rule spirit)
+            # 對齊 §改完先 ask 修正先 Commit (2026-09-09 07:23) — backend 改完必先 restart + curl verify
 
         # Step 1: 計算 RSI + MACD
         momentum = self._compute_momentum(klines)
@@ -812,6 +789,19 @@ class IndicatorsAlgorithm(Algorithm):
             cycle = "SIDEWAYS"
             cycle_label = "動能中性"
 
+        # v0.3.0 (大少 2026-09-09 11:26 Option 1 trigger): reg gate fail soft fail override
+        # 凡人話: 即使 reg gate fail (H<0.45 / ADX<20), 仍然拎 RSI/MACD series 畀 chart render,
+        # 但 verdict 拎 SIDEWAYS 0.3 (避免 random walk 亂出 BUY/SELL 影響落單)
+        # 對齊 §M4 self-check penalty 永久 rule spirit (gate fail conf floor 0.3)
+        # 對齊 §改完先 ask 修正先 Commit (2026-09-09 07:23) — backend 改完必先 restart + curl verify
+        if not regime_passed:
+            # 凡人話: 大少想 M4 任何情況下都睇到 RSI/MACD 副圖, 所以 override verdict 拎 SIDEWAYS 0.3
+            # 但保留 RSI/MACD series 真實 emit (見 line 904-905 momentum["rsiSeries"/"macdSeries"])
+            cycle = "SIDEWAYS"
+            cycle_label = "動能中性"
+            confidence = min(confidence, 0.3)  # 永久 ban 1.0 + 對齊 §M4 self-check penalty 永久 rule
+            original_confidence_for_audit = max(original_confidence, confidence)  # 保留 audit 原始值
+
         # Evidence 收集
         evidence = [
             {
@@ -893,6 +883,7 @@ class IndicatorsAlgorithm(Algorithm):
             "inputBars": len(klines),
             "hurst": round(hurst_value, 4),  # v0.2.0 A1: audit field
             "adx": round(adx_value, 2),  # v0.2.0 A1: audit field
+            "regimeGate": "PASSED" if regime_passed else "FAILED",  # v0.3.0: audit field, 大少 11:26 trigger
             "m1State": m1_state,  # v0.2.0 A3: audit field
             "selfCheckTriggered": self_check_triggered,  # v0.2.0 A5: audit field
             "originalConfidence": original_confidence,  # v0.2.0 A5: audit field
