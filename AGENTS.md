@@ -3185,3 +3185,27 @@ if (!rsiSeries || !macdSeries) {
 **對應 commit**: 即將 push (Spec Sync #53)
 
 **套用情境**: 之後任何 backend algorithm 嘅 verdict 序列化、任何 frontend chart overlay 嘅 meta field 拎取, 永遠用呢個統一 pattern。Frontend 拎到 array 自動 skip render, 拎到 undefined 先係 silent fail 提示。**凡人話: 1 個地方改, 之後新加 module 自動受惠, 唔需要再諗 shape 一致性**。
+
+### Module Card Purpose 永久 rule (大少 2026-09-09 17:50 trigger)
+
+**凡人話**: 每個 algorithm 嘅 testing page 結果 card 嘅 Title 下面都要加返一句「主要作用」凡人話說明, 等大少撳跑完 algorithm 一落到結果 card 即刻知道呢個 module 專門做乜。大少 trigger 範例: M4 = 檢查轉勢。
+
+**永久 rule checklist**:
+- ✅ `renderXxxResult` 嘅 `module-card-header` div 入面, `<h3 class="module-header">` / `<h4 class="module-header">` 下面都要加 `<p class="module-purpose">...</p>` 凡人話一句 (8-30 字)
+- ✅ Description 永遠講呢個 module 主要做乜 (e.g. M4 = 檢查轉勢), 唔好重複 Title 嘅名字
+- ✅ 凡人話, 唔用 technical jargon (e.g. 唔寫 "DFA Hurst Exponent 過 gate", 寫 "檢查股價有冇方向")
+- ✅ 凡新加 module / 改 renderResult, 必跟呢個 pattern
+- ✅ 對齊 cache bust 永久 rule: 改 adapter.mjs 之後必同步 bump `testing-page.js` 嘅 `ALGO_CACHE_BUST` + `testing-page/index.html` 嘅 `?v=2.3.X`
+- ✅ Trade Journal section 喺 testing-page.js renderTradeJournalSection 內 `<h3>` 下面都要加 `<p class="module-purpose">`
+- ✅ M7 Synthesizer + M8 Decision Engine 因為 layout 唔同 (verdict-card 內 div 而唔係 module-card-header), 一齊喺 M7 verdict card 入面 render 兩段 `<p class="module-purpose">` 分別講 M7 + M8 主要作用
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` 9 個 renderResult function 嘅 module-card-header div (zmen / SlopeMomentum / Multi-TF / M5 Volume / M6 Volatility / M2 HL Structure / M3 Trendline / M4 Indicators / M1 MA Alignment) + M7 Synthesizer verdict card (line 7239-7240)
+- `testing-page/testing-page.js` renderTradeJournalSection line 3094
+- `testing-page/testing-page.css` line 732-741 (`.module-card-header .module-purpose` CSS)
+- `testing-page/index.html` `?v=2.3.X` (CSS + JS cache bust)
+
+**對應 commit**: 即將 push (Spec Sync #56)
+
+**套用情境**: 之後新加任何 module 嘅 renderResult function, 必喺 module-card-header 下面加 `<p class="module-purpose">` 凡人話一句。**凡人話: 大少撳跑完任何 algorithm, 一落到結果 card 即刻知道呢個 module 專門做乜, 唔使再讀 algorithm 細節**。
+

@@ -925,6 +925,7 @@ function renderSlopeMomentumResult(verdict) {
     <div class="as03-verdict as03-module-card as03-slope-momentum">
       <div class="module-card-header">
         <h4>📈 M8 SlopeMomentum 斜率動能 (v1.0.0, Stage 2 re-elevate)</h4>
+        <p class="module-purpose">用均線斜率動能, 量度趨勢加速 / 減速</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -1223,6 +1224,7 @@ function renderMultiTFResult(verdict) {
     <div class="as03-verdict as03-module-card as03-multi-tf">
       <div class="module-card-header">
         <h4>🌐 M5 Multi-TF 多時間框架綜合 (v1.0.0, Stage 2)</h4>
+        <p class="module-purpose">綜合多時間框架 (日線/週線), 確認大方向 + 中短線一致</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -1815,6 +1817,7 @@ function renderMAResult(verdict) {
       ${ZMEN_V21_TOOLTIP_STYLE}
       <div class="module-card-header">
         <h4 class="module-header"><span class="zmen-verdict-tooltip" data-help="${ZMEN_V21_TOOLTIPS.zmen_title}">📐 zmen均算法 v1.0 (保留 Layer 1 + 加 Layer 2, 9 個 sub-scenario + 14 個 field)</span></h4>
+        <p class="module-purpose">3 條均線 10 條 rule 判 4 個 state, 加 Layer 2 細分 9 個 sub-scenario</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${cycleColor}">
@@ -2276,6 +2279,7 @@ export function renderVolumeResult(verdict) {
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
         <h3 class="module-header">成交量價格行為確認法 v2.0 (VolumePrice)</h3>
+        <p class="module-purpose">用成交量 + 價格行為, 確認大戶資金跟進 + 識別突破真偽</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -2716,6 +2720,7 @@ export function renderVolatilityResult(verdict) {
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
         <h3 class="module-header">波動率與市場結構收縮擴張 (Volatility)</h3>
+        <p class="module-purpose">用波動率 + 通道, 偵測 Squeeze (爆發前壓縮) 同 Breakout (突破)</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -3037,6 +3042,7 @@ function renderHLStructureResult(verdict) {
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
         <h3 class="module-header">📊 高低點結構法 (Peak-Trough Structure)</h3>
+        <p class="module-purpose">用高低峰谷結構, 5 年尺度判大方向 + 短線突破 override</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${cycleColor}">
@@ -3550,6 +3556,7 @@ function renderTrendlineResult(verdict) {
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
         <h3 class="module-header">📈 趨勢線法 (Trendline)</h3>
+        <p class="module-purpose">用通道支撐壓力線 + 10 條 rule, 確認大方向 + 識別真突破</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -4182,6 +4189,7 @@ function renderIndicatorsResult(verdict) {
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
         <h3 class="module-header">⚡ 動能背馳與衰竭檢測法 (Indicators) <span class="version-tag">${v40Version}</span></h3>
+        <p class="module-purpose">用 RSI + MACD 專門檢查轉勢, 搵背馳 + 衰竭信號</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${color}">
@@ -5031,6 +5039,7 @@ function renderMAAlignmentV2Result(verdict) {
       ${M1_TOOLTIP_STYLE}
       <div class="module-card-header">
         <h3 class="module-header"><span class="m1-verdict-tooltip" data-help="${M1_TOOLTIPS.m1_title}">📊 均線系統週期判斷法 v2.1.0 (9 個 sub-scenario + 成交量 + 斜率)</span></h3>
+        <p class="module-purpose">用 4 條均線排列 + 成交量 + 斜率, 判 9 個 sub-scenario 嘅強升/初升/橫行/初跌/強跌/上升回調/下跌反彈/到頂轉勢/到底轉勢</p>
       </div>
       <div class="verdict-header">
         <div class="state-pill" style="background: ${cycleColor}">
@@ -7226,7 +7235,9 @@ export function renderDecisionEngineResult(verdict) {
       </style>
       <!-- 頂部 verdict card (大少 2026-08-10 v2: 自訂 CSS tooltip + 大字) -->
       <div class="verdict-card" style="background:linear-gradient(135deg, ${gradeColor}22, ${gradeColor}08);border:2px solid ${gradeColor};border-radius:12px;padding:20px;margin-bottom:20px;text-align:center;">
-        <div class="m7-verdict-tooltip" data-help="${TOOLTIPS.verdict_title}" style="font-size:14px;color:#666;margin-bottom:8px;">📊 終極綜合判斷 (M7 Synthesizer)</div>
+        <div class="m7-verdict-tooltip" data-help="${TOOLTIPS.verdict_title}" style="font-size:14px;color:#666;margin-bottom:4px;">📊 終極綜合判斷 (M7 Synthesizer · M8 Decision Engine 頂)</div>
+        <p class="module-purpose" style="font-size:12px;color:#888;margin:0 0 4px 0;">M7 — 6 個 module 綜合判定, 計 SSI / TCM / Grade / Kelly</p>
+        <p class="module-purpose" style="font-size:12px;color:#888;margin:0 0 8px 0;">M8 — 中長線/短炒 雙策略, 推 8 個最終動作 + Kelly 倉位</p>
         <div class="m7-verdict-tooltip" data-help="${TOOLTIPS.grade}" style="font-size:48px;font-weight:700;color:${gradeColor};line-height:1;">${grade}</div>
         <div style="font-size:18px;color:#666;margin-top:8px;">分數 ${grade_score.toFixed(1)} / 100</div>
         <div style="font-size:14px;color:#999;margin-top:4px;">${grade_reason}</div>

@@ -730,3 +730,13 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+
+/* 大少 2026-09-09 17:50 trigger — Module Card Purpose 永久 rule
+   每個 algorithm 嘅 testing page 結果 card 嘅 Title 下面都要加返一句「主要作用」凡人話說明 */
+.module-card-header .module-purpose {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: #888;
+  font-weight: normal;
+  line-height: 1.4;
+}
