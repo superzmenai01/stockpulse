@@ -3306,3 +3306,34 @@ if (!rsiSeries || !macdSeries) {
 
 **套用情境**: 之後 M6 (volatility) + M7 (synthesizer) + M8 (decision_engine) + M9 (back_test) 加 self-check warning/penalty 都對齊呢個 audit field design (`selfCheckTriggered: bool` + `originalConfidence: float`)。**凡人話: 大少撳跑任何 algorithm 見到 banner 提示 self-check triggered, 即知呢個 verdict 唔可信, 唔好落單**。
 
+
+### M5 Spec Sync #60 v0.2 永久 rule (大少 2026-09-10 09:43 trigger, commit 拎取 v0.2)
+
+**凡人話**: Spec Sync #60 v0.2 = 拎走 V13 拆 AND 改動 (返 baseline) + 保留 V9 secondary confirm AND→OR 拆解。V9 拆 AND 拎 evidence 拎返 +1.1% UP verdict 觸發率微升, UP 一致性拎返 100% CONFIRM (拎走 V13 矛盾 source 拎返 baseline 一致性)。
+
+**Root cause 確認 (凡人話 audit 永久 rule + 284 stocks curl evidence)**:
+- v0.1 (V9+V13 拆 AND) audit: UP 32.7% (升 16.5%) + UP signal CONFIRM **87.1% (12/93 跌穿 95% 還原門檻)** ⚠️
+- v0.1 觸發 trigger 還原條件: UP verdict + DISCONFIRM/NEUTRAL signal 矛盾 12/93 = 12.9% 跌穿 95%
+- v0.2 (拎走 V13, 保留 V9) audit: UP 17.3% (升 1.1%) + UP signal CONFIRM **100% (49/49)** ✅ 通過 trigger 還原條件
+- 凡人話: V13 拆 AND 觸發矛盾嘅 root cause = V13 決定 buy_timing_score 但 signal/volume_regime 跟舊 logic → 出現 UP verdict + DISCONFIRM/NEUTRAL signal 矛盾
+
+**永久 rule checklist**:
+- ✅ V9 (0.9) secondary confirm 永久由 AND 改 OR: `(obv_price_corr > 0.5 or not divergence_detected)` (backend) / `(obvPriceCorr > 0.5 || !divergenceDetected)` (frontend)
+- ✅ V13 (0.75) 永久拎走返 baseline 4 個 AND (唔可以拆 AND, 因為 V13 拆 AND 觸發矛盾)
+- ✅ 5 條 buy rule 其他 3 條 (V15 / V2) 永久不變
+- ✅ 凡人話 audit 通過 trigger 還原條件 4 條 (SIDEWAYS < 80%, UP < 45%, UP 一致性 ≥ 95%, 無 VERDICT_MISSING)
+- ✅ Backend `volume_price/algorithm.py` + Frontend `modules/volume.ts` 1:1 port 同步
+- ✅ 改 backend 之後必 restart backend (`./start.sh`) + curl 拎 evidence 確認
+- ✅ 改 adapter.mjs / testing-page.js 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (cache bust self-check 永久 rule)
+- ✅ 跑 284 stocks full DB audit 拎 evidence 對比 baseline 拎真實 evidence (凡人話 audit 永久 rule)
+
+**對應文件**:
+- `backend/algorithms/volume_price/algorithm.py` line 554-557 (V9 拆 AND) + line 558-564 (V13 拎走返 baseline)
+- `algorithms/AS-03-cycle-detection/modules/volume.ts` line 435-442 (1:1 port)
+- `docs/research/AS-03-cycle-detection/MODULE-05-VOLUME-PRICE-V2.md` v0.4.0
+
+**還原 reference (對齊 9月8日 22:41 永久 rule「以分支來做還原點」)**:
+- baseline commit SHA: `5cef31d9` (Spec Sync #58 v2.1.0)
+- 還原: `git checkout 5cef31d9 -- backend/algorithms/volume_price/algorithm.py algorithms/AS-03-cycle-detection/modules/volume.ts`
+
+**對應 commit**: 即將 push (Spec Sync #60 v0.2)
