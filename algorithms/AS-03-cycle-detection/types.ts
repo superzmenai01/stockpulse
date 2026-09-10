@@ -268,6 +268,12 @@ export interface TCMPairResult {
 /** M7 Synthesizer 嘅 final verdict
  *  6 個 ModuleStandardVerdict → SynthesizerVerdict
  *  M8 Decision Engine 將來再吃 SynthesizerVerdict 推導 trading card
+ *
+ *  v2.0.0 (大少 2026-09-10 23:06 Spec Sync #62, 8-stage architecture)
+ *  - 加 7 個新 field 對齊 backend algorithm.py 嘅 Stage 3-8 改動
+ *  - weight_discounts (Stage 3 generalize)
+ *  - conflict_pairs / conflict_count (Stage 4)
+ *  - consensus_state / consensus_score / consensus_achieved / state_breakdown / simple_majority_state (Stage 5)
  */
 export interface SynthesizerVerdict {
   // SSI 戰略強度指數
@@ -290,7 +296,57 @@ export interface SynthesizerVerdict {
   kelly_numeric: number;     // 0.5 / 0.25 / 0.125
   kelly_position: number;    // 0-1 (position size)
 
+  // v2.0.0 Stage 3: Weight discount generalization (大少 2026-09-10 23:06)
+  // 對齊 backend algorithm.py 嘅 _apply_weight_discounts output
+  // 凡人話: 拎任何 module 嘅 self-check warning 自動降 weight 落 0.05, 其他 5 個 normalize 補返
+  weight_discounts: WeightDiscount[];
+
+  // v2.0.0 Stage 4: Conflict detection (大少 2026-09-10 23:06)
+  // 凡人話: 拎 UP↔DOWN 直接矛盾 pairs
+  conflict_pairs: [CycleModuleId, CycleModuleId][];
+  conflict_count: number;
+
+  // v2.0.0 Stage 5: Consensus scoring (大少 2026-09-10 23:06)
+  // 凡人話: 拎 67% threshold 共識, weighted state 拎 majority
+  consensus_state: CycleState;
+  consensus_score: number;          // 0-1
+  consensus_achieved: boolean;      // 拎 ≥ 67% threshold 達成共識
+  simple_majority_state: CycleState;
+  state_breakdown: Record<string, number>;  // {state: weight_sum, ...}
+
+  // v2.0.0 Stage 7: State derivation (大少 2026-09-10 23:06)
+  // 凡人話: 共識先重要, 共識唔到先睇簡單多數
+  final_state: CycleState;          // 共識 → consensus_state; 否則 → simple_majority_state
+
   // Meta
   module_verdicts: ModuleStandardVerdict[];  // 6 個 input (trace)
   timestamp: number;
+}
+
+/** v2.0.0 (大少 2026-09-10 23:06) — Weight discount 詳情 (對齊 backend algorithm.py 嘅 discount_meta entry)
+ *  凡人話: 拎任何 module 嘅 self-check warning 自動降 base_weight 落 0.05, 其他 5 個 normalize 補返
+ *  對齊永久 rule: §M2 self-check weight 折扣 generalize 至所有 module
+ */
+export interface WeightDiscount {
+  module_id: CycleModuleId;
+  triggered: boolean;                       // 拎 self-check warning 即 trigger
+  original_weight: number;                  // 拎之前嘅 base_weight
+  discounted_weight: number;                // discount 後嘅 weight (0.05 if triggered, else original)
+  trigger_codes: string[];                  // 邊啲 warning code 觸發 (FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH / VERDICT_MISSING)
+}
+
+/** v2.0.0 (大少 2026-09-10 23:06) — Conflict pair (對齊 backend algorithm.py 嘅 conflict_pairs tuple)
+ *  凡人話: 拎 UP↔DOWN 直接矛盾 pair, 對綜合判定有疑問
+ */
+export type ConflictPair = [CycleModuleId, CycleModuleId];
+
+/** v2.0.0 (大少 2026-09-10 23:06) — Consensus result (對齊 backend algorithm.py 嘅 consensus dict)
+ *  凡人話: 拎 67% threshold (4/6 個 module 同意) 拎 weighted state 共識
+ */
+export interface ConsensusResult {
+  consensus_state: CycleState;              // 多數 state (UP / DOWN / SIDEWAYS)
+  consensus_score: number;                  // 0-1, weighted 共識比例
+  simple_majority_state: CycleState;        // 簡單多數 state (fallback)
+  consensus_achieved: boolean;              // 拎 ≥ 67% threshold 達成共識
+  state_breakdown: Record<string, number>;  // {state: weight_sum, ...}
 }
