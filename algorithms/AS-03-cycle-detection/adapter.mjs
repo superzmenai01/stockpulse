@@ -6649,7 +6649,15 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
   const base_weight = moduleId === 'ma-alignment'
     ? getM1DynamicWeight(verdict)
     : DECISION_ENGINE_BASE_WEIGHTS[moduleId];
-  const expected_return = decisionEngineExpectedReturn(verdict.state, verdict.confidence);
+  // 大少 2026-09-11 07:32 Fix D — 拎 state / confidence 對齊 backend verdict shape
+  // Backend v0.1-v2.x 統一將 state / confidence emit 喺 verdict.meta.* 下面
+  // (只有少數舊 algo 例如 volatility 仍然 emit 喺 top level, 所以 fallback top level)
+  // Fix 前 frontend 拎 verdict.state (top level) 永遠 undefined, fallback SIDEWAYS 0
+  // → 6 個 module 全部顯示「橫行」+「未確認」+ 信心 0, 完全錯晒
+  // 對齊 §M7 v2.0.1 永久 rule: frontend display 永遠對齊 backend verdict shape
+  const rawState = verdict.meta?.state ?? verdict.state;
+  const rawConfidence = verdict.meta?.confidence ?? verdict.confidence;
+  const expected_return = decisionEngineExpectedReturn(rawState, rawConfidence);
   const max_drawdown_estimate = decisionEngineMaxDD(klines);
   const sentiment_6d = decisionEngineSentiment6D(klines);
   const rules_fired = (verdict.evidence || []).map(e => e.type);
@@ -6657,14 +6665,14 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
   return {
     // Plan B fix (大少 2026-08-08 13:30) — defensive state default
     // 如果 verdict.state 係 undefined / null / 空字串 / 唔喺 5 個 value 入面, fallback 去 'SIDEWAYS'
-    state: (verdict.state && ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION', 'TRAP'].includes(verdict.state))
-      ? verdict.state
+    state: (rawState && ['UP', 'DOWN', 'SIDEWAYS', 'TRANSITION', 'TRAP'].includes(rawState))
+      ? rawState
       : 'SIDEWAYS',
     // 大少 2026-09-05 Fix C: NaN-safe confidence clamp
     // 凡人話: 之前 Math.max(0, Math.min(1, NaN)) = NaN (NaN 任何 math 運算都係 NaN),
     //         污染 ssi_score 變 NaN, frontend 嗰度 trigger NAN_RESULT warning (但 backend runner 拎唔到 warning)
     // Fix: 先用 Number.isFinite check, 唔係 finite → fallback 0
-    confidence: Number.isFinite(verdict.confidence) ? Math.max(0, Math.min(1, verdict.confidence)) : 0,
+    confidence: Number.isFinite(rawConfidence) ? Math.max(0, Math.min(1, rawConfidence)) : 0,
     base_weight,
     expected_return,
     max_drawdown_estimate,
@@ -6679,7 +6687,7 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
     // backend M7 algorithm.py line 410 拎 v.get("warnings", []), 即係靠 standard verdict 嘅 warnings field
     // Fix 前 decisionEngineToStandardVerdict 永遠冇 propagate _warnings, M7 永遠拎唔到 → 永遠唔 trigger discount
     // 對齊 §Module Warning v1.0.0 永久 rule: 對外一定要有 _warnings array (propagate chain M1-M6 → M7 → M8 → M9)
-    warnings: verdict._warnings || [],
+    warnings: verdict._warnings || verdict.meta?._warnings || [],
   };
 }
 
