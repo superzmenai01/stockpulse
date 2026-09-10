@@ -551,10 +551,18 @@ class VolumePriceAlgorithm(Algorithm):
         buy_reasons: List[str] = []
         false_signal_flags: List[str] = []
 
+        # V9 (0.9) — Spec Sync #60 拆 AND 條件: secondary confirm 由 AND 改 OR
+        # 凡人話: primary trigger (gradual_buildup + breakout_confirmed) 維持 AND,
+        #         secondary confirm (obv_corr>0.5 OR 冇 divergence) 2 揀 1
+        # 預期: V9 觸發率微升, 仍然保留 primary trigger 嘅 quality
         if (breakout_pattern == "gradual_buildup" and is_breakout_confirmed is True
-                and obv_price_corr > 0.5 and not divergence_detected):
+                and (obv_price_corr > 0.5 or not divergence_detected)):
             buy_timing_score = 0.9
             buy_reasons.append("V9 溫和堆量突破確認 + V8 OBV 同步,黃金買點")
+        # V13 (0.75) — Spec Sync #60 audit 觸發 trigger 還原條件: 拎走 V13 拆 AND 改動, 返 baseline
+        # 凡人話: V13 拆 AND 條件 (4 個 AND 拆做 2 個 group) 觸發 UP verdict + DISCONFIRM/NEUTRAL signal 矛盾
+        # 10/68 (14.7%) UP verdict signal 唔一致, 跌穿 95% 還原門檻
+        # 保留 V9 拆 AND 改動 (UP 一致性 100%, 凡人話 audit 通過)
         elif (pullback_is_healthy is True and support_zone is not None
               and volume_regime == "accumulation" and obv_trend == "rising"):
             buy_timing_score = 0.75

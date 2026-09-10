@@ -431,11 +431,16 @@ export class VolumePrice implements CycleModule<KLine[]> {
     const buyReasons: string[] = [];
     const falseSignalFlags: string[] = [];
 
-    // 5 條 buy 規則 (按信心由高到低)
+    // 5 條 buy 規則 (按信心由高到低) — Spec Sync #60 拆 AND 條件 1:1 port
+    // V9 (0.9) — 拆 AND: primary trigger (gradual_buildup + breakout_confirmed) 維持 AND,
+    //             secondary confirm (obv_corr>0.5 OR 冇 divergence) 2 揀 1
     if (breakoutPattern === 'gradual_buildup' && isBreakoutConfirmed === true
-        && obvPriceCorr > 0.5 && !divergenceDetected) {
+        && (obvPriceCorr > 0.5 || !divergenceDetected)) {
       buyTimingScore = 0.9;
       buyReasons.push('V9 溫和堆量突破確認 + V8 OBV 同步,黃金買點');
+    // V13 (0.75) — Spec Sync #60 audit 觸發 trigger 還原條件: 拎走 V13 拆 AND 改動, 返 baseline
+    // 凡人話: V13 拆 AND 觸發 UP verdict + DISCONFIRM/NEUTRAL signal 矛盾 (87.1% CONFIRM 跌穿 95%)
+    // 保留 V9 拆 AND 改動
     } else if (pullbackIsHealthy === true && supportZone !== null
         && volumeRegime === 'accumulation' && obvTrend === 'rising') {
       buyTimingScore = 0.75;

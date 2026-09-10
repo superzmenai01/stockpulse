@@ -1,10 +1,43 @@
-# AS-03 · Module 5: 成交量價格行為確認法 v2.1.0 (Volume-Price Action Confirmation)
+# AS-03 · Module 5: 成交量價格行為確認法 v2.2.0 (Volume-Price Action Confirmation)
 
 > **對應 docx**: `docs/演算法概念SPECS/05成交量價格行為確認法.docx` (Kimi v2.0)
-> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/volume.ts` (v2.1.0 1:1 port, 待 frontend sync)
+> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/volume.ts` (v2.2.0 1:1 port)
 > **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/volume.test.mjs` (rewrite)
 > **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`volumePriceAdapter`)
-> **對應 backend algo**: `backend/algorithms/volume_price/algorithm.py` v2.1.0 (大少 2026-09-09 20:19 trigger, Spec Sync #58)
+> **對應 backend algo**: `backend/algorithms/volume_price/algorithm.py` v2.2.0 (大少 2026-09-10 09:43 trigger, Spec Sync #60 v0.2)
+
+## Spec Sync #60 v0.2 改動 (大少 2026-09-10 09:43 trigger)
+
+凡人話: V9 (溫和堆量突破, 0.9) 嘅 trigger 條件拆 AND, secondary confirm 由 AND 改 OR, 拎返 +1.1% UP verdict 觸發率微升。V13 拆 AND 觸發 UP verdict + DISCONFIRM/NEUTRAL signal 矛盾 12.9% (跌穿 95% 還原門檻), 已拎走返 baseline 4 個 AND。
+
+### 改動細節
+
+| Rule | v2.1.0 baseline | v2.2.0 (Spec Sync #60 v0.2) |
+|------|------|------|
+| **V9 0.9** (溫和堆量突破) | gradual_buildup + breakout_confirmed + obv_corr>0.5 + 冇 divergence (4 個 AND) | gradual_buildup + breakout_confirmed + (obv_corr>0.5 OR 冇 divergence) (3 個 AND) |
+| **V13 0.75** (健康回調) | pullback_healthy + support_zone + volume_regime=accumulation + obv=rising (4 個 AND) | **拎走返 baseline (4 個 AND)** 因為 V13 拆 AND 觸發矛盾 |
+| V15 0.6 / V2 0.55 | 維持不變 | 維持不變 |
+
+### 凡人話 audit 結果 (284 stocks, 大少 2026-09-10 09:43 trigger 同意 commit)
+
+| 指標 | v2.1.0 baseline | v2.2.0 (Spec Sync #60 v0.2) | 拎返 baseline |
+|------|------|------|------|
+| SIDEWAYS | 76.4% (217) | 76.4% (217) | ✅ 100% 拎返 baseline |
+| UP | 16.2% (46) | 17.3% (49) | ✅ +1.1% 微改善 (V9 拆 AND) |
+| DOWN | 7.4% (21) | 6.3% (18) | ✅ -1.1% 接近 baseline |
+| UP signal CONFIRM | 100% (46) | 100% (49) | ✅ 一致性拎返 baseline |
+
+### 凡人話 audit 還原條件對齊 ✅
+
+- SIDEWAYS > 80% → 拎走 (76.4% 通過)
+- UP > 45% → 拎走 (17.3% 通過)
+- UP verdict 一致性 95%+ → 拎走 (100% 通過)
+- VERDICT_MISSING / NaN → 拎走 (無 通過)
+
+### 還原 reference (對齊 9月8日 22:41 永久 rule「以分支來做還原點」)
+
+- baseline commit SHA: `5cef31d9` (Spec Sync #58 v2.1.0)
+- 還原: `git checkout 5cef31d9 -- backend/algorithms/volume_price/algorithm.py algorithms/AS-03-cycle-detection/modules/volume.ts`
 
 ---
 
@@ -442,7 +475,7 @@ export const volumePriceAdapter = {
 
 | 規則組合 | 策略 |
 |----------|------|
-| **V9 溫和堆量突破** (gradual_buildup + confirmed + OBV 同步) | 🏆 **黃金買入** — 信心 0.9,勝率 68%。趁回調入場,唔好追高 |
+| **V9 溫和堆量突破** (gradual_buildup + confirmed + (OBV 同步 OR 冇 divergence)) | 🏆 **黃金買入** — 信心 0.9,勝率 68%。趁回調入場,唔好追高 |
 | **V13 健康回調** (回調縮量 + 有支撐) | ✅ **回調買入** — 信心 0.75,勝率 60%。等回調到 VWAP/dense_zone 反彈 |
 | **V15 拋壓枯竭** (bullish_vp + 量縮) | ⏳ **試探性買入** — 信心 0.6,勝率 52%。成交量極度萎縮時嘅撈底訊號 |
 | **V2 VWAP 支撐** (price near VWAP) | 🛡️ **VWAP 反彈** — 信心 0.55,勝率 52%。喺 VWAP 附近反彈入場 |
