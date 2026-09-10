@@ -255,6 +255,215 @@ def _normalize_module_verdicts(verdicts: List[Dict[str, Any]]) -> List[Dict[str,
 
 
 # ============================================================
+# v2.0.0 Stage 3: Weight discount generalization (大少 2026-09-10 23:06 永久 rule)
+# 凡人話: 拎任何 module 嘅 self-check warning, 自動降 base_weight 落 0.05
+#         其他 5 個 module 等比例 normalize 補返, sum 仍 = 1.0
+# 對齊永久 rule:
+# - §M2 self-check weight 折扣 (大少 2026-09-06 15:10): 沿用 4 個 trigger code 拎 generalize
+# - §M2 self-check penalty (Spec Sync #48): 拎 4 個 critical + warning level code (FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH / VERDICT_MISSING)
+# - §M3 self-check warning (Spec Sync #45)
+# - §M4 self-check warning (Spec Sync #52)
+# - §M5 self-check warning (Spec Sync #58)
+# - §M6 self-check warning (Spec Sync #54)
+# 對齊 §Module Warning v1.1.0: info level (DATA_AGE) 唔觸發 discount
+# ============================================================
+
+# 凡人話: 各 module 嘅 default base_weight (對齊 algorithm_runner.py line 277-282)
+MODULE_BASE_WEIGHTS: Dict[str, float] = {
+    "ma-alignment": 0.25,
+    "hl-structure":  0.15,
+    "trendline":     0.10,
+    "indicators":    0.10,
+    "volume":        0.10,
+    "volatility":    0.10,
+}
+
+# 凡人話: 邊啲 warning code 觸發 self-check weight discount
+# 對齊 §M2 self-check penalty 永久 rule 4 個 critical + warning code
+# (FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH / VERDICT_MISSING)
+# 拎走 info level (DATA_AGE) 對齊 §Module Warning v1.1.0 spirit
+SELF_CHECK_TRIGGER_CODES: Tuple[str, ...] = (
+    "FALLBACK_USED",
+    "CONFLICT_STATE",
+    "THRESHOLD_BREACH",
+    "VERDICT_MISSING",
+)
+
+# 凡人話: self-check 觸發後, 拎 module 嘅 base_weight 折到 0.05 (對齊 M2 永久 rule spirit)
+SELF_CHECK_DISCOUNT_TARGET_WEIGHT: float = 0.05
+
+
+def _extract_warning_code(w: Any) -> Optional[str]:
+    """拎 warning 嘅 code (對齊 ModuleWarning object 或 dict)"""
+    if isinstance(w, dict):
+        return w.get("code")
+    return getattr(w, "code", None)
+
+
+def _has_self_check_trigger(verdict: Dict[str, Any]) -> bool:
+    """檢查 verdict 嘅 warnings 入面有冇 self-check trigger code (Stage 3 入口)"""
+    for w in (verdict.get("warnings") or []):
+        if _extract_warning_code(w) in SELF_CHECK_TRIGGER_CODES:
+            return True
+    return False
+
+
+def _apply_weight_discounts(verdicts: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """v2.0.0 Stage 3: Generalize weight discount — 拎任何 module 嘅 self-check warning 自動降 weight
+
+    凡人話: 6 個 module 任何一個 emit self-check warning (FALLBACK_USED / CONFLICT_STATE /
+            THRESHOLD_BREACH / VERDICT_MISSING), M7 自動將該 module 嘅 base_weight 折到 0.05,
+            其他 5 個 module 等比例 normalize 補返, sum 仍 = 1.0
+
+    對齊永久 rule:
+    - §M2 self-check weight 折扣 (Spec Sync v0.3.0 沿用)
+    - §M3 / §M4 / §M5 / §M6 self-check warning: generalize 至所有 module
+
+    Returns:
+        (normalized_verdicts, discount_meta_list)
+        - normalized_verdicts: shallow copy 嘅 verdict list, 已套用 discount + normalize
+        - discount_meta_list: List[Dict], 每個 entry 描述 1 個 module 嘅 discount 詳情
+          [
+            {
+              "module_id": "hl-structure",
+              "triggered": True,
+              "original_weight": 0.15,
+              "discounted_weight": 0.05,
+              "trigger_codes": ["FALLBACK_USED", "CONFLICT_STATE"],
+            },
+            ...
+          ]
+    """
+    # 拎 list copy 避免 mutate caller 嘅 state
+    verdicts_copy: List[Dict[str, Any]] = [dict(v) for v in verdicts]
+
+    # 拎 6 個 module 嘅 default base_weight (algorithm_runner 拎 normalized 過嘅值可能唔同, 拎 meta fallback)
+    discount_meta: List[Dict[str, Any]] = []
+    for v in verdicts_copy:
+        module_id = v.get("module_id")
+        default_w = MODULE_BASE_WEIGHTS.get(module_id, v.get("base_weight", 0))
+        triggered = _has_self_check_trigger(v)
+        trigger_codes: List[str] = []
+        if triggered:
+            for w in (v.get("warnings") or []):
+                code = _extract_warning_code(w)
+                if code in SELF_CHECK_TRIGGER_CODES and code not in trigger_codes:
+                    trigger_codes.append(code)
+        discount_meta.append({
+            "module_id": module_id,
+            "triggered": triggered,
+            "original_weight": default_w,
+            "discounted_weight": SELF_CHECK_DISCOUNT_TARGET_WEIGHT if triggered else default_w,
+            "trigger_codes": trigger_codes,
+        })
+
+    # 拎 list 拎邊啲 module 觸發 self-check
+    triggered_ids = {d["module_id"] for d in discount_meta if d["triggered"]}
+
+    # 套用 discount + re-normalize
+    if triggered_ids:
+        # 拎觸發 module 嘅 discount 落 base_weight = 0.05
+        for v in verdicts_copy:
+            if v.get("module_id") in triggered_ids:
+                v["base_weight"] = SELF_CHECK_DISCOUNT_TARGET_WEIGHT
+
+        # 拎其他 module 等比例 normalize 補返 (sum = 1.0)
+        other_total = sum(
+            v.get("base_weight", 0)
+            for v in verdicts_copy
+            if v.get("module_id") not in triggered_ids
+        )
+        if other_total > 0:
+            target_other_total = 1.0 - SELF_CHECK_DISCOUNT_TARGET_WEIGHT * len(triggered_ids)
+            factor = target_other_total / other_total
+            for v in verdicts_copy:
+                if v.get("module_id") not in triggered_ids:
+                    v["base_weight"] = round(v.get("base_weight", 0) * factor, 4)
+
+    return verdicts_copy, discount_meta
+
+
+def _detect_conflicts(verdicts: List[Dict[str, Any]]) -> List[Tuple[str, str]]:
+    """v2.0.0 Stage 4: Conflict detection — 拎 UP↔DOWN 直接矛盾 pairs
+
+    凡人話: 6 個 module 任何 1 對 state 直接矛盾 (M1 升 + M2 跌 互相打架),
+            M7 拎到就 emit 1 個 system CONFLICT_STATE warning + 紀錄 conflict_pairs 落 meta
+            對綜合判定有疑問, 大少見到 banner 即知「呢個 verdict 內部有矛盾」
+
+    Returns:
+        List[Tuple[str, str]] — conflict pairs [(module_id_1, module_id_2), ...]
+    """
+    conflicts: List[Tuple[str, str]] = []
+    n = len(verdicts)
+    for i in range(n):
+        for j in range(i + 1, n):
+            s1 = verdicts[i].get("state", "SIDEWAYS")
+            s2 = verdicts[j].get("state", "SIDEWAYS")
+            if _is_opposite_state(s1, s2):
+                id1 = verdicts[i].get("module_id", "?")
+                id2 = verdicts[j].get("module_id", "?")
+                conflicts.append((id1, id2))
+    return conflicts
+
+
+# ============================================================
+# v2.0.0 Stage 5: Consensus scoring (67% threshold)
+# 凡人話: 拎 67% threshold (4/6 個 module 同意) 拎 weighted state consensus
+# 對齊 plan v2 §F 5 stock 對齊表 60% hit rate evidence + Spec Sync #62 recommendation
+# ============================================================
+
+# 凡人話: consensus 達成 threshold (≥ 4/6 = 67% 拎 state 一致, 對齊 plan v2 §F)
+CONSENSUS_THRESHOLD: float = 0.67
+
+
+def _compute_consensus(verdicts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """v2.0.0 Stage 5: Weighted consensus scoring — 拎 67% threshold 拎 majority state
+
+    凡人話: 拎 6 個 module 嘅 state 用 base_weight 拎加權, 拎 majority state 拎 ≥ 67% 拎共識。
+            consensus 達成 → 用 consensus_state 拎 final state; 唔達成 → fall back 落 simple majority
+
+    Returns:
+        dict: {
+            consensus_state: str,        # 多數 state (UP / DOWN / SIDEWAYS)
+            consensus_score: float,     # weighted 共識比例 (0-1)
+            simple_majority_state: str,  # 簡單多數 state (fallback)
+            consensus_achieved: bool,    # 拎 ≥ 67% threshold 拎共識
+            state_breakdown: dict,       # {state: weight_sum, ...} 詳細
+        }
+    """
+    if not verdicts:
+        return {
+            "consensus_state": "SIDEWAYS",
+            "consensus_score": 0.0,
+            "simple_majority_state": "SIDEWAYS",
+            "consensus_achieved": False,
+            "state_breakdown": {},
+        }
+
+    # weighted state 拎 base_weight 拎 weighted count
+    state_breakdown: Dict[str, float] = {}
+    simple_count: Dict[str, int] = {}
+    for v in verdicts:
+        state = v.get("state", "SIDEWAYS")
+        w = v.get("base_weight", 0)
+        state_breakdown[state] = state_breakdown.get(state, 0.0) + w
+        simple_count[state] = simple_count.get(state, 0) + 1
+
+    total_weight = sum(state_breakdown.values()) or 1.0
+    consensus_state = max(state_breakdown.items(), key=lambda x: x[1])[0]
+    consensus_score = state_breakdown[consensus_state] / total_weight
+    simple_majority_state = max(simple_count.items(), key=lambda x: x[1])[0]
+
+    return {
+        "consensus_state": consensus_state,
+        "consensus_score": round(consensus_score, 4),
+        "simple_majority_state": simple_majority_state,
+        "consensus_achieved": consensus_score >= CONSENSUS_THRESHOLD,
+        "state_breakdown": {k: round(v, 4) for k, v in state_breakdown.items()},
+    }
+
+
+# ============================================================
 # Step 3.5: ZigZagSlope Cross-Module Alignment Enrichment
 # 大少 2026-08-21 12:04 trigger — Stage 2 第一步
 # 凡人話: 拎 M1 verdict 嘅 zigzagSlope 短期斜率做 cross-module alignment check
@@ -503,41 +712,22 @@ class SynthesizerAlgorithm(Algorithm):
         # 對齊 plan v2 §D + spec doc MODULE-04-INDICATORS.md §2.2
         verdicts = _normalize_module_verdicts(verdicts)
 
-        # ============ v0.3.0 M2 self-check weight 折扣 (大少 2026-09-06 15:10 trigger) ============
-        # 凡人話: M2 self-check warning emit 之後, M7 自動降 M2 weight 0.15→0.05,
-        # 5 個其他 module (M1/M3/M4/M5/M6) 等比例 normalize 補返 0.10, sum 仍 = 1.0
-        # 永久 rule: 拎 M2 self-check warning 即 FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH,
-        # shallow copy verdicts 避免 mutate caller 嘅 state
-        verdicts_for_synth: List[Dict[str, Any]] = [dict(v) for v in verdicts]
-        m2_self_check_triggered = False
-        m2_discount_codes = ("FALLBACK_USED", "CONFLICT_STATE", "THRESHOLD_BREACH")
+        # ============ v2.0.0 Stage 3: Weight discount generalization (大少 2026-09-10 23:06 永久 rule) ============
+        # 凡人話: 拎任何 module 嘅 self-check warning (FALLBACK_USED / CONFLICT_STATE /
+        #         THRESHOLD_BREACH / VERDICT_MISSING) 自動降 base_weight 落 0.05,
+        #         其他 5 個 module 等比例 normalize 補返, sum 仍 = 1.0
+        # 對齊永久 rule: §M2 self-check weight 折扣 (Spec Sync v0.3.0) generalize 至 M1/M3/M4/M5/M6
+        # 對齊永久 rule: §M3/§M4/§M5/§M6 self-check warning emit
+        # 對齊永久 rule: §Module Warning v1.1.0 info level (DATA_AGE) 唔觸發 discount
+        verdicts_for_synth, weight_discounts = _apply_weight_discounts(verdicts)
 
-        for v in verdicts_for_synth:
-            if v.get("module_id") == "hl-structure":
-                v_warnings = v.get("warnings", []) or []
-                for w in v_warnings:
-                    if isinstance(w, dict):
-                        code = w.get("code")
-                    else:
-                        code = getattr(w, "code", None)
-                    if code in m2_discount_codes:
-                        m2_self_check_triggered = True
-                        break
-                if m2_self_check_triggered:
-                    # 折扣 M2 weight 0.15 → 0.05
-                    v["base_weight"] = 0.05
-                    # Re-normalize 其他 5 個 module weight (等比例, sum = 1.0)
-                    other_total = sum(
-                        other.get("base_weight", 0)
-                        for other in verdicts_for_synth
-                        if other.get("module_id") != "hl-structure"
-                    )
-                    if other_total > 0:
-                        factor = (1.0 - 0.05) / other_total
-                        for other in verdicts_for_synth:
-                            if other.get("module_id") != "hl-structure":
-                                other["base_weight"] = round(other.get("base_weight", 0) * factor, 4)
-                    break
+        # ============ v0.3.0 backward compat: 保留 m2_discounted / m2_original_weight / m2_discounted_weight ============
+        # 對齊永久 rule §M2 self-check weight 折扣: meta 永遠 emit M2 嘅 discount 狀態 (frontend 拎嚟 audit / banner)
+        m2_discount = next(
+            (d for d in weight_discounts if d["module_id"] == "hl-structure"),
+            {"triggered": False, "original_weight": None, "discounted_weight": None},
+        )
+        m2_self_check_triggered = m2_discount["triggered"]
 
         # Step 0: 數據驗證 (need ≥ 1 module verdict)
         if not verdicts:
@@ -632,15 +822,23 @@ class SynthesizerAlgorithm(Algorithm):
         # Step 5: Kelly
         kelly = _compute_kelly(verdicts_for_synth)
 
-        # Cycle state derivation (跟 majority state, 唔睇 weight)
-        state_count: Dict[str, int] = {}
-        for v in verdicts_for_synth:
-            state = v.get("state", "SIDEWAYS")
-            state_count[state] = state_count.get(state, 0) + 1
-        if state_count:
-            majority_state = max(state_count.items(), key=lambda x: x[1])[0]
-        else:
-            majority_state = "SIDEWAYS"
+        # ============ v2.0.0 Stage 4: Conflict detection (大少 2026-09-10 23:06 永久 rule) ============
+        # 凡人話: 拎 UP↔DOWN 直接矛盾 pairs, 凡人話: M1 升 + M2 跌 互相打架 → emit warning
+        conflict_pairs = _detect_conflicts(verdicts_for_synth)
+
+        # ============ v2.0.0 Stage 5: Consensus scoring (大少 2026-09-10 23:06 永久 rule) ============
+        # 凡人話: 拎 67% threshold (4/6 個 module 同意) 拎 weighted state 共識
+        #         共識達成 → 用 consensus_state; 唔達成 → fall back 落 simple_majority_state
+        consensus = _compute_consensus(verdicts_for_synth)
+
+        # ============ v2.0.0 Stage 7: State derivation (大少 2026-09-10 23:06 永久 rule) ============
+        # 凡人話: 共識先重要, 共識唔到先睇簡單多數
+        final_state = (
+            consensus["consensus_state"]
+            if consensus["consensus_achieved"]
+            else consensus["simple_majority_state"]
+        )
+        majority_state = final_state  # backward compat alias
 
         # Cycle label 跟 state
         cycle_label = (
@@ -695,6 +893,17 @@ class SynthesizerAlgorithm(Algorithm):
             "m2_discounted": m2_self_check_triggered,
             "m2_original_weight": 0.15 if m2_self_check_triggered else None,
             "m2_discounted_weight": 0.05 if m2_self_check_triggered else None,
+            # v2.0.0 (大少 2026-09-10 23:06): generalize 至所有 module 嘅 weight discount 詳情
+            "weight_discounts": weight_discounts,
+            # v2.0.0 (大少 2026-09-10 23:06): Stage 4 conflict detection
+            "conflict_pairs": [list(p) for p in conflict_pairs],
+            "conflict_count": len(conflict_pairs),
+            # v2.0.0 (大少 2026-09-10 23:06): Stage 5 consensus scoring
+            "consensus_state": consensus["consensus_state"],
+            "consensus_score": consensus["consensus_score"],
+            "simple_majority_state": consensus["simple_majority_state"],
+            "consensus_achieved": consensus["consensus_achieved"],
+            "state_breakdown": consensus["state_breakdown"],
             "zigzag_alignment_reasons": zigzag_alignment_reasons,
             "grade": grade,
             "grade_score": grade_score,
@@ -711,22 +920,66 @@ class SynthesizerAlgorithm(Algorithm):
         # Step 6: Aggregate upstream warnings (永久 rule v1.1.0 propagation chain)
         aggregated_warnings = _aggregate_warnings(verdicts, nan_fields=nan_fields)
 
-        # ============ v0.3.0 M2 self-check 通知 (大少 2026-09-06 15:10 trigger) ============
-        # 凡人話: M2 self-check 觸發咗, M7 自動降 weight 之後, 同步 emit 1 個 stock_state
-        # warning 通知 banner (用 MODULE_PARTIAL code, 沿用 15 個 code, 唔加新 code)
-        if m2_self_check_triggered:
+        # ============ v2.0.0 Stage 3 warning 通知 (大少 2026-09-10 23:06 generalize) ============
+        # 凡人話: 拎任何 module 嘅 self-check warning 觸發咗, M7 自動降 weight 之後,
+        #         每個 trigger 嘅 module 同步 emit 1 個 stock_state MODULE_PARTIAL warning
+        #         通知 banner (沿用 15 個 code, 唔加新 code 對齊永久 rule §Module Warning v1.1.0)
+        for d in weight_discounts:
+            if d["triggered"]:
+                aggregated_warnings.append(make_warning(
+                    level="warning",
+                    module_id="M7",
+                    code="MODULE_PARTIAL",
+                    message=f"{d['module_id']} self-check 觸發, 自動降 weight {d['original_weight']} → {d['discounted_weight']}",
+                    issue=f"{d['module_id']} 嘅 self-check warning 觸發 (codes: {', '.join(d['trigger_codes'])}), M7 自動將 {d['module_id']} base_weight 由 {d['original_weight']} 折扣到 {d['discounted_weight']}",
+                    impact=f"{d['module_id']} vote 保留但 weight 大減, 其他 5 個 module 等比例 normalize 補返, sum 仍 = 1.0",
+                    fix=f"睇 banner 提示 {d['module_id']} 觸發咗邊個 self-check, Re-run / 確認 K 線數據",
+                    context={
+                        "module_id": d["module_id"],
+                        "original_weight": d["original_weight"],
+                        "discounted_weight": d["discounted_weight"],
+                        "trigger_codes": d["trigger_codes"],
+                        "discount_reason": f"{d['module_id']} self-check warning detected",
+                    },
+                ).to_dict())
+
+        # ============ v2.0.0 Stage 4 warning 通知 (大少 2026-09-10 23:06 conflict detection) ============
+        # 凡人話: 拎 UP↔DOWN 直接矛盾 pairs, 每對 emit 1 個 system CONFLICT_STATE warning
+        #         通知 banner, 對齊 §Module Warning v1.1.0 (system category, verdict 可能唔可信)
+        for id1, id2 in conflict_pairs:
             aggregated_warnings.append(make_warning(
                 level="warning",
                 module_id="M7",
-                code="MODULE_PARTIAL",
-                message="M2 self-check 觸發, 自動降 weight 0.15 → 0.05",
-                issue="M2 嘅 self-check warning 觸發, M7 自動將 M2 base_weight 由 0.15 折扣到 0.05",
-                impact="M2 vote 保留但 weight 大減, 其他 5 個 module (M1/M3/M4/M5/M6) 等比例 normalize 補返, sum 仍 = 1.0",
-                fix="睇 banner 提示 M2 觸發咗邊個 self-check (形態預警/峰谷太舊/5年vs短線矛盾/信心過低/結構破壞), Re-run / 確認 K 線數據",
+                code="CONFLICT_STATE",
+                message=f"{id1} ↔ {id2} state 矛盾 (UP↔DOWN)",
+                issue=f"{id1} 同 {id2} 嘅 state 直接相反, 對綜合判定有疑問, 大少睇到即知 verdict 內部有矛盾",
+                impact="Verdict 唔可信, 唔好落單",
+                fix="睇 6 個 module verdict card 確認邊個 module 比較合理, Re-run / 確認 K 線數據",
                 context={
-                    "m2_original_weight": 0.15,
-                    "m2_discounted_weight": 0.05,
-                    "discount_reason": "M2 self-check warning detected",
+                    "module_a": id1,
+                    "module_b": id2,
+                    "conflict_reason": "UP↔DOWN direct opposite state",
+                },
+            ).to_dict())
+
+        # ============ v2.0.0 Stage 5 warning 通知 (大少 2026-09-10 23:06 consensus scoring) ============
+        # 凡人話: 拎 weighted consensus 達成, 同步 emit 1 個 stock_state CONFLICT_STATE
+        #         通知 banner (對齊 plan v2 §F 67% threshold spirit)
+        #         凡人話: 「6 個 module 入面, 4 個以上同意 {state}, 綜合判定跟呢個 state」
+        if consensus["consensus_achieved"]:
+            aggregated_warnings.append(make_warning(
+                level="info",
+                module_id="M7",
+                code="CONFLICT_STATE",
+                message=f"Consensus 達成: {consensus['consensus_state']} (score {consensus['consensus_score']:.2f} ≥ {CONSENSUS_THRESHOLD})",
+                issue=f"6 個 module 入面 ≥ {int(CONSENSUS_THRESHOLD * 100)}% 同意 {consensus['consensus_state']}, weighted consensus 達成",
+                impact="Verdict 已經準確, 留意股票狀態",
+                fix="睇其他 module 確認 / 留意 M7 alignment",
+                context={
+                    "consensus_state": consensus["consensus_state"],
+                    "consensus_score": consensus["consensus_score"],
+                    "state_breakdown": consensus["state_breakdown"],
+                    "consensus_threshold": CONSENSUS_THRESHOLD,
                 },
             ).to_dict())
 
