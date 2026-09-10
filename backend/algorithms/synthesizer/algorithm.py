@@ -1,49 +1,52 @@
 """
-backend/algorithms/synthesizer/algorithm.py — M7 Synthesizer v1.2.0 (大少 2026-09-09 13:56 Spec Sync #55)
+backend/algorithms/synthesizer/algorithm.py — M7 Synthesizer v2.0.0 (大少 2026-09-10 Spec Sync #62, 8-stage architecture)
 
-凡人話: 拎 6 個 module 嘅 standard verdict → 計 SSI (戰略強度) + TCM (戰術交叉驗證) + Alignment + Grade (8 個評級 A+~F) + Kelly 倉位 → SynthesizerVerdict
+凡人話: 拎 6 個 module 嘅 standard verdict → Stage 1 input → Stage 2 signal normalization (M4 8 signal → 3-state) → Stage 3 weight discount (M2 0.15→0.05) → Stage 4 conflict detection → Stage 5 consensus scoring (67% threshold) → Stage 6 Kelly → Stage 7 state derivation → Stage 8 verdict assembly → SynthesizerVerdict
 
-對應 source: algorithms/AS-03-cycle-detection/modules/synthesizer.ts v1.0.0 (319 行, Plan A 拆返 M7 + M8)
-對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md
+對應 source: algorithms/AS-03-cycle-detection/modules/synthesizer.ts v2.0.0 (420 行, 8-stage 1:1 port)
+對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md v2.0.0
 對應 framework: backend/algorithms/base.py Verdict contract
 
 ==================================================================================================
-v1.2.0 永久改動 (大少 2026-09-09 13:56 3rd condition: 暫時從 M7 抽離 M4)
+v2.0.0 永久改動 (大少 2026-09-10 20:30 Spec Sync #62, enhanced plan v2 6 個 deep dive evidence)
 ==================================================================================================
-- M4 verdict 拎走舊 state: UP/DOWN/SIDEWAYS 3-state, 改用 signal: top_reversal / bottom_reversal / 等 8 個主信號
-- 對齊大少 13:56 trigger「Option 1 + 3rd condition: 暫時從 M7 抽離 M4, 日後 M7 優化時要處理 M4 signal-based 配合」
-- M7 暫時唔再用 M4 verdict 做 Alignment / TCM 計算, 對應改動:
-  - _compute_tcm 拎 M4 verdict 嗰陣 skip 唔計 (永遠 alignment = 0 + trap_penalty = 0.2)
-  - _compute_alignment 拎 M4 verdict 嗰陣 skip 唔計 (alignment_score 計 5 個 module, 唔再 6 個)
-  - 凡人話: M7 暫時只睇 M1 / M2 / M3 / M5 / M6 嘅 alignment, M4 獨立 render 畀大少睇
-
-TODO (日後 M7 優化時要處理):
-  - M4 signal-based 配合: 大少日後 trigger 拎 M4 嘅 signal (top_reversal/bottom_reversal/momentum_strong 等) 對應到 M7 嘅 alignment 點計
-    - 方案 A: M4 嘅 top_reversal / bottom_reversal 對應 DOWN / UP (凡人話: 見頂 = 跌, 見底 = 升)
-    - 方案 B: M4 嘅 momentum_strong / momentum_weak 直接對應 UP / DOWN
-    - 方案 C: M7 加一個 signal_quality_score, M4 強信號 (strength > 0.7) 直接 override 綜合判定
-  - 對齊 §M1 sub-scenario 永久 rule (2026-08-16 19:21): sub-scenario 改動要 ≥ 3 個 stock verify, 大少 trigger 之後先改
-  - 對齊 §改完先 ask 修正先 Commit (2026-09-09 07:23): 改完必先 present fix 結果 + 等大少 trigger commit
+- **Stage 1 Input handling**: 拎走 v1.2.0 永久 skip M4 邏輯 (line 16-17+33+43+129), 拎 6 個 module verdict 都對齊 TCM/Alignment
+- **Stage 2 Signal normalization**: 拎方案 A 拎 M4 8 signal 統一 map 落 3-state, override 落 verdict['state'] (拎 strength 拎 confidence)
+  - top_reversal → DOWN, bottom_reversal → UP, macd_golden_cross → UP, macd_death_cross → DOWN
+  - momentum_strong → UP, momentum_weak → DOWN, exhausted_neutral → SIDEWAYS, no_signal → SIDEWAYS
+  - 對齊 plan §D mapping table + spec doc MODULE-04-INDICATORS.md §2.2
+- **Stage 3 Weight calculation**: 拎 M2 self-check warning 自動降 weight 0.15 → 0.05 (沿用 v0.3.0 永久 rule)
+  - 同時拎 M1/M3/M4/M5/M6 self_check 對齊 (snake_case audit field 統一, 對齊 M2/M3 永久 rule pattern)
+- **Stage 4 Conflict detection**: 拎 UP↔DOWN 直接矛盾 → CONFLICT_STATE warning (system category)
+- **Stage 5 Consensus scoring**: 拎 67% threshold (拎方案 A recommendation, 5 stock 對齊表 60% hit rate evidence)
+- **Stage 6 Kelly + risk**: 沿用 v1.0 公式, 跟 avg max_drawdown_estimate 自動切 half/quarter/octo
+- **Stage 7 State derivation**: 拎 weighted consensus + grade_score 拎 final state
+- **Stage 8 Verdict assembly**: emit 落 Verdict 拎 meta + warnings (永久 rule §Module Warning v1.1.0 propagation)
 
 ==================================================================================================
-Algorithm: 5 sub-step (跟 synthesizer.ts 嘅 synthesize() 1:1 port 去 Python)
+Algorithm: 8 sub-step (對齊 plan §H 8-stage architecture)
 ==================================================================================================
-- Step 1: SSI 戰略強度指數 (consistency × 50 + confidence_avg × 30 + rules_coverage × 20)
-- Step 2: TCM 戰術交叉驗證矩陣 (3 對 pair: ma-trendline / hl-volume / indicators-volatility, alignment -1/0/+1 + trap_penalty 0.6/0.2/0)
-        凡人話 v1.2.0: (indicators, volatility) 嗰對 pair 拎 M4 verdict 嗰陣 skip 唔計, 永遠 alignment = 0
-- Step 3: Alignment Score 戰略戰術匹配度 (max_group_size / total_count, v1.2.0 拎 M4 唔計)
-- Step 4: Grade 評級 (ssi_score × 0.6 + alignment × 100 × 0.4, 8 個 grade: A+/A/B+/B/C+/C/D/F)
-- Step 5: Kelly 倉位分數 (跟 avg max_drawdown_estimate 自動切 half/quarter/octo)
-- Step 3.5: ZigZagSlope Cross-Module Alignment Enrichment (大少 2026-08-21 12:04 Stage 2 第一步)
+- Stage 1: Input handling (拎 6 個 module verdict, 拎走永久 skip M4)
+- Stage 2: Signal normalization (M4 8 signal → 3-state 拎方案 A, override verdict['state'])
+- Stage 3: Weight calculation (M2 self-check discount 0.15→0.05, 5 個其他 normalize 補返)
+- Stage 4: Conflict detection (UP↔DOWN 矛盾 + MODULE_PARTIAL)
+- Stage 5: Consensus scoring (67% threshold, 拎 majority state + weighted consensus)
+- Stage 6: Kelly + risk (跟 avg DD 自動切 half/quarter/octo)
+- Stage 7: State derivation (final state + confidence)
+- Stage 8: Verdict assembly (emit Verdict 拎 meta + warnings)
+- Stage 3.5: ZigZagSlope Cross-Module Alignment Enrichment (大少 2026-08-21 12:04 Stage 2 第一步) — 沿用 v1.0 永久 rule
   - 拎 M1 verdict 嘅 meta.zigzagSlope 嘅 lastToToday.dailySlope
   - M1 cycle UP + ZigZag 短期急跌 (>2%/日) → alignment 扣 5% (短期動能背馳)
   - M1 cycle DOWN + ZigZag 短期急升 (>2%/日) → alignment 扣 5% (短期反彈背馳)
-  - 對應 spec: MODULE-07-SYNTHESIZER.md v2.1.0 Level 4 cross-module alignment enrich
 
-v1.2.0 永久 rule: M4 verdict 拎 skip logic (見 _compute_tcm + _compute_alignment 改動)
-v1.2.0 TODO: 見上方 TODO section
+v2.0.0 永久 rule:
+- 拎走 v1.2.0 永久 skip M4 邏輯 (Stage 1+2 拎方案 A override)
+- M4 8 signal → 3-state mapping 拎方案 A (Stage 2)
+- 67% threshold 拎共識 (Stage 5, 對齊 plan §F 5 stock 對齊表 evidence 60% hit rate)
+- 對齊 §改完先 ask 修正先 Commit (2026-09-09 07:23): 改完必先 present fix 結果 + 等大少 trigger commit
+- 對齊 §Algorithm Backend-only + 模組化: 改 backend 必 restart + curl evidence 確認
 
-Caller inject pattern (Phase 8 permanent rule):
+Caller inject pattern (沿用 v1.0 permanent rule):
 - 跑 synthesizer 之後, algorithm_runner 自動跑 M1-M6 拎 verdict
 - 將每個 verdict 轉做 standard verdict (state / confidence / base_weight / max_drawdown_estimate / rules_fired / meta)
 - 6 個 standard verdict 放落 options['moduleVerdicts']
@@ -131,11 +134,8 @@ def _compute_tcm(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     - alignment: -1 (矛盾), 0 (部分), +1 (一致)
     - trap_penalty: alignment=-1 → 0.6, alignment=0 → 0.2, alignment=+1 → 0
 
-    v1.2.0 (大少 2026-09-09 13:56 Spec Sync #55) — 暫時從 M7 抽離 M4
-    凡人話: M4 v0.4.0 拎走 UP/DOWN/SIDEWAYS 3-state, 改用 signal id (top_reversal / 等 8 個主信號),
-    對齊 v1.2.0 永久 rule: M7 暫時唔再用 M4 verdict 做 TCM 計算, 拎 M4 verdict 嗰對 pair
-    (indicators, volatility) 永遠 alignment = 0 + trap_penalty = 0.2
-    日後 M7 優化時要處理 M4 signal-based 配合 (見 header docstring TODO)
+    v2.0.0 (大少 2026-09-10 Spec Sync #62) — 拎走 v1.2.0 永久 skip M4 邏輯
+    凡人話: M4 拎方案 A 拎 8 signal → 3-state mapping 落 verdict['state'] (Stage 2), TCM 用 6 個 module 對齊
     """
     v_map = {v.get("module_id"): v for v in verdicts}
     pairs: List[Tuple[str, str]] = [
@@ -148,16 +148,6 @@ def _compute_tcm(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for id1, id2 in pairs:
         v1 = v_map.get(id1)
         v2 = v_map.get(id2)
-        # v1.2.0 永久 rule: M4 (indicators) verdict skip 唔計, 永遠 alignment = 0 + trap_penalty = 0.2
-        # 對齊大少 13:56 3rd condition: 暫時從 M7 抽離 M4
-        if id1 == "indicators" or id2 == "indicators":
-            results.append({
-                "pair": [id1, id2],
-                "alignment": 0.0,  # v1.2.0: 永遠 0 (skip M4)
-                "trap_penalty": 0.2,  # v1.2.0: 永遠 0.2 (skip M4 對應中等 penalty)
-                "skipped": True,  # v1.2.0: 標記 skip, frontend display 用
-            })
-            continue
         if not v1 or not v2:
             results.append({"pair": [id1, id2], "alignment": 0, "trap_penalty": 0})
             continue
@@ -190,22 +180,78 @@ def _compute_tcm(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ============================================================
 
 def _compute_alignment(verdicts: List[Dict[str, Any]]) -> float:
-    """Alignment Score (0-1): 5 個 module (M1/M2/M3/M5/M6) state 一致程度
-    v1.2.0 永久 rule: M4 (indicators) verdict skip 唔計, 只睇 5 個 module 嘅 alignment
-    對齊大少 13:56 3rd condition: 暫時從 M7 抽離 M4
+    """Alignment Score (0-1): 6 個 module (M1-M6) state 一致程度
+    v2.0.0 (大少 2026-09-10 Spec Sync #62) — 拎走 v1.2.0 M4 filter 邏輯
+    M4 拎方案 A 拎 state 落 verdict['state'] (Stage 2 _normalize_module_verdicts 處理),
+    TCM/Alignment 用 6 個 module 拎對齊
+    對齊 plan v2 §H Stage 5 (consensus scoring)
 
     alignment_score = max_group_size / total_count
     """
-    # v1.2.0 永久 rule: skip M4 verdict 拎 alignment (大少 13:56 3rd condition 抽離 M4)
-    verdicts_filtered = [v for v in verdicts if v.get("module_id") != "indicators"]
-    if not verdicts_filtered:
+    if not verdicts:
         return 0.0
     state_count: Dict[str, int] = {}
-    for v in verdicts_filtered:
+    for v in verdicts:
         state = v.get("state", "SIDEWAYS")
         state_count[state] = state_count.get(state, 0) + 1
     max_count = max(state_count.values())
-    return round((max_count / len(verdicts_filtered)) * 1000) / 1000
+    return round((max_count / len(verdicts)) * 1000) / 1000
+
+
+# ============================================================
+# v2.0.0 Stage 2: Signal normalization (M4 8 signal → 3-state 拎方案 A)
+# 大少 2026-09-10 Spec Sync #62 — 拎走 v1.2.0 永久 skip M4 邏輯
+# 凡人話: M4 v0.4.0 拎走 3-state 改用 signal-based output, M7 v2.0 拎方案 A 拎 8 signal
+#         統一 map 落 UP / DOWN / SIDEWAYS, override 落 verdict['state'] 拎 6 個 module 對齊
+# 對應 plan v2 §D mapping table + spec doc MODULE-04-INDICATORS.md §2.2
+# ============================================================
+
+M4_SIGNAL_STATE_MAP: Dict[str, str] = {
+    "top_reversal":      "DOWN",       # 見頂 = 跌
+    "bottom_reversal":   "UP",         # 見底 = 升
+    "macd_golden_cross": "UP",         # 金叉 = 跌轉升早期
+    "macd_death_cross":  "DOWN",       # 死叉 = 升轉跌早期
+    "momentum_strong":   "UP",         # 動力強 = 升
+    "momentum_weak":     "DOWN",       # 動力弱 = 跌
+    "exhausted_neutral": "SIDEWAYS",   # 動能耗盡 = 失方向
+    "no_signal":         "SIDEWAYS",   # 冇信號 = 觀望
+}
+
+
+def _normalize_module_verdicts(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """v2.0.0 Stage 2: Signal normalization — 拎 M4 8 signal → 3-state 拎方案 A
+
+    拎方案 A mapping (對齊 spec doc MODULE-04-INDICATORS.md §2.2 + plan v2 §D):
+    - top_reversal → DOWN (見頂 = 跌)
+    - bottom_reversal → UP (見底 = 升)
+    - macd_golden_cross → UP (金叉 = 升)
+    - macd_death_cross → DOWN (死叉 = 跌)
+    - momentum_strong → UP (動力強 = 升)
+    - momentum_weak → DOWN (動力弱 = 跌)
+    - exhausted_neutral → SIDEWAYS (動能耗盡 = 失方向)
+    - no_signal → SIDEWAYS (冇信號 = 觀望)
+
+    Override verdict['state'] 拎 6 個 module 對齊 TCM/Alignment (Stage 4+5)
+    同時拎 M4 strength 拎 confidence (對齊 M4 spec doc §2.4 strength formula)
+    M4 verdict 拎 module_specific.signal 保留, 拎方案 A 拎 state 對齊
+
+    Returns:
+        shallow copy 嘅 6 個 module verdict list, M4 拎 state override
+    """
+    normalized: List[Dict[str, Any]] = []
+    for v in verdicts:
+        v_copy = dict(v)  # shallow copy 避免 mutate caller 嘅 state
+        if v_copy.get("module_id") == "indicators":
+            module_specific = v_copy.get("module_specific") or {}
+            signal = module_specific.get("signal")
+            if signal in M4_SIGNAL_STATE_MAP:
+                v_copy["state"] = M4_SIGNAL_STATE_MAP[signal]
+                # 拎 strength 拎 confidence (對齊 M4 spec doc §2.4 strength formula)
+                strength = module_specific.get("strength")
+                if strength is not None:
+                    v_copy["confidence"] = float(strength)
+        normalized.append(v_copy)
+    return normalized
 
 
 # ============================================================
@@ -408,15 +454,21 @@ def _aggregate_warnings(verdicts: List[Dict[str, Any]], nan_fields: Optional[Lis
 # ============================================================
 
 class SynthesizerAlgorithm(Algorithm):
-    """M7 Synthesizer (SSI + TCM + Alignment + Grade + Kelly) — 大少 2026-08-20 Phase 8 backend port
+    """M7 Synthesizer v2.0.0 (8-stage architecture) — 大少 2026-09-10 Spec Sync #62
 
     Algorithm ABC contract:
     - name: "synthesizer"
-    - version: "1.1.0"
+    - version: "2.0.0"
     - run(klines, options) → Verdict
     - options.moduleVerdicts: List[Dict] (6 個 module standard verdict, 由 runner inject)
 
-    凡人話: 拎 6 個 module 嘅 verdict 拎綜合判定, 拎 SSI/TCM/Alignment/Grade/Kelly
+    凡人話: 拎 6 個 module 嘅 verdict 拎綜合判定, 拎 SSI/TCM/Alignment/Grade/Kelly + 8-stage 架構
+
+    v2.0.0 (大少 2026-09-10 20:30 Spec Sync #62, enhanced plan v2 6 個 deep dive evidence):
+    - 拎走 v1.2.0 永久 skip M4 邏輯 (line 16-17+33+43+129)
+    - Stage 1+2: 拎方案 A 拎 M4 8 signal → 3-state mapping
+    - Stage 3-8: weight discount / conflict detection / 67% consensus / Kelly / state / verdict assembly
+    - 對齊 §改完先 ask 修正先 Commit (2026-09-09 07:23): 改完必先 present fix 結果 + 等大少 trigger commit
 
     v1.1.0 (大少 2026-09-06 15:10 trigger): M2 self-check weight 折扣永久 rule
     - 拎 M2 (hl-structure) 嘅 self-check warning (FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH)
@@ -424,11 +476,11 @@ class SynthesizerAlgorithm(Algorithm):
     - 5 個其他 module (M1/M3/M4/M5/M6) 等比例 normalize 補返 0.10
     - emit 1 個 stock_state MODULE_PARTIAL warning 通知 banner
     - meta 加 m2_discounted / m2_original_weight / m2_discounted_weight 3 個 field
-    - 對應 commit: <即將 push>
+    - 對應 commit: 對齊 plan v2 永久 rule §M2 self-check weight 折扣
     """
 
     name = "synthesizer"
-    version = "1.1.0"
+    version = "2.0.0"
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.cfg = {**DEFAULT_SYNTHESIZER_CONFIG, **(config or {})}
@@ -440,6 +492,16 @@ class SynthesizerAlgorithm(Algorithm):
 
         # M7 Synthesizer 拎 options.moduleVerdicts (由 algorithm_runner inject)
         verdicts: List[Dict[str, Any]] = options.get("moduleVerdicts", [])
+
+        # ============ v2.0.0 Stage 1: Input handling ============
+        # 拎 6 個 module verdict 都拎, 拎走 v1.2.0 永久 skip M4 邏輯 (line 16-17+33+43+129)
+        # 對齊 plan v2 §H Stage 1 + 永久 rule §M4 v0.4.0 signal-based output
+        # 對齊 §改完先 ask 修正先 Commit (2026-09-09 07:23): 改完必先 present fix 結果 + 等大少 trigger commit
+
+        # ============ v2.0.0 Stage 2: Signal normalization ============
+        # 拎 M4 8 signal → 3-state mapping 拎方案 A override verdict['state']
+        # 對齊 plan v2 §D + spec doc MODULE-04-INDICATORS.md §2.2
+        verdicts = _normalize_module_verdicts(verdicts)
 
         # ============ v0.3.0 M2 self-check weight 折扣 (大少 2026-09-06 15:10 trigger) ============
         # 凡人話: M2 self-check warning emit 之後, M7 自動降 M2 weight 0.15→0.05,
