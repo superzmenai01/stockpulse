@@ -84,6 +84,18 @@ MODULE_BASE_WEIGHTS = {"ma-alignment": 0.25, "hl-structure": 0.15, "trendline": 
 - §M6 self-check warning (Spec Sync #54)
 - §Module Warning v1.1.0: info level (DATA_AGE) 唔觸發 discount
 
+**v2.0.1 加 category check** (大少 9月11日 confirm fix):
+- 拎 self-check trigger code 嗰陣, 額外檢查 warning 嘅 category
+- **stock_state category 永遠唔 trigger weight discount** (對齊 §Module Warning v1.1.0 spirit: stock_state 屬 verdict 已經準確只係狀態提示)
+- 只對 system category 嘅 self-check warning 觸發 discount
+- 凡人話: M1 強跌 CONFLICT_STATE stock_state → 唔扣 M1 weight 0.25, M7 拎 M1 真實信號
+- 影響: 對齊 M1 self-check 永久 rule 嘅 3 個 CONFLICT_STATE 條件 (late_stage_topping / late_stage_bottoming / strong_downtrend), 全部 category 改 stock_state
+
+**v2.0.1 加 normalize fallback** (大少 9月11日 confirm fix):
+- 5 個 module 全部 self-check 觸發 (other_total == 0) 嗰陣, 拎每個 trigger module 1/n normalize 補返 sum = 1.0
+- 凡人話: 強跌股 5 個 module 全部 trigger 嗰陣, 唔可以 sum 0.25, 拎 1/5 = 0.20 平均分
+- 對齊 spec invariant: 永遠 sum = 1.0
+
 Backward compat: 保留 m2_discounted / m2_original_weight / m2_discounted_weight 3 個 field (frontend 拎嚟 audit / banner)。
 
 ### Stage 4 詳情 (Conflict detection)
@@ -121,9 +133,25 @@ final_state = (
 
 凡人話: 拎咗共識就信共識, 冇共識先睇簡單多數。
 
+**v2.0.1 cycleLabel 跟 state 而唔係 grade** (大少 9月11日 confirm fix):
+- 拎走 v2.0.0 grade-based 寫法 (A+/A/B+/B/C+/C/D/F 對應 cycleLabel)
+- 改 state-based 寫法:
+  - `state=UP` → `cycleLabel="綜合看升"`
+  - `state=DOWN` → `cycleLabel="綜合看跌"`
+  - `state=SIDEWAYS` → `cycleLabel="綜合觀望"`
+- 對齊 §M7 Synthesizer spirit: 副校長嘅 label 應該跟老師嘅 state 寫, 唔再睇 grade
+- 凡人話: 避免 state=DOWN 但 label=綜合觀望 嘅矛盾 (00981 case)
+- 對應 commit: 大少 9月11日 confirm fix 永久 rule
+
 ### Stage 8 詳情 (Verdict assembly)
 
 **加 8 個新 meta field + 3 個新 warning 注入點**
+
+**v2.0.1 module_verdicts emit normalized weight** (大少 9月11日 confirm fix):
+- 拎走 raw verdict 嘅 base_weight (0.25/0.15/0.10/0.10/0.10/0.10)
+- emit normalized weight (對齊 backend 計嘅 discount + normalize)
+- 凡人話: frontend 拎到嘅 base_weight 對齊 backend 計嘅, 1 個 source of truth, 避免 raw/discounted 不一致
+- 對應 commit: 大少 9月11日 confirm fix 永久 rule
 
 新 meta field:
 - `weight_discounts: List[WeightDiscount]` (Stage 3, 6 個 module 嘅 discount 詳情)

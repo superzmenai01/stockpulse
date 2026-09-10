@@ -773,49 +773,51 @@ class MAAlignmentV2Algorithm(Algorithm):
                 "context": {"actual_count": len(klines), "recommended_min": 30},
             })
 
-        # 條件 1: cyclePosition = late_stage_topping → CONFLICT_STATE (見頂跡象)
+        # 條件 1: cyclePosition = late_stage_topping → CONFLICT_STATE (見頂跡象, stock_state category)
+        # 對齊 §Module Warning v1.1.0: CONFLICT_STATE 屬 stock_state, 唔 trigger weight discount
         if cycle_position == "late_stage_topping":
             self_check_triggered = True
             warnings.append({
                 "level": "warning",
-                "category": "system",
+                "category": "stock_state",
                 "module_id": "ma_alignment",
                 "code": "CONFLICT_STATE",
                 "message": "Cycle 見頂轉勢中 (late_stage_topping)",
-                "issue": f"cyclePosition = {cycle_position}, 股價見頂跡象, 上升動能可能用完",
-                "impact": "Verdict 唔可信 (見頂跡象, 上行可能逆轉), 唔好重倉",
+                "issue": f"cyclePosition = {cycle_position}, 股價見頂跡象, 上升動能可能用完, verdict 已經表達 UP 但留意短期逆轉",
+                "impact": "Verdict 已經準確, 留意股票狀態",
                 "fix": "睇其他 module 確認 / 留意 M7 alignment",
                 "context": {"cyclePosition": cycle_position, "cycle": candidate},
             })
 
-        # 條件 2: cyclePosition = late_stage_bottoming → CONFLICT_STATE (見底跡象)
+        # 條件 2: cyclePosition = late_stage_bottoming → CONFLICT_STATE (見底跡象, stock_state category)
+        # 對齊 §Module Warning v1.1.0: CONFLICT_STATE 屬 stock_state, 唔 trigger weight discount
         if cycle_position == "late_stage_bottoming":
             self_check_triggered = True
             warnings.append({
                 "level": "warning",
-                "category": "system",
+                "category": "stock_state",
                 "module_id": "ma_alignment",
                 "code": "CONFLICT_STATE",
                 "message": "Cycle 見底轉勢中 (late_stage_bottoming)",
-                "issue": f"cyclePosition = {cycle_position}, 股價見底跡象, 下跌動能可能用完",
-                "impact": "Verdict 唔可信 (見底跡象, 下跌可能逆轉), 唔好做空",
+                "issue": f"cyclePosition = {cycle_position}, 股價見底跡象, 下跌動能可能用完, verdict 已經表達 DOWN 但留意短期逆轉",
+                "impact": "Verdict 已經準確, 留意股票狀態",
                 "fix": "睇其他 module 確認 / 留意 M7 alignment",
                 "context": {"cyclePosition": cycle_position, "cycle": candidate},
             })
 
-        # 條件 3: confidence < 0.4 → THRESHOLD_BREACH (信心太弱)
-        # 對齊 §M2 self_check penalty 永久 rule: M1 conf 已經 floor 0.3, 唔額外扣
+        # 條件 3: confidence < 0.4 → THRESHOLD_BREACH (信心太弱, stock_state category)
+        # 對齊 §Module Warning v1.1.0: THRESHOLD_BREACH 屬 stock_state, 唔 trigger weight discount
         if confidence < 0.4:
             self_check_triggered = True
             warnings.append({
                 "level": "warning",
-                "category": "system",
+                "category": "stock_state",
                 "module_id": "ma_alignment",
                 "code": "THRESHOLD_BREACH",
                 "message": f"信心指數 {confidence} < 0.4 門檻",
-                "issue": f"信心太弱, verdict 可信度低, M1 conf 已經 floor 0.3 唔再額外扣",
-                "impact": "Verdict 唔可信, 唔好落單",
-                "fix": "Re-run / 加大 dataWindowDays / 接受低 conf 但繼續判斷",
+                "issue": f"信心太弱, verdict 已經表達股票狀態, M1 conf 已經 floor 0.3 唔再額外扣",
+                "impact": "Verdict 已經準確, 留意股票狀態",
+                "fix": "睇其他 module 確認 / 留意 M7 alignment",
                 "context": {"confidence": confidence, "original_confidence": original_confidence, "floor": 0.3},
             })
 
@@ -834,17 +836,19 @@ class MAAlignmentV2Algorithm(Algorithm):
                 "context": {"cycle": candidate, "abs_momentum_score": abs(momentum_score), "threshold": 0.012},
             })
 
-        # 條件 5: cycle = strong_downtrend → CONFLICT_STATE (跌股警告, 凡人話擴展避免 dead code)
+        # 條件 5: cycle = strong_downtrend → CONFLICT_STATE (跌股警告, stock_state category)
+        # 對齊 §Module Warning v1.1.0: CONFLICT_STATE 屬 stock_state, 唔 trigger weight discount
+        # 對齊 §M7 v2.0.1 永久 rule: M1 強跌 verdict 已經準確表達股票狀態, 唔應該 trigger weight discount
         if candidate == "strong_downtrend":
             self_check_triggered = True
             warnings.append({
                 "level": "warning",
-                "category": "system",
+                "category": "stock_state",
                 "module_id": "ma_alignment",
                 "code": "CONFLICT_STATE",
                 "message": "Cycle 強跌 (strong_downtrend)",
-                "issue": f"cycle = strong_downtrend, 股價強烈下跌, MA 排序全負, 短期回升可能只係反彈",
-                "impact": "Verdict 唔可信 (強跌股, 短期信號可能被大勢蓋過), 唔好撈底",
+                "issue": f"cycle = strong_downtrend, 股價強烈下跌, MA 排序全負, verdict 已經表達 DOWN 狀態, 短期回升可能只係反彈",
+                "impact": "Verdict 已經準確, 留意股票狀態",
                 "fix": "睇其他 module 確認 / 留意 M7 alignment / 接受跌股信號弱",
                 "context": {"cycle": candidate, "cyclePosition": cycle_position, "confidence": confidence},
             })

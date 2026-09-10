@@ -3483,6 +3483,58 @@ if (!rsiSeries || !macdSeries) {
 - ✅ 加 3 個新 warning 注入點: Stage 3 (每個 discount module emit stock_state MODULE_PARTIAL) + Stage 4 (每對 conflict emit system CONFLICT_STATE) + Stage 5 (consensus 達成 emit stock_state CONFLICT_STATE info)
 - ✅ 對齊 §Module Warning v1.1.0: 統一用 make_warning() ModuleWarning object, 15 個 warning code 唔加新 code
 
+### M7 Synthesizer v2.0.1 永久 rules (大少 2026-09-11 07:09 confirm fix, 4 個 bug fix)
+
+**凡人話**: v2.0.0 (Spec Sync #62, 9月10日 23:06) 拎咗 8-stage architecture, 但仲有 4 個 bug:
+1. **00981 強跌 M7 conf 0.515 對齊 M1 強跌 0.83 偏低** (M1 weight 0.25 → 0.05 太 aggressive)
+2. **state_breakdown sum = 0.25 ≠ 1.0** (5 個 module 全部 self-check 觸發, normalize fallback 漏咗)
+3. **cycleLabel = 綜合觀望 但 state = DOWN** (跟 grade 而唔係跟 state, 矛盾)
+4. **module_verdicts.base_weight 拎 raw 0.25 而唔係 discount 後** (frontend 拎到嘅 weight 對齊 backend 唔一致)
+
+大少 9月11日 07:09 trigger 「好, 照做」confirm 4 個 fix 統一方案, v2.0.1 永久 rule:
+
+**§M7 v2.0.1 Stage 3 — Weight discount 加 category check 永久 rule (大少 9月11日 07:09 confirm)**
+- ✅ 拎 self-check trigger code (FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH / VERDICT_MISSING) 嗰陣, 額外檢查 warning 嘅 category
+- ✅ **stock_state category 永遠唔 trigger weight discount** (對齊 §Module Warning v1.1.0 spirit: stock_state 屬 verdict 已經準確, 只係狀態提示, 唔應該 trigger weight discount)
+- ✅ 只對 system category 嘅 self-check warning 觸發 discount
+- ✅ 對齊 ma_alignment/algorithm.py v2.5.0 5 個 self-check condition: 條件 1 (late_stage_topping CONFLICT_STATE) / 條件 2 (late_stage_bottoming CONFLICT_STATE) / 條件 3 (THRESHOLD_BREACH) 全部 category 改 stock_state, 條件 4 (MODULE_PARTIAL) 保持 system, 條件 5 (strong_downtrend CONFLICT_STATE) 改 stock_state
+- ✅ 凡人話: 00981 M1 強跌 CONFLICT_STATE stock_state → 唔扣 M1 weight 0.25, M7 拎 M1 真實信號, M7 final conf 對齊 0.7-0.8
+
+**§M7 v2.0.1 Stage 3 — Normalize fallback 永久 rule (大少 9月11日 07:09 confirm)**
+- ✅ 5 個 module 全部 self-check 觸發 (other_total == 0) 嗰陣, 拎每個 trigger module 1/n normalize 補返 sum = 1.0
+- ✅ 凡人話: 強跌股 5 個 module 全部 trigger 嗰陣, 唔可以 sum 0.25, 拎 1/5 = 0.20 平均分
+- ✅ 對齊 spec invariant: 永遠 sum = 1.0
+- ✅ 影響: state_breakdown / consensus_score / alignment_score 全部用 normalized weight, 計準
+
+**§M7 v2.0.1 Stage 7 — cycleLabel 跟 state 而唔係 grade 永久 rule (大少 9月11日 07:09 confirm)**
+- ✅ 拎走 v2.0.0 grade-based 寫法 (A+/A → 強烈綜合買入 / B+/B → 綜合買入 / C+/C → 綜合觀望 / D → 綜合賣出 / F → 綜合強烈賣出)
+- ✅ 改 state-based 寫法:
+  - state=UP → cycleLabel="綜合看升"
+  - state=DOWN → cycleLabel="綜合看跌"
+  - state=SIDEWAYS → cycleLabel="綜合觀望"
+- ✅ 對齊 §M7 Synthesizer spirit: 副校長嘅 label 應該跟老師嘅 state 寫, 唔再睇 grade
+- ✅ 凡人話: 避免 state=DOWN 但 label=綜合觀望 嘅矛盾 (00981 case)
+- ✅ 對應 commit: 大少 9月11日 confirm fix 永久 rule
+
+**§M7 v2.0.1 Stage 8 — module_verdicts emit normalized weight 永久 rule (大少 9月11日 07:09 confirm)**
+- ✅ 拎走 raw verdict 嘅 base_weight (0.25/0.15/0.10/0.10/0.10/0.10), emit normalized weight (對齊 backend 計嘅 discount + normalize)
+- ✅ 凡人話: frontend 拎到嘅 base_weight 對齊 backend 計嘅, 1 個 source of truth, 避免 raw/discounted 不一致
+- ✅ 對應 commit: 大少 9月11日 confirm fix 永久 rule
+
+**對應文件**:
+- `backend/algorithms/synthesizer/algorithm.py` v2.0.1 (升自 v2.0.0) — Stage 3 加 category check + normalize fallback, Stage 7 cycleLabel 跟 state, Stage 8 module_verdicts emit normalized weight
+- `backend/algorithms/synthesizer/__init__.py` v2.0.1
+- `backend/algorithms/ma_alignment/algorithm.py` v2.5.0 — 5 個 self-check condition category 對齊 stock_state / system
+- `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` v2.0.1 — Stage 3 / Stage 7 / Stage 8 spec doc 對齊
+
+**Verify evidence (6 隻 stock, dataWindowDays=1260)**:
+- 00981: state=DOWN, cycleLabel=綜合看跌, M1 weight 0.25 (唔折, 因 stock_state 唔 trigger), conf 對齊 0.7-0.8, state_breakdown sum=1.0
+- HK.00700: state=DOWN, cycleLabel=綜合看跌
+- HK.00005: state=UP, cycleLabel=綜合看升
+- US.AAPL: state=SIDEWAYS, cycleLabel=綜合觀望
+- US.MSFT: state=UP, cycleLabel=綜合看升
+- US.GOOGL: state=SIDEWAYS, cycleLabel=綜合觀望
+
 **284 stock evidence (dataWindowDays=1260, 20 秒搞掂)**:
 - State: SIDEWAYS 181 (63.7%) / UP 61 (21.5%) / DOWN 42 (14.8%)
 - Grade: B 91 / C+ 127 / C 24 / B+ 21 / A 11 / D 10

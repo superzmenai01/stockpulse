@@ -1,11 +1,19 @@
 """
-backend/algorithms/synthesizer/algorithm.py — M7 Synthesizer v2.0.0 (大少 2026-09-10 Spec Sync #62, 8-stage architecture)
+backend/algorithms/synthesizer/algorithm.py — M7 Synthesizer v2.0.1 (大少 2026-09-11 confirm fix, 8-stage architecture)
 
 凡人話: 拎 6 個 module 嘅 standard verdict → Stage 1 input → Stage 2 signal normalization (M4 8 signal → 3-state) → Stage 3 weight discount (M2 0.15→0.05) → Stage 4 conflict detection → Stage 5 consensus scoring (67% threshold) → Stage 6 Kelly → Stage 7 state derivation → Stage 8 verdict assembly → SynthesizerVerdict
 
 對應 source: algorithms/AS-03-cycle-detection/modules/synthesizer.ts v2.0.0 (420 行, 8-stage 1:1 port)
 對應 spec doc: docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md v2.0.0
 對應 framework: backend/algorithms/base.py Verdict contract
+
+==================================================================================================
+v2.0.1 永久改動 (大少 2026-09-11 confirm fix — 4 個 bug fix)
+==================================================================================================
+- **Stage 3 weight_discounts 加 category check**: 拎走 stock_state category 嘅 self-check warning, 對齊 §Module Warning v1.1.0 spirit (stock_state 屬 verdict 已經準確, 唔 trigger weight discount). 只對 system category 嘅 FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH / VERDICT_MISSING 觸發 discount
+- **Stage 3 normalize fallback**: 5 個 module 全部 self-check 觸發 (other_total == 0) 嗰陣, 拎每個 trigger module 1/n normalize 補返 sum = 1.0, 避免 5×0.05 = 0.25 唔等於 1.0 嘅 bug
+- **Stage 7 cycleLabel 跟 state**: 拎走 v2.0.0 grade-based 寫法 (A+/A/B+/B/C+/C/D/F 對應 cycleLabel), 改 state-based 寫法 (UP→綜合看升, DOWN→綜合看跌, SIDEWAYS→綜合觀望). 對齊 spec spirit: 副校長嘅 label 應該跟老師嘅 state 寫, 唔再睇 grade
+- **Stage 8 module_verdicts emit normalized weight**: 拎走 raw verdict 嘅 base_weight (0.25/0.15/0.10/0.10/0.10/0.10), emit normalized weight (對齊 backend 計嘅 discount + normalize). 凡人話: frontend 拎到嘅 base_weight 對齊 backend 計嘅, 1 個 source of truth
 
 ==================================================================================================
 v2.0.0 永久改動 (大少 2026-09-10 20:30 Spec Sync #62, enhanced plan v2 6 個 deep dive evidence)
@@ -300,10 +308,27 @@ def _extract_warning_code(w: Any) -> Optional[str]:
     return getattr(w, "code", None)
 
 
+def _extract_warning_category(w: Any) -> Optional[str]:
+    """拎 warning 嘅 category (對齊 ModuleWarning object 或 dict)"""
+    if isinstance(w, dict):
+        return w.get("category")
+    return getattr(w, "category", None)
+
+
 def _has_self_check_trigger(verdict: Dict[str, Any]) -> bool:
-    """檢查 verdict 嘅 warnings 入面有冇 self-check trigger code (Stage 3 入口)"""
+    """檢查 verdict 嘅 warnings 入面有冇 self-check trigger code (Stage 3 入口)
+
+    v2.0.1 永久 rule: 拎走 stock_state category 嘅 self-check warning
+    對齊 §Module Warning v1.1.0: stock_state 屬 verdict 已經準確, 只係狀態提示, 唔 trigger weight discount
+    只對 system category 嘅 self-check warning 觸發 weight discount
+    """
     for w in (verdict.get("warnings") or []):
-        if _extract_warning_code(w) in SELF_CHECK_TRIGGER_CODES:
+        code = _extract_warning_code(w)
+        category = _extract_warning_category(w)
+        if code in SELF_CHECK_TRIGGER_CODES:
+            # 對齊 §Module Warning v1.1.0 spirit: stock_state 唔 trigger discount
+            if category == "stock_state":
+                continue
             return True
     return False
 
@@ -379,6 +404,13 @@ def _apply_weight_discounts(verdicts: List[Dict[str, Any]]) -> Tuple[List[Dict[s
             for v in verdicts_copy:
                 if v.get("module_id") not in triggered_ids:
                     v["base_weight"] = round(v.get("base_weight", 0) * factor, 4)
+        else:
+            # v2.0.1 fix: 所有 module 都 trigger (other_total == 0), 拎每個 trigger module normalize 補返 sum = 1.0
+            # 凡人話: 強跌股 5 個 module 全部 self-check 觸發, sum 1/n 拎平均, 唔可以跌 0.25
+            equal_weight = round(1.0 / len(triggered_ids), 4) if triggered_ids else 0
+            for v in verdicts_copy:
+                if v.get("module_id") in triggered_ids:
+                    v["base_weight"] = equal_weight
 
     return verdicts_copy, discount_meta
 
@@ -689,7 +721,7 @@ class SynthesizerAlgorithm(Algorithm):
     """
 
     name = "synthesizer"
-    version = "2.0.0"
+    version = "2.0.1"
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.cfg = {**DEFAULT_SYNTHESIZER_CONFIG, **(config or {})}
@@ -840,13 +872,14 @@ class SynthesizerAlgorithm(Algorithm):
         )
         majority_state = final_state  # backward compat alias
 
-        # Cycle label 跟 state
+        # v2.0.1 永久 rule: Cycle label 跟 state 而唔係 grade (大少 11/9 確認)
+        # 對齊 §M7 Synthesizer spirit: 副校長嘅 label 應該跟老師嘅 state 寫, 唔再睇 grade
+        # 凡人話: state=DOWN → 綜合看跌, state=UP → 綜合看升, state=SIDEWAYS → 綜合觀望
+        # 避免 state=DOWN 但 label=綜合觀望 嘅矛盾
         cycle_label = (
-            "強烈綜合買入" if grade in ("A+", "A")
-            else "綜合買入" if grade in ("B+", "B")
-            else "綜合觀望" if grade in ("C+", "C")
-            else "綜合賣出" if grade == "D"
-            else "綜合強烈賣出"
+            "綜合看升" if majority_state == "UP"
+            else "綜合看跌" if majority_state == "DOWN"
+            else "綜合觀望"
         )
 
         # Interpretation
@@ -911,7 +944,12 @@ class SynthesizerAlgorithm(Algorithm):
             "kelly_fraction": kelly["fraction"],
             "kelly_numeric": kelly["numeric"],
             "kelly_position": kelly["position"],
-            "module_verdicts": verdicts,
+            # v2.0.1 永久 rule: module_verdicts emit normalized weight (對齊 backend 計嘅 discount + normalize)
+            # 凡人話: frontend 拎到嘅 base_weight 對齊 backend 計嘅, 避免 raw/discounted 不一致
+            "module_verdicts": [
+                {**v, "base_weight": nv.get("base_weight", v.get("base_weight"))}
+                for v, nv in zip(verdicts, verdicts_for_synth)
+            ],
             "module_summary": module_summary,
             "reason": interpretation,
             "dataDays": len(verdicts),
