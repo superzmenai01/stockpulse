@@ -153,6 +153,16 @@ final_state = (
 - 凡人話: frontend 拎到嘅 base_weight 對齊 backend 計嘅, 1 個 source of truth, 避免 raw/discounted 不一致
 - 對應 commit: 大少 9月11日 confirm fix 永久 rule
 
+**v2.0.2 frontend display path fix** (大少 9月11日 07:32 trigger):
+- frontend `decisionEngineToStandardVerdict` 拎 backend verdict 嘅 `state` / `confidence` 拎錯 path
+- 之前拎 `verdict.state` (top level) 永遠 `undefined`, 因為 backend v2.x 5/6 個 module 統一 emit 喺 `verdict.meta.*` 下面 (top level 永遠 None)
+- 6 個 module 全部 fallback SIDEWAYS 0, 對齊 backend 唔對, 撳跑 synth 00700 見到 6 個 module 全部「橫行」+「未確認」+ 信心 0, 唯一例外係波動 25% (因為 backend volatility 仍 emit top level)
+- 比重 35% / 15% / 20% / 15% / 15% / 10% = 110% 仍拎到, 因為 frontend 拎 `verdict.meta.cycle` (backend M1 emit 喺 meta) + M2-M6 hardcode weight
+- **Fix**: 拎 `verdict.meta?.state` / `verdict.meta?.confidence` 優先, fallback top level 對齊 backend v0.1 (volatility 仲 emit top level) + v2.x (其他 5 個統一 emit 喺 meta) 兩個 shape
+- 對應 commit: `71b61986` (Fix D)
+- 對齊 §M7 v2.0.1 永久 rule spirit「frontend display 永遠對齊 backend verdict shape」
+- **Follow-up task** (唔屬於呢次 commit, 屬於 frontend architectural gap): frontend `synthesizerAdapter.analyze` 仍指舊 v1.0.0 `analyzeDecisionEngine`, 唔做 v2.0.0 8-stage architecture, 唔做 v2.0.1 normalize fallback, 6 個 module 嘅 base_weight 加埋 1.10 唔係 1.0, 違反 §M7 v2.0.1 normalize 永久 rule spirit. frontend 應該 migrate 去 `modules/synthesizer.ts` v2.0.0 8-stage synth 對齊 backend.
+
 新 meta field:
 - `weight_discounts: List[WeightDiscount]` (Stage 3, 6 個 module 嘅 discount 詳情)
 - `conflict_pairs: List[List[str]]` (Stage 4, 矛盾 pairs)

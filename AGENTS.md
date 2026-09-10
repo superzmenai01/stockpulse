@@ -3521,6 +3521,18 @@ if (!rsiSeries || !macdSeries) {
 - ✅ 凡人話: frontend 拎到嘅 base_weight 對齊 backend 計嘅, 1 個 source of truth, 避免 raw/discounted 不一致
 - ✅ 對應 commit: 大少 9月11日 confirm fix 永久 rule
 
+**§M7 v2.0.2 — Frontend display path fix 永久 rule (大少 9月11日 07:32 confirm)**
+- ✅ Frontend `decisionEngineToStandardVerdict` 拎 backend verdict 嘅 `state` / `confidence` 拎 path 永遠 `verdict.meta.*` 優先, fallback top level
+- ✅ 之前拎 `verdict.state` (top level) 永遠 `undefined` (backend v2.x 5/6 個 module 統一 emit 喺 `verdict.meta.*` 下面), 導致 6 個 module 全部 fallback SIDEWAYS 0
+- ✅ 唯一例外係 M6 波動 25% (backend v0.1 volatility 仍 emit top level), 證明 frontend 拎 path bug 唔係 backend issue
+- ✅ 對齊 backend verdict shape: v0.1 (volatility emit top level) + v2.x (其他 5 個統一 emit 喺 meta) 兩個 shape 都用 `??` operator fallback
+- ✅ 凡人話: 大少撳跑 synth 拎 backend 6 個 module verdict 嗰陣, frontend 一定要拎 `verdict.meta.state` 拎 state, 因為 backend 將 state 收埋喺 `verdict.meta.*` 下面
+- ✅ 對齊 §M7 v2.0.1 永久 rule spirit: frontend display 永遠對齊 backend verdict shape
+- ✅ 同步拎 `verdict._warnings || verdict.meta?._warnings` 對齊 backend warning propagation
+- ✅ 對應 commit: `71b61986` (Fix D)
+- ✅ Cache bust: ALGO_CACHE_BUST 4.91.0 → 4.92.0, ?v=2.3.170 → ?v=2.3.171
+- ✅ 對應文件: `algorithms/AS-03-cycle-detection/adapter.mjs` line 6647-6690 `decisionEngineToStandardVerdict` function
+
 **對應文件**:
 - `backend/algorithms/synthesizer/algorithm.py` v2.0.1 (升自 v2.0.0) — Stage 3 加 category check + normalize fallback, Stage 7 cycleLabel 跟 state, Stage 8 module_verdicts emit normalized weight
 - `backend/algorithms/synthesizer/__init__.py` v2.0.1
