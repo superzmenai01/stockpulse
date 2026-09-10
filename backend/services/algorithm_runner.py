@@ -325,7 +325,14 @@ def run_algorithm(
                         # 之前 silent drop (M7 verdict 唔可信大少唔知), 而家 propagate 畀 Synthesizer aggregate
                         # 對齊永久 rule §Module Warning v1.1.0: 統一用 ModuleWarning object
                         # 對齊 frontend verdict.warnings 永久 naming (Batch 2 修正 _warnings → warnings)
-                        "warnings": list(upstream_verdict.warnings or []),
+                        # 大少 2026-09-10 18:15 Spec Sync #61 M5 wiring fix: M5 algorithm emit ModuleWarning object
+                        # (instance), 唔係 dict。Pydantic ModuleVerdict.warnings: List[Dict] validate 拎 FAIL,
+                        # except handler silent skip, M5 完全拎唔到。
+                        # Fix: 拎 object 轉 dict (.to_dict() if hasattr) 先 validate pass。
+                        "warnings": [
+                            (w.to_dict() if hasattr(w, "to_dict") else w)
+                            for w in (upstream_verdict.warnings or [])
+                        ],
                     }
                     # 永久 rule P0-3: validate shape 拎 conform contract, 缺 field 即刻 raise ValueError
                     from backend.algorithms.contract import validate_module_verdict
