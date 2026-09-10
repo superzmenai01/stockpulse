@@ -46,8 +46,11 @@ from backend.services.warning_collector import (
 # =============================================================
 
 def test_warning_codes_all_have_level():
-    """所有 15 個 warning codes 都要有對應 level (3 層級分佈)"""
-    assert len(WARNING_CODES) == 17, f"expected 17 codes, got {len(WARNING_CODES)}"
+    """所有 warning codes 都要有對應 level (3 層級分佈)
+    WARNING_CODES 已經 extend 過: 6 critical (加咗 OPEN_D_UNAVAILABLE) + 8 warning (加咗 LLM_RATE_LIMIT) + 4 info = 18 個
+    對齊 v1.4.0 (大少 9月8日 22:14) + v1.5.0 (大少 9月9日) + 後續 OPEN_D_UNAVAILABLE / LLM_RATE_LIMIT 加落
+    """
+    assert len(WARNING_CODES) == 18, f"expected 18 codes (6 crit + 8 warn + 4 info), got {len(WARNING_CODES)}"
     
     critical = [c for c, l in WARNING_CODES.items() if l == 'critical']
     warning = [c for c, l in WARNING_CODES.items() if l == 'warning']
@@ -55,7 +58,7 @@ def test_warning_codes_all_have_level():
     
     assert len(critical) == 6, f"expected 6 critical, got {len(critical)}"
     assert len(warning) == 8, f"expected 8 warning, got {len(warning)}"
-    assert len(info) == 3, f"expected 3 info, got {len(info)}"
+    assert len(info) == 4, f"expected 4 info (CONFLICT_STATE 拎走落 info, 對齊 v1.4.0), got {len(info)}"
 
 
 def test_make_warning_basic():
@@ -274,14 +277,15 @@ def test_format_all_warnings_for_copy_empty():
 # =============================================================
 
 def test_all_15_warning_codes_fire():
-    """15 個 warning codes 全部能 create + serialize"""
-    # 5 Critical
+    """所有 warning codes 全部能 create + serialize (v1.4.0 + v1.5.0 之後 16 個)"""
+    # 6 Critical (對齊 WARNING_CODES actual, 加咗 OPEN_D_UNAVAILABLE)
     critical_codes = [
         ('INSUFFICIENT_DATA', 'M1'),
         ('VERDICT_MISSING', 'M2'),
         ('NAN_RESULT', 'M1'),
         ('CACHE_INVALID', 'M8'),
         ('KLINE_MISSING', 'M5'),
+        ('OPEN_D_UNAVAILABLE', 'M5'),
     ]
     for code, module in critical_codes:
         w = make_warning('critical', module, code, f'test {code}')
@@ -290,15 +294,16 @@ def test_all_15_warning_codes_fire():
         assert d['code'] == code
         assert d['module_id'] == module
     
-    # 7 Warning
+    # 8 Warning (對齊 WARNING_CODES actual, 加咗 LLM_RATE_LIMIT)
     warning_codes = [
         ('MODULE_PARTIAL', 'M7'),
         ('OUTLIER_VALUE', 'M5'),
         ('LOW_SAMPLE_SIZE', 'M9'),
         ('THRESHOLD_BREACH', 'M8'),
-        ('CONFLICT_STATE', 'M7'),
+        ('LOW_CONFIDENCE', 'M4'),
         ('POST_FAILED', 'M9'),
         ('FALLBACK_USED', 'M3'),
+        ('LLM_RATE_LIMIT', 'M8'),
     ]
     for code, module in warning_codes:
         w = make_warning('warning', module, code, f'test {code}')
@@ -306,12 +311,13 @@ def test_all_15_warning_codes_fire():
         assert d['level'] == 'warning'
         assert d['code'] == code
         assert d['module_id'] == module
-    
-    # 3 Info
+
+    # 4 Info (大少 2026-09-08 22:14 Spec Sync #54 v1.4.0: CONFLICT_STATE 拎走落 info, stock_state category 唔 floor conf, 對齊 §Module Warning v1.1.0 spirit)
     info_codes = [
         ('CACHE_EXPIRING', 'M8'),
         ('CONFIG_DEFAULTS', 'M8'),
         ('DATA_AGE', 'M11'),
+        ('CONFLICT_STATE', 'M7'),
     ]
     for code, module in info_codes:
         w = make_warning('info', module, code, f'test {code}')
@@ -320,8 +326,8 @@ def test_all_15_warning_codes_fire():
         assert d['code'] == code
         assert d['module_id'] == module
     
-    # Total 15
-    assert len(critical_codes) + len(warning_codes) + len(info_codes) == 15
+    # Total 18 (6 critical + 8 warning + 4 info, 對齊 WARNING_CODES actual)
+    assert len(critical_codes) + len(warning_codes) + len(info_codes) == 18
 
 
 def test_end_to_end_workflow():

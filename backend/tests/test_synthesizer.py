@@ -53,7 +53,7 @@ def test_synthesizer_registered_in_registry():
     assert "synthesizer" in list_algorithms()
     algo = get_algorithm("synthesizer")
     assert algo.name == "synthesizer"
-    assert algo.version == "1.0.0"
+    assert algo.version == "2.0.0"  # 大少 2026-09-10 23:06 Spec Sync #62: 1.0.0 → 2.0.0 (8-stage architecture)
 
 
 def test_synthesizer_strong_consensus_grade_a():
