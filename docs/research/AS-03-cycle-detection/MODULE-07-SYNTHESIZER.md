@@ -1,4 +1,184 @@
-# AS-03 · Module 7: 終極綜合判定 (Synthesizer v1.0.0)
+# AS-03 · Module 7: 終極綜合判定 (Synthesizer v2.0.0)
+
+> **對應 docx**: `docs/演算法概念SPECS/07多時間框架一致性與極端情緒校準法.docx` (M7 部分)
+> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/synthesizer.ts` (M7, 559 行 v2.0.0)
+> **對應 types**: `algorithms/AS-03-cycle-detection/types.ts` (SynthesizerVerdict interface, v2.0.0 加 8 個新 field)
+> **對應 backend**: `backend/algorithms/synthesizer/algorithm.py` (M7, v2.0.0, 8-stage architecture)
+> **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/synthesizer.test.mjs` (64 個 assertions)
+> **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`synthesizerAdapter`)
+>
+> **M8 部分 (8 個 finalAction + Trading card + 短期走勢預測 + 人話詳細解讀 + 5 個 adaptive params + L2 cache) 見** `MODULE-08-DECISION-ENGINE.md`
+
+> **大少 2026-09-10 23:06 Spec Sync #62 (v2.0.0)**: 8-stage architecture
+> - 拎走 v1.2.0 永久 skip M4 邏輯 (Stage 1+2 拎方案 A 拎 M4 8 signal → 3-state mapping)
+> - Stage 3 weight discount generalization (對齊 §M2 self-check weight 折扣 永久 rule generalize 至 M1/M3/M4/M5/M6)
+> - Stage 4 conflict detection (UP↔DOWN 矛盾)
+> - Stage 5 consensus scoring (67% threshold, 對齊 plan v2 §F 60% hit rate evidence)
+> - Stage 7 state derivation (共識先重要, 共識唔到先睇簡單多數)
+> - Stage 8 verdict assembly (加 8 個新 field + 3 個新 warning 注入點)
+>
+> **大少 2026-08-08 13:30 指示 (Plan A 拆返 M7+M8)**: 之前 sprint 1 合併做 1 個 mega module, 大少澄清「一齊優化」意思係「設計上一起考慮但 implementation 應該分開」, 而家拆返 2 個獨立 module + spec doc:
+> - **M7 (Synthesizer)** = 本 doc — 6 個 modules 嘅綜合判定 (SSI + TCM + Alignment + 8 個 Grade + Kelly 倉位)
+> - **M8 (Decision Engine)** = `MODULE-08-DECISION-ENGINE.md` — Sprint 2 將加 (finalAction 8 個 + trading card + 短期走勢預測 + 人話詳細解讀 + 5 個 adaptive params + L2 cache)
+>
+> **大少 2026-08-08 11:39 指示**: 5 個 adaptive params (SSI 戰略層權重 / RSI 情緒權重 / Kelly 倉位分數 / 馬可維茨相關係數 / Hurst 持續反轉 threshold) — 屬於 M8 adaptive params, 見 `MODULE-08-DECISION-ENGINE.md` §adaptive params
+>
+> **大少 2026-08-08 11:57 指示**: UX 多圖少文字, 顏色對應狀態, 永遠全 Show (將來可收埋個別 section)。
+>
+> **大少 2026-08-08 13:30 永久 rule (Memory)**: M8 嘅人話詳細解讀 (render function) 必須有 `async generateInterpretation(ctx): Promise<string>` interface, 將來可以 swap 落 LLM call (OpenAI / MiniMax / Kimi)。Sprint 2 而家用 hardcoded template, 大少話「記底日後提我去做返」。
+
+---
+
+## v2.0.0 永久改動 (大少 2026-09-10 23:06 Spec Sync #62, 8-stage architecture)
+
+### 凡人話總結
+
+v2.0.0 由 5 sub-step 拎 SSI / TCM / Alignment / Grade / Kelly 變成 8 stage architecture,
+對齊 §M2 self-check weight 折扣 永久 rule generalize + plan v2 §D-§H 6 個 stage 設計。
+
+| Stage | 名 | 凡人話 | 對應 backend 函數 |
+|---|---|---|---|
+| 1 | Input handling | 拎 6 個 module verdict | (直接 options['moduleVerdicts']) |
+| 2 | Signal normalization | M4 8 signal → 3-state mapping | `_normalize_module_verdicts` |
+| 3 | Weight discount generalization | 拎 self-check warning 自動降 weight 0.05 | `_apply_weight_discounts` |
+| 4 | Conflict detection | UP↔DOWN 矛盾 emit warning | `_detect_conflicts` |
+| 5 | Consensus scoring | 67% threshold weighted 共識 | `_compute_consensus` |
+| 6 | Kelly + risk | 跟 avg DD 自動切 half/quarter/octo | `_compute_kelly` |
+| 7 | State derivation | 共識先重要, 共識唔到先睇簡單多數 | (inline logic) |
+| 8 | Verdict assembly | 整合 6 stage output 落 meta + emit warnings | (inline logic + `_aggregate_warnings`) |
+
+### Stage 2 詳情 (Signal normalization)
+
+**拎走 v1.2.0 永久 skip M4 邏輯, 拎方案 A 拎 M4 8 signal 統一 map 落 3-state**
+
+```python
+M4_SIGNAL_STATE_MAP: Dict[str, str] = {
+    "top_reversal":      "DOWN",       # 見頂 = 跌
+    "bottom_reversal":   "UP",         # 見底 = 升
+    "macd_golden_cross": "UP",         # 金叉 = 升
+    "macd_death_cross":  "DOWN",       # 死叉 = 跌
+    "momentum_strong":   "UP",         # 動力強 = 升
+    "momentum_weak":     "DOWN",       # 動力弱 = 跌
+    "exhausted_neutral": "SIDEWAYS",   # 動能耗盡 = 失方向
+    "no_signal":         "SIDEWAYS",   # 冇信號 = 觀望
+}
+```
+
+對齊 spec doc MODULE-04-INDICATORS.md §2.2 + plan v2 §D。
+
+### Stage 3 詳情 (Weight discount generalization)
+
+**拎任何 module 嘅 self-check warning, 自動降 base_weight 落 0.05, 其他 5 個 normalize 補返, sum 仍 = 1.0**
+
+```python
+SELF_CHECK_TRIGGER_CODES = ("FALLBACK_USED", "CONFLICT_STATE", "THRESHOLD_BREACH", "VERDICT_MISSING")
+SELF_CHECK_DISCOUNT_TARGET_WEIGHT = 0.05
+MODULE_BASE_WEIGHTS = {"ma-alignment": 0.25, "hl-structure": 0.15, "trendline": 0.10, "indicators": 0.10, "volume": 0.10, "volatility": 0.10}
+```
+
+對齊永久 rule:
+- §M2 self-check weight 折扣 (Spec Sync v0.3.0) generalize 至 M1/M3/M4/M5/M6
+- §M3 self-check warning (Spec Sync #45)
+- §M4 self-check warning (Spec Sync #52)
+- §M5 self-check warning (Spec Sync #58)
+- §M6 self-check warning (Spec Sync #54)
+- §Module Warning v1.1.0: info level (DATA_AGE) 唔觸發 discount
+
+Backward compat: 保留 m2_discounted / m2_original_weight / m2_discounted_weight 3 個 field (frontend 拎嚟 audit / banner)。
+
+### Stage 4 詳情 (Conflict detection)
+
+**拎每對 UP↔DOWN 直接矛盾, emit 1 個 system CONFLICT_STATE warning**
+
+凡人話: M1 升 + M2 跌 互相打架 → emit warning 畀 banner, 大少睇到即知「呢個 verdict 內部有矛盾」。
+
+對齊 §Module Warning v1.1.0: system category, verdict 可能唔可信。
+
+### Stage 5 詳情 (Consensus scoring)
+
+**拎 67% threshold (≥ 4/6 個 module 同意) 拎 weighted state 共識**
+
+```python
+CONSENSUS_THRESHOLD = 0.67
+```
+
+凡人話: 6 個 module 入面, 拎 base_weight 加權, 多數 state ≥ 67% 拎 consensus 達成。
+共識達成 → 用 consensus_state; 唔達成 → fall back 落 simple_majority_state。
+
+對齊 plan v2 §F 5 stock 對齊表 60% hit rate evidence + 67% threshold recommendation。
+
+### Stage 7 詳情 (State derivation)
+
+**共識先重要, 共識唔到先睇簡單多數**
+
+```python
+final_state = (
+    consensus["consensus_state"]
+    if consensus["consensus_achieved"]
+    else consensus["simple_majority_state"]
+)
+```
+
+凡人話: 拎咗共識就信共識, 冇共識先睇簡單多數。
+
+### Stage 8 詳情 (Verdict assembly)
+
+**加 8 個新 meta field + 3 個新 warning 注入點**
+
+新 meta field:
+- `weight_discounts: List[WeightDiscount]` (Stage 3, 6 個 module 嘅 discount 詳情)
+- `conflict_pairs: List[List[str]]` (Stage 4, 矛盾 pairs)
+- `conflict_count: int` (Stage 4)
+- `consensus_state: str` (Stage 5)
+- `consensus_score: float` (Stage 5, 0-1)
+- `consensus_achieved: bool` (Stage 5)
+- `simple_majority_state: str` (Stage 5, fallback)
+- `state_breakdown: dict` (Stage 5, {state: weight_sum, ...})
+- `final_state: str` (Stage 7, 對齊 frontend)
+- `m2_discounted: bool` (backward compat)
+- `m2_original_weight: float` (backward compat)
+- `m2_discounted_weight: float` (backward compat)
+
+3 個新 warning 注入點:
+- Stage 3: 每個 discount module emit 1 個 stock_state `MODULE_PARTIAL` warning
+- Stage 4: 每對 conflict emit 1 個 system `CONFLICT_STATE` warning
+- Stage 5: consensus 達成 emit 1 個 stock_state `CONFLICT_STATE` info warning
+
+對齊永久 rule §Module Warning v1.1.0: 統一用 `make_warning()` / `makeWarning()` ModuleWarning object, 15 個 warning code 唔加新 code。
+
+---
+
+## v2.0.0 永久 rule (對齊 §改完先 ask 修正先 Commit 已廢 + §Mavis 自己行有大問題先問)
+
+- ✅ M7 拎方案 A 拎 M4 8 signal → 3-state (Stage 2, 對齊 plan v2 §D + spec doc MODULE-04-INDICATORS.md §2.2)
+- ✅ M7 拎任何 module 嘅 self-check warning 自動降 weight 落 0.05 (Stage 3, generalize §M2 永久 rule)
+- ✅ M7 拎 UP↔DOWN 矛盾 emit CONFLICT_STATE warning (Stage 4)
+- ✅ M7 拎 67% threshold weighted consensus 達成 (Stage 5, 對齊 plan v2 §F)
+- ✅ M7 final state = 共識先, 共識唔到先睇簡單多數 (Stage 7)
+- ✅ M7 emit 8 個新 meta field + 3 個新 warning 注入點 (Stage 8)
+- ✅ Frontend 1:1 port 落 modules/synthesizer.ts v2.0.0 + types.ts SynthesizerVerdict 加 8 個新 field
+- ✅ 對齊 §Module Warning v1.1.0: info level 唔觸發 discount, system category emit 落 banner
+- ✅ 對齊 §Backend hot-reload: 改 backend 必 restart + curl evidence 確認
+- ✅ 對齊 §Algorithm Backend-only + 模組化: 算法喺 server 內部用 nest_asyncio 拎 K 線 + 真 async I/O
+
+### 還原方法
+
+對齊永久 rule §Spec doc 改為「還原方法」, 用 commit SHA 拎返 detailed code:
+- 拎 v2.0.0 嘅 detailed code: `git show 76a3c423` (Stage 1+2 Step 1) + `git show d64c4d31` (Stage 3-8 Step 2) + `git show 4eef71f2` (frontend port Step 5)
+- 拎 v1.2.0 嘅 code: `git show 76a3c423^` (Step 1 commit parent)
+- 拎 v1.0.0 嘅 code: `git show 76a3c423~3` (Step 1 commit grandparent)
+
+---
+
+## 1. 點解呢個 module (Why)
+
+前 6 個 module 各自睇一個維度嘅趨勢:
+- M1 均線 / M2 峰谷結構 / M3 趨勢線 → **大方向 (戰略層)**
+- M4 動能背馳 / M5 量价 / M6 波動率 → **短線操作 (戰術層)**
+
+呢個 module = **M7 綜合演算法 (Synthesizer)**:
+- **M7 (Synthesizer, 本 doc)**: 將 6 個 module 嘅 verdict 翻譯做 A+~F 評級 + 數學最優倉位 (凱利公式)
+- **M8 (Decision Engine, `MODULE-08-DECISION-ENGINE.md`)**: 喺 M7 評級之上加決策紀律 — 何時加倉/減倉/食胡、信號新舊、市場波動大嘅守則 + 交易指令卡
 
 > **對應 docx**: `docs/演算法概念SPECS/07多時間框架一致性與極端情緒校準法.docx` (M7 部分)
 > **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/synthesizer.ts` (M7)

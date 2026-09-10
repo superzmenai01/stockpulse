@@ -10,7 +10,7 @@ DEFAULT_VOLUME_PRICE_CONFIG = {
     # 對齊 M4 Spec Sync #52 永久 rule (Hurst<0.45 OR ADX<20 確認 weak trend)
     # 凡人話: 對冇 trend 嘅 stock 提前扣 conf 0.10 (M3 warn_penalty pattern), 唔好再 100% SIDEWAYS
     "regimeGateHurstThreshold": 0.45,
-    "regimeGateAdxThreshold": 18,  # 對齊 M3 Spec Sync #51 (M3 用 18 唔係 20)
+    "regimeGateAdxThreshold": 20,  # 大少 2026-09-10 23:10 Step 3 trigger: 統一 M3/M4/M5/M6 嘅 ADX gate threshold 20 (Wilder's standard, 對齊 §M3 Hurst+ADX gate 永久 rule 1:08 trigger)
     # Step 1: 基礎指標
     "vwapPeriod": 20,
     "volumePercentileLookback": 60,

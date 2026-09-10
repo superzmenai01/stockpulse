@@ -3432,3 +3432,96 @@ if (!rsiSeries || !macdSeries) {
 - 還原: `git checkout 5cef31d9 -- backend/algorithms/volume_price/algorithm.py algorithms/AS-03-cycle-detection/modules/volume.ts`
 
 **對應 commit**: 即將 push (Spec Sync #60 v0.2)
+
+### M7 Synthesizer v2.0.0 永久 rules (大少 2026-09-10 23:06 confirm, Spec Sync #62, 8-stage architecture)
+
+**凡人話**: M7 Synthesizer v1.0.0 拎 5 sub-step (SSI/TCM/Alignment/Grade/Kelly) 唔夠做綜合判定, 2026-09-10 23:06 Spec Sync #62 拎方案 A 拎 M7 變 8-stage architecture, 對齊 §M2 self-check weight 折扣 generalize + plan v2 §D-§H 6 個 stage 設計。
+
+**8 個 stage 凡人話**:
+
+| Stage | 名 | 凡人話 | 對應 backend 函數 |
+|---|---|---|---|
+| 1 | Input handling | 拎 6 個 module verdict | (直接 options['moduleVerdicts']) |
+| 2 | Signal normalization | M4 8 signal → 3-state mapping 拎方案 A | `_normalize_module_verdicts` |
+| 3 | Weight discount generalization | 拎 self-check warning 自動降 weight 0.05 | `_apply_weight_discounts` |
+| 4 | Conflict detection | UP↔DOWN 矛盾 emit CONFLICT_STATE warning | `_detect_conflicts` |
+| 5 | Consensus scoring | 67% threshold weighted consensus | `_compute_consensus` |
+| 6 | Kelly + risk | 跟 avg DD 自動切 half/quarter/octo | `_compute_kelly` (沿用 v1.0) |
+| 7 | State derivation | 共識先重要, 共識唔到先睇簡單多數 | (inline logic) |
+| 8 | Verdict assembly | 整合 6 stage output 落 meta + emit warnings | (inline logic + `_aggregate_warnings`) |
+
+**§M7 v2.0.0 Stage 2 — M4 8 signal → 3-state 拎方案 A 永久 rule (大少 9月10日 20:30 trigger)**
+- ✅ 拎走 v1.2.0 永久 skip M4 邏輯, 拎方案 A 拎 8 signal 統一 map 落 verdict['state']
+- ✅ Mapping: top_reversal→DOWN / bottom_reversal→UP / macd_golden_cross→UP / macd_death_cross→DOWN / momentum_strong→UP / momentum_weak→DOWN / exhausted_neutral→SIDEWAYS / no_signal→SIDEWAYS
+- ✅ Override verdict['state'] + 拎 strength 拎 confidence (對齊 M4 spec doc §2.4 strength formula)
+- ✅ 對齊 plan v2 §D + spec doc MODULE-04-INDICATORS.md §2.2
+
+**§M7 v2.0.0 Stage 3 — Weight discount generalization 永久 rule (大少 9月10日 23:06 trigger)**
+- ✅ 拎任何 module 嘅 self-check warning 自動降 base_weight 落 0.05, 其他 5 個 normalize 補返, sum 仍 = 1.0
+- ✅ SELF_CHECK_TRIGGER_CODES = (FALLBACK_USED, CONFLICT_STATE, THRESHOLD_BREACH, VERDICT_MISSING)
+- ✅ 對齊 §M2 self-check weight 折扣 (Spec Sync v0.3.0) generalize 至 M1/M3/M4/M5/M6
+- ✅ 對齊 §Module Warning v1.1.0: info level (DATA_AGE) 唔觸發 discount
+- ✅ Backward compat: 保留 m2_discounted / m2_original_weight / m2_discounted_weight 3 個 field
+
+**§M7 v2.0.0 Stage 4 — Conflict detection 永久 rule (大少 9月10日 23:06 trigger)**
+- ✅ 拎每對 UP↔DOWN 直接矛盾, emit 1 個 system CONFLICT_STATE warning
+- ✅ 凡人話: M1 升 + M2 跌 互相打架 → emit warning 畀 banner
+- ✅ 對齊 §Module Warning v1.1.0: system category, verdict 可能唔可信
+
+**§M7 v2.0.0 Stage 5 — Consensus scoring 67% threshold 永久 rule (大少 9月10日 23:06 trigger)**
+- ✅ CONSENSUS_THRESHOLD = 0.67 (拎 6 個 module ≥ 67% 同意拎 weighted state 共識)
+- ✅ 凡人話: 拎 base_weight 加權, 多數 state ≥ 67% 拎 consensus 達成
+- ✅ 共識達成 → 用 consensus_state; 唔達成 → fall back 落 simple_majority_state
+- ✅ 對齊 plan v2 §F 5 stock 對齊表 60% hit rate evidence + 67% threshold recommendation
+
+**§M7 v2.0.0 Stage 7 — State derivation 永久 rule (大少 9月10日 23:06 trigger)**
+- ✅ final_state = consensus_state (if consensus_achieved) else simple_majority_state
+- ✅ 凡人話: 拎咗共識就信共識, 冇共識先睇簡單多數
+
+**§M7 v2.0.0 Stage 8 — Verdict assembly 永久 rule (大少 9月10日 23:06 trigger)**
+- ✅ 加 8 個新 meta field: weight_discounts / conflict_pairs / conflict_count / consensus_state / consensus_score / consensus_achieved / simple_majority_state / state_breakdown / final_state
+- ✅ 加 3 個新 warning 注入點: Stage 3 (每個 discount module emit stock_state MODULE_PARTIAL) + Stage 4 (每對 conflict emit system CONFLICT_STATE) + Stage 5 (consensus 達成 emit stock_state CONFLICT_STATE info)
+- ✅ 對齊 §Module Warning v1.1.0: 統一用 make_warning() ModuleWarning object, 15 個 warning code 唔加新 code
+
+**284 stock evidence (dataWindowDays=1260, 20 秒搞掂)**:
+- State: SIDEWAYS 181 (63.7%) / UP 61 (21.5%) / DOWN 42 (14.8%)
+- Grade: B 91 / C+ 127 / C 24 / B+ 21 / A 11 / D 10
+- **Consensus 達成 200/284 (70.4%)** ≥ 67% threshold ✅
+- **有 conflict 52/284 (18.3%)** — Stage 4 warning emit 落 banner
+- Discount count: {4: 110, 5: 89, 2: 27, 3: 54, 1: 4} — 70% stock 拎 4-5 個 module self-check trigger
+
+**永久 rule checklist**:
+- ✅ M7 algorithm 永遠用 8-stage architecture (Stage 1 input → Stage 8 verdict)
+- ✅ Stage 3 拎 SELF_CHECK_TRIGGER_CODES 4 個 code (FALLBACK_USED / CONFLICT_STATE / THRESHOLD_BREACH / VERDICT_MISSING)
+- ✅ Stage 5 CONSENSUS_THRESHOLD = 0.67
+- ✅ Stage 7 共識先, 共識唔到先睇簡單多數
+- ✅ Stage 8 加 8 個新 meta field + 3 個新 warning 注入點
+- ✅ Backend `synthesizer/algorithm.py` v2.0.0 + Frontend `modules/synthesizer.ts` v2.0.0 1:1 port 同步
+- ✅ TypeScript `types.ts` SynthesizerVerdict 加 8 個新 field + 3 個新 interface (WeightDiscount / ConflictPair / ConsensusResult)
+- ✅ Spec doc `MODULE-07-SYNTHESIZER.md` v2.0.0 (Stage 1-8 詳情 + 還原方法)
+- ✅ Testing page cache bust: `?v=2.3.170` + `ALGO_CACHE_BUST = '4.91.0'`
+- ✅ 改 backend 之後必 restart backend (`./start.sh`) + curl 拎 evidence 確認
+- ✅ 改 adapter.mjs / testing-page.js 之後必同步 bump ALGO_CACHE_BUST + ?v=2.3.X (cache bust self-check 永久 rule)
+- ✅ 跑 284 stocks full DB audit 拎 evidence 對比 baseline 拎真實 evidence (凡人話 audit 永久 rule)
+- ✅ Warning 走完整 propagation chain: M7 → M8 → M9 → frontend banner (永久 rule §Module Warning v1.1.0)
+
+**對應文件**:
+- `backend/algorithms/synthesizer/algorithm.py` v2.0.0 (8-stage architecture, +309/-56)
+- `algorithms/AS-03-cycle-detection/modules/synthesizer.ts` v2.0.0 (319 → 559 行, +240)
+- `algorithms/AS-03-cycle-detection/types.ts` (296 → 351 行, +55, 加 3 個新 interface)
+- `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` v2.0.0
+- `testing-page/index.html` (cache bust ?v=2.3.169 → 2.3.170)
+- `testing-page/testing-page.js` (ALGO_CACHE_BUST 4.90.0 → 4.91.0)
+
+**還原 reference (對齊 9月8日 22:41 永久 rule「以分支來做還原點」)**:
+- v1.0.0 commit SHA: `76a3c423^~2` (Step 1 grandparent grandparent)
+- v1.2.0 commit SHA: `76a3c423^` (Step 1 parent)
+- v2.0.0 Stage 1+2 commit SHA: `76a3c423` (Step 1, 拎走 v1.2.0 永久 skip M4 邏輯)
+- v2.0.0 Stage 3-8 commit SHA: `d64c4d31` (Step 2, 8-stage architecture)
+- v2.0.0 Step 3 (M5 ADX 18 → 20) commit SHA: `c0935b75`
+- v2.0.0 Step 4 (284 evidence) commit SHA: `51f2aabb`
+- v2.0.0 Step 5 (frontend port) commit SHA: `4eef71f2`
+- v2.0.0 Step 6 (spec doc) commit SHA: `db771d72`
+- 還原: `git checkout 76a3c423^ -- backend/algorithms/synthesizer/algorithm.py algorithms/AS-03-cycle-detection/modules/synthesizer.ts algorithms/AS-03-cycle-detection/types.ts`
+
+**對應 commit**: 即將 push (Spec Sync #62 v2.0.0)
