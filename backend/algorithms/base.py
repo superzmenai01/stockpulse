@@ -46,6 +46,8 @@ class Verdict:
     - `meta`: 額外資訊 (e.g. lastSwingHigh, lastSwingLow — M1 拎緊呢啲 field)
     - `warnings`: warning 注入 (跟 Module Warning System v1.1.0)
     - `error`: 失敗嘅 error message (ok=False 時必填)
+    - `state`: 統一 verdict state (UP / DOWN / SIDEWAYS / TRANSITION) — 大少 2026-09-10 15:05 Spec Sync #54 v2.0.3, 對齊 §M2 self-check penalty audit field pattern + frontend 1:1 port
+    - `confidence`: 統一 verdict confidence (0-1) — 同上
 
     Frontend 拎到呢個 shape 就可以直接 render (chart overlay + 凡人話 display)
     其他 algorithm (M7 Synthesizer) 拎到都可以 aggregate。
@@ -55,6 +57,12 @@ class Verdict:
     meta: Dict[str, Any] = field(default_factory=dict)
     warnings: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
+    # 大少 2026-09-10 15:05 Spec Sync #54 v2.0.3 — Verdict 頂層加 state + confidence fields
+    # 凡人話: 之前 algorithm.py 漏咗 emit 落 Verdict 頂層, algorithm_runner.py 拎 upstream_meta.get("state") 拎返 None
+    # 對齊 §M2 self-check penalty audit field pattern + frontend 1:1 port volatility.ts line 509-510
+    # Optional default None, 唔影響現有 algorithm, 但 M6 v2.0.3 fix 必須顯式 set
+    state: Optional[str] = None
+    confidence: Optional[float] = None
 
 
 class Algorithm(ABC):
