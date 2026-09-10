@@ -827,6 +827,12 @@ class VolatilityAlgorithm(Algorithm):
         confidence = _round(entry_score, 4)
         meta = {
             "moduleId": "volatility",
+            # 大少 2026-09-10 15:00 Spec Sync #54 v2.0.3 — emit state + confidence 落 meta dict 對齊 §M2 self-check penalty audit field pattern + frontend 1:1 port
+            # 凡人話: 之前 v2.0.0 / v2.0.1 commit 漏咗呢 2 個 field 落 backend meta dict, 雖然 algorithm 入面 line 819 + 827 有 local var
+            # Frontend volatility.ts line 509-510 已經 emit (1:1 port), backend 對齊
+            # Algorithm runner line 313-314 拎 upstream_meta.get("state") / "confidence" 拎返 None, 導致 verdict.state / verdict.confidence 永遠 None
+            "state": state,
+            "confidence": confidence,
             "symbol": symbol,
             "timeframe": timeframe,
             "state": state,
@@ -900,6 +906,10 @@ class VolatilityAlgorithm(Algorithm):
         return Verdict(
             ok=True,
             points=[],
+            # 大少 2026-09-10 15:00 Spec Sync #54 v2.0.3 — 顯式 set state + confidence 落 Verdict 頂層 (對齊 §M2 self-check penalty audit field pattern)
+            # 凡人話: 之前 backend 漏咗, verdict.state / verdict.confidence 永遠 None, frontend 拎唔到
+            state=state,
+            confidence=confidence,
             meta=meta,
             warnings=[w.to_dict() if hasattr(w, 'to_dict') else w for w in warnings_list],
         )

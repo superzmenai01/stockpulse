@@ -447,4 +447,10 @@ def run_algorithm(
         "meta": meta_normalized,
         "warnings": verdict.warnings,
         "error": verdict.error,
+        # 大少 2026-09-10 15:05 Spec Sync #54 v2.0.3 — propagate Verdict.state + confidence 落 API response 頂層
+        # 凡人話: 之前 algorithm emit 落 Verdict 頂層 (state=state) 但 algorithm_runner 嘅 serialize return dict 冇 set, 拎返 None
+        # 對齊 §M2 self-check penalty audit field pattern + §Verdict meta shape 統一永久 rule (Spec Sync #53)
+        # Frontend verdict.state 拎到, 唔再 None
+        "state": verdict.state,
+        "confidence": verdict.confidence,
     }
