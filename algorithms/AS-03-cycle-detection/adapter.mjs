@@ -2862,19 +2862,149 @@ async function analyzeVolatility(klines, options = {}) {
   return verdict;
 }
 
+// ============================================================
+// M6_TOOLTIPS + M6_TOOLTIP_STYLE + tt() — Module-level (大少 2026-09-10 11:16)
+// 對齊 M1 v2.1.0 .verdict-tooltip pattern: position relative + cursor help + 底部 dotted underline + hover::after content attr(data-help) + 0.1s 即時顯示
+// 凡人話: 將所有 M6 technical term 凡人話解讀, 拎去 module-level 等 renderVolatilityResult + renderM6Dashboard 共用
+// 對齊 §改完先 ask 修正先 Commit (大少 2026-09-09 07:23): 全凡人話, 0 英文 technical term, 0 casual 詞
+// ============================================================
+const M6_TOOLTIPS = {
+  m6_title: '第六模組嘅目的: 用波動率 (大波動定細波動) 同通道 (布林帶 + 肯特納通道), 偵測股票係咪蓄緊力 (Squeeze) 準備爆發, 或者已經突破 (Breakout)。5 個 setup 對應 5 種動作',
+  m6_setup: 'Setup (入場 setup): 算法判斷嘅入場類型, 7 種: mtf_squeeze_fire (黃金爆發) / bear_squeeze_fire (沽空爆發) / confirmed_vcp_breakout (教科書突破) / clean_trend_expansion (上升趨勢) / clean_trend_breakdown (下跌趨勢) / genuine_squeeze_forming (蓄力中) / no_clear_setup (冇 setup)',
+
+  // ===== 5 個燈 =====
+  m6_squeeze_light: 'Squeeze 燈: 「而家係咪真嘅蓄緊力」嘅綠燈。3 個條件全部符合先綠: (1) Squeeze 狀態 = 是, (2) 質量 ≥ 0.7, (3) 持續 ≥ 3 日。否則紅燈',
+  m6_trend_light: 'Trend 燈: 「而家個股價有冇真方向」嘅綠燈。用 Hurst 指數 (0.45 以上) + ADX (20 以上) 兩招 confirm。否則紅燈 = random walk, 冇方向',
+  m6_setup_light: 'Setup 燈: 「有冇明確入場訊號」嘅綠燈。Setup 唔係 no_clear_setup + 信心 ≥ 60% 先綠。否則紅燈 = 觀望',
+  m6_three_lights: '3 個燈一齊睇: 3 個都綠 = 可以入場; 2 綠 1 紅 = 觀望等確認; ≤ 1 綠 = 唔好入場。大少用呢個 rule 快速判斷呢隻股票有冇落單價值',
+
+  // ===== Squeeze 4 個 metric =====
+  m6_squeeze_state: 'Squeeze 狀態: 個股價嘅波動率 (上落幅度) 係咪收緊咗。用兩條線比較: 布林帶 (BB) 同肯特納通道 (KC), BB 細過 KC 就叫做 Squeeze (蓄力中)',
+  m6_squeeze_duration: '持續日數: 而家已經連續收緊咗幾多日。≥ 3 日先算「真蓄力」, 1-2 日嘅短暫收縮可能假訊號',
+  m6_squeeze_quality: '質量分數: 0-100%, 用 3 招計: 水平度 (30%) + 量集中度 (40%) + 價集中度 (30%)。≥ 70% 為真 Squeeze, < 70% 為弱蓄力',
+  m6_squeeze_genuine: '真 Squeeze: 質量 ≥ 70% + 持續 ≥ 3 日, 兩個都要符合先叫「真」嘅 Squeeze, 大少可以信呢個信號',
+
+  // ===== ATR 分解 4 個 metric =====
+  m6_atr_title: 'ATR 分解: 將個股價嘅大波動 (ATR) 拆開兩部分: (1) Trend ATR = 跟住趨勢嘅波動 (有意義嘅), (2) Noise ATR = 噪音波動 (無意義嘅)。分開睇可以知道個走勢係「真」定「假」',
+  m6_trend_atr: 'Trend ATR: 跟住趨勢嘅波動幅度。越大代表趨勢越明確 (例如上升時有大陽燭)。接近 0 代表冇趨勢',
+  m6_noise_atr: 'Noise ATR: 純粹噪音嘅波動 (例如 1 日升 1 日跌嘅無規則震盪)。越大代表個股價越亂行',
+  m6_snr: 'SNR (Signal-to-Noise Ratio, 信噪比): Trend ATR ÷ Noise ATR。> 2 = 趨勢清晰 (信號強), 0.5-2 = 信號一般, < 0.5 = 噪音 (信號弱)',
+  m6_regime: 'Regime (市場狀態): 分 3 種。trending = 趨勢清晰, 信號強; balanced = 平衡, 信號一般; choppy = 震盪亂行, 唔好入場',
+
+  // ===== VCP 4 個 metric =====
+  m6_vcp_title: 'VCP (Volatility Contraction Pattern, 波動率收縮形態): 教科書嘅「蓄力 → 突破」pattern。Mark Minervini 標準: 2-5 個越嚟越細嘅回調 (C1 > C2 > C3) + 每次低點越嚟越高 + 量縮確認 + 喺上升趨勢中',
+  m6_vcp_detected: 'VCP 檢測: 算法判斷呢隻股票有冇跟 Minervini 標準嘅 VCP 結構。要 4 個條件全部符合: progressively smaller + higher lows + 量縮 + Stage 2 上升趨勢',
+  m6_vcp_contractions: 'Contractions 數: 過去 60 日內拎到幾多個高低點 pair。Minervini 標準要 ≥ 2 對, 越多越穩固',
+  m6_vcp_higher_lows: 'Higher Lows (越嚟越高嘅低點): 每個回調嘅最低價都比之前高, 證明買家每次喺更高價接貨 (institutional accumulation)。如果低點越嚟越低 = 派發, 唔係 VCP',
+  m6_vcp_vol_tightening: 'VCP 量縮: 最後一個 contraction 期間嘅成交量 < 之前嘅 60%。證明沽壓耗盡, 賣家已經走晒, 準備突破',
+  m6_vcp_stage2: 'Stage 2 Uptrend: 200 日均線向上斜 + 現價接近 200 日均線。VCP 必須喺上升趨勢中先 work, 跌市 VCP = 派發 pattern, 唔係積累',
+
+  // ===== Follow-through 4 個 metric =====
+  m6_follow_title: 'Follow-through (突破跟進): 個股價突破 (向上或向下) 之後, 跟進嘅力量有幾強。健康嘅突破 = 突破日量大 + 跟住幾日量縮 (沽壓耗盡) + 價格繼續推進',
+  m6_follow_score: '跟進評分: 0-100%, 量衰 (50%) + 價推進 (50%)。≥ 50% 為健康跟進, < 40% 為假突破 (weak_follow_through)',
+  m6_volume_decay: '量衰: 突破日之後嘅成交量萎縮程度。突破日量大, 跟住縮 = 健康 (沽壓耗盡)。突破日量大, 跟住仲大 = 後繼無力',
+  m6_price_progression: '價推進: 突破後幾日股價繼續推進嘅比率。100% = 每日都升, 0% = 全部跌',
+  m6_breakout_direction: '突破方向: up = 向上突破, down = 向下突破 (跌穿), none = 冇突破。失敗模式 weak_follow_through 只喺向上突破 + 跟進無力嗰陣先 trigger',
+
+  // ===== 5 種 setup 詳細 =====
+  m6_setup_mtf_squeeze_fire: '黃金 Squeeze Fire (向上, 評分 0.95): 之前 Squeeze 壓縮一段時間, 而家突然爆發, 加上動能向上 = 黃金買入訊號。立即買, 止損 BB 下軌',
+  m6_setup_bear_squeeze_fire: '沽空 Squeeze Fire (向下, 評分 0.85): 之前 Squeeze 壓縮一段時間, 而家突然向下爆發 = 沽空訊號。立即沽/避, 止損 BB 上軌',
+  m6_setup_confirmed_vcp_breakout: 'VCP 教科書突破 (評分 0.9): 跟 Minervini 標準嘅 VCP 結構 + 量縮確認 + 向上突破 = 教科書買入訊號。確認後入場, 止損最後低點',
+  m6_setup_clean_trend_expansion: '上升趨勢擴張 (評分 0.7): noise 細, trend 強, regime trending, 跟進有力。順勢買, 跟隨止損',
+  m6_setup_clean_trend_breakdown: '下跌趨勢擴張 (評分 0.65): noise 細, trend 強 (但向下), regime trending, 跟進有力 (向下)。順勢沽/避, 跟隨止損',
+  m6_setup_genuine_squeeze_forming: '蓄力中 (評分 0.55): 真 Squeeze + 高質量 + 仲未突破。唔好搶跑, 等突破訊號先入場',
+  m6_setup_no_clear_setup: '冇明確 setup (評分 0.25): 冇 Squeeze 冇 VCP 冇 trend。觀望, 唔好入場',
+
+  // ===== 失敗模式 =====
+  m6_failure_none: '冇失敗模式: 個 setup 結構正常, 冇明顯問題',
+  m6_failure_noisy_squeeze: '噪音 Squeeze: 表面 Squeeze 但內部 noise 大過 trend × 2, 結構唔穩定, 突破容易失敗。最高入場評分 0.4',
+  m6_failure_weak_follow_through: '跟進無力 (假突破): 向上突破之後跟進細過 0.4, 屬於假突破訊號。最高入場評分 0.4',
+  m6_failure_no_setup: '冇 setup: 冇 Squeeze 冇突破 + 環境震盪。基本上冇嘢可以落單',
+
+  // ===== Hurst+ADX gate =====
+  m6_regime_gate: 'Regime Gate (環境確認): 用 Hurst 指數 + ADX 兩招 confirm 個股價有冇真方向。PASS = 兩招都過, FAIL = 其中一招唔過。FAIL 嗰陣 verdict 仍出但要小心, 因為 random walk 環境 setup 容易失效',
+  m6_hurst: 'Hurst 指數 (0-1): 量度個股價有冇「持續方向」。> 0.55 = trending (有方向), 0.45-0.55 = random walk (冇方向), < 0.45 = mean-reverting (會返去平均)。對齊 M3 永久 rule',
+  m6_adx: 'ADX (Average Directional Index, 0-100): 量度趨勢嘅「強度」。> 25 = 強趨勢, 20-25 = 發展中, < 20 = 弱趨勢 / 橫行',
+
+  // ===== Momentum Histogram =====
+  m6_momentum_title: 'Momentum Histogram (動能直方圖): 對齊 TTM Squeeze John Carter 2005 標準。過去 20 日 close 嘅線性回歸斜率, 量度個股價嘅「加速度」。> 0 = 向上動能, < 0 = 向下動能',
+  m6_momentum_dir: '動能方向: bull (向上) / bear (向下) / flat (平)。對應 setup 推導: bull → mtf_squeeze_fire, bear → bear_squeeze_fire, flat → 通用 squeeze fire',
+
+  // ===== Self-check =====
+  m6_self_check: 'Self-Check (自我診斷): 算法跑完之後自我檢查 verdict 信唔信。critical/warning level warning 觸發會將信心自動折到 30% floor, 避免 random walk / data 不足等問題導致錯誤訊號',
+  m6_original_confidence: '原本信心: 冇經過 self-check penalty 嘅原始信心, 畀 audit 同 frontend verify 用。大少睇到「conf 由 80% 折到 30% 因為 self_check_triggered=true」就知道點解',
+
+  // ===== S1-S12 rules =====
+  m6_S1: 'S1 日線 Squeeze: BB 喺 KC 入面 (波動率收縮), 證明股價喺蓄力中',
+  m6_S2: 'S2 Squeeze 質量高: 質量分數 ≥ 0.7, 證明蓄力有質素 (水平 + 量集中 + 價集中)',
+  m6_S3: 'S3 Squeeze 持續夠耐: 連續收縮 ≥ 3 日, 排除短暫波動嘅假訊號',
+  m6_S4: 'S4 趨勢 ATR 強: SNR > 2, 趨勢清晰, 信號強',
+  m6_S5: 'S5 噪音 ATR 高: SNR < 0.5, 環境震盪亂行, 唔好落單 (反向 rule)',
+  m6_S6: 'S6 結構性收縮: 過去 5 日總波動率 < 之前 5 日 × 0.85, 波動率持續下降中',
+  m6_S7: 'S7 結構性擴張: 過去 5 日總波動率 > 之前 5 日 × 1.15, 波動率持續上升中',
+  m6_S8: 'S8 籌碼集中: Squeeze 期間量集中度 > 0.6, 莊家偷偷吸納',
+  m6_S9: 'S9 VCP 結構 (Minervini): 跟 Mark Minervini 標準嘅 VCP, 2-5 個 progressively smaller 收縮',
+  m6_S10: 'S10 VCP 量縮確認: 最後 contraction 嘅量 < 之前 × 0.6, 證明沽壓耗盡',
+  m6_S11: 'S11 突破跟進: 突破後跟進評分 ≥ 0.5, 健康跟進唔係假突破',
+  m6_S12: 'S12 失敗模式: 偵測到 noisy_squeeze / weak_follow_through / no_setup (反向 rule)',
+
+  // ===== 信心 + 勝率 =====
+  m6_entry_score: '入場評分 (0-100%): 算法對呢個 setup 嘅可信度。≥ 70% = 高入場, 40-70% = 中等, < 40% = 低入場唔好落單',
+  m6_win_probability: '估計勝率 (0-82%): 根據 setup 類型 + 失敗模式嘅歷史勝率。歷史統計, 唔係保證',
+};
+
+const M6_TOOLTIP_STYLE = `<style>
+  .m6-verdict-tooltip { position: relative; cursor: help; border-bottom: 1px dotted #999; }
+  .m6-verdict-tooltip:hover::after {
+    content: attr(data-help);
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    background: #2c3e50; color: #fff; padding: 8px 12px; border-radius: 6px;
+    white-space: normal; width: max-content; max-width: 380px; min-width: 200px;
+    font-size: 12px; line-height: 1.5; z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: fadeIn 0.1s ease-in;
+  }
+  .m6-verdict-tooltip:hover::before {
+    content: ''; position: absolute; bottom: 95%; left: 50%; transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #2c3e50;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+</style>`;
+
+// tt() helper: 用 span 包住要解讀嘅 text, 加 m6-verdict-tooltip class + data-help
+const tt = (label, key) => `<span class="m6-verdict-tooltip" data-help="${(M6_TOOLTIPS[key] || '').replace(/"/g, '&quot;')}">${label}</span>`;
+
 export function renderVolatilityResult(verdict) {
+  // ===== M6 v2.0.0 — 凡人話 popup tooltip 註解 (對齊 M1 v2.1.0) =====
+  // M6_TOOLTIPS + M6_TOOLTIP_STYLE + tt() 已 extract 去 module-level (大少 2026-09-10 11:16), renderM6Dashboard 都共用
+  // 凡人話: 大少話「那些什麼燈，什麼VCP等我全都不明白」, 將 verdict card 入面所有 technical term 加 hover popup 即刻見到解讀
   const stateColors = { UP: '#52c41a', DOWN: '#ff4d4f', SIDEWAYS: '#faad14', TRANSITION: '#722ed1' };
   const stateLabels = { UP: '上升', DOWN: '下跌', SIDEWAYS: '橫行', TRANSITION: '轉折' };
   const setupLabels = {
     mtf_squeeze_fire: '🏆 黃金 Squeeze Fire',
+    bear_squeeze_fire: '🔴 沽空 Squeeze Fire',
     confirmed_vcp_breakout: '🏆 確認 VCP 突破',
-    genuine_squeeze_forming: '⏳ 真 Squeeze 蓄力中',
     clean_trend_expansion: '🟢 乾淨趨勢擴張',
+    clean_trend_breakdown: '🔴 乾淨趨勢沽空',
+    genuine_squeeze_forming: '⏳ 真 Squeeze 蓄力中',
     no_clear_setup: '🟡 觀望 (no_clear_setup)',
+  };
+  const setupKeys = {
+    mtf_squeeze_fire: 'm6_setup_mtf_squeeze_fire',
+    bear_squeeze_fire: 'm6_setup_bear_squeeze_fire',
+    confirmed_vcp_breakout: 'm6_setup_confirmed_vcp_breakout',
+    clean_trend_expansion: 'm6_setup_clean_trend_expansion',
+    clean_trend_breakdown: 'm6_setup_clean_trend_breakdown',
+    genuine_squeeze_forming: 'm6_setup_genuine_squeeze_forming',
+    no_clear_setup: 'm6_setup_no_clear_setup',
   };
   const failureLabels = {
     none: '🟢 無', noisy_squeeze: '🔴 噪音 Squeeze',
     weak_follow_through: '🔴 跟進無力', no_setup: '🟡 冇明確 setup',
+  };
+  const failureKeys = {
+    none: 'm6_failure_none', noisy_squeeze: 'm6_failure_noisy_squeeze',
+    weak_follow_through: 'm6_failure_weak_follow_through', no_setup: 'm6_failure_no_setup',
   };
   const color = stateColors[verdict.meta.state] || '#666';
   const stateLabel = stateLabels[verdict.meta.state] || verdict.meta.state;
@@ -2890,38 +3020,33 @@ export function renderVolatilityResult(verdict) {
   const follow = verdict.meta.followThrough || {};
   const matchedRules = verdict.meta.matchedRules || [];
   const rulesFired = verdict.meta.rulesFired || 0;
-  const ruleMap = { S1: ['日線 Squeeze', 'medium'], S2: ['Squeeze 質量高', 'medium'], S3: ['Squeeze 持續夠耐', 'medium'], S4: ['趨勢 ATR 強', 'strong'], S5: ['噪音 ATR 高', 'strong'], S6: ['結構性收縮', 'medium'], S7: ['結構性擴張', 'medium'], S8: ['籌碼集中', 'medium'], S9: ['VCP 結構', 'medium'], S10: ['VCP 量縮確認', 'medium'], S11: ['突破跟進', 'medium'], S12: ['失敗模式', 'strong'] };
+  const ruleMap = { S1: ['日線 Squeeze', 'medium', 'm6_S1'], S2: ['Squeeze 質量高', 'medium', 'm6_S2'], S3: ['Squeeze 持續夠耐', 'medium', 'm6_S3'], S4: ['趨勢 ATR 強', 'strong', 'm6_S4'], S5: ['噪音 ATR 高', 'strong', 'm6_S5'], S6: ['結構性收縮', 'medium', 'm6_S6'], S7: ['結構性擴張', 'medium', 'm6_S7'], S8: ['籌碼集中', 'medium', 'm6_S8'], S9: ['VCP 結構 (Minervini)', 'medium', 'm6_S9'], S10: ['VCP 量縮確認', 'medium', 'm6_S10'], S11: ['突破跟進', 'medium', 'm6_S11'], S12: ['失敗模式', 'strong', 'm6_S12'] };
   const matchedRulesHtml = matchedRules.length === 0
     ? '<li style="color: #888;">無 rule 觸發</li>'
-    : matchedRules.map(rid => { const [l, s] = ruleMap[rid] || [rid, 'medium']; return '<li class="rule-' + s + '"><strong>' + rid + '</strong> — ' + l + ' <small>(' + s + ')</small></li>'; }).join('');
+    : matchedRules.map(rid => { const [l, s, k] = ruleMap[rid] || [rid, 'medium', null]; return '<li class="rule-' + s + '"><strong>' + tt(rid, k) + '</strong> — ' + tt(l, k) + ' <small>(' + s + ')</small></li>'; }).join('');
 
   // 📌 波動率結構 + 入場評分解讀 (plain language)
   const entryExplain = entryScorePct >= 70 ? '高入場評分, 適合入市' : entryScorePct >= 40 ? '中等入場評分, 觀望或小注' : '低入場評分, 唔建議入市';
   const setupDetail = setupType === 'mtf_squeeze_fire' ? `
     <p>📌 <strong>簡單講</strong>: 出現黃金 Squeeze Fire setup, 即 Squeeze 壓縮一段時間後開始爆發, ATR 開始擴張, 典型嘅大波動開始訊號。</p>
-    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 大波動開始, 配合 M1 MA 確認方向 + M5 量价確認資金跟進 = 黃金買點。留意失敗模式 ${failureLabels[failureMode] || failureMode}。</p>
+  ` : setupType === 'bear_squeeze_fire' ? `
+    <p>📌 <strong>簡單講</strong>: 出現沽空 Squeeze Fire setup, Squeeze 壓縮後向下爆發, 典型嘅下跌開始訊號。</p>
   ` : setupType === 'confirmed_vcp_breakout' ? `
     <p>📌 <strong>簡單講</strong>: 出現教科書 VCP 突破 setup, 波動率持續收縮後放量突破, 典型嘅趨勢啟動訊號。</p>
-    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: VCP 突破, 趨勢啟動訊號強烈, 配合 M1 MA + M2 HL 確認結構轉強 = 強烈買入。</p>
   ` : setupType === 'genuine_squeeze_forming' ? `
     <p>📌 <strong>簡單講</strong>: 真正嘅 Squeeze 蓄力中, 波動率持續壓縮, 典型嘅突破前蓄力階段。</p>
-    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 蓄力中, 等待突破訊號。配合 M1 MA + 量能變化捕捉突破時機, 唔好搶跑。</p>
   ` : setupType === 'clean_trend_expansion' ? `
     <p>📌 <strong>簡單講</strong>: 趨勢擴張, 噪音低, 跟進有力, 典型嘅乾淨趨勢運行。</p>
-    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 乾淨趨勢, 可考慮持有 / 順勢入市。留意失敗模式 ${failureLabels[failureMode] || failureMode}。</p>
+  ` : setupType === 'clean_trend_breakdown' ? `
+    <p>📌 <strong>簡單講</strong>: 趨勢沽空中, 噪音低, 跟進有力, 典型嘅乾淨下跌趨勢。</p>
   ` : `
     <p>📌 <strong>簡單講</strong>: 暫時冇明確嘅波動率 setup, 結構混亂或者趨勢唔清晰。</p>
-    <p>📊 <strong>咩意思</strong>: 入場評分 ${entryScorePct}% (${entryExplain}) · 估計勝率 ${winProbPct}% · 失敗模式: ${failureLabels[failureMode] || failureMode} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
-    <p>💡 <strong>點睇呢個結果</strong>: 等待方向確認, 唔好強行入市。配合 M1 MA 確認大方向, 留意 Squeeze 訊號 (可能係蓄力)。</p>
   `;
   return `
+    ${M6_TOOLTIP_STYLE}
     <div class="as03-verdict as03-module-card">
       <div class="module-card-header">
-        <h3 class="module-header">波動率與市場結構收縮擴張 (Volatility)</h3>
+        <h3 class="module-header">${tt('波動率與市場結構收縮擴張 (Volatility)', 'm6_title')}</h3>
         <p class="module-purpose">用波動率 + 通道, 偵測 Squeeze (爆發前壓縮) 同 Breakout (突破)</p>
       </div>
       <div class="verdict-header">
@@ -2931,50 +3056,63 @@ export function renderVolatilityResult(verdict) {
         </div>
         <div class="confidence">
           <div class="conf-pct">${entryScorePct}%</div>
-          <div class="conf-label">入場評分 — ${entryExplain}</div>
+          <div class="conf-label">${tt('入場評分', 'm6_entry_score')} — ${entryExplain}</div>
         </div>
         <div class="data-summary">
-          <div class="summary-row"><span>Setup:</span> <strong>${setupLabels[setupType] || setupType}</strong></div>
-          <div class="summary-row"><span>估計勝率:</span> <strong>${winProbPct}% (歷史統計, 唔係保證)</strong></div>
-          <div class="summary-row"><span>失敗模式:</span> <strong>${failureLabels[failureMode] || failureMode}</strong></div>
+          <div class="summary-row"><span>${tt('Setup', 'm6_setup')}:</span> <strong>${tt(setupLabels[setupType] || setupType, setupKeys[setupType] || 'm6_setup_no_clear_setup')}</strong></div>
+          <div class="summary-row"><span>${tt('估計勝率', 'm6_win_probability')}:</span> <strong>${winProbPct}% (歷史統計, 唔係保證)</strong></div>
+          <div class="summary-row"><span>失敗模式:</span> <strong>${tt(failureLabels[failureMode] || failureMode, failureKeys[failureMode] || 'm6_failure_none')}</strong></div>
           <div class="summary-row"><span>觸發 Rules:</span> <strong>${rulesFired} 條</strong></div>
         </div>
       </div>
       <div class="interpretation">
         <strong>📌 波動率結構：</strong>${verdict.meta.interpretation}
         ${setupDetail}
+        <p>📊 <strong>咩意思</strong>: 入場評分 ${tt(entryScorePct + '%', 'm6_entry_score')} · 估計勝率 ${tt(winProbPct + '%', 'm6_win_probability')} · 失敗模式: ${tt(failureLabels[failureMode] || failureMode, failureKeys[failureMode] || 'm6_failure_none')} · 識別到 ${rulesFired} 條 S-rules 觸發。</p>
+        <p>💡 <strong>點睇呢個結果</strong>: 配合 M1 MA + M2 HL 確認大方向, 留意 Squeeze 訊號 (可能係蓄力)。永遠唔好單獨靠 M6 落單, 配合 M1-M5 一齊睇。</p>
       </div>
       <div class="key-metrics">
         <div class="metric-card">
-          <h4>Squeeze 狀態</h4>
-          <p>收縮中: <strong>${squeeze.isSqueeze ? '🟡 是' : '🟢 否'}</strong></p>
-          <p>持續: <strong>${squeeze.duration || 0} 日</strong></p>
-          <p>質量: <strong>${((squeeze.qualityScore || 0) * 100).toFixed(0)}%</strong></p>
-          <p>真 Squeeze: <strong>${squeeze.isGenuine ? '✅' : '❌'}</strong></p>
+          <h4>${tt('Squeeze 狀態 (波動率收縮)', 'm6_squeeze_state')}</h4>
+          <p>${tt('收縮中', 'm6_squeeze_state')}: <strong>${squeeze.isSqueeze ? '🟡 是' : '🟢 否'}</strong></p>
+          <p>${tt('持續', 'm6_squeeze_duration')}: <strong>${squeeze.duration || 0} 日</strong></p>
+          <p>${tt('質量', 'm6_squeeze_quality')}: <strong>${((squeeze.qualityScore || 0) * 100).toFixed(0)}%</strong></p>
+          <p>${tt('真 Squeeze', 'm6_squeeze_genuine')}: <strong>${squeeze.isGenuine ? '✅' : '❌'}</strong></p>
         </div>
         <div class="metric-card">
-          <h4>ATR 分解</h4>
-          <p>Trend ATR: <strong>${atrDecomp.trendAtr || 0}</strong></p>
-          <p>Noise ATR: <strong>${atrDecomp.noiseAtr || 0}</strong></p>
-          <p>SNR: <strong>${atrDecomp.snr || 0}</strong></p>
-          <p>Regime: <strong>${atrDecomp.regime || 'N/A'}</strong></p>
+          <h4>${tt('ATR 分解 (波動率分開睇)', 'm6_atr_title')}</h4>
+          <p>${tt('Trend ATR', 'm6_trend_atr')}: <strong>${atrDecomp.trendAtr || 0}</strong></p>
+          <p>${tt('Noise ATR', 'm6_noise_atr')}: <strong>${atrDecomp.noiseAtr || 0}</strong></p>
+          <p>${tt('SNR (信噪比)', 'm6_snr')}: <strong>${atrDecomp.snr || 0}</strong></p>
+          <p>${tt('Regime (市場狀態)', 'm6_regime')}: <strong>${atrDecomp.regime || 'N/A'}</strong></p>
         </div>
         <div class="metric-card">
-          <h4>VCP 結構</h4>
-          <p>檢測: <strong>${vcp.detected ? '✅ 是' : '❌ 否'}</strong></p>
-          <p>高低點對: <strong>${vcp.highLowPairs || 0}</strong></p>
-          <p>量縮確認: <strong>${vcp.volTightening ? '✅' : '❌'}</strong></p>
+          <h4>${tt('VCP 結構 (波動率收縮形態)', 'm6_vcp_title')}</h4>
+          <p>${tt('檢測', 'm6_vcp_detected')}: <strong>${vcp.detected ? '✅ 是' : '❌ 否'}</strong></p>
+          <p>${tt('Contractions (收縮對數)', 'm6_vcp_contractions')}: <strong>${vcp.contractions || 0} 對</strong></p>
+          <p>${tt('Higher Lows (越嚟越高嘅低點)', 'm6_vcp_higher_lows')}: <strong>${vcp.higherLows ? '✅' : '❌'}</strong></p>
+          <p>${tt('量縮確認', 'm6_vcp_vol_tightening')}: <strong>${vcp.volTightening ? '✅' : '❌'}</strong></p>
+          <p>${tt('Stage 2 上升趨勢', 'm6_vcp_stage2')}: <strong>${vcp.stage2Uptrend ? '✅' : '❌'}</strong></p>
         </div>
         <div class="metric-card">
-          <h4>Follow-through</h4>
-          <p>跟進評分: <strong>${((follow.followScore || 0) * 100).toFixed(0)}%</strong></p>
-          <p>量衰: <strong>${((follow.volumeDecay || 0) * 100).toFixed(0)}%</strong></p>
-          <p>價推進: <strong>${((follow.priceProgression || 0) * 100).toFixed(0)}%</strong></p>
+          <h4>${tt('Follow-through (突破跟進)', 'm6_follow_title')}</h4>
+          <p>${tt('跟進評分', 'm6_follow_score')}: <strong>${((follow.followScore || 0) * 100).toFixed(0)}%</strong></p>
+          <p>${tt('量衰', 'm6_volume_decay')}: <strong>${((follow.volumeDecay || 0) * 100).toFixed(0)}%</strong></p>
+          <p>${tt('價推進', 'm6_price_progression')}: <strong>${((follow.priceProgression || 0) * 100).toFixed(0)}%</strong></p>
+          <p>${tt('突破方向', 'm6_breakout_direction')}: <strong>${follow.direction || 'none'}</strong></p>
         </div>
       </div>
       <div class="matched-rules">
-        <h4>🎯 觸發 Rules (${rulesFired} 條)</h4>
+        <h4>🎯 觸發 Rules (${rulesFired} 條) <small style="color:#888;">— hover 每條 rule 睇解讀</small></h4>
         <ul>${matchedRulesHtml}</ul>
+      </div>
+      <div style="background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:10px 14px;margin-top:12px;font-size:13px;">
+        <strong>📊 v2.0.0 新加 audit field</strong>:
+        ${tt('Hurst 指數', 'm6_hurst')} = <strong>${(verdict.meta.hurst || 0).toFixed(4)}</strong> ·
+        ${tt('ADX', 'm6_adx')} = <strong>${(verdict.meta.adx || 0).toFixed(2)}</strong> ·
+        ${tt('Regime Gate (環境確認)', 'm6_regime_gate')} = <strong>${verdict.meta.regimeGate || 'N/A'}</strong> ·
+        ${tt('動能方向', 'm6_momentum_dir')} = <strong>${verdict.meta.momentumDir || 'flat'}</strong> ·
+        ${tt('Self-Check', 'm6_self_check')} = <strong>${verdict.meta.selfCheckTriggered ? '⚠️ 觸發' : '✅ 正常'}</strong>${verdict.meta.selfCheckTriggered ? ` · ${tt('原本信心', 'm6_original_confidence')} = ${((verdict.meta.originalConfidence || 0) * 100).toFixed(0)}%` : ''}
       </div>
       <details class="meta-details">
         <summary>🔧 配置 (debug 用)</summary>
@@ -2985,13 +3123,339 @@ export function renderVolatilityResult(verdict) {
 }
 
 export function getVolatilityHelp() {
-  return `<h4>波動率 v1.0 · 12 條規則 (1 到 12 條)</h4>
-  <p>分析股價波動嘅大細同變化, 等你知道幾時會爆升爆跌</p>
-  <p><strong>1 到 3 條 波動收縮 (Squeeze)</strong>: 1 日線波動收縮 / 2 質素好 / 3 持續夠耐</p>
-  <p><strong>4 到 7 條 波動分解</strong>: 4 趨勢波動強 / 5 噪音波動高 / 6 結構性收縮 / 7 結構性擴張</p>
-  <p><strong>8 到 11 條 收縮震盪同跟進</strong>: 8 籌碼集中 / 9 收縮震盪結構 / 10 收縮震盪量縮 / 11 突破跟進</p>
-  <p><strong>12 條 失敗模式</strong>: 噪音式收縮 / 跟進唔夠 — 入場上限 0.4</p>
-  <p><strong>5 種情況</strong>: 多時段收縮爆發 0.95 / 確認收縮震盪突破 0.9 / 乾淨趨勢擴張 0.7 / 真正收縮形成中 0.55 / 冇明確情況 0.25</p>`;
+  // 大少 2026-09-10 10:09 trigger (Spec Sync #54 Phase 5): 加入 Mavis 嘅「M6 三步睇完 (凡人話)」教學
+  // 凡人話: 撳 M6 algo 嗰陣, 喺 inputs 旁邊嘅 help box 即時見到 3 步教學 + 5 種 setup 動作表 + HK.00700 真實例子
+  // 對齊 §M6 Volatility v2.0.0 永久 rule「3 個 sections 永久 rule (#11056)": 📖 詳細解讀 + 🎯 策略建議 + 💡 點用點睇
+  return `
+    <div style="font-size:13px;line-height:1.6;">
+      <h4 style="color:#1890ff;margin:0 0 8px 0;">🎓 M6 三步睇完 (凡人話) · v2.0.0</h4>
+
+      <details open style="background:#e6f7ff;border-left:3px solid #1890ff;padding:8px 12px;border-radius:4px;margin-bottom:10px;">
+        <summary style="cursor:pointer;font-weight:600;color:#1890ff;">📖 第一步: 問 3 個問題</summary>
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;">
+          <tr style="background:#f5f5f5;">
+            <th style="padding:4px;text-align:left;">問題</th>
+            <th style="padding:4px;text-align:left;">點睇</th>
+            <th style="padding:4px;text-align:left;">點解讀</th>
+          </tr>
+          <tr>
+            <td style="padding:4px;"><b>Q1: 而家係咩 setup?</b></td>
+            <td style="padding:4px;">睇 <code>setupType</code></td>
+            <td style="padding:4px;">5 種 setup 對應 5 種動作</td>
+          </tr>
+          <tr style="background:#fafafa;">
+            <td style="padding:4px;"><b>Q2: 個 setup 信唔信?</b></td>
+            <td style="padding:4px;">睇 <code>confidence</code> + <code>selfCheckTriggered</code></td>
+            <td style="padding:4px;">≥ 0.6 可信, &lt; 0.3 唔好落單</td>
+          </tr>
+          <tr>
+            <td style="padding:4px;"><b>Q3: 個 trend 信唔信?</b></td>
+            <td style="padding:4px;">睇 <code>regimeGate</code> (Hurst+ADX)</td>
+            <td style="padding:4px;">PASS = 真 trend, FAIL = 亂行</td>
+          </tr>
+        </table>
+      </details>
+
+      <details open style="background:#fff7e6;border-left:3px solid #fa8c16;padding:8px 12px;border-radius:4px;margin-bottom:10px;">
+        <summary style="cursor:pointer;font-weight:600;color:#fa8c16;">🎯 第二步: 5 種 setup 動作表</summary>
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;">
+          <tr style="background:#f5f5f5;">
+            <th style="padding:4px;text-align:left;">Setup</th>
+            <th style="padding:4px;text-align:left;">意思</th>
+            <th style="padding:4px;text-align:left;">你要點做</th>
+          </tr>
+          <tr><td style="padding:4px;">🟢 <b>mtf_squeeze_fire</b> (0.95)</td><td style="padding:4px;">黃金爆發 (向上)</td><td style="padding:4px;">立即買, 止損 BB 下軌</td></tr>
+          <tr style="background:#fafafa;"><td style="padding:4px;">🔴 <b>bear_squeeze_fire</b> (0.85)</td><td style="padding:4px;">黃金爆發 (向下)</td><td style="padding:4px;">立即沽/避, 止損 BB 上軌</td></tr>
+          <tr><td style="padding:4px;">🏆 <b>confirmed_vcp_breakout</b> (0.9)</td><td style="padding:4px;">教科書突破</td><td style="padding:4px;">確認後買, 止損最後低點</td></tr>
+          <tr style="background:#fafafa;"><td style="padding:4px;">🟢 <b>clean_trend_expansion</b> (0.7)</td><td style="padding:4px;">上升趨勢</td><td style="padding:4px;">順勢買, 跟隨止損</td></tr>
+          <tr><td style="padding:4px;">🔴 <b>clean_trend_breakdown</b> (0.65)</td><td style="padding:4px;">下跌趨勢</td><td style="padding:4px;">順勢沽/避, 跟隨止損</td></tr>
+          <tr style="background:#fafafa;"><td style="padding:4px;">⏳ <b>genuine_squeeze_forming</b> (0.55)</td><td style="padding:4px;">蓄力中</td><td style="padding:4px;"><b>唔好搶跑</b>, 等突破</td></tr>
+          <tr><td style="padding:4px;">🟡 <b>no_clear_setup</b> (0.25)</td><td style="padding:4px;">觀望</td><td style="padding:4px;"><b>等方向, 唔好入場</b></td></tr>
+        </table>
+      </details>
+
+      <details style="background:#f6ffed;border-left:3px solid #52c41a;padding:8px 12px;border-radius:4px;margin-bottom:10px;">
+        <summary style="cursor:pointer;font-weight:600;color:#52c41a;">💡 第三步: 用 HK.00700 真實 verdict 行一次 (撳開睇)</summary>
+        <div style="margin-top:8px;">
+          <p style="margin:0 0 6px 0;"><b>個案: HK.00700 騰訊</b> (2026-09-10 真實 verdict)</p>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr style="background:#f5f5f5;">
+              <th style="padding:4px;text-align:left;">步驟</th>
+              <th style="padding:4px;text-align:left;">睇乜</th>
+              <th style="padding:4px;text-align:left;">00700 真實數值</th>
+              <th style="padding:4px;text-align:left;">凡人話解讀</th>
+            </tr>
+            <tr>
+              <td style="padding:4px;"><b>Q1 setup</b></td>
+              <td style="padding:4px;">setupType</td>
+              <td style="padding:4px;"><code>no_clear_setup</code></td>
+              <td style="padding:4px;">🟡 觀望中, 唔好入場</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;"><b>Q2 信唔信</b></td>
+              <td style="padding:4px;">confidence</td>
+              <td style="padding:4px;">0.25 + selfCheck=False</td>
+              <td style="padding:4px;">0.25 &lt; 0.3 → 唔可信, banner 顯示 🔧 系統警告</td>
+            </tr>
+            <tr>
+              <td style="padding:4px;"><b>Q3 trend 信唔信</b></td>
+              <td style="padding:4px;">regimeGate</td>
+              <td style="padding:4px;">❌ <b>FAIL</b> (Hurst 0.43 &lt; 0.45)</td>
+              <td style="padding:4px;">00700 random walk, 冇真 trend</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;">Squeeze?</td>
+              <td style="padding:4px;">isSqueeze</td>
+              <td style="padding:4px;">✅ 是, 3 日</td>
+              <td style="padding:4px;">正在收縮, 但未爆</td>
+            </tr>
+            <tr>
+              <td style="padding:4px;">Squeeze 質素?</td>
+              <td style="padding:4px;">qualityScore</td>
+              <td style="padding:4px;">0.82 (≥ 0.7)</td>
+              <td style="padding:4px;">真 squeeze, 質素好</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;">動能方向?</td>
+              <td style="padding:4px;">momentumDir</td>
+              <td style="padding:4px;">🔴 <b>bear</b></td>
+              <td style="padding:4px;">下跌動能, 等爆發向下</td>
+            </tr>
+            <tr>
+              <td style="padding:4px;">VCP?</td>
+              <td style="padding:4px;">vcp.detected</td>
+              <td style="padding:4px;">❌ 否</td>
+              <td style="padding:4px;">HL=False, stage2=False, 唔係 Minervini 標準 VCP</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;">失敗模式?</td>
+              <td style="padding:4px;">failureMode</td>
+              <td style="padding:4px;">none</td>
+              <td style="padding:4px;">冇失敗模式, 但 setup 仍然 no_clear</td>
+            </tr>
+          </table>
+          <p style="background:#fffbe6;border:1px solid #ffe58f;border-radius:4px;padding:8px 10px;margin:8px 0 0 0;font-size:12px;">
+            <b>💡 結論</b>: 00700 而家係 <b>蓄力 + bear momentum + random walk</b>, 即係「等爆發但方向向下」。大少呢個 case 應該 <b>等 squeeze fire + 確認 bear → 沽/避</b>。
+          </p>
+        </div>
+      </details>
+
+      <details style="background:#f0f5ff;border-left:3px solid #2f54eb;padding:8px 12px;border-radius:4px;">
+        <summary style="cursor:pointer;font-weight:600;color:#2f54eb;">📊 簡化版視覺睇法: 3 個燈 (凡人話) · 撳開睇</summary>
+        <div style="margin-top:8px;font-size:12px;">
+          <p style="margin:0 0 6px 0;"><b>3 個燈嘅條件</b>:</p>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr style="background:#f5f5f5;">
+              <th style="padding:4px;text-align:left;">燈</th>
+              <th style="padding:4px;text-align:left;">綠燈條件</th>
+              <th style="padding:4px;text-align:left;">點解讀</th>
+            </tr>
+            <tr><td style="padding:4px;">🟢 <b>Squeeze 燈</b></td><td style="padding:4px;">isSqueeze + quality≥0.7 + duration≥3</td><td style="padding:4px;">真蓄力中</td></tr>
+            <tr style="background:#fafafa;"><td style="padding:4px;">🟢 <b>Trend 燈</b></td><td style="padding:4px;">regimeGate=PASS (H≥0.45, ADX≥20)</td><td style="padding:4px;">有真 trend</td></tr>
+            <tr><td style="padding:4px;">🟢 <b>Setup 燈</b></td><td style="padding:4px;">setup ≠ no_clear_setup + conf≥0.6</td><td style="padding:4px;">有入場訊號</td></tr>
+          </table>
+          <p style="margin:8px 0 0 0;">
+            <b>3 個都綠 = 可以入場</b><br/>
+            <b>2 綠 1 紅 = 觀望</b><br/>
+            <b>≤ 1 綠 = 唔好入場</b>
+          </p>
+        </div>
+      </details>
+
+      <div style="background:#f5f5f5;padding:8px 10px;border-radius:4px;margin-top:10px;font-size:12px;color:#666;">
+        <b>💡 重點提醒</b>:
+        <ul style="margin:4px 0 0 18px;padding:0;">
+          <li>Squeeze 只係「蓄力」, 唔係「必然升」, 要等 squeezeFire 先做</li>
+          <li>SNR 高 (trending) 先好入場, choppy 環境止損會被 noise 觸發</li>
+          <li>失敗模式 noisy_squeeze / weak_follow_through 最高入場 0.4</li>
+          <li>永遠配合 M1-M5 一齊睇, M6 嘅 setup 類型要同其他 module 一致先信</li>
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// 大少 2026-09-10 10:03 — M6 Dashboard 優化 UI (Spec Sync #54 Phase 4)
+// 大少 2026-09-10 11:16 — M6 Dashboard 加凡人話 popup tooltip (對齊 verdict card)
+// 凡人話: 大少 trigger「Dashboard 優化 UI 搬到圖表下邊」, 將 Mavis 教嘅 3 個燈 + 5 種 setup 動作表
+// 拎去 chart container 下面 (testing-page/index.html chart-section 入面 chart-container 之後, result section 之前)
+// 同時將所有 technical term 加 hover popup 凡人話解讀, 對齊 verdict card pattern
+// 對齊 testing page chart-control layout 永久 rule (大少 2026-08-20 23:20): dashboard 永遠排喺 chart-section 入面 chart container 之後
+// ============================================================
+
+export function renderM6Dashboard(verdict) {
+  // 拎 verdict meta, 計算 3 個燈, render dashboard panel
+  const meta = verdict.meta || {};
+  const squeeze = meta.squeeze || {};
+  const vcp = meta.vcpStructure || {};
+  const setup = meta.setupType || 'no_clear_setup';
+  const confidence = meta.entryScore || meta.confidence || 0;
+  const regimeGate = meta.regimeGate || 'UNKNOWN';
+  const momentumDir = meta.momentumDir || 'flat';
+  const failureMode = meta.failureMode || 'none';
+  const selfCheckTriggered = meta.selfCheckTriggered || false;
+  const originalConfidence = meta.originalConfidence || confidence;
+  const warnings = verdict.warnings || [];
+
+  // ===== 3 個燈 (凡人話) =====
+  const squeezeGreen = squeeze.isSqueeze && (squeeze.qualityScore || 0) >= 0.7 && (squeeze.duration || 0) >= 3;
+  const squeezeLabel = squeezeGreen ? '🟢 真蓄力' :
+                       squeeze.isSqueeze ? '🟡 弱蓄力' : '🔴 無 Squeeze';
+  const squeezeDetail = `quality ${((squeeze.qualityScore || 0) * 100).toFixed(0)}% · ${squeeze.duration || 0} 日`;
+
+  const trendGreen = regimeGate === 'PASS';
+  const trendLabel = trendGreen ? '🟢 有真 trend' : '🔴 Random walk';
+  const trendDetail = `H=${(meta.hurst || 0).toFixed(2)} · ADX=${(meta.adx || 0).toFixed(1)}`;
+
+  const setupGreen = setup !== 'no_clear_setup' && confidence >= 0.6;
+  const setupLabel = setupGreen ? '🟢 有 setup' : '🔴 觀望';
+  const setupDetail = `${setup} · ${(confidence * 100).toFixed(0)}%`;
+
+  const greenCount = [squeezeGreen, trendGreen, setupGreen].filter(Boolean).length;
+  let action;
+  if (greenCount === 3) {
+    action = '✅ 3 燈全綠, 可以入場';
+  } else if (greenCount === 2) {
+    action = '🟡 2 綠 1 紅, 觀望等確認';
+  } else {
+    action = '🔴 ≤ 1 綠, 唔好入場';
+  }
+
+  // ===== 5 種 setup 動作表 =====
+  const setupActionMap = {
+    'mtf_squeeze_fire': { icon: '🟢', name: '黃金 Squeeze Fire (向上)', score: 0.95, action: '立即買, 止損 BB 下軌', key: 'm6_setup_mtf_squeeze_fire' },
+    'bear_squeeze_fire': { icon: '🔴', name: '沽空 Squeeze Fire (向下)', score: 0.85, action: '立即沽/避, 止損 BB 上軌', key: 'm6_setup_bear_squeeze_fire' },
+    'confirmed_vcp_breakout': { icon: '🏆', name: 'VCP 教科書突破', score: 0.9, action: '確認後買, 止損最後低點', key: 'm6_setup_confirmed_vcp_breakout' },
+    'clean_trend_expansion': { icon: '🟢', name: '上升趨勢擴張', score: 0.7, action: '順勢買, 跟隨止損', key: 'm6_setup_clean_trend_expansion' },
+    'clean_trend_breakdown': { icon: '🔴', name: '下跌趨勢擴張', score: 0.65, action: '順勢沽/避, 跟隨止損', key: 'm6_setup_clean_trend_breakdown' },
+    'genuine_squeeze_forming': { icon: '⏳', name: '蓄力中', score: 0.55, action: '唔好搶跑, 等突破', key: 'm6_setup_genuine_squeeze_forming' },
+    'no_clear_setup': { icon: '🟡', name: '冇明確 setup', score: 0.25, action: '等方向, 唔好入場', key: 'm6_setup_no_clear_setup' },
+  };
+  const currentSetup = setupActionMap[setup] || setupActionMap['no_clear_setup'];
+
+  // ===== 失敗模式 Badge =====
+  const failureBadge = {
+    'none': { icon: '✅', label: '正常', color: '#52c41a', key: 'm6_failure_none' },
+    'noisy_squeeze': { icon: '⚠️', label: '噪音 Squeeze', color: '#faad14', key: 'm6_failure_noisy_squeeze' },
+    'weak_follow_through': { icon: '🚨', label: '假突破', color: '#ff4d4f', key: 'm6_failure_weak_follow_through' },
+    'no_setup': { icon: '😴', label: '冇 setup', color: '#999', key: 'm6_failure_no_setup' },
+  }[failureMode] || { icon: '❓', label: failureMode, color: '#999', key: 'm6_failure_none' };
+
+  // ===== 動能方向 =====
+  const momentumIcon = momentumDir === 'bull' ? '🔵' : momentumDir === 'bear' ? '🟡' : '⚪';
+  const momentumLabel = momentumDir === 'bull' ? '向上動能' : momentumDir === 'bear' ? '向下動能' : '平';
+
+  // ===== 凡人話解讀 =====
+  let plainLang = '';
+  if (setup === 'no_clear_setup') {
+    plainLang = `🟡 <b>而家係觀望狀態</b>, 唔好入場。等 setup 清楚先做。`;
+  } else if (setup === 'mtf_squeeze_fire' || setup === 'confirmed_vcp_breakout' || setup === 'clean_trend_expansion') {
+    plainLang = `🟢 <b>上升訊號出現</b>: ${currentSetup.action}。記得配合 M1/M2 確認大環境。`;
+  } else if (setup === 'bear_squeeze_fire' || setup === 'clean_trend_breakdown') {
+    plainLang = `🔴 <b>下跌訊號出現</b>: ${currentSetup.action}。如果已經持貨, 諗下止賺。`;
+  } else if (setup === 'genuine_squeeze_forming') {
+    plainLang = `⏳ <b>蓄力中</b>: 仲未爆發, ${currentSetup.action}。配合 M1 等突破訊號。`;
+  }
+
+  // ===== 對齊 V2.0.0 audit fields =====
+  const vcpDetected = vcp.detected;
+  const vcpNote = vcpDetected ? '✅ 跟 Minervini 標準' : (vcp.contractions >= 1 ? '🟡 結構 partial' : '❌ 唔係 VCP');
+
+  return `
+    ${M6_TOOLTIP_STYLE}
+    <div class="m6-dashboard" style="background:linear-gradient(135deg,#f5f7fa 0%,#e8eef5 100%);border:2px solid #1890ff;border-radius:10px;padding:16px 20px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:18px;color:#1890ff;">🎯 ${tt('M6 Dashboard · 凡人話一頁睇晒', 'm6_title')}</h3>
+        <span style="font-size:13px;color:#666;">M6 v2.0.0 · 對齊 TTM Squeeze + Minervini VCP</span>
+      </div>
+
+      <!-- 3 個燈 (Squeeze + Trend + Setup) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div style="background:#fff;border-radius:8px;padding:12px;border-left:4px solid ${squeezeGreen ? '#52c41a' : (squeeze.isSqueeze ? '#faad14' : '#ff4d4f')};">
+          <div style="font-size:13px;color:#666;margin-bottom:4px;">${tt('📊 Squeeze 燈', 'm6_squeeze_light')}</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:2px;">${squeezeLabel}</div>
+          <div style="font-size:12px;color:#888;">${squeezeDetail}</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:12px;border-left:4px solid ${trendGreen ? '#52c41a' : '#ff4d4f'};">
+          <div style="font-size:13px;color:#666;margin-bottom:4px;">${tt('📈 Trend 燈', 'm6_trend_light')}</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:2px;">${trendLabel}</div>
+          <div style="font-size:12px;color:#888;">${trendDetail}</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:12px;border-left:4px solid ${setupGreen ? '#52c41a' : '#ff4d4f'};">
+          <div style="font-size:13px;color:#666;margin-bottom:4px;">${tt('🎯 Setup 燈', 'm6_setup_light')}</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:2px;">${setupLabel}</div>
+          <div style="font-size:12px;color:#888;">${setupDetail}</div>
+        </div>
+      </div>
+
+      <!-- 凡人話結論 -->
+      <div style="background:${greenCount === 3 ? '#f6ffed' : (greenCount === 2 ? '#fffbe6' : '#fff2f0')};border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:15px;">
+        ${tt(action, 'm6_three_lights')}
+      </div>
+
+      <!-- Setup 動作 + 失敗模式 + 動能 + VCP -->
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">📌 ${tt('Setup + 動作', 'm6_setup')}</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:2px;">${tt(currentSetup.icon + ' ' + currentSetup.name, currentSetup.key)}</div>
+          <div style="font-size:12px;color:#1890ff;">${currentSetup.action}</div>
+          <div style="font-size:11px;color:#999;margin-top:2px;">評分 ${(currentSetup.score * 100).toFixed(0)}% · 勝率 ${((meta.winProbability || 0) * 100).toFixed(0)}%</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">🚨 失敗模式</div>
+          <div style="font-size:14px;font-weight:600;color:${failureBadge.color};">${tt(failureBadge.icon + ' ' + failureBadge.label, failureBadge.key)}</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">${tt('📊 動能方向', 'm6_momentum_dir')}</div>
+          <div style="font-size:14px;font-weight:600;">${momentumIcon} ${momentumLabel}</div>
+          <div style="font-size:11px;color:#999;">${(meta.momentumHistogram || 0).toFixed(4)}</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">${tt('📐 VCP (Minervini)', 'm6_vcp_title')}</div>
+          <div style="font-size:14px;font-weight:600;">${vcpNote}</div>
+          <div style="font-size:11px;color:#999;">${vcp.contractions || 0} 對 contraction${vcp.higherLows ? ' · higher lows ✓' : ''}</div>
+        </div>
+      </div>
+
+      <!-- 凡人話解讀 -->
+      <div style="background:#fff;border-radius:6px;padding:12px 14px;font-size:14px;line-height:1.6;">
+        💡 <b>點睇呢個結果</b>: ${plainLang}
+        ${warnings.length > 0 ? `<br/><span style="color:#fa8c16;">⚠️ 有 ${warnings.length} 個 warning, 詳見詳細 verdict card</span>` : ''}
+        ${selfCheckTriggered ? `<br/><span style="color:#722ed1;">🛡️ ${tt('Self-Check', 'm6_self_check')} 觸發 (原本信心 ${(originalConfidence * 100).toFixed(0)}% → 折到 ${(confidence * 100).toFixed(0)}%)</span>` : ''}
+      </div>
+
+      <details style="margin-top:12px;font-size:13px;">
+        <summary style="cursor:pointer;color:#1890ff;font-weight:600;">📚 大少教學: 點樣睇 M6 結果 (撳開睇)</summary>
+        <div style="background:#fff;border-radius:6px;padding:12px;margin-top:8px;line-height:1.6;">
+          <p><b>3 步睇完 M6 verdict</b>:</p>
+          <ol style="margin:6px 0 12px 24px;line-height:1.7;">
+            <li><b>睇 ${tt('Setup 燈', 'm6_setup_light')}</b> — 有 setup 先考慮入場</li>
+            <li><b>睇 ${tt('Trend 燈', 'm6_trend_light')}</b> — random walk 環境唔好落單 (Hurst &lt; 0.45 OR ADX &lt; 20)</li>
+            <li><b>睇 ${tt('Squeeze 燈', 'm6_squeeze_light')}</b> — 真蓄力 + 持續 ≥ 3 日先有意義</li>
+          </ol>
+          <p><b>${tt('5 種 setup 動作對應表', 'm6_setup')}</b>:</p>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 12px 0;">
+            <tr style="background:#f5f5f5;"><th style="padding:6px;text-align:left;">Setup</th><th>評分</th><th>動作</th></tr>
+            <tr><td style="padding:4px 6px;">${tt('🟢 mtf_squeeze_fire', 'm6_setup_mtf_squeeze_fire')}</td><td>0.95</td><td>立即買, 止損 BB 下軌</td></tr>
+            <tr style="background:#fafafa;"><td style="padding:4px 6px;">${tt('🔴 bear_squeeze_fire', 'm6_setup_bear_squeeze_fire')}</td><td>0.85</td><td>立即沽/避, 止損 BB 上軌</td></tr>
+            <tr><td style="padding:4px 6px;">${tt('🏆 confirmed_vcp_breakout', 'm6_setup_confirmed_vcp_breakout')}</td><td>0.9</td><td>確認後買, 止損最後低點</td></tr>
+            <tr style="background:#fafafa;"><td style="padding:4px 6px;">${tt('🟢 clean_trend_expansion', 'm6_setup_clean_trend_expansion')}</td><td>0.7</td><td>順勢買, 跟隨止損</td></tr>
+            <tr><td style="padding:4px 6px;">${tt('🔴 clean_trend_breakdown', 'm6_setup_clean_trend_breakdown')}</td><td>0.65</td><td>順勢沽/避, 跟隨止損</td></tr>
+            <tr style="background:#fafafa;"><td style="padding:4px 6px;">${tt('⏳ genuine_squeeze_forming', 'm6_setup_genuine_squeeze_forming')}</td><td>0.55</td><td>唔好搶跑, 等突破</td></tr>
+            <tr><td style="padding:4px 6px;">${tt('🟡 no_clear_setup', 'm6_setup_no_clear_setup')}</td><td>0.25</td><td>等方向, 唔好入場</td></tr>
+          </table>
+          <p style="color:#666;font-size:12px;"><b>💡 重點提醒</b>:</p>
+          <ul style="margin:6px 0 0 24px;line-height:1.7;font-size:12px;color:#666;">
+            <li>${tt('Squeeze 只係「蓄力」, 唔係「必然升」, 要等 squeezeFire 先做', 'm6_squeeze_state')}</li>
+            <li>${tt('SNR 高 (trending) 先好入場, choppy 環境止損會被 noise 觸發', 'm6_snr')}</li>
+            <li>失敗模式 ${tt('noisy_squeeze', 'm6_failure_noisy_squeeze')} / ${tt('weak_follow_through', 'm6_failure_weak_follow_through')} 最高入場 0.4</li>
+            <li>永遠配合 M1-M5 一齊睇, M6 嘅 setup 類型要同其他 module 一致先信</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  `;
 }
 
 // 大少 2026-08-11 22:40 — Codebase 註解 Phase 4 partial gap fill

@@ -371,6 +371,101 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: `51e19234` (feat(m2-self-check-penalty): Step 19.5 auto floor confidence 0.3 when self-check warning 觸發)
 
+### M6 Volatility v2.0.0 永久 rules (大少 2026-09-10 09:50 confirm, Spec Sync #54)
+
+**凡人話**: M6 (波動率與市場結構收縮擴張檢測法) v1.0.0 永遠 100% SIDEWAYS 係錯嘅, 2026-09-10 09:50 Spec Sync #54 做咗 11 個 fix — 加 Hurst+ADX regime gate + M1 state filter + self-check warning + self-check penalty + 修 5 個 critical bug + 重寫 VCP 跟 Minervini 標準 + 加 momentum histogram + 加 bearish squeeze fire + 加 clean trend breakdown + 修 follow-through 邏輯矛盾 + 修 S2/S3/S8 is_squeeze guard, 對齊 M2/M3/M4 永久 rule pattern + 對齊 TTM Squeeze John Carter 2005 standard + 對齊 Mark Minervini VCP 教科書。
+
+**5 隻 stock evidence** (v2.0.0 vs v1.0.0, dataWindowDays=1260):
+- HK.00700 騰訊: state=SIDEWAYS setup=no_clear_setup score=0.25 hurst=0.4261 adx=9.86 gate=FAIL mom=bear vcp.det=False (5 個 contractions 但 higherLows=False stage2=False) warnings=CONFLICT_STATE+THRESHOLD_BREACH
+- HK.00005 匯豐: state=SIDEWAYS hurst=0.4363 adx=18.36 gate=FAIL mom=bull vcp.det=False (3 個 contractions higherLows=True 但 stage2=True) 
+- US.AAPL: state=SIDEWAYS hurst=0.6431 adx=13.61 gate=FAIL mom=bull follow.direction=up failure=weak_follow_through (C5 fix 確認: upward breakout 跟進 0.22 < 0.4 正確 trigger)
+- US.MSFT: state=SIDEWAYS hurst=0.6531 adx=36.22 gate=PASS (唯一 PASS) rules=[] (I6 fix 確認: 冇 squeeze 所以 S2/S8 唔誤判)
+- US.GOOGL: state=SIDEWAYS hurst=0.6546 adx=7.0 gate=FAIL mom=bear follow.direction=down failure=none (C3 fix 確認: 之前誤判 weak_follow_through, 而家向下 breakout 唔 trigger)
+
+**§M6 Hurst+ADX regime gate (A1, 對齊 M3 Spec Sync #45 永久 rule)**
+- ✅ M6 algorithm Step 0.5 永遠 emit Hurst+ADX gate check
+- ✅ H < 0.45 OR ADX < 20 → emit 1 個 CONFLICT_STATE warning (info level) + 繼續行
+- ✅ 對齊 M4 v0.3.0 Option 1: 唔好 early return, verdict 仍然 SIDEWAYS 0.3
+- ✅ Backend `_compute_hurst` (返 tuple) + `_compute_adx` (返 dict) from `trendline.algorithm`
+- ✅ Frontend `computeHurst` (返 number) + `computeAdx` (返 number) from `./trendline.ts`
+- ✅ Meta 永遠 emit `hurst` + `adx` + `regimeGate` 3 個 audit field
+- ✅ 對齊 Module Warning v1.1.0 — `CONFLICT_STATE` info level, 唔 floor conf
+
+**§M6 M1 state trend filter cross-module alignment (A2, 對齊 M4 Spec Sync #52 永久 rule)**
+- ✅ algorithm_runner.py 統一 inject `options["m1State"]` 落 M6
+- ✅ M6 見到 M1=DOWN/SIDEWAYS 但 M6 出 bullish setup → FALLBACK_USED warning + entry score × 0.5
+- ✅ M6 見到 M1=UP/SIDEWAYS 但 M6 出 bearish setup → FALLBACK_USED warning + entry score × 0.5
+- ✅ Meta 永遠 emit `m1State: 'UP' | 'DOWN' | 'SIDEWAYS' | 'TRANSITION'` + `m1FilterApplied: bool`
+
+**§M6 self-check warning emit (A3+A4, 對齊 §M2 self-check + §M3 + §M4 永久 rule)**
+- ✅ `INSUFFICIENT_DATA` (critical) — K 線唔夠 85 條
+- ✅ `CONFLICT_STATE` (info) — Hurst+ADX gate 唔過 OR noisy_squeeze
+- ✅ `FALLBACK_USED` (warning) — M1 state 同 M6 setup 矛盾
+- ✅ `THRESHOLD_BREACH` (warning) — 最終 conf < 0.3 門檻
+- ✅ `MODULE_PARTIAL` (warning) — VCP 結構 partial 確認 (1 contraction < 2)
+- ✅ 統一用 `make_warning()` / `makeWarning()` ModuleWarning object
+
+**§M6 self-check penalty (A5, 對齊 §M2 self-check penalty Spec Sync #48 永久 rule)**
+- ✅ M6 algorithm Step 7.5 永遠拎 critical + warning level self-check warning 觸發 conf floor 0.3
+- ✅ 公式 `max(conf * 0.375, 0.3)` — 原本 conf 0.8 → 0.3, 0.56 → 0.3, 0.27 → 0.3
+- ✅ info level (CONFLICT_STATE) 唔觸發 floor
+- ✅ state 唔變, 由 M7 layer 處理 weight 折扣
+- ✅ Meta 永遠 emit `selfCheckTriggered: bool` + `originalConfidence: float` 2 個 audit field
+
+**§M6 修 Critical C1 — cycle 推導加 DOWN state**
+- ✅ 之前 M6 永遠 UP/SIDEWAYS, 跌市永遠 SIDEWAYS (邏輯錯)
+- ✅ 而家: bear_squeeze_fire / clean_trend_breakdown → cycle='downtrend' → state='DOWN'
+- ✅ 對齊 TTM Squeeze 標準 bearish setup
+
+**§M6 修 Critical C3 — follow-through 邏輯矛盾**
+- ✅ 之前 downward breakout 仍然 trigger weak_follow_through (邏輯錯, 將「跌穿」誤判為「假突破」)
+- ✅ 而家: upward 跟進失敗先 trigger weak_follow_through
+- ✅ 向下突破用 close < prev_low 嘅比率計 price_progression
+- ✅ Meta 加 `direction: 'up' | 'down' | 'none'` 標示突破方向
+- ✅ Failure mode `weak_follow_through` 只係 upward breakout case
+
+**§M6 修 Critical C5 — S6/S7 結構性收縮/擴張用 total_atr 唔係 noise_atr**
+- ✅ 之前用 noise_atr, 對齊波動率結構嘅 spirit 唔對
+- ✅ 而家: 過去 5 日 total_atr (= trend_atr + noise_atr) < 之前 5 日 × 0.85 → atr_contraction
+
+**§M6 修 Info I6 — S2/S3/S8 條件加 `is_squeeze` guard**
+- ✅ 之前 S2 「Squeeze 質量高」trigger 用 `quality_score >= 0.6` 完全唔睇係咪真 squeeze
+- ✅ 而家: S2/S3/S8 全部必須 `is_squeeze=True` 先 trigger
+- ✅ quality_score threshold 由 0.6 → 0.7 (對齊 TTM Squeeze 標準)
+
+**§M6 加 A7 — momentum histogram (對齊 TTM Squeeze 標準)**
+- ✅ 對齊 TTM Squeeze John Carter 2005 standard 3 個 component: BB + KC + Momentum Histogram
+- ✅ Histogram 計算: smoothed linear regression of close 過去 20 日
+- ✅ `momentumDir: 'bull' | 'bear' | 'flat'` 對齊 setup 推導
+- ✅ Meta 永遠 emit `momentumHistogram: float` + `momentumDir: string` 2 個 field
+
+**§M6 加 A8 — bearish squeeze fire + clean trend breakdown (對齊 TTM Squeeze 標準)**
+- ✅ bear_squeeze_fire (0.85): 之前 Squeeze → 而家 NOT Squeeze + quality >= 0.7 + momentum bear
+- ✅ clean_trend_breakdown (0.65): noise < trend × 0.5 + regime=trending + follow >= 0.6 + momentum bear
+- ✅ Cycle 推導: bear_squeeze_fire / clean_trend_breakdown → 'downtrend' → state='DOWN'
+- ✅ 凡人話: 跌市 M6 都可以出 setup, 對齊 TTM Squeeze 教科書 bearish pattern
+
+**§M6 重寫 VCP 跟 Minervini 標準 (Phase 2)**
+- ✅ 2-5 個 progressively smaller pullback: C1 > C2 > C3 > C-final, 每個 ≤ 70% 之前
+- ✅ higher low 結構 (每個 contraction low 比之前高)
+- ✅ 量縮確認 (最後 contraction vol < avg vol × 60%)
+- ✅ Stage 2 uptrend filter (200-day MA sloping up + current close > 200 MA × 0.85)
+- ✅ Lookback 20 日 → 60 日 (對齊 Minervini 標準窗口)
+- ✅ VCP detected = progressively_smaller AND higher_lows AND vol_tightening AND stage2_uptrend AND contractions >= 2
+- ✅ 凡人話: 跟 Mark Minervini 教科書 VCP 標準, 唔再係 5 隻 stock 全部 trigger 唔到
+
+**§M6 加 Warning W5 — no_setup 失敗模式**
+- ✅ Spec doc 講 3 種失敗模式, code 只出 2 種 (noisy_squeeze + weak_follow_through)
+- ✅ 而家補返: 冇 squeeze 冇 breakout + choppy 環境 → no_setup
+- ✅ no_setup base_win -0.05
+
+**Backend + Frontend 1:1 port 同步**:
+- ✅ Backend `backend/algorithms/volatility/algorithm.py` v2.0.0
+- ✅ Frontend `algorithms/AS-03-cycle-detection/modules/volatility.ts` v2.0.0
+- ✅ Spec doc `docs/research/AS-03-cycle-detection/MODULE-06-VOLATILITY.md` updated
+
+對應 commit: 即將 push (Spec Sync #54, 大少 2026-09-10 trigger "做 A 和 B")
+
 ### M4 Indicators v0.2.0 永久 rules (大少 2026-09-09 01:55 confirm, Spec Sync #52)
 
 **凡人話**: M4 (動能背馳法) 算法 v1.0.0 永遠 100% SIDEWAYS 係錯嘅, 2026-09-09 01:55 Spec Sync #52 做咗 12 個 fix — 加 Hurst+ADX regime gate + M1 state filter + self-check warning + self-check penalty + cross-confirm bonus + meta.symbol + 改 lookbackDays 60→250 + signalThreshold 0.6→0.5 + ban conf 1.0 + confirmation candle + RSI 5 日 linear slope, 對齊 M2/M3 永久 rule pattern。

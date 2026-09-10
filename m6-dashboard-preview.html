@@ -1,0 +1,93 @@
+<!DOCTYPE html><html><head><meta charset=utf-8><title>M6 Dashboard Preview · HK.00700</title><style>body{font-family:-apple-system,sans-serif;background:#fafafa;padding:24px;max-width:1200px;margin:0 auto;}.preview-note{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:14px;}</style></head><body><div class=preview-note><b>📌 Preview:</b> 呢個係 M6 Dashboard 嘅 standalone preview (用 HK.00700 真實 verdict mock data)。撳完 testing page 嘅 M6 跑算法之後, dashboard 會喺 chart container 下面即時顯示。</div>
+    <div class="m6-dashboard" style="background:linear-gradient(135deg,#f5f7fa 0%,#e8eef5 100%);border:2px solid #1890ff;border-radius:10px;padding:16px 20px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:18px;color:#1890ff;">🎯 M6 Dashboard · 凡人話一頁睇晒</h3>
+        <span style="font-size:13px;color:#666;">M6 v2.0.0 · 對齊 TTM Squeeze + Minervini VCP</span>
+      </div>
+
+      <!-- 3 個燈 (Squeeze + Trend + Setup) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div style="background:#fff;border-radius:8px;padding:12px;border-left:4px solid #52c41a;">
+          <div style="font-size:13px;color:#666;margin-bottom:4px;">📊 Squeeze 燈</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:2px;">🟢 真蓄力</div>
+          <div style="font-size:12px;color:#888;">quality 82% · 3 日</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:12px;border-left:4px solid #ff4d4f;">
+          <div style="font-size:13px;color:#666;margin-bottom:4px;">📈 Trend 燈</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:2px;">🔴 Random walk</div>
+          <div style="font-size:12px;color:#888;">H=0.43 · ADX=9.9</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:12px;border-left:4px solid #ff4d4f;">
+          <div style="font-size:13px;color:#666;margin-bottom:4px;">🎯 Setup 燈</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:2px;">🔴 觀望</div>
+          <div style="font-size:12px;color:#888;">no_clear_setup · 25%</div>
+        </div>
+      </div>
+
+      <!-- 凡人話結論 -->
+      <div style="background:#fff2f0;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:15px;">
+        🔴 ≤ 1 綠, 唔好入場
+      </div>
+
+      <!-- Setup 動作 + 失敗模式 + 動能 + VCP -->
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">📌 Setup + 動作</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:2px;">🟡 冇明確 setup</div>
+          <div style="font-size:12px;color:#1890ff;">等方向, 唔好入場</div>
+          <div style="font-size:11px;color:#999;margin-top:2px;">評分 25% · 勝率 35%</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">🚨 失敗模式</div>
+          <div style="font-size:14px;font-weight:600;color:#52c41a;">✅ 正常</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">📊 動能方向</div>
+          <div style="font-size:14px;font-weight:600;">🟡 向下動能</div>
+          <div style="font-size:11px;color:#999;">-0.0757</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">📐 VCP (Minervini)</div>
+          <div style="font-size:14px;font-weight:600;">🟡 結構 partial</div>
+          <div style="font-size:11px;color:#999;">5 對 contraction</div>
+        </div>
+      </div>
+
+      <!-- 凡人話解讀 -->
+      <div style="background:#fff;border-radius:6px;padding:12px 14px;font-size:14px;line-height:1.6;">
+        💡 <b>點睇呢個結果</b>: 🟡 <b>而家係觀望狀態</b>, 唔好入場。等 setup 清楚先做。
+        
+        
+      </div>
+
+      <details style="margin-top:12px;font-size:13px;">
+        <summary style="cursor:pointer;color:#1890ff;font-weight:600;">📚 大少教學: 點樣睇 M6 結果 (撳開睇)</summary>
+        <div style="background:#fff;border-radius:6px;padding:12px;margin-top:8px;line-height:1.6;">
+          <p><b>3 步睇完 M6 verdict</b>:</p>
+          <ol style="margin:6px 0 12px 24px;line-height:1.7;">
+            <li><b>睇 Setup 燈</b> — 有 setup 先考慮入場</li>
+            <li><b>睇 Trend 燈</b> — random walk 環境唔好落單 (Hurst &lt; 0.45 OR ADX &lt; 20)</li>
+            <li><b>睇 Squeeze 燈</b> — 真蓄力 + 持續 ≥ 3 日先有意義</li>
+          </ol>
+          <p><b>5 種 setup 動作對應表</b>:</p>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 12px 0;">
+            <tr style="background:#f5f5f5;"><th style="padding:6px;text-align:left;">Setup</th><th>評分</th><th>動作</th></tr>
+            <tr><td style="padding:4px 6px;">🟢 mtf_squeeze_fire</td><td>0.95</td><td>立即買, 止損 BB 下軌</td></tr>
+            <tr><td style="padding:4px 6px;">🔴 bear_squeeze_fire</td><td>0.85</td><td>立即沽/避, 止損 BB 上軌</td></tr>
+            <tr><td style="padding:4px 6px;">🏆 confirmed_vcp_breakout</td><td>0.9</td><td>確認後買, 止損最後低點</td></tr>
+            <tr><td style="padding:4px 6px;">🟢 clean_trend_expansion</td><td>0.7</td><td>順勢買, 跟隨止損</td></tr>
+            <tr><td style="padding:4px 6px;">🔴 clean_trend_breakdown</td><td>0.65</td><td>順勢沽/避, 跟隨止損</td></tr>
+            <tr><td style="padding:4px 6px;">⏳ genuine_squeeze_forming</td><td>0.55</td><td>唔好搶跑, 等突破</td></tr>
+            <tr><td style="padding:4px 6px;">🟡 no_clear_setup</td><td>0.25</td><td>等方向, 唔好入場</td></tr>
+          </table>
+          <p style="color:#666;font-size:12px;"><b>💡 重點提醒</b>:</p>
+          <ul style="margin:6px 0 0 24px;line-height:1.7;font-size:12px;color:#666;">
+            <li>Squeeze 只係「蓄力」, 唔係「必然升」, 要等 squeezeFire 先做</li>
+            <li>SNR 高 (trending) 先好入場, choppy 環境止損會被 noise 觸發</li>
+            <li>失敗模式 noisy_squeeze / weak_follow_through 最高入場 0.4</li>
+            <li>永遠配合 M1-M5 一齊睇, M6 嘅 setup 類型要同其他 module 一致先信</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </body></html>

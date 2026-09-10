@@ -1,9 +1,11 @@
-# AS-03 · Module 6: 波動率與市場結構收縮擴張檢測法 v1.0.0 (Volatility & Squeeze Detector)
+# AS-03 · Module 6: 波動率與市場結構收縮擴張檢測法 v2.0.0 (Volatility & Squeeze Detector)
 
 > **對應 docx**: `docs/演算法概念SPECS/06波動率與市場結構收縮擴張檢測法.docx` v2.0
-> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/volatility.ts`
+> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/volatility.ts` v2.0.0
+> **對應 backend**: `backend/algorithms/volatility/algorithm.py` v2.0.0 (1:1 port 同步)
 > **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/volatility.test.mjs`
 > **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`volatilityAdapter`)
+> **最後更新**: 2026-09-10 (大少 Spec Sync #54) — 對齊 M3/M4 永久 rule + 修 5 個 critical bug
 
 ---
 
@@ -130,7 +132,21 @@ interface VolatilityVerdict {
 ## 5. 算法步驟
 
 ### Step 0: 輸入驗證
-- min data = 85 條, 唔夠就 default verdict
+- min data = 85 條, 唔夠就 default verdict + emit INSUFFICIENT_DATA (critical) warning
+
+### Step 0.5: Hurst+ADX Regime Gate (v2.0.0 新加, 對齊 §M3 Hurst+ADX gate Spec Sync #45 永久 rule)
+- 凡人話: random walk / mean-reverting 弱趨勢 stock 唔好亂話 squeeze fire, 永遠 hold
+- 兩招確認: Hurst 指數 (DFA, 100 日) + ADX (Wilder 14 日)
+- **H < 0.45 OR ADX < 20** → emit 1 個 CONFLICT_STATE warning (info level) + 繼續行
+- 對齊 M4 v0.3.0 Option 1: 唔好 early return, verdict 仍然 SIDEWAYS 0.3
+- meta 永遠 emit `hurst` + `adx` + `regimeGate` 3 個 audit field
+
+### Step 0.7: M1 State Filter (v2.0.0 新加, 對齊 §M4 M1 state filter Spec Sync #52 永久 rule)
+- 凡人話: 大環境 DOWN 嗰陣唔好亂話 bullish setup, 大環境 UP 嗰陣唔好亂話 bearish setup
+- algorithm_runner.py 統一 inject `options["m1State"]` 落 M6
+- **M1=DOWN/SIDEWAYS 但 M6 出 bullish setup** → FALLBACK_USED warning + entry score 折 0.5x
+- **M1=UP/SIDEWAYS 但 M6 出 bearish setup** → FALLBACK_USED warning + entry score 折 0.5x
+- meta 永遠 emit `m1State` + `m1FilterApplied` 2 個 audit field
 
 ### Step 1: 計算基礎指標
 - **ATR (14)**: Wilder smoothing
@@ -138,6 +154,12 @@ interface VolatilityVerdict {
 - **Keltner Channel (20, 1.5 ATR)**: SMA20 ± 1.5 × ATR
 - **BB Width** = (BB_upper - BB_lower) / SMA20
 - **KC Width** = (KC_upper - KC_lower) / SMA20
+
+### Step 1.5: Momentum Histogram (v2.0.0 新加, 對齊 TTM Squeeze John Carter 2005 standard)
+- 凡人話: TTM Squeeze 標準做法有 3 個 component — BB + KC + Momentum Histogram
+- 過去 20 日 close 做 linear regression → 拎 slope → normalize by close
+- **momentumHistogram > 0.005** = bull, **< -0.005** = bear, 中間 = flat
+- meta 永遠 emit `momentumHistogram` + `momentumDir` 2 個 field
 
 ### Step 2: Squeeze 檢測 (核心)
 - **isSqueeze = BB_width < KC_width** (i.e. BB 喺 KC 入面)
@@ -155,31 +177,56 @@ interface VolatilityVerdict {
 - **snr = trendComponent / noiseComponent** (if noise > 0, else 10)
 - **regime = snr > 2 ? 'trending' : snr < 0.5 ? 'choppy' : 'balanced'**
 
-### Step 4: VCP 結構檢測 (簡化)
-- 過去 20 日找高低點 (rolling 5 日 max/min)
-- 連續 ≥ 2 對高低點遞減 (high 跌, low 跌) → VCP detected
-- **volTightening** = VCP 期間 vol 遞減 (e.g. 後段 vol 唔多過前段 70%)
+### Step 4: VCP 結構檢測 (v2.0.0 重寫跟 Mark Minervini 標準)
+- **凡人話**: 跟 Mark Minervini VCP 教科書標準 — 2-5 個 progressively smaller pullback + higher low + 量縮 + Stage 2 uptrend
+- **Lookback 20 日 → 60 日** (對齊 Minervini 標準窗口)
+- **Step 4.1**: 拎 swing high / low (rolling 5 日 max/min, 對齊 frontend 簡化)
+- **Step 4.2**: 拎 contraction depths (high → low 跌幅) — 需要 ≥ 2 對
+- **Step 4.3**: progressively_smaller = 每個 contraction ≤ 70% 之前
+- **Step 4.4**: higher_lows = 每個 contraction low 比之前高
+- **Step 4.5**: vol_tightening = 最後 contraction 嘅 vol < avg vol × 60%
+- **Step 4.6**: stage2_uptrend = 200-day MA sloping up + current close > 200 MA × 0.85
+- **VCP detected = progressively_smaller AND higher_lows AND vol_tightening AND stage2_uptrend AND contractions >= 2**
 
-### Step 5: Follow-through 評分
+### Step 5: Follow-through 評分 (v2.0.0 fix 邏輯矛盾)
 - 過去 followThroughDays 日 vs 之前 followThroughDays 日
-- **isBreakoutAttempt** = 近期高/低 > 之前高/低 × 1.01
-- 如果 breakout up:
-  - **volumeDecay** = breakout 日 vol > avg AND 後續 vol < breakout × 0.8 → 0.8 (健康)
-  - 否則 0.2-0.4
-- **priceProgression** = 後段 close 升嘅比率
-- **followScore** = (volumeDecay × 0.5 + priceProgression × 0.5)
+- **isBreakoutUp** = 近期高 > 之前高 × 1.01
+- **isBreakoutDown** = 近期低 < 之前低 × 0.99 (v2.0.0 新加)
+- **isBreakoutAttempt = isBreakoutUp OR isBreakoutDown**
+- **v2.0.0 fix**: 之前 downward breakout 仍然 trigger weak_follow_through → 邏輯錯, 而家分方向計 follow_score
+- 向上突破: price_progression = close 升嘅比率, volume_decay = 突破日量大 + 後續縮
+- 向下突破: price_progression = close 跌嘅比率, volume_decay 同上
+- **followScore = (volumeDecay × 0.5 + priceProgression × 0.5)**
+- meta 加 `direction: 'up' | 'down' | 'none'` 標示突破方向
 
-### Step 6: 失敗模式 (3 種)
+### Step 6: 失敗模式 (3 種, v2.0.0 fix upward only)
 - **noisy_squeeze**: Squeeze 但 noise_atr > trend_atr × 2 (表面 squeeze 內部震盪)
-- **weak_follow_through**: followScore < 0.4 (突破後跟進無力)
-- **no_setup**: 其他 (冇明確信號)
+- **weak_follow_through**: 向上突破 AND followScore < 0.4 (v2.0.0 fix: 唔再對 downward breakout 誤判)
+- **no_setup**: 冇 squeeze 冇 breakout + choppy 環境 (v2.0.0 新加補返 spec 講 3 種失敗模式)
 
-### Step 7: 入場評分 (5 種 setup)
-- **A 黃金 Squeeze Fire** (0.95): 之前 Squeeze → 而家 NOT Squeeze (squeezeFire) + quality >= 0.6
-- **B 確認 VCP 突破** (0.9): VCP detected + volTightening + follow >= 0.5
+### Step 7: 入場評分 (v2.0.0 加 bearish setup, 對齊 TTM Squeeze 標準)
+- **A 黃金 Squeeze Fire** (0.95): 之前 Squeeze → 而家 NOT Squeeze + quality >= 0.7 + momentum bull
+- **A' 沽空 Squeeze Fire** (0.85, v2.0.0 新加): 之前 Squeeze → 而家 NOT Squeeze + quality >= 0.7 + momentum bear
+- **B 確認 VCP 突破** (0.9): VCP detected (Minervini) + volTightening + follow >= 0.5 + direction=up
 - **C 真 Squeeze 蓄力** (0.55): isGenuine + quality >= 0.75 (仲未突破, 觀望中)
-- **D 乾淨趨勢擴張** (0.7): noise < trend × 0.5 + regime=trending + follow >= 0.6
+- **D 乾淨趨勢擴張** (0.7): noise < trend × 0.5 + regime=trending + follow >= 0.6 + momentum ≠ bear
+- **D' 趨勢沽空** (0.65, v2.0.0 新加): noise < trend × 0.5 + regime=trending + follow >= 0.6 + momentum=bear
 - **E 觀望** (0.25): 其他
+
+### Step 7.5: Self-Check Penalty (v2.0.0 新加, 對齊 §M2 self-check penalty Spec Sync #48 永久 rule)
+- 拎 critical + warning level self-check warning 觸發 conf floor 0.3
+- 公式 `max(conf × 0.375, 0.3)` — 原本 conf 0.8 → 0.3, 0.56 → 0.3
+- info level (CONFLICT_STATE) 唔觸發 floor
+- state 唔變, 由 M7 layer 處理 weight 折扣
+- meta 永遠 emit `selfCheckTriggered: bool` + `originalConfidence: float` 2 個 audit field
+
+### Step 7.6: Self-Check Warning Emit (v2.0.0 新加, 對齊 §M2 + §M3 + §M4 永久 rule)
+- **INSUFFICIENT_DATA** (critical) — K 線唔夠 85 條
+- **CONFLICT_STATE** (info) — Hurst+ADX gate 唔過 OR noisy_squeeze
+- **FALLBACK_USED** (warning) — M1 state 同 M6 setup 矛盾
+- **THRESHOLD_BREACH** (warning) — 最終 conf < 0.3 門檻
+- **MODULE_PARTIAL** (warning) — VCP 結構 partial 確認 (1 contraction < 2)
+- 統一用 `make_warning()` / `makeWarning()` ModuleWarning object
 
 ### Step 8: 12 條 rule S1-S12
 
@@ -205,11 +252,11 @@ interface VolatilityVerdict {
 
 ### Step 10: 組裝輸出
 
-## 6. Cycle State 統一
+## 6. Cycle State 統一 (v2.0.0 fix 加 DOWN)
 
-- **uptrend**: setup = mtf_squeeze_fire OR vcp_breakout OR trend_expansion (跟 cycle 上升)
-- **downtrend**: setup 顯示強烈下跌 / 突破後失敗
-- **sideways**: 其他 (no_clear_setup / genuine_squeeze_forming)
+- **uptrend**: setup = mtf_squeeze_fire OR confirmed_vcp_breakout OR clean_trend_expansion
+- **downtrend** (v2.0.0 新加): setup = bear_squeeze_fire OR clean_trend_breakdown
+- **sideways**: 其他 (genuine_squeeze_forming / no_clear_setup)
 - **state**: UP / DOWN / SIDEWAYS (用 cycle 推導)
 
 ## 7. Adapter 設計

@@ -1,0 +1,98 @@
+<!DOCTYPE html><html><head><meta charset=utf-8><title>M6 Verdict Card Preview · Popup Tooltips</title><style>body{font-family:-apple-system,sans-serif;background:#fafafa;padding:24px;max-width:1200px;margin:0 auto;}.preview-note{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:14px;}</style></head><body><div class=preview-note><b>📌 Preview:</b> 撳完 M6 跑算法之後, 結果 verdict card 嘅 output (US.MSFT bear_squeeze_fire 完整 mock). <b>大少 hover 任何底線有虛線嘅 technical term 即刻見到凡人話 popup 解讀</b> (例如 hover 「VCP 結構」/「Hurst 指數」/「SNR」/「S1 日線 Squeeze」等)。對齊 M1 v2.1.0 .verdict-tooltip pattern。</div>
+    <style>
+    .m6-verdict-tooltip { position: relative; cursor: help; border-bottom: 1px dotted #999; }
+    .m6-verdict-tooltip:hover::after {
+      content: attr(data-help);
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      background: #2c3e50; color: #fff; padding: 8px 12px; border-radius: 6px;
+      white-space: normal; width: max-content; max-width: 380px; min-width: 200px;
+      font-size: 12px; line-height: 1.5; z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      animation: fadeIn 0.1s ease-in;
+    }
+    .m6-verdict-tooltip:hover::before {
+      content: ''; position: absolute; bottom: 95%; left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: #2c3e50;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  </style>
+    <div class="as03-verdict as03-module-card">
+      <div class="module-card-header">
+        <h3 class="module-header"><span class="m6-verdict-tooltip" data-help="第六模組嘅目的: 用波動率 (大波動定細波動) 同通道 (布林帶 + 肯特納通道), 偵測股票係咪蓄緊力 (Squeeze) 準備爆發, 或者已經突破 (Breakout)。5 個 setup 對應 5 種動作">波動率與市場結構收縮擴張 (Volatility)</span></h3>
+        <p class="module-purpose">用波動率 + 通道, 偵測 Squeeze (爆發前壓縮) 同 Breakout (突破)</p>
+      </div>
+      <div class="verdict-header">
+        <div class="state-pill" style="background: #ff4d4f">
+          <span class="state-label">高質量沽空</span>
+          <span class="state-code">downtrend (下跌)</span>
+        </div>
+        <div class="confidence">
+          <div class="conf-pct">85%</div>
+          <div class="conf-label"><span class="m6-verdict-tooltip" data-help="入場評分 (0-100%): 算法對呢個 setup 嘅可信度。≥ 70% = 高入場, 40-70% = 中等, < 40% = 低入場唔好落單">入場評分</span> — 高入場評分, 適合入市</div>
+        </div>
+        <div class="data-summary">
+          <div class="summary-row"><span><span class="m6-verdict-tooltip" data-help="Setup (入場 setup): 算法判斷嘅入場類型, 7 種: mtf_squeeze_fire (黃金爆發) / bear_squeeze_fire (沽空爆發) / confirmed_vcp_breakout (教科書突破) / clean_trend_expansion (上升趨勢) / clean_trend_breakdown (下跌趨勢) / genuine_squeeze_forming (蓄力中) / no_clear_setup (冇 setup)">Setup</span>:</span> <strong><span class="m6-verdict-tooltip" data-help="沽空 Squeeze Fire (向下, 評分 0.85): 之前 Squeeze 壓縮一段時間, 而家突然向下爆發 = 沽空訊號。立即沽/避, 止損 BB 上軌">🔴 沽空 Squeeze Fire</span></strong></div>
+          <div class="summary-row"><span><span class="m6-verdict-tooltip" data-help="估計勝率 (0-82%): 根據 setup 類型 + 失敗模式嘅歷史勝率。歷史統計, 唔係保證">估計勝率</span>:</span> <strong>68% (歷史統計, 唔係保證)</strong></div>
+          <div class="summary-row"><span>失敗模式:</span> <strong><span class="m6-verdict-tooltip" data-help="跟進無力 (假突破): 向上突破之後跟進細過 0.4, 屬於假突破訊號。最高入場評分 0.4">🔴 跟進無力</span></strong></div>
+          <div class="summary-row"><span>觸發 Rules:</span> <strong>10 條</strong></div>
+        </div>
+      </div>
+      <div class="interpretation">
+        <strong>📌 波動率結構：</strong>undefined
+        
+    <p>📌 <strong>簡單講</strong>: 出現沽空 Squeeze Fire setup, Squeeze 壓縮後向下爆發, 典型嘅下跌開始訊號。</p>
+  
+        <p>📊 <strong>咩意思</strong>: 入場評分 <span class="m6-verdict-tooltip" data-help="入場評分 (0-100%): 算法對呢個 setup 嘅可信度。≥ 70% = 高入場, 40-70% = 中等, < 40% = 低入場唔好落單">85%</span> · 估計勝率 <span class="m6-verdict-tooltip" data-help="估計勝率 (0-82%): 根據 setup 類型 + 失敗模式嘅歷史勝率。歷史統計, 唔係保證">68%</span> · 失敗模式: <span class="m6-verdict-tooltip" data-help="跟進無力 (假突破): 向上突破之後跟進細過 0.4, 屬於假突破訊號。最高入場評分 0.4">🔴 跟進無力</span> · 識別到 10 條 S-rules 觸發。</p>
+        <p>💡 <strong>點睇呢個結果</strong>: 配合 M1 MA + M2 HL 確認大方向, 留意 Squeeze 訊號 (可能係蓄力)。永遠唔好單獨靠 M6 落單, 配合 M1-M5 一齊睇。</p>
+      </div>
+      <div class="key-metrics">
+        <div class="metric-card">
+          <h4><span class="m6-verdict-tooltip" data-help="Squeeze 狀態: 個股價嘅波動率 (上落幅度) 係咪收緊咗。用兩條線比較: 布林帶 (BB) 同肯特納通道 (KC), BB 細過 KC 就叫做 Squeeze (蓄力中)">Squeeze 狀態 (波動率收縮)</span></h4>
+          <p><span class="m6-verdict-tooltip" data-help="Squeeze 狀態: 個股價嘅波動率 (上落幅度) 係咪收緊咗。用兩條線比較: 布林帶 (BB) 同肯特納通道 (KC), BB 細過 KC 就叫做 Squeeze (蓄力中)">收縮中</span>: <strong>🟡 是</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="持續日數: 而家已經連續收緊咗幾多日。≥ 3 日先算「真蓄力」, 1-2 日嘅短暫收縮可能假訊號">持續</span>: <strong>5 日</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="質量分數: 0-100%, 用 3 招計: 水平度 (30%) + 量集中度 (40%) + 價集中度 (30%)。≥ 70% 為真 Squeeze, < 70% 為弱蓄力">質量</span>: <strong>82%</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="真 Squeeze: 質量 ≥ 70% + 持續 ≥ 3 日, 兩個都要符合先叫「真」嘅 Squeeze, 大少可以信呢個信號">真 Squeeze</span>: <strong>✅</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4><span class="m6-verdict-tooltip" data-help="ATR 分解: 將個股價嘅大波動 (ATR) 拆開兩部分: (1) Trend ATR = 跟住趨勢嘅波動 (有意義嘅), (2) Noise ATR = 噪音波動 (無意義嘅)。分開睇可以知道個走勢係「真」定「假」">ATR 分解 (波動率分開睇)</span></h4>
+          <p><span class="m6-verdict-tooltip" data-help="Trend ATR: 跟住趨勢嘅波動幅度。越大代表趨勢越明確 (例如上升時有大陽燭)。接近 0 代表冇趨勢">Trend ATR</span>: <strong>8.19</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="Noise ATR: 純粹噪音嘅波動 (例如 1 日升 1 日跌嘅無規則震盪)。越大代表個股價越亂行">Noise ATR</span>: <strong>3.31</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="SNR (Signal-to-Noise Ratio, 信噪比): Trend ATR ÷ Noise ATR。> 2 = 趨勢清晰 (信號強), 0.5-2 = 信號一般, < 0.5 = 噪音 (信號弱)">SNR (信噪比)</span>: <strong>2.5</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="Regime (市場狀態): 分 3 種。trending = 趨勢清晰, 信號強; balanced = 平衡, 信號一般; choppy = 震盪亂行, 唔好入場">Regime (市場狀態)</span>: <strong>trending</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4><span class="m6-verdict-tooltip" data-help="VCP (Volatility Contraction Pattern, 波動率收縮形態): 教科書嘅「蓄力 → 突破」pattern。Mark Minervini 標準: 2-5 個越嚟越細嘅回調 (C1 > C2 > C3) + 每次低點越嚟越高 + 量縮確認 + 喺上升趨勢中">VCP 結構 (波動率收縮形態)</span></h4>
+          <p><span class="m6-verdict-tooltip" data-help="VCP 檢測: 算法判斷呢隻股票有冇跟 Minervini 標準嘅 VCP 結構。要 4 個條件全部符合: progressively smaller + higher lows + 量縮 + Stage 2 上升趨勢">檢測</span>: <strong>✅ 是</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="Contractions 數: 過去 60 日內拎到幾多個高低點 pair。Minervini 標準要 ≥ 2 對, 越多越穩固">Contractions (收縮對數)</span>: <strong>4 對</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="Higher Lows (越嚟越高嘅低點): 每個回調嘅最低價都比之前高, 證明買家每次喺更高價接貨 (institutional accumulation)。如果低點越嚟越低 = 派發, 唔係 VCP">Higher Lows (越嚟越高嘅低點)</span>: <strong>✅</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="VCP 量縮: 最後一個 contraction 期間嘅成交量 < 之前嘅 60%。證明沽壓耗盡, 賣家已經走晒, 準備突破">量縮確認</span>: <strong>✅</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="Stage 2 Uptrend: 200 日均線向上斜 + 現價接近 200 日均線。VCP 必須喺上升趨勢中先 work, 跌市 VCP = 派發 pattern, 唔係積累">Stage 2 上升趨勢</span>: <strong>✅</strong></p>
+        </div>
+        <div class="metric-card">
+          <h4><span class="m6-verdict-tooltip" data-help="Follow-through (突破跟進): 個股價突破 (向上或向下) 之後, 跟進嘅力量有幾強。健康嘅突破 = 突破日量大 + 跟住幾日量縮 (沽壓耗盡) + 價格繼續推進">Follow-through (突破跟進)</span></h4>
+          <p><span class="m6-verdict-tooltip" data-help="跟進評分: 0-100%, 量衰 (50%) + 價推進 (50%)。≥ 50% 為健康跟進, < 40% 為假突破 (weak_follow_through)">跟進評分</span>: <strong>22%</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="量衰: 突破日之後嘅成交量萎縮程度。突破日量大, 跟住縮 = 健康 (沽壓耗盡)。突破日量大, 跟住仲大 = 後繼無力">量衰</span>: <strong>20%</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="價推進: 突破後幾日股價繼續推進嘅比率。100% = 每日都升, 0% = 全部跌">價推進</span>: <strong>25%</strong></p>
+          <p><span class="m6-verdict-tooltip" data-help="突破方向: up = 向上突破, down = 向下突破 (跌穿), none = 冇突破。失敗模式 weak_follow_through 只喺向上突破 + 跟進無力嗰陣先 trigger">突破方向</span>: <strong>down</strong></p>
+        </div>
+      </div>
+      <div class="matched-rules">
+        <h4>🎯 觸發 Rules (10 條) <small style="color:#888;">— hover 每條 rule 睇解讀</small></h4>
+        <ul><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S1 日線 Squeeze: BB 喺 KC 入面 (波動率收縮), 證明股價喺蓄力中">S1</span></strong> — <span class="m6-verdict-tooltip" data-help="S1 日線 Squeeze: BB 喺 KC 入面 (波動率收縮), 證明股價喺蓄力中">日線 Squeeze</span> <small>(medium)</small></li><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S2 Squeeze 質量高: 質量分數 ≥ 0.7, 證明蓄力有質素 (水平 + 量集中 + 價集中)">S2</span></strong> — <span class="m6-verdict-tooltip" data-help="S2 Squeeze 質量高: 質量分數 ≥ 0.7, 證明蓄力有質素 (水平 + 量集中 + 價集中)">Squeeze 質量高</span> <small>(medium)</small></li><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S3 Squeeze 持續夠耐: 連續收縮 ≥ 3 日, 排除短暫波動嘅假訊號">S3</span></strong> — <span class="m6-verdict-tooltip" data-help="S3 Squeeze 持續夠耐: 連續收縮 ≥ 3 日, 排除短暫波動嘅假訊號">Squeeze 持續夠耐</span> <small>(medium)</small></li><li class="rule-strong"><strong><span class="m6-verdict-tooltip" data-help="S4 趨勢 ATR 強: SNR > 2, 趨勢清晰, 信號強">S4</span></strong> — <span class="m6-verdict-tooltip" data-help="S4 趨勢 ATR 強: SNR > 2, 趨勢清晰, 信號強">趨勢 ATR 強</span> <small>(strong)</small></li><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S6 結構性收縮: 過去 5 日總波動率 < 之前 5 日 × 0.85, 波動率持續下降中">S6</span></strong> — <span class="m6-verdict-tooltip" data-help="S6 結構性收縮: 過去 5 日總波動率 < 之前 5 日 × 0.85, 波動率持續下降中">結構性收縮</span> <small>(medium)</small></li><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S8 籌碼集中: Squeeze 期間量集中度 > 0.6, 莊家偷偷吸納">S8</span></strong> — <span class="m6-verdict-tooltip" data-help="S8 籌碼集中: Squeeze 期間量集中度 > 0.6, 莊家偷偷吸納">籌碼集中</span> <small>(medium)</small></li><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S9 VCP 結構 (Minervini): 跟 Mark Minervini 標準嘅 VCP, 2-5 個 progressively smaller 收縮">S9</span></strong> — <span class="m6-verdict-tooltip" data-help="S9 VCP 結構 (Minervini): 跟 Mark Minervini 標準嘅 VCP, 2-5 個 progressively smaller 收縮">VCP 結構 (Minervini)</span> <small>(medium)</small></li><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S10 VCP 量縮確認: 最後 contraction 嘅量 < 之前 × 0.6, 證明沽壓耗盡">S10</span></strong> — <span class="m6-verdict-tooltip" data-help="S10 VCP 量縮確認: 最後 contraction 嘅量 < 之前 × 0.6, 證明沽壓耗盡">VCP 量縮確認</span> <small>(medium)</small></li><li class="rule-medium"><strong><span class="m6-verdict-tooltip" data-help="S11 突破跟進: 突破後跟進評分 ≥ 0.5, 健康跟進唔係假突破">S11</span></strong> — <span class="m6-verdict-tooltip" data-help="S11 突破跟進: 突破後跟進評分 ≥ 0.5, 健康跟進唔係假突破">突破跟進</span> <small>(medium)</small></li><li class="rule-strong"><strong><span class="m6-verdict-tooltip" data-help="S12 失敗模式: 偵測到 noisy_squeeze / weak_follow_through / no_setup (反向 rule)">S12</span></strong> — <span class="m6-verdict-tooltip" data-help="S12 失敗模式: 偵測到 noisy_squeeze / weak_follow_through / no_setup (反向 rule)">失敗模式</span> <small>(strong)</small></li></ul>
+      </div>
+      <div style="background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:10px 14px;margin-top:12px;font-size:13px;">
+        <strong>📊 v2.0.0 新加 audit field</strong>:
+        <span class="m6-verdict-tooltip" data-help="Hurst 指數 (0-1): 量度個股價有冇「持續方向」。> 0.55 = trending (有方向), 0.45-0.55 = random walk (冇方向), < 0.45 = mean-reverting (會返去平均)。對齊 M3 永久 rule">Hurst 指數</span> = <strong>0.6531</strong> ·
+        <span class="m6-verdict-tooltip" data-help="ADX (Average Directional Index, 0-100): 量度趨勢嘅「強度」。> 25 = 強趨勢, 20-25 = 發展中, < 20 = 弱趨勢 / 橫行">ADX</span> = <strong>36.22</strong> ·
+        <span class="m6-verdict-tooltip" data-help="Regime Gate (環境確認): 用 Hurst 指數 + ADX 兩招 confirm 個股價有冇真方向。PASS = 兩招都過, FAIL = 其中一招唔過。FAIL 嗰陣 verdict 仍出但要小心, 因為 random walk 環境 setup 容易失效">Regime Gate (環境確認)</span> = <strong>PASS</strong> ·
+        <span class="m6-verdict-tooltip" data-help="動能方向: bull (向上) / bear (向下) / flat (平)。對應 setup 推導: bull → mtf_squeeze_fire, bear → bear_squeeze_fire, flat → 通用 squeeze fire">動能方向</span> = <strong>bear</strong> ·
+        <span class="m6-verdict-tooltip" data-help="Self-Check (自我診斷): 算法跑完之後自我檢查 verdict 信唔信。critical/warning level warning 觸發會將信心自動折到 30% floor, 避免 random walk / data 不足等問題導致錯誤訊號">Self-Check</span> = <strong>⚠️ 觸發</strong> · <span class="m6-verdict-tooltip" data-help="原本信心: 冇經過 self-check penalty 嘅原始信心, 畀 audit 同 frontend verify 用。大少睇到「conf 由 80% 折到 30% 因為 self_check_triggered=true」就知道點解">原本信心</span> = 85%
+      </div>
+      <details class="meta-details">
+        <summary>🔧 配置 (debug 用)</summary>
+        <pre>{
+  "atrPeriod": 14
+}</pre>
+      </details>
+    </div>
+  </body></html>

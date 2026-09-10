@@ -1,0 +1,147 @@
+<!DOCTYPE html><html><head><meta charset=utf-8><title>M6 Help Box Preview</title><style>body{font-family:-apple-system,sans-serif;background:#fafafa;padding:24px;max-width:900px;margin:0 auto;}.preview-note{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:14px;}.label{background:#e6f7ff;border:1px solid #91d5ff;border-radius:4px;padding:8px 12px;margin:12px 0;font-size:12px;color:#0050b3;}</style></head><body><div class=preview-note><b>📌 Preview:</b> 撳 M6 algo 嗰陣, 呢個 help 會顯示喺 inputs 旁邊嘅說明框 (algoHelp panel)。用真實 HK.00700 verdict mock data 嘅 help box output。</div><div class=label>↓ 撳 M6 (波動率) 之後, inputs 旁邊嘅 help box 會顯示呢個 ↓</div>
+    <div style="font-size:13px;line-height:1.6;">
+      <h4 style="color:#1890ff;margin:0 0 8px 0;">🎓 M6 三步睇完 (凡人話) · v2.0.0</h4>
+
+      <details open style="background:#e6f7ff;border-left:3px solid #1890ff;padding:8px 12px;border-radius:4px;margin-bottom:10px;">
+        <summary style="cursor:pointer;font-weight:600;color:#1890ff;">📖 第一步: 問 3 個問題</summary>
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;">
+          <tr style="background:#f5f5f5;">
+            <th style="padding:4px;text-align:left;">問題</th>
+            <th style="padding:4px;text-align:left;">點睇</th>
+            <th style="padding:4px;text-align:left;">點解讀</th>
+          </tr>
+          <tr>
+            <td style="padding:4px;"><b>Q1: 而家係咩 setup?</b></td>
+            <td style="padding:4px;">睇 <code>setupType</code></td>
+            <td style="padding:4px;">5 種 setup 對應 5 種動作</td>
+          </tr>
+          <tr style="background:#fafafa;">
+            <td style="padding:4px;"><b>Q2: 個 setup 信唔信?</b></td>
+            <td style="padding:4px;">睇 <code>confidence</code> + <code>selfCheckTriggered</code></td>
+            <td style="padding:4px;">≥ 0.6 可信, &lt; 0.3 唔好落單</td>
+          </tr>
+          <tr>
+            <td style="padding:4px;"><b>Q3: 個 trend 信唔信?</b></td>
+            <td style="padding:4px;">睇 <code>regimeGate</code> (Hurst+ADX)</td>
+            <td style="padding:4px;">PASS = 真 trend, FAIL = 亂行</td>
+          </tr>
+        </table>
+      </details>
+
+      <details open style="background:#fff7e6;border-left:3px solid #fa8c16;padding:8px 12px;border-radius:4px;margin-bottom:10px;">
+        <summary style="cursor:pointer;font-weight:600;color:#fa8c16;">🎯 第二步: 5 種 setup 動作表</summary>
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;">
+          <tr style="background:#f5f5f5;">
+            <th style="padding:4px;text-align:left;">Setup</th>
+            <th style="padding:4px;text-align:left;">意思</th>
+            <th style="padding:4px;text-align:left;">你要點做</th>
+          </tr>
+          <tr><td style="padding:4px;">🟢 <b>mtf_squeeze_fire</b> (0.95)</td><td style="padding:4px;">黃金爆發 (向上)</td><td style="padding:4px;">立即買, 止損 BB 下軌</td></tr>
+          <tr style="background:#fafafa;"><td style="padding:4px;">🔴 <b>bear_squeeze_fire</b> (0.85)</td><td style="padding:4px;">黃金爆發 (向下)</td><td style="padding:4px;">立即沽/避, 止損 BB 上軌</td></tr>
+          <tr><td style="padding:4px;">🏆 <b>confirmed_vcp_breakout</b> (0.9)</td><td style="padding:4px;">教科書突破</td><td style="padding:4px;">確認後買, 止損最後低點</td></tr>
+          <tr style="background:#fafafa;"><td style="padding:4px;">🟢 <b>clean_trend_expansion</b> (0.7)</td><td style="padding:4px;">上升趨勢</td><td style="padding:4px;">順勢買, 跟隨止損</td></tr>
+          <tr><td style="padding:4px;">🔴 <b>clean_trend_breakdown</b> (0.65)</td><td style="padding:4px;">下跌趨勢</td><td style="padding:4px;">順勢沽/避, 跟隨止損</td></tr>
+          <tr style="background:#fafafa;"><td style="padding:4px;">⏳ <b>genuine_squeeze_forming</b> (0.55)</td><td style="padding:4px;">蓄力中</td><td style="padding:4px;"><b>唔好搶跑</b>, 等突破</td></tr>
+          <tr><td style="padding:4px;">🟡 <b>no_clear_setup</b> (0.25)</td><td style="padding:4px;">觀望</td><td style="padding:4px;"><b>等方向, 唔好入場</b></td></tr>
+        </table>
+      </details>
+
+      <details style="background:#f6ffed;border-left:3px solid #52c41a;padding:8px 12px;border-radius:4px;margin-bottom:10px;">
+        <summary style="cursor:pointer;font-weight:600;color:#52c41a;">💡 第三步: 用 HK.00700 真實 verdict 行一次 (撳開睇)</summary>
+        <div style="margin-top:8px;">
+          <p style="margin:0 0 6px 0;"><b>個案: HK.00700 騰訊</b> (2026-09-10 真實 verdict)</p>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr style="background:#f5f5f5;">
+              <th style="padding:4px;text-align:left;">步驟</th>
+              <th style="padding:4px;text-align:left;">睇乜</th>
+              <th style="padding:4px;text-align:left;">00700 真實數值</th>
+              <th style="padding:4px;text-align:left;">凡人話解讀</th>
+            </tr>
+            <tr>
+              <td style="padding:4px;"><b>Q1 setup</b></td>
+              <td style="padding:4px;">setupType</td>
+              <td style="padding:4px;"><code>no_clear_setup</code></td>
+              <td style="padding:4px;">🟡 觀望中, 唔好入場</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;"><b>Q2 信唔信</b></td>
+              <td style="padding:4px;">confidence</td>
+              <td style="padding:4px;">0.25 + selfCheck=False</td>
+              <td style="padding:4px;">0.25 &lt; 0.3 → 唔可信, banner 顯示 🔧 系統警告</td>
+            </tr>
+            <tr>
+              <td style="padding:4px;"><b>Q3 trend 信唔信</b></td>
+              <td style="padding:4px;">regimeGate</td>
+              <td style="padding:4px;">❌ <b>FAIL</b> (Hurst 0.43 &lt; 0.45)</td>
+              <td style="padding:4px;">00700 random walk, 冇真 trend</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;">Squeeze?</td>
+              <td style="padding:4px;">isSqueeze</td>
+              <td style="padding:4px;">✅ 是, 3 日</td>
+              <td style="padding:4px;">正在收縮, 但未爆</td>
+            </tr>
+            <tr>
+              <td style="padding:4px;">Squeeze 質素?</td>
+              <td style="padding:4px;">qualityScore</td>
+              <td style="padding:4px;">0.82 (≥ 0.7)</td>
+              <td style="padding:4px;">真 squeeze, 質素好</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;">動能方向?</td>
+              <td style="padding:4px;">momentumDir</td>
+              <td style="padding:4px;">🔴 <b>bear</b></td>
+              <td style="padding:4px;">下跌動能, 等爆發向下</td>
+            </tr>
+            <tr>
+              <td style="padding:4px;">VCP?</td>
+              <td style="padding:4px;">vcp.detected</td>
+              <td style="padding:4px;">❌ 否</td>
+              <td style="padding:4px;">HL=False, stage2=False, 唔係 Minervini 標準 VCP</td>
+            </tr>
+            <tr style="background:#fafafa;">
+              <td style="padding:4px;">失敗模式?</td>
+              <td style="padding:4px;">failureMode</td>
+              <td style="padding:4px;">none</td>
+              <td style="padding:4px;">冇失敗模式, 但 setup 仍然 no_clear</td>
+            </tr>
+          </table>
+          <p style="background:#fffbe6;border:1px solid #ffe58f;border-radius:4px;padding:8px 10px;margin:8px 0 0 0;font-size:12px;">
+            <b>💡 結論</b>: 00700 而家係 <b>蓄力 + bear momentum + random walk</b>, 即係「等爆發但方向向下」。大少呢個 case 應該 <b>等 squeeze fire + 確認 bear → 沽/避</b>。
+          </p>
+        </div>
+      </details>
+
+      <details style="background:#f0f5ff;border-left:3px solid #2f54eb;padding:8px 12px;border-radius:4px;">
+        <summary style="cursor:pointer;font-weight:600;color:#2f54eb;">📊 簡化版視覺睇法: 3 個燈 (凡人話) · 撳開睇</summary>
+        <div style="margin-top:8px;font-size:12px;">
+          <p style="margin:0 0 6px 0;"><b>3 個燈嘅條件</b>:</p>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr style="background:#f5f5f5;">
+              <th style="padding:4px;text-align:left;">燈</th>
+              <th style="padding:4px;text-align:left;">綠燈條件</th>
+              <th style="padding:4px;text-align:left;">點解讀</th>
+            </tr>
+            <tr><td style="padding:4px;">🟢 <b>Squeeze 燈</b></td><td style="padding:4px;">isSqueeze + quality≥0.7 + duration≥3</td><td style="padding:4px;">真蓄力中</td></tr>
+            <tr style="background:#fafafa;"><td style="padding:4px;">🟢 <b>Trend 燈</b></td><td style="padding:4px;">regimeGate=PASS (H≥0.45, ADX≥20)</td><td style="padding:4px;">有真 trend</td></tr>
+            <tr><td style="padding:4px;">🟢 <b>Setup 燈</b></td><td style="padding:4px;">setup ≠ no_clear_setup + conf≥0.6</td><td style="padding:4px;">有入場訊號</td></tr>
+          </table>
+          <p style="margin:8px 0 0 0;">
+            <b>3 個都綠 = 可以入場</b><br/>
+            <b>2 綠 1 紅 = 觀望</b><br/>
+            <b>≤ 1 綠 = 唔好入場</b>
+          </p>
+        </div>
+      </details>
+
+      <div style="background:#f5f5f5;padding:8px 10px;border-radius:4px;margin-top:10px;font-size:12px;color:#666;">
+        <b>💡 重點提醒</b>:
+        <ul style="margin:4px 0 0 18px;padding:0;">
+          <li>Squeeze 只係「蓄力」, 唔係「必然升」, 要等 squeezeFire 先做</li>
+          <li>SNR 高 (trending) 先好入場, choppy 環境止損會被 noise 觸發</li>
+          <li>失敗模式 noisy_squeeze / weak_follow_through 最高入場 0.4</li>
+          <li>永遠配合 M1-M5 一齊睇, M6 嘅 setup 類型要同其他 module 一致先信</li>
+        </ul>
+      </div>
+    </div>
+  </body></html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>M4 副圖 RSI/MACD 預覽 (凡人話 standalone)</title>
+  <link rel="stylesheet" href="testing-page.css?v=2.3.159">
+  <style>
+    body { background:#f5f5f5; }
+    .preview-header {
+      max-width: 1280px; margin: 20px auto; padding: 16px 20px;
+      background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+      font-size: 14px; line-height: 1.7;
+    }
+    .preview-header h1 { margin: 0 0 8px 0; font-size: 18px; }
+    .preview-controls {
+      max-width: 1280px; margin: 0 auto 12px; padding: 10px 20px;
+      background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+      display: flex; gap: 12px; align-items: center;
+    }
+    .preview-controls input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
+    .preview-controls button { padding: 6px 16px; background: #4f46e5; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .preview-controls button:hover { background: #4338ca; }
+    .preview-status { font-size: 13px; color: #555; }
+    .chart-container { max-width: 1280px; margin: 0 auto; }
+    #chart-container { width: 100%; height: 800px; background: white; border-radius: 6px; border: 1px solid #e8e8e8; }
+  </style>
+</head>
+<body>
+  <div class="preview-header">
+    <h1>🧪 M4 副圖 multi-pane 預覽 (Spec Sync #41 + Option 1 fix)</h1>
+    <div>凡人話: K 線 (Pane 0) + RSI 紫色線 (Pane 1) + MACD 橙色線 (Pane 2), 3 個 pane 共享同一個 time scale, 大少撳住 K 線 pan/zoom 嗰陣 RSI/MACD 副圖自動跟住同步 (TradingView 風格)。</div>
+    <div>Backend: 拎走 M4 Spec Sync #52 reg gate fail 早 return, 改為 emit warning + 繼續行 algorithm 拎 RSI/MACD series (任何 stock 都睇到副圖)。</div>
+  </div>
+
+  <div class="preview-controls">
+    <label>股票代碼: <input type="text" id="stock-code" value="HK.00700" style="width:140px;"></label>
+    <label>視窗天數: <input type="number" id="data-days" value="1260" min="60" max="1260" step="60" style="width:80px;"></label>
+    <button id="run-btn">跑算法</button>
+    <span class="preview-status" id="status">就緒</span>
+  </div>
+
+  <div class="chart-container">
+    <div id="chart-container"></div>
+  </div>
+
+  <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script>
+  const BACKEND_URL = 'http://localhost:18792';
+  const statusEl = document.getElementById('status');
+  const stockCodeEl = document.getElementById('stock-code');
+  const dataDaysEl = document.getElementById('data-days');
+  const chartContainerEl = document.getElementById('chart-container');
+  const runBtn = document.getElementById('run-btn');
+
+  let chartInstance = null;
+  let indicatorsLineSeries = {};
+
+  function clearIndicatorsSeries() {
+    if (!chartInstance) return;
+    for (const key of Object.keys(indicatorsLineSeries)) {
+      const entry = indicatorsLineSeries[key];
+      if (entry && entry.series) {
+        try {
+          if (Array.isArray(entry.priceLines)) {
+            for (const pl of entry.priceLines) {
+              try { entry.series.removePriceLine(pl); } catch (_) {}
+            }
+          }
+          chartInstance.removeSeries(entry.series);
+        } catch (e) {}
+      }
+    }
+    indicatorsLineSeries = {};
+  }
+
+  function destroyChart() {
+    if (chartInstance) {
+      try { chartInstance.remove(); } catch (_) {}
+      chartInstance = null;
+    }
+    indicatorsLineSeries = {};
+  }
+
+  async function fetchKLines(code, period, count) {
+    const url = `${BACKEND_URL}/api/kline?code=${encodeURIComponent(code)}&period=${period}&count=${count}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`K 線 fetch 失敗: ${r.status}`);
+    const d = await r.json();
+    return d.klines || d.data || [];
+  }
+
+  async function fetchIndicatorsVerdict(code, count) {
+    const url = `${BACKEND_URL}/api/algorithms/run?algo=indicators&symbol=${encodeURIComponent(code)}&dataWindowDays=${count}&period=1d`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`verdict fetch 失敗: ${r.status}`);
+    return r.json();
+  }
+
+  function toLocalDate(t) {
+    if (typeof t === 'number') {
+      return t > 1e12 ? Math.floor(t / 1000) : t;
+    }
+    if (typeof t === 'string') {
+      return Math.floor(new Date(t).getTime() / 1000);
+    }
+    return null;
+  }
+
+  function renderKLinePane(klines) {
+    const candleData = klines.map(k => ({
+      time: toLocalDate(k.timestamp ?? k.time ?? k.date),
+      open: k.open, high: k.high, low: k.low, close: k.close,
+    })).filter(d => d.time != null && [d.open, d.high, d.low, d.close].every(Number.isFinite))
+      .sort((a, b) => a.time - b.time);
+
+    const chart = LightweightCharts.createChart(chartContainerEl, {
+      layout: {
+        background: { type: 'solid', color: '#ffffff' },
+        textColor: '#333',
+        panes: {
+          separatorColor: '#e8e8e8',
+          separatorHoverColor: '#d0d0d0',
+          enableResize: true,
+        },
+      },
+      grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
+      timeScale: { borderColor: '#d9d9d9', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: '#d9d9d9' },
+      autoSize: true,
+    });
+
+    const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+      upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
+      wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+    });
+    candleSeries.setData(candleData);
+
+    // Volume 疊落下面 25%
+    const volumeData = candleData.map((d, i) => {
+      const k = klines[i];
+      return {
+        time: d.time,
+        value: k.volume || 0,
+        color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)',
+      };
+    });
+    const volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
+      priceFormat: { type: 'volume' }, priceScaleId: 'volume',
+    });
+    chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    volumeSeries.setData(volumeData);
+
+    chart.timeScale().fitContent();
+
+    // Pane 0 stretch = 3 (相對 pane 1/2 = 1, 即 60/20/20)
+    setTimeout(() => {
+      try {
+        const p0 = chart.panes()[0];
+        if (p0) p0.setStretchFactor(3);
+      } catch (e) {}
+    }, 0);
+
+    return { chart, candleSeries };
+  }
+
+  function renderIndicators(chart, klines, verdict) {
+    const m = verdict.meta || {};
+    const rsiSeries = m.rsiSeries || [];
+    const macdSeries = m.macdSeries || [];
+
+    if (rsiSeries.length > 0) {
+      const rsiData = [];
+      const rsiOffset = klines.length - rsiSeries.length;
+      for (let i = 0; i < rsiSeries.length; i++) {
+        const k = klines[rsiOffset + i];
+        if (!k) continue;
+        const t = toLocalDate(k.timestamp ?? k.time ?? k.date);
+        rsiData.push({ time: t, value: rsiSeries[i] });
+      }
+      if (rsiData.length > 0) {
+        const rsiS = chart.addSeries(LightweightCharts.LineSeries, {
+          color: '#9b59b6', lineWidth: 2, title: 'RSI(14)',
+          priceLineVisible: false, lastValueVisible: true,
+          priceScaleId: 'rsi',
+        }, 1);
+        rsiS.setData(rsiData);
+        try { rsiS.priceScale().applyOptions({ autoScale: false, scaleMargins: { top: 0.05, bottom: 0.05 } }); } catch (_) {}
+
+        const priceLines = [];
+        const pl30 = rsiS.createPriceLine({ price: 30, color: '#27ae60', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30 超賣' });
+        const pl50 = rsiS.createPriceLine({ price: 50, color: '#999999', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: '50 中軸' });
+        const pl70 = rsiS.createPriceLine({ price: 70, color: '#c0392b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70 超買' });
+        priceLines.push(pl30, pl50, pl70);
+        indicatorsLineSeries.rsi = { series: rsiS, priceLines };
+
+        try { const p1 = chart.panes()[1]; if (p1) p1.setStretchFactor(1); } catch (_) {}
+      }
+    }
+
+    if (macdSeries.length > 0) {
+      const macdData = [];
+      const macdOffset = klines.length - macdSeries.length;
+      for (let i = 0; i < macdSeries.length; i++) {
+        const k = klines[macdOffset + i];
+        if (!k) continue;
+        const t = toLocalDate(k.timestamp ?? k.time ?? k.date);
+        macdData.push({ time: t, value: macdSeries[i] });
+      }
+      if (macdData.length > 0) {
+        const macdS = chart.addSeries(LightweightCharts.LineSeries, {
+          color: '#e67e22', lineWidth: 2, title: 'MACD',
+          priceLineVisible: false, lastValueVisible: true,
+          priceScaleId: 'macd',
+        }, 2);
+        macdS.setData(macdData);
+
+        const priceLines = [];
+        const pl0 = macdS.createPriceLine({ price: 0, color: '#666666', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: '0 軸' });
+        priceLines.push(pl0);
+        indicatorsLineSeries.macd = { series: macdS, priceLines };
+
+        try { const p2 = chart.panes()[2]; if (p2) p2.setStretchFactor(1); } catch (_) {}
+      }
+    }
+  }
+
+  async function runPreview() {
+    const code = stockCodeEl.value.trim() || 'HK.00700';
+    const count = parseInt(dataDaysEl.value, 10) || 1260;
+    statusEl.textContent = '執行中…';
+    destroyChart();
+    chartContainerEl.innerHTML = '';
+    try {
+      const [klines, verdict] = await Promise.all([
+        fetchKLines(code, '1d', count),
+        fetchIndicatorsVerdict(code, count),
+      ]);
+      if (klines.length === 0) {
+        statusEl.textContent = `❌ ${code} 拎唔到 K 線`;
+        return;
+      }
+      const { chart } = renderKLinePane(klines);
+      chartInstance = chart;
+      renderIndicators(chart, klines, verdict);
+
+      const m = verdict.meta || {};
+      const rg = m.regimeGate || '?';
+      const st = m.state || '?';
+      const cf = m.confidence != null ? m.confidence.toFixed(2) : '?';
+      const rsiN = (m.rsiSeries || []).length;
+      const macdN = (m.macdSeries || []).length;
+      statusEl.innerHTML = `✅ ${code} (${count}d) · regime=${rg} · state=${st} · conf=${cf} · RSI=${rsiN} 條 · MACD=${macdN} 條`;
+    } catch (e) {
+      statusEl.textContent = `❌ ${e.message}`;
+    }
+  }
+
+  runBtn.addEventListener('click', runPreview);
+  window.addEventListener('load', () => {
+    stockCodeEl.value = 'HK.00700';
+    dataDaysEl.value = '1260';
+    setTimeout(runPreview, 100);
+  });
+  </script>
+</body>
+</html>

@@ -624,7 +624,7 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 // 大少 2026-09-09 09:21 — Verdict meta shape 統一 (治本): ALGO_CACHE_BUST = '4.80.0' → '4.81.0' (對齊 §Verdict meta shape 統一永久 rule Spec Sync #53, 大少 9月19 09:19 trigger「這些問題不停出現, 有沒有徹底可以解決既方法」嘅 systematic 解決方案, 1 個地方改全部 algorithm 即時受惠: backend services/algorithm_runner.py line 437-441 verdict 序列化階段 setdefault rsiSeries: [] + macdSeries: [] 落 meta dict 統一保證 shape, frontend adapter.mjs line 4294-4296 renderIndicatorsChartOverlay guard 簡化返 1 個 `!rsiSeries || !macdSeries` 拎到 [] 自然 pass (凡人話正常: reg gate fail / K 線唔夠 / network error 嗰陣都拎到 []), 拎到 undefined / null 先係 silent fail 觸發 warning. 之前 v0.2.1 分 2 個 case 仍然 false positive 因為 backend 唔同 early return path 仲有 shape inconsistency, 過去 1.5 個鐘 (7:23 → 9:19) 撞 4 次同樣 pattern 嘅 bug. backend evidence: restart backend (./start.sh, 對齊 8月31日 11:01 hot-reload 永久 rule) + curl 5 隻 stock (HK.00700/HK.00005/HK.00019/HK.00981/US.AAPL) 全部統一拎 rsiSeries: list len 0 + macdSeries: list len 0, 3 個 case (reg gate fail / K 線唔夠 / 正常行) 全部 frontend 拎到 array 自然 pass guard; 對齊 §M3 trendline chart overlay 修復永久 rule (2026-09-06 16:47) + §M4 v0.2.0 永久 rule (9月9日 01:55) 嘅 spirit; 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.159 → ?v=2.3.160)
 // 大少 2026-09-09 09:32 — M4 副圖 multi-pane: ALGO_CACHE_BUST = '4.81.0' → '4.82.0' (adapter.mjs renderIndicatorsChartOverlay 改用 LWC v5 panes API, RSI 落 Pane 1 + MACD 落 Pane 2, Pane 預設 share 同一個 time scale, 凡人話: 大少撳住 K 線 pan/zoom, RSI/MACD 副圖自動跟住同步, TradingView 風格; 加 RSI 30/50/70 reference line (Option A: tradingview 標準) + MACD 0 軸 reference line; layout.panes enableResize: true, 凡人話: 大少可以 drag pane 邊界自由 resize; setStretchFactor 控制 60/20/20 比例; testing-page.css #chart-container height 600px → 800px 對齊 3 個 pane; testing-page.js renderChart createChart options 加 layout.panes defaults; backend 唔需要改, Spec Sync #52 reg gate fail 嗰陣仍然拎 rsiSeries: [] / macdSeries: [] 兜底, frontend 拎空 array 唔 add pane 對齊 plan Step 6 case 6 silent fail testing; 凡人話: K 線移動或放大縮小動作時 RSI/MACD 副圖完全配合對應; 對齊 LWC v5 panes 永久 rule「chart.panes() 預設 share time scale」+ §M3 trendline chart overlay 修復永久 rule spirit「Frontend render function 拎 path 永遠 verdict.meta.X」; 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.160 → ?v=2.3.161)
 // 大少 2026-09-09 17:50 — Module Card Purpose 永久 rule: ALGO_CACHE_BUST = '4.82.0' → '4.83.0' (testing-page.js renderTradeJournalSection `<h3>` 下面加 `<p class="module-purpose">` 講 Trade Journal 主要作用「記低真正落實嘅倉位, 之後用 forward return 同命中率回測驗證」, 對齊 §Module Card Purpose 永久 rule spirit「每個 module card 頂部都加一句凡人話作用說明」; 凡人話: 撳去 Trade Journal section 即刻知道呢度係畀真正落實倉位記低, 唔係 mark 啱錯嗰啲 operation; 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.161 → ?v=2.3.162)
-const ALGO_CACHE_BUST = '4.85.0';  // 大少 2026-09-10 09:43 Spec Sync #60 v0.2 (feature/m5-buy-rule-relax merge 64230718/40f76ba8): V9 secondary confirm AND→OR 拆解
+const ALGO_CACHE_BUST = '4.89.0';  // 大少 2026-09-10 11:16 Spec Sync #54 M6 Dashboard 加凡人話 popup: renderM6Dashboard 入面所有 technical term (3 個燈 / setup 動作 / 失敗模式 / 動能 / VCP / 教學 5 種 setup 表 / Self-Check) 加 .m6-verdict-tooltip popup — M6_TOOLTIPS 拎去 module-level, renderVolatilityResult + renderM6Dashboard 共用
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -1543,6 +1543,27 @@ async function runAlgorithm() {
         resultPanel.innerHTML = renderM9ProgressLog(verdict) + `<pre>${JSON.stringify(verdict, null, 2)}</pre>`;
       } else {
         resultPanel.innerHTML = `<pre>${JSON.stringify(verdict, null, 2)}</pre>`;
+      }
+    }
+
+    // 大少 2026-09-10 10:03 trigger — M6 Dashboard 優化 UI 搬到圖表下邊 (Spec Sync #54)
+    // 凡人話: 撳跑 M6 之後, 將 dashboard 寫入 #m6-dashboard-panel (chart-section 入面, chart-container 之後, result section 之前)
+    // 視線一離開 chart 即刻見到 3 個燈 + 5 種 setup 動作 + 凡人話解讀
+    // 其他 algo 嗰陣清返 dashboard panel (避免顯示 M6 舊 verdict)
+    const dashboardPanel = document.getElementById('m6-dashboard-panel');
+    if (dashboardPanel) {
+      if (currentAdapter.id === 'AS-03-VOL') {
+        try {
+          const { renderM6Dashboard } = await import('../algorithms/AS-03-cycle-detection/adapter.mjs?v=' + ALGO_CACHE_BUST);
+          dashboardPanel.innerHTML = renderM6Dashboard(verdict);
+          // 大少 9月6日 16:47 永久 rule 沿用 (testing page chart overlay 視覺 verify): dashboard 都要肉眼 verify
+        } catch (err) {
+          console.error('[M6 Dashboard] render failed:', err);
+          dashboardPanel.innerHTML = `<div style="background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;padding:12px;color:#cf1322;">⚠️ M6 Dashboard 渲染失敗: ${err.message}</div>`;
+        }
+      } else {
+        // 撳跑其他 algo → 清 M6 dashboard
+        dashboardPanel.innerHTML = '';
       }
     }
 

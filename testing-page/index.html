@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>股票演算法測試頁</title>
-  <link rel="stylesheet" href="testing-page.css?v=2.3.160">
+  <link rel="stylesheet" href="testing-page.css?v=2.3.168">
   <style>
     /* 大少 2026-08-22 23:35 trigger — chart 上方顯示股票名稱 + 號碼 */
     .stock-name-display {
@@ -182,6 +182,9 @@
             <span style="color:#999;font-size:12px;margin-left:4px;">(撳即時生效, 唔需要跑算法 · 預設開)</span>
           </div>
           <div id="chart-container"></div>
+          <!-- 大少 2026-09-10 10:03 trigger — M6 Dashboard 搬到圖表下邊 (chart-section 入面, chart-container 之後, result section 之前) -->
+          <!-- 凡人話: 撳完 M6 跑算法之後, dashboard 即刻喺 chart 下面顯示 3 個燈 + 5 種 setup 動作 + 凡人話解讀, 視線一離開 chart 即刻見到 verdict 結果, 唔使 scroll 落去 result section -->
+          <div id="m6-dashboard-panel"></div>
         </section>
 
         <section class="result">
@@ -202,6 +205,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.164"></script>  <!-- 大少 2026-09-10 09:43 Spec Sync #60 v0.2: bump ?v=2.3.163 → 2.3.164 (testing-page.js ALGO_CACHE_BUST 4.84.0 → 4.85.0) -->
+  <script type="module" src="testing-page.js?v=2.3.168"></script>  <!-- 大少 2026-09-10 11:16 Spec Sync #54 M6 Dashboard 加凡人話 popup: bump ?v=2.3.167 → 2.3.168 (testing-page.js ALGO_CACHE_BUST 4.88.0 → 4.89.0) -->
 </body>
 </html>
