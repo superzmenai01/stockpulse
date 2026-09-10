@@ -1,5 +1,5 @@
 """
-backend/algorithms/ma-alignment/algorithm.py — M1 MA Alignment v2.4.0 (大少 2026-09-08 拎走強升中整固 sub-scenario + 強升/強跌 trigger 拎走放量 v2.3.0 已 9月6日 commit)
+backend/algorithms/ma-alignment/algorithm.py — M1 MA Alignment v2.5.0 (大少 2026-09-10 18:15 Spec Sync #61 加 5 個 self_check warning emit, 對齊 M2/M3/M4/M5/M6 pattern)
 
 凡人話: 拎 K 線 → 計算 MA5/MA10/MA20/MA60 → 判定 8 個 sub-scenario cycle + 8 個 cycle position
 
@@ -18,6 +18,7 @@ Algorithm: 8 個 step (跟 ma-alignment.ts 嘅 detect() method 1:1 port 去 Pyth
 - Step 6: MA slopes + momentum score
 - Step 7: Confidence (base × vol × slope, 三階段調整)
 - Step 8: 組裝 verdict (跟 frontend verdict shape 100% 兼容)
+- Step 8.5: 5 個 self_check warning emit (v2.5.0, 大少 2026-09-10 18:15 trigger 揀 C Stage+Conf 混合)
 
 v2.2.0 改動 (大少 2026-08-21 18:37):
 - thresholdPct 改用 adaptive (ATR% × 1.5, clamp 0.5%-5%)
@@ -28,6 +29,23 @@ v2.4.0 改動 (大少 2026-09-08 拎走強升中整固):
 - 拎走第 10 個 sub-scenario: strong_uptrend_consolidating (強升中整固 / 蓄勢) — v2.3.0 加咗, 9月5日 spec doc, 但 audit 217 stock (2026-09-08 14:13) 證明 0 隻 stock 真係 hit 過, 屬 dead code
 - 拎走 Priority 2.6 整個 elif block (algorithm.py line 562-598)
 - 拎走 cycleLabel / stateMap / positionLabel 3 個 dict entry
+
+v2.5.0 改動 (大少 2026-09-10 18:15 Spec Sync #61 M1 self_check warning emit, 對齊 M2/M3/M4/M5/M6):
+- 對齊 §M1 sub-scenario 永久 rule (大少 2026-08-16 19:21) ≥ 3 stock verify
+- 對齊 §M2 self-check penalty 永久 rule (Spec Sync #48) — M1 conf 已經 floor 0.3, self_check_triggered 唔再額外扣
+- 對齊 §Module Warning v1.1.0 spirit — 統一用 ModuleWarning object 落 verdict.warnings
+- 對齊 §M7 Synthesizer v2.0 plan §E.1 audit — M1 完全冇 self_check emit, 補返 5 個 condition
+- 5 個 self_check condition (大少 trigger C 方案 Stage+Conf 混合):
+  1. cyclePosition = late_stage_topping → CONFLICT_STATE (見頂跡象, 對齊 plan §F.2 條件 1)
+  2. cyclePosition = late_stage_bottoming → CONFLICT_STATE (見底跡象, 對齊 plan §F.2 條件 2)
+  3. confidence < 0.4 → THRESHOLD_BREACH (信心太弱, 對齊 plan §F.2 條件 3)
+  4. cycle = sideways + abs(momentumScore) < 0.012 → MODULE_PARTIAL (橫行無方向, 對齊 plan §F.2 條件 4)
+  5. cycle = strong_downtrend → CONFLICT_STATE (跌股警告, 凡人話擴展自 plan §F.2 條件 5, 避免 dead code)
+- 凡人話 expected trigger (5 隻 stock): HK.00700 跌 (條件 5) + US.AAPL 橫行弱 (條件 4) + US.GOOGL 弱 conf (條件 3) + 條件 4
+  = 3/5 stock trigger, 對齊 §M1 sub-scenario 永久 rule ≥ 3 stock verify
+  HK.00005 + US.MSFT 強升股 唔 trigger (對齊凡人話「強升股 唔應該 self_check」)
+- Meta 加 self_check_triggered (bool) + original_confidence (float) 2 個 audit field
+  對齊 M2 (snake_case) / M3 (snake_case) 嘅 pattern
 - 拎走 candidate list 入面嘅 "strong_uptrend_consolidating" (line 704 + 721 + 753)
 - 拎走 consolidationLookback + consolidationRangeThresholdPct config (config.py line 38-42)
 - 拎走 _recent_consolidation_range helper function (algorithm.py line 283-289, 只係強升中整固 trigger 用)
@@ -729,6 +747,108 @@ class MAAlignmentV2Algorithm(Algorithm):
         confidence = max(0.30, min(0.95, confidence))
         confidence = _round(confidence, 4)
 
+        # v2.5.0 (大少 2026-09-10 18:15 Spec Sync #61) — self_check 初始化
+        # 凡人話: 拎 self_check_triggered 同 original_confidence 初始化喺 meta dict 之前,
+        # 因為 meta dict 要拎呢 2 個 audit field, 後面 warnings 嗰段會 trigger self_check_triggered = True
+        self_check_triggered = False
+        original_confidence = confidence  # 拎 audit field, 對齊 M2/M3 pattern
+
+        # ============ v2.5.0 M1 self_check warning emit (大少 2026-09-10 18:15 Spec Sync #61) ============
+        # 凡人話: M1 算法跑完之後, 自己診斷 verdict 係咪可信, emit warning
+        # 對齊 M2 self_check_warning 永久 rule (Spec Sync #48) / M3 self_check_warning 永久 rule (Spec Sync #40)
+        # 5 個 self_check condition (大少 trigger C 方案 Stage + Conf 混合):
+        warnings = []  # 拎返初始化 (因為拎去 Step 8 之前)
+
+        # 大少原本永久 rule: K 線 < 30 拎 LOW_SAMPLE_SIZE warning (對齊 §Algorithm Backend-only + 模組化)
+        if len(klines) < 30:
+            warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "ma_alignment",
+                "code": "LOW_SAMPLE_SIZE",
+                "message": f"只有 {len(klines)} 條 K 線, sample size 較細",
+                "issue": f"actual klines = {len(klines)}, 建議 ≥ 30 條先可信",
+                "impact": "Verdict 唔可信, 唔好落單",
+                "fix": "Re-run / 加大 dataWindowDays",
+                "context": {"actual_count": len(klines), "recommended_min": 30},
+            })
+
+        # 條件 1: cyclePosition = late_stage_topping → CONFLICT_STATE (見頂跡象)
+        if cycle_position == "late_stage_topping":
+            self_check_triggered = True
+            warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "ma_alignment",
+                "code": "CONFLICT_STATE",
+                "message": "Cycle 見頂轉勢中 (late_stage_topping)",
+                "issue": f"cyclePosition = {cycle_position}, 股價見頂跡象, 上升動能可能用完",
+                "impact": "Verdict 唔可信 (見頂跡象, 上行可能逆轉), 唔好重倉",
+                "fix": "睇其他 module 確認 / 留意 M7 alignment",
+                "context": {"cyclePosition": cycle_position, "cycle": candidate},
+            })
+
+        # 條件 2: cyclePosition = late_stage_bottoming → CONFLICT_STATE (見底跡象)
+        if cycle_position == "late_stage_bottoming":
+            self_check_triggered = True
+            warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "ma_alignment",
+                "code": "CONFLICT_STATE",
+                "message": "Cycle 見底轉勢中 (late_stage_bottoming)",
+                "issue": f"cyclePosition = {cycle_position}, 股價見底跡象, 下跌動能可能用完",
+                "impact": "Verdict 唔可信 (見底跡象, 下跌可能逆轉), 唔好做空",
+                "fix": "睇其他 module 確認 / 留意 M7 alignment",
+                "context": {"cyclePosition": cycle_position, "cycle": candidate},
+            })
+
+        # 條件 3: confidence < 0.4 → THRESHOLD_BREACH (信心太弱)
+        # 對齊 §M2 self_check penalty 永久 rule: M1 conf 已經 floor 0.3, 唔額外扣
+        if confidence < 0.4:
+            self_check_triggered = True
+            warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "ma_alignment",
+                "code": "THRESHOLD_BREACH",
+                "message": f"信心指數 {confidence} < 0.4 門檻",
+                "issue": f"信心太弱, verdict 可信度低, M1 conf 已經 floor 0.3 唔再額外扣",
+                "impact": "Verdict 唔可信, 唔好落單",
+                "fix": "Re-run / 加大 dataWindowDays / 接受低 conf 但繼續判斷",
+                "context": {"confidence": confidence, "original_confidence": original_confidence, "floor": 0.3},
+            })
+
+        # 條件 4: cycle = sideways + abs(momentumScore) < 0.012 → MODULE_PARTIAL (橫行無方向)
+        if candidate == "sideways" and abs(momentum_score) < 0.012:
+            self_check_triggered = True
+            warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "ma_alignment",
+                "code": "MODULE_PARTIAL",
+                "message": f"橫行無方向 (cycle=sideways, |momentumScore|={abs(momentum_score):.4f} < 0.012)",
+                "issue": f"cycle = sideways + momentum 接近 0, 橫行無明確方向, 趨勢量度唔準",
+                "impact": "Verdict 唔可信 (橫行無方向), 唔好落單",
+                "fix": "Re-run / 睇其他 module 確認 / 接受 SIDEWAYS 但繼續判斷",
+                "context": {"cycle": candidate, "abs_momentum_score": abs(momentum_score), "threshold": 0.012},
+            })
+
+        # 條件 5: cycle = strong_downtrend → CONFLICT_STATE (跌股警告, 凡人話擴展避免 dead code)
+        if candidate == "strong_downtrend":
+            self_check_triggered = True
+            warnings.append({
+                "level": "warning",
+                "category": "system",
+                "module_id": "ma_alignment",
+                "code": "CONFLICT_STATE",
+                "message": "Cycle 強跌 (strong_downtrend)",
+                "issue": f"cycle = strong_downtrend, 股價強烈下跌, MA 排序全負, 短期回升可能只係反彈",
+                "impact": "Verdict 唔可信 (強跌股, 短期信號可能被大勢蓋過), 唔好撈底",
+                "fix": "睇其他 module 確認 / 留意 M7 alignment / 接受跌股信號弱",
+                "context": {"cycle": candidate, "cyclePosition": cycle_position, "confidence": confidence},
+            })
+
         # ============ Step 8: 組裝 verdict ============
         last_date = (
             klines[-1].get("date") or klines[-1].get("time")
@@ -778,26 +898,15 @@ class MAAlignmentV2Algorithm(Algorithm):
             "adaptiveAtrPct": _round(threshold_resolution["atrPct"], 6) if threshold_resolution["atrPct"] is not None else None,
             "adaptiveAtrPctDisplay": f"{threshold_resolution['atrPct']*100:.3f}%" if threshold_resolution["atrPct"] is not None else None,
             "adaptiveRawThreshold": _round(threshold_resolution["rawValue"], 6) if threshold_resolution["rawValue"] is not None else None,
+            # v2.5.0 (大少 2026-09-10 18:15 Spec Sync #61) — M1 self_check 永久 rule audit field
+            # 對齊 M2 (snake_case self_check_triggered / original_confidence) / M3 (snake_case) 嘅 pattern
+            # M4/M5/M6 用 camelCase (selfCheckTriggered / originalConfidence), M7 algorithm_runner 已經 OR fallback 處理
+            "self_check_triggered": self_check_triggered,
+            "original_confidence": original_confidence,
             # 大少 2026-08-30 01:04 — 拎走 ZigZag 5 個 field (zigzagPoints / lastSwingHigh / lastSwingLow / zigzagThreshold / zigzagSlope / zigzagSource)
             # Spec Sync #46 永久 rule 改: M1 純 MA alignment, 之字 points 由 frontend inject
         }
 
-        # Warnings (跟 Module Warning System v1.1.0)
-        warnings = []
-        if len(klines) < 30:
-            warnings.append({
-                "level": "warning",
-                "category": "system",
-                "module_id": "ma_alignment",
-                "code": "LOW_SAMPLE_SIZE",
-                "message": f"只有 {len(klines)} 條 K 線, sample size 較細",
-                "issue": f"actual klines = {len(klines)}, 建議 ≥ 30 條先可信",
-                "impact": "Verdict 唔可信, 唔好落單",
-                "fix": "Re-run / 加大 dataWindowDays",
-                "context": {"actual_count": len(klines), "recommended_min": 30},
-            })
-
-        # M1 algorithm 唔拎 points (ZigZag 拎), 返 Verdict shape
         return Verdict(
             ok=True,
             points=[],  # M1 algorithm 唔拎 points, ZigZag algorithm 拎
