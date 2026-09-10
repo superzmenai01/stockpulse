@@ -220,7 +220,10 @@ export class VolatilityModule implements CycleModule<KLine[]> {
     qualityScore += (1 - Math.min(1, priceCV / 0.03)) * 0.3;
 
     // 凡人話: S2/S3 quality threshold 0.6 → 0.7 (對齊 TTM Squeeze best practice)
-    const qualityThreshold = 0.7;
+    // 大少 2026-09-10 11:30 Spec Sync #54 v2.0.1 — qualityThreshold 0.7 → 0.5 (對齊 v1.0.0 spirit + TTM Squeeze balance)
+    // 凡人話: v2.0.0 用 0.7 太嚴, 99% stock 唔達標 setup 永遠 no_clear_setup
+    // 改 0.5 平衡: regimeGate PASS 嗰陣 setup 容易 trigger, FAIL 嗰陣 (random walk) 唔會亂 trigger
+    const qualityThreshold = 0.5;
     const isGenuineSqueeze = qualityScore >= qualityThreshold && squeezeDuration >= cfg.squeezeMinDuration;
 
     // ============ Step 3: ATR 分解 ============
@@ -400,6 +403,15 @@ export class VolatilityModule implements CycleModule<KLine[]> {
       entryScore = 0.65 * failureMaxCap;
       setupType = 'clean_trend_breakdown';
       riskReward = 2.0;
+    // v2.0.1 D: 新加 regime_pass_setup (大少 2026-09-10 11:30 Spec Sync #54)
+    // 凡人話: regimeGate=PASS (Hurst+ADX 兩招過, 確認有真 trend) 但冇任何 5 種 setup
+    // 對齊 §M4 cross-module alignment 永久 rule: M6 setup 一定要同 M1 確認大方向
+    // 條件: regimeGate=PASS + 唔 trigger noisy_squeeze/weak_follow_through + 冇 5 種 setup
+    // 評分 0.45 (比 no_clear_setup 0.25 高, 但比 5 種 setup 0.55-0.95 低, 提醒「有方向等突破」)
+    } else if (regimePassed && failureMode === 'none' && !isSqueeze) {
+      entryScore = 0.45 * failureMaxCap;
+      setupType = 'regime_pass_setup';
+      riskReward = 0;  // 等突破, 唔入場
     } else {
       entryScore = 0.25;
       setupType = 'no_clear_setup';

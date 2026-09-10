@@ -492,7 +492,11 @@ class VolatilityAlgorithm(Algorithm):
         quality_score += (1 - min(1, price_cv / 0.03)) * 0.3
 
         # 凡人話: S2/S3 quality threshold 0.6 → 0.7 (對齊 TTM Squeeze best practice)
-        quality_threshold = 0.7
+        # 大少 2026-09-10 11:30 Spec Sync #54 v2.0.1 — quality_threshold 0.7 → 0.5 (對齊 v1.0.0 spirit + TTM Squeeze balance)
+        # 凡人話: v2.0.0 對齊 TTM Squeeze 標準用 0.7 太嚴, 99% stock 唔達標 setup 永遠 no_clear_setup
+        # 改 0.5 平衡: regimeGate PASS 嗰陣 setup 容易 trigger, FAIL 嗰陣 (random walk) 唔會亂 trigger
+        # 對齊 §改完先 ask 修正先 Commit (9月9日 07:23) + §M3 Hurst+ADX gate 永久 rule spirit
+        quality_threshold = 0.5
         is_genuine_squeeze = quality_score >= quality_threshold and squeeze_duration >= cfg["squeezeMinDuration"]
 
         # Step 3: ATR 分解
@@ -681,6 +685,15 @@ class VolatilityAlgorithm(Algorithm):
             entry_score = 0.65 * failure_max_cap
             setup_type = "clean_trend_breakdown"
             risk_reward = 2.0
+        # v2.0.1 D: 新加 regime_pass_setup (大少 2026-09-10 11:30 Spec Sync #54 v2.0.1)
+        # 凡人話: regimeGate=PASS (Hurst+ADX 兩招過, 確認有真 trend) 但冇任何 5 種 setup
+        # 對齊 §M4 cross-module alignment 永久 rule: M6 setup 一定要同 M1 確認大方向 (M1=UP 嗰陣先 trigger)
+        # 條件: regimeGate=PASS + 唔 trigger noisy_squeeze/weak_follow_through + 冇 5 種 setup
+        # 評分 0.45 (比 no_clear_setup 0.25 高, 但比 5 種 setup 0.55-0.95 低, 提醒大少「有方向等突破」)
+        elif regime_passed and failure_mode == "none" and not is_squeeze:
+            entry_score = 0.45 * failure_max_cap
+            setup_type = "regime_pass_setup"
+            risk_reward = 0  # 等突破, 唔入場
         else:
             entry_score = 0.25
             setup_type = "no_clear_setup"

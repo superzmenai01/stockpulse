@@ -2914,6 +2914,7 @@ const M6_TOOLTIPS = {
   m6_setup_clean_trend_breakdown: '下跌趨勢擴張 (評分 0.65): noise 細, trend 強 (但向下), regime trending, 跟進有力 (向下)。順勢沽/避, 跟隨止損',
   m6_setup_genuine_squeeze_forming: '蓄力中 (評分 0.55): 真 Squeeze + 高質量 + 仲未突破。唔好搶跑, 等突破訊號先入場',
   m6_setup_no_clear_setup: '冇明確 setup (評分 0.25): 冇 Squeeze 冇 VCP 冇 trend。觀望, 唔好入場',
+  m6_setup_regime_pass_setup: '有方向等突破 (評分 0.45, v2.0.1 新加): Hurst+ADX 兩招 confirm 有真 trend, 但 5 種 setup 全部唔 trigger。等突破訊號, 配合 M1 確認大方向。唔好強行入場',
 
   // ===== 失敗模式 =====
   m6_failure_none: '冇失敗模式: 個 setup 結構正常, 冇明顯問題',
@@ -2987,6 +2988,7 @@ export function renderVolatilityResult(verdict) {
     clean_trend_expansion: '🟢 乾淨趨勢擴張',
     clean_trend_breakdown: '🔴 乾淨趨勢沽空',
     genuine_squeeze_forming: '⏳ 真 Squeeze 蓄力中',
+    regime_pass_setup: '🟦 有方向等突破',
     no_clear_setup: '🟡 觀望 (no_clear_setup)',
   };
   const setupKeys = {
@@ -2996,6 +2998,7 @@ export function renderVolatilityResult(verdict) {
     clean_trend_expansion: 'm6_setup_clean_trend_expansion',
     clean_trend_breakdown: 'm6_setup_clean_trend_breakdown',
     genuine_squeeze_forming: 'm6_setup_genuine_squeeze_forming',
+    regime_pass_setup: 'm6_setup_regime_pass_setup',
     no_clear_setup: 'm6_setup_no_clear_setup',
   };
   const failureLabels = {
@@ -3322,7 +3325,7 @@ export function renderM6Dashboard(verdict) {
     action = '🔴 ≤ 1 綠, 唔好入場';
   }
 
-  // ===== 5 種 setup 動作表 =====
+  // ===== 5 種 setup 動作表 (v2.0.1 加 regime_pass_setup) =====
   const setupActionMap = {
     'mtf_squeeze_fire': { icon: '🟢', name: '黃金 Squeeze Fire (向上)', score: 0.95, action: '立即買, 止損 BB 下軌', key: 'm6_setup_mtf_squeeze_fire' },
     'bear_squeeze_fire': { icon: '🔴', name: '沽空 Squeeze Fire (向下)', score: 0.85, action: '立即沽/避, 止損 BB 上軌', key: 'm6_setup_bear_squeeze_fire' },
@@ -3330,6 +3333,7 @@ export function renderM6Dashboard(verdict) {
     'clean_trend_expansion': { icon: '🟢', name: '上升趨勢擴張', score: 0.7, action: '順勢買, 跟隨止損', key: 'm6_setup_clean_trend_expansion' },
     'clean_trend_breakdown': { icon: '🔴', name: '下跌趨勢擴張', score: 0.65, action: '順勢沽/避, 跟隨止損', key: 'm6_setup_clean_trend_breakdown' },
     'genuine_squeeze_forming': { icon: '⏳', name: '蓄力中', score: 0.55, action: '唔好搶跑, 等突破', key: 'm6_setup_genuine_squeeze_forming' },
+    'regime_pass_setup': { icon: '🟦', name: '有方向等突破', score: 0.45, action: '等突破訊號, 配合 M1 確認大方向', key: 'm6_setup_regime_pass_setup' },
     'no_clear_setup': { icon: '🟡', name: '冇明確 setup', score: 0.25, action: '等方向, 唔好入場', key: 'm6_setup_no_clear_setup' },
   };
   const currentSetup = setupActionMap[setup] || setupActionMap['no_clear_setup'];
@@ -3443,7 +3447,8 @@ export function renderM6Dashboard(verdict) {
             <tr style="background:#fafafa;"><td style="padding:4px 6px;">${tt('🟢 clean_trend_expansion', 'm6_setup_clean_trend_expansion')}</td><td>0.7</td><td>順勢買, 跟隨止損</td></tr>
             <tr><td style="padding:4px 6px;">${tt('🔴 clean_trend_breakdown', 'm6_setup_clean_trend_breakdown')}</td><td>0.65</td><td>順勢沽/避, 跟隨止損</td></tr>
             <tr style="background:#fafafa;"><td style="padding:4px 6px;">${tt('⏳ genuine_squeeze_forming', 'm6_setup_genuine_squeeze_forming')}</td><td>0.55</td><td>唔好搶跑, 等突破</td></tr>
-            <tr><td style="padding:4px 6px;">${tt('🟡 no_clear_setup', 'm6_setup_no_clear_setup')}</td><td>0.25</td><td>等方向, 唔好入場</td></tr>
+            <tr><td style="padding:4px 6px;">${tt('🟦 regime_pass_setup', 'm6_setup_regime_pass_setup')}</td><td>0.45</td><td>等突破訊號, 配合 M1 確認大方向</td></tr>
+            <tr style="background:#fafafa;"><td style="padding:4px 6px;">${tt('🟡 no_clear_setup', 'm6_setup_no_clear_setup')}</td><td>0.25</td><td>等方向, 唔好入場</td></tr>
           </table>
           <p style="color:#666;font-size:12px;"><b>💡 重點提醒</b>:</p>
           <ul style="margin:6px 0 0 24px;line-height:1.7;font-size:12px;color:#666;">
