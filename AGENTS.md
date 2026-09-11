@@ -234,9 +234,9 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: 7865544f (fix H guard + self-check warning) + Spec Sync #40 即將 push
 
-### M3 Hurst+ADX gate 永久 rule (大少 2026-09-07 01:08 confirm, Phase 1 (B3))
+### M3 Hurst+ADX gate 永久 rule (大少 2026-09-07 01:08 confirm, Phase 1 (B3) → Spec Sync #51 大少 2026-09-09 00:42 confirm 改 confirmation filter)
 
-**凡人話**: M3 (趨勢線法) 算法開頭加一層 gate, 用 Hurst 指數 + ADX 兩招確認個股價真係有「方向」先用 trend line。否則 (random walk / mean-reverting / 弱趨勢) 強制 return SIDEWAYS + emit 1 個 system warning, 等 M7 / M8 / M9 見到就唔好用 M3 嘅 verdict 做綜合判斷, UI 同步顯示 banner 提示大少「呢個 M3 verdict 唔可信」。
+**凡人話**: M3 (趨勢線法) 算法開頭加一層 gate, 用 Hurst 指數 + ADX 兩招做 confirmation。Spec Sync #51 (大少 9月9日 00:42 confirm) 改咗舊 Spec Sync #45 嘅 hard gate 行為: 之前 gate fail 早 return SIDEWAYS 0.3 (99% stock 跌到呢度, 對 UP/DOWN 識別差); 而家 gate fail emit 1 個 LOW_CONFIDENCE warning (info level, system category), 由 Layer 4 公式 warn_penalty 自動扣 conf 0.10, 繼續行正常 algorithm (10+2 條 rule + self-check)。對齊 fractalcycles.com 3-layer framework: Hurst + ADX 應該係 confirmation 而非 hard gate, 對齊 AInvest 標準 H>0.65 strong / 0.5-0.6 maybe / <0.4 mean-reverting。
 
 **兩招確認**：
 1. **Hurst 指數 (DFA, 100 日)**: 量度 trending 持續性
@@ -245,38 +245,49 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
    - H < 0.45 = mean-reverting
 2. **ADX (Wilder 14 日 standard)**: 量度趨勢強度
    - ADX > 25 = 強趨勢
-   - ADX 20-25 = 發展中
-   - ADX < 20 = 弱趨勢 / 橫行
+   - ADX 18-25 = 發展中
+   - ADX < 18 = 弱趨勢 / 橫行
 
-**Gate 規則**:
-- H < 0.45 OR ADX < 20 → **FAIL** → return SIDEWAYS + 1 個 CONFLICT_STATE warning (system category)
-- H ≥ 0.45 AND ADX ≥ 20 → **PASS** → 繼續正常算法 (10 條 rule + 3 個 self-check warning)
+**Gate 規則** (Spec Sync #51 改 confirmation filter):
+- H < 0.45 OR ADX < 18 → **emit LOW_CONFIDENCE warning** (info level, system category) + **繼續行 algorithm**, conf 自動扣 0.10 (Layer 4 warn_penalty)
+- H ≥ 0.45 AND ADX ≥ 18 → **PASS** → 繼續正常算法 (10 條 rule + 3 個 self-check warning)
+- ❌ **唔再 early return SIDEWAYS 0.3** (Spec Sync #45 嘅 hard gate 行為已廢)
 
 **Meta 新加 field**:
 - `hurst`: Hurst 指數 (0-1, 4 decimals)
 - `adx`: ADX 值 (0-100, 4 decimals)
+- `plusDI` / `minusDI` / `atr`: Layer 2 (tactical) emit 對齊 Wilder 1978 standard
+- `hurstLogR2`: Layer 1 (regime) DFA log-log fit R² (Peng 1994 pitfall check)
+
+**Spec Sync #51 改動 (Spec Sync #45 → #51)**:
+- ✅ 改 hard gate → confirmation filter (避免 99% stock 跌到 SIDEWAYS 嘅 false negative)
+- ✅ ADX threshold 20 → 18 (對齊 fractalcycles.com 3-layer framework 標準)
+- ✅ 對齊 5-layer framework: Layer 1 (regime) + Layer 2 (tactical) + Layer 3 (direction) + Layer 4 (breakout) + Layer 5 (pattern)
+- ✅ Bulkowski 條件 30/5 → 20/3 (對齊 Donchian 20-period standard)
+- ✅ Donchian Rule K/L 永遠 priority 第一/二位 (newtrading.io 100 年 backtest 74.1% win rate)
 
 **解決 audit 揭發嘅 3 個問題** (Spec Sync #40 baseline, 404 隻 stock):
 - ✅ **一致率** 28% → 預期升：M3 改判 SIDEWAYS 對齊 M1+M2
 - ⚠️ **self-check 觸發** 84% → 預期降但仍係高 (因 84% stock 唔係 strong trending)
-- ✅ **over-confident** 46% → 預期降：全部 SIDEWAYS 0.3 唔再 over-confident
+- ✅ **over-confident** 46% → 預期降：conf 自動扣 0.10 + floor 0.3 唔再 over-confident
 
 **永久 rule checklist**:
 - ✅ M3 algorithm 永遠 emit Hurst+ADX gate check 用 `compute_hurst()` (DFA) + `compute_adx()` (Wilder 14 日)
+- ✅ Gate 永遠 emit LOW_CONFIDENCE warning 而非 SIDEWAYS 早 return (Spec Sync #51 confirmation filter)
+- ✅ Threshold H < 0.45 / ADX < 18 (Spec Sync #51 confirm)
 - ✅ Gate 走完整 propagation chain: M3 → M7 → M8 → M9 → frontend banner
 - ✅ Meta 永遠 emit `hurst` + `adx` 兩個 field (audit 對比用)
 - ✅ Backend `trendline/algorithm.py` v0.1.4 + Frontend `modules/trendline.ts` v0.1.4 1:1 port 同步
-- ✅ Threshold H < 0.45 / ADX < 20 (Wilder's standard, 大少 1:08 confirm)
 - ✅ 對齊 Module Warning v1.1.0 — `category: "system"` 因為 verdict 可能唔可信
 - ✅ ADX Wilder's smooth 要 `/ period` (Wilder's standard formula, 唔可以漏)
 
 **對應文件**:
-- `backend/algorithms/trendline/algorithm.py` run() Step 0.5 gate (Hurst+ADX check)
+- `backend/algorithms/trendline/algorithm.py` run() Step 0.5 gate (Hurst+ADX check, Spec Sync #51 line 788-807 confirmation filter)
 - `algorithms/AS-03-cycle-detection/modules/trendline.ts` detect() Step 0.5 gate (1:1 port)
-- `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §4.2 Hurst+ADX gate section
-- `backup-admin/index.html` Backup Admin Page 拎到 `restore-2026-09-07-m3-pre-b3-phase1` tag 還原
+- `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §4.2 Hurst+ADX gate section + §4.4 5-layer framework
+- 對齊 §M3 5-layer framework 永久 rule (Spec Sync #51, line 3150-3184 段)
 
-對應 commit: `863bb22b` (fix(trendline) Hurst+ADX gate v0.1.4) + Spec Sync #41 即將 push
+對應 commit: `863bb22b` (fix(trendline) Hurst+ADX gate v0.1.4 hard gate) + `aa2cb3bb` (Spec Sync #51 改 confirmation filter + 5-layer framework)
 
 ### M2 HL Structure self-check warning 永久 rule (大少 2026-09-06 15:08 confirm)
 
@@ -3179,7 +3190,7 @@ git push origin --delete feat/xxx          # delete remote branch
 - `backend/algorithms/trendline/algorithm.py` line 788-807 (gate 改 confirmation filter, LOW_CONFIDENCE warning)
 - `docs/research/AS-03-cycle-detection/MODULE-03-TRENDLINE.md` §4.4 (5-layer framework 描述)
 
-**對應 commit**: 即將 push (Spec Sync #51)
+**對應 commit**: `aa2cb3bb` (feat(m3-5layer): Spec Sync #51 5-layer framework 改善 UP/DOWN 識別, 大少 9月9日 00:42 confirm)
 
 **套用**: 之後任何 algorithm 改動, 永遠要對齊 5-layer framework (regime / tactical / direction / breakout / pattern)。拎走任何 layer 屬於 Spec Sync 範圍, 必先 web research 拎權威 source 確認先做。改之後必跑 217 stock audit + 對比 baseline, 一致率跌過 50% 唔收貨。
 
