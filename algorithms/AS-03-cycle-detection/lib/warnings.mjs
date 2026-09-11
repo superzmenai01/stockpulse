@@ -210,9 +210,9 @@ export function formatWarningForCopy(warning) {
     `- **Category**: ${categoryLabel}`,
     `- **Module**: ${warning.module_id}`,
     `- **Code**: ${warning.code}`,
-    `- **問題**: ${warning.debug?.issue || warning.message}`,
-    `- **影響**: ${warning.debug?.impact || '?'}`,
-    `- **修復建議**: ${warning.debug?.fix || '?'}`,
+    `- **問題**: ${warning.issue || warning.debug?.issue || warning.message}`,
+    `- **影響**: ${warning.impact || warning.debug?.impact || '?'}`,
+    `- **修復建議**: ${warning.fix || warning.debug?.fix || '?'}`,
     `- **Debug Context**:`,
     ...contextLines,
   ].join('\n');
@@ -345,8 +345,8 @@ function _renderSingleCategoryBanner(warnings, category) {
         <span style="font-size:16px;">${s.icon}</span>
         <div style="flex:1;">
           <div style="font-weight:700;color:${s.color};">[${i + 1}] ${w.module_id} - ${w.code} <span style="color:#999;font-weight:400;font-size:11px;">(${s.label})</span> <span style="background:#f0f0f0;padding:1px 6px;border-radius:3px;font-size:10px;color:#666;">${catDisplay.icon} ${catDisplay.label}</span></div>
-          <div style="color:#333;margin-top:2px;">${w.debug?.issue || w.message}</div>
-          <div style="color:#666;margin-top:4px;font-size:12px;"><strong>影響</strong>: ${w.debug?.impact || '?'} · <strong>修復</strong>: ${w.debug?.fix || '?'}</div>
+          <div style="color:#333;margin-top:2px;">${w.issue || w.debug?.issue || w.message}</div>
+          <div style="color:#666;margin-top:4px;font-size:12px;"><strong>影響</strong>: ${w.impact || w.debug?.impact || '?'} · <strong>修復</strong>: ${w.fix || w.debug?.fix || '?'}</div>
         </div>
         <button onclick="window.__copyWarning && window.__copyWarning(${i})" data-warning-idx="${i}" style="background:${s.color};color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap;">📋 Copy</button>
       </div>
