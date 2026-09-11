@@ -179,7 +179,8 @@ export function formatWarningForCopy(warning) {
   }[warning.level] || '⚪ Unknown';
 
   // 大少 2026-08-14 11:33 v1.1.0: 加 category label (system / stock_state)
-  const category = WARNING_CATEGORIES[warning.code] || 'system';
+  // 大少 2026-09-10 23:50 — 拎 backend emit `warning.category` 優先, 對齊 backend verdict shape (Spec Sync #51 M3 trendline emit category="system" 但 WARNING_CATEGORIES 歸 stock_state 衝突)
+  const category = warning.category || WARNING_CATEGORIES[warning.code] || 'system';
   const catDisplay = CATEGORY_DISPLAY[category];
   const categoryLabel = `${catDisplay.icon} **${catDisplay.label}** (${category === 'system' ? 'verdict 可能唔可信' : 'verdict 已經準確'})`;
 
@@ -290,9 +291,15 @@ export function renderWarningBanners(warnings) {
   }
 
   // 拎每個 warning 嘅 category
+  // 大少 2026-09-10 23:50 — frontend 永遠拎 backend emit `warning.category` 優先, 對齊 backend verdict shape
+  // 對齊 §Module Warning v1.1.0: backend emit warning 永遠有 `category` field
+  // 對齊 §M7 v2.0.1 Fix D spirit: frontend display 永遠對齊 backend verdict shape
+  // WARNING_CATEGORIES dict 只係 fallback, 當 backend 冇 emit category 嗰陣先用
+  // 凡人話: 之前 frontend 永遠用 WARNING_CATEGORIES 重新 derive, 對 backend emit category="system" 嘅 warning
+  //         (e.g. M3 trendline 7 個 system warning 對齊 Spec Sync #51) 拎 stock_state 錯晒
   const withCategory = warnings.map((w) => ({
     ...w,
-    category: WARNING_CATEGORIES[w.code] || 'system',  // 默認 system (安全)
+    category: w.category || WARNING_CATEGORIES[w.code] || 'system',  // 默認 system (安全)
   }));
 
   // 分 2 組
