@@ -3760,3 +3760,84 @@ if (!rsiSeries || !macdSeries) {
 - `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` v2.0.4 (待更新)
 
 **對應 commit**: 即將 push (Spec Sync #65 v2.0.4) — 等大少 trigger
+
+### M1-M6 frontend 拎走 永久 rule (大少 2026-09-12 07:22 trigger, Spec Sync #66 v2.x)
+
+**凡人話**: Phase 12 拎走咗 M7 3 個 file 之後, 大少 9月12日 07:22 trigger「你再去查下M1.-M6 有沒有同樣的問題,我要的是後台做計算,前台只是顯示」, 拎 evidence 發現 M1-M6 frontend 6 個 module file 全部有 `class XxxModule implements CycleModule<KLine[]>` 計算 class (KLine 入, verdict 出), 同 M7 拎走 pattern 一樣。
+
+**拎 evidence 確認 import chain (frontend testing page 已經走 fetch backend path)**:
+- `testing-page/testing-page.js`: 完全冇 import M1-M6 frontend module class (Phase 1-6 已經全部 fetch backend, 大少 8月20-21日 拎走)
+- `algorithms/AS-03-cycle-detection/adapter.mjs`: 完全冇 import M1/M2/M3/M4/M6 frontend module class (Phase 2-6 已經 fetch backend, M5 之前 8月20日 21:30 Phase 6 已經拎走), 6 個 module 嘅 chart overlay (`renderXxxChartOverlay`) 拎 `verdict.meta.*` 拎 data, 屬於 display layer 唔係 M7 algorithm 計算
+- `algorithms/AS-03-cycle-detection/modules/decision-engine.ts`: 完全冇 import M1-M6 module class
+- `algorithms/AS-03-cycle-detection/__tests__/smoke.mjs`: 唯一仲 import M1-M6 module class + CycleDetector 嘅 file, 拎走 (frontend 拎走 chain 一齊拎走)
+- `algorithms/AS-03-cycle-detection/__tests__/standard-verdict.test.mjs`: 用 `toStandardVerdictMA/HL/TL/IND/VP/VOL` 6 個 helper, 拎走 (frontend wrapper 拎走 chain 一齊拎走)
+
+**v2.x fix (Phase 13-18 永久 rule)**:
+
+- ✅ 拎走 frontend `modules/ma-alignment.ts` 整個 file (24206 bytes): `MAAlignmentV2Module` class implements `CycleModule<KLine[]>` — KLine 入 verdict 出, frontend 計算違規
+- ✅ 拎走 frontend `modules/hl-structure.ts` 整個 file (30484 bytes): `HLStructureModule` class implements `CycleModule<KLine[]>` — 拎 K 線計峰谷 + 趨勢分析 + 結構分數 + 短線 mode 確認 + 突破 override
+- ✅ 拎走 frontend `modules/trendline.ts` 整個 file (33685 bytes): `TrendlineModule` class implements `CycleModule<KLine[]>` — 拎 K 線計 Hurst/ADX 趨勢線 + 10+2 條 rule + 3 個 self-check warning (M3 Spec Sync #51 v0.1.4 1:1 port, 拎走改 fetch backend)
+- ✅ 拎走 frontend `modules/indicators.ts` 整個 file (49162 bytes): `IndicatorsModule` class implements `CycleModule<KLine[]>` — 拎 K 線計 RSI/EMA/MACD/extrema
+- ✅ 拎走 frontend `modules/volume.ts` 整個 file (29279 bytes): `VolumePrice` class implements `CycleModule<KLine[]>` — 拎 K 線計 量價 + VWAP + OBV + 量能 37 個 meta field
+- ✅ 拎走 frontend `modules/volatility.ts` 整個 file (35214 bytes): `VolatilityModule` class implements `CycleModule<KLine[]>` — 拎 K 線計 波動率 + VCP + Squeeze + Hurst+ADX regime gate (M6 Spec Sync #54 v2.0.0 1:1 port, 拎走改 fetch backend)
+- ✅ 拎走 frontend `std-verdict.ts` 整個 file (348 行): 純 frontend wrapper 純計算 `computeSentiment6D()` + `computeExpectedReturn()` + `computeMaxDrawdownEstimate()` + `toStandardVerdict()` + `runAndStandardize()` — 全部 frontend 計算違規
+- ✅ 拎走 frontend `__tests__/{ma-alignment,hl-structure,trendline,indicators,volume,volatility,smoke,standard-verdict}.test.mjs` 8 個 frontend test file (frontend chain 拎走後冇意義)
+- ✅ 拎走 `index.ts` 嘅 6 個 module import (line 15-20) + CycleDetector class 整個 (line 60-218, 完全依賴 6 個 frontend module) + 4 個 orchestrator import (line 24-27, smoke.mjs 拎走後冇人 import) + 4 個 orchestrator re-export (line 250-254) + AnalyzeOptions interface (line 30-39) + enableFlagsToRecord helper (line 46-56) + DEFAULT_ENABLE_FLAGS import (line 28) + 6 個 module re-export (line 231-236) + 1 個 std-verdict re-export (line 224-228)
+- ✅ 保留 `index.ts` 嘅 `ZmenMAAlignmentModule` (大少 2026-08-08 09:13 trigger zmen均算法獨立, 唔屬 7 個 modules) + `DecisionEngine` re-export (M8 follow-up) + `MultiTFOrchestrator` / `RegimeChangeAlerter` / `Aggregator` re-export (orchestrator follow-up) + `types.ts` / `config.ts` re-export (type defs + config, frontend 拎走後保留 file)
+- ✅ 加 `backend/tests/test_m1_to_m6.py` 6 個 pytest 對齊 backend M1-M6 emit shape (沿用 §Algorithm Backend-only + 模組化永久 rule, 對齊 test_synthesizer.py pattern)
+- ✅ 對齊 §Cache bust self-check 永久 rule 21:24 sync bump `?v=2.3.177 → 2.3.178` + `ALGO_CACHE_BUST 4.98.0 → 4.99.0`
+
+**永久 rule checklist**:
+- ✅ Frontend M1-M6 testing page entry 永遠 fetch backend `/api/algorithms/run?algo={ma_alignment,hl_structure,trendline,indicators,volume_price,volatility}&symbol=...&data_window_days=1260` 拎 verdict (沿用 Phase 1-6 拎走 pattern)
+- ✅ Frontend 唔可以再拎 K 線喺 frontend 計 MA/高低點/趨勢線/指標/量價/波動率 (對齊 §數據處理 Server 內部做永久 rule b2d851ca 2026-08-23)
+- ✅ Frontend 唔可以再 8 stage 重做 backend emit 結果 (對齊 §Algorithm Backend-only + 模組化永久 rule 2026-08-22)
+- ✅ 對齊 §M7 v2.0.4 Phase 12 永久 rule — M1-M6 拎走 pattern 沿用 M7 拎走 pattern
+- ✅ 對齊 §M7 v2.0.2 Frontend display path fix 永久 rule — frontend display 永遠拎 `verdict.meta.*` 對齊 backend emit shape
+- ✅ 對齊 §verdict.meta.symbol 永久 rule (大少 2026-09-07 08:30) — backend runner 統一 inject caller symbol 落 options dict, frontend 拎 `verdict.meta.symbol == caller symbol` 永遠 True
+- ✅ 對齊 §verdict.meta.state 永久 rule (跟 §M6 Spec Sync #54 v2.0.3) — backend emit state 落 `verdict.meta.state` (M1-M5 暫時唔 set 落 `verdict.state` 頂層, runner service algorithm_runner.py line 313-314 統一 inject `state: upstream_meta.get("state")`)
+- ✅ Backend 唔需要改 (M1-M6 算法已經 backend 跑, source of truth `backend/algorithms/{ma_alignment,hl_structure,trendline,indicators,volume_price,volatility}/algorithm.py`)
+- ✅ Follow-up: M1-M5 backend algorithm 跟 M6 pattern 補返 set `verdict.state` + `verdict.confidence` 落頂層 (對齊 §M6 Spec Sync #54 v2.0.3 永久 rule), 拎 pytest `v.state in valid states` 直接 assert 唔再用 `v.meta.state`
+
+**凡人話 verify 結論**:
+- 6 個 backend pytest 全部通過: `test_m1_ma_alignment_meta_shape` / `test_m2_hl_structure_meta_shape` / `test_m3_trendline_meta_shape` / `test_m4_indicators_meta_shape` / `test_m5_volume_price_meta_shape` / `test_m6_volatility_meta_shape`
+- 6 隻 stock × 6 個 algo = 18 個 curl 全部拎到 verdict, backend emit 完整 (data_window_days=1260):
+  - **M1 ma_alignment** (31 meta keys): HK.00700 DOWN 0.43, HK.00005 SIDEWAYS 0.30, US.AAPL SIDEWAYS 0.35
+  - **M2 hl_structure** (37 meta keys): HK.00700 UP 0.30, HK.00005 UP 0.32, US.AAPL UP 0.40
+  - **M3 trendline** (35 meta keys): HK.00700 DOWN 0.30, HK.00005 UP 0.30, US.AAPL UP 0.30
+  - **M4 indicators** (33 meta keys): HK.00700 exhausted_neutral 0.0, HK.00005 exhausted_neutral 0.25, US.AAPL exhausted_neutral 0.0
+  - **M5 volume_price** (41 meta keys): HK.00700 SIDEWAYS 0.30, HK.00005 UP 0.55, US.AAPL SIDEWAYS 0.30
+  - **M6 volatility** (41 meta keys): HK.00700 DOWN 0.85, HK.00005 SIDEWAYS 0.25, US.AAPL SIDEWAYS 0.25
+- 所有 `verdict.meta.symbol == caller symbol` ✅ (對齊 §verdict.meta.symbol 永久 rule)
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/modules/ma-alignment.ts` (拎走, 24206 bytes)
+- `algorithms/AS-03-cycle-detection/modules/hl-structure.ts` (拎走, 30484 bytes)
+- `algorithms/AS-03-cycle-detection/modules/trendline.ts` (拎走, 33685 bytes)
+- `algorithms/AS-03-cycle-detection/modules/indicators.ts` (拎走, 49162 bytes)
+- `algorithms/AS-03-cycle-detection/modules/volume.ts` (拎走, 29279 bytes)
+- `algorithms/AS-03-cycle-detection/modules/volatility.ts` (拎走, 35214 bytes)
+- `algorithms/AS-03-cycle-detection/std-verdict.ts` (拎走, 348 行 frontend wrapper)
+- `algorithms/AS-03-cycle-detection/__tests__/ma-alignment.test.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/hl-structure.test.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/trendline.test.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/indicators.test.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/volume.test.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/volatility.test.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/smoke.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/standard-verdict.test.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/index.ts` v2.x (拎走 6 個 import + CycleDetector class + 4 個 orchestrator import + 4 個 orchestrator re-export + AnalyzeOptions + enableFlagsToRecord + DEFAULT_ENABLE_FLAGS + 6 個 module re-export + 1 個 std-verdict re-export)
+- `backend/tests/test_m1_to_m6.py` v2.x (新加 6 個 pytest, 對齊 backend M1-M6 emit shape)
+- `testing-page/index.html` (cache bust ?v=2.3.177 → 2.3.178)
+- `testing-page/testing-page.js` (ALGO_CACHE_BUST 4.98.0 → 4.99.0)
+
+**保留清單 (唔拎走, 屬獨立算法或 follow-up)**:
+- `algorithms/AS-03-cycle-detection/modules/zmen-ma-alignment.ts` (zmen均算法獨立, 大少 2026-08-08 09:13 trigger 唔屬 7 個 modules)
+- `algorithms/AS-03-cycle-detection/modules/slope-momentum.ts` (暫時隱藏, 大少 2026-08-07 23:15 trigger)
+- `algorithms/AS-03-cycle-detection/modules/decision-engine.ts` (M8 follow-up, 大量違規計算拎走放第 2 輪)
+- `algorithms/AS-03-cycle-detection/modules/back-test.ts` + `backtest-timeline.ts` (M9 follow-up)
+- `algorithms/AS-03-cycle-detection/orchestrator/{multi-tf,alert,aggregator,synthesize}.ts` (orchestrator follow-up)
+- `algorithms/AS-03-cycle-detection/types.ts` (type defs, 拎走 frontend module 後保留)
+- `algorithms/AS-03-cycle-detection/config.ts` (config defs, 拎走 frontend module 後保留, 部分 default value 拎走放 follow-up)
+- `backend/algorithms/{ma_alignment,hl_structure,trendline,indicators,volume_price,volatility}/algorithm.py` (source of truth, 唔改)
+
+**對應 commit**: 即將 push (Spec Sync #66 v2.x) — 等大少 trigger
