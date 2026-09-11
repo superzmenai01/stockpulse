@@ -236,7 +236,12 @@ export { VolumePrice, toStandardVerdictVP } from './modules/volume.ts';
 export { VolatilityModule, toStandardVerdictVOL } from './modules/volatility.ts';
 // 大少 2026-08-08 13:30 — Plan A 拆返 M7 + M8 兩個獨立 module (之前 sprint 1 合併做 1 個 mega module, 而家拆返)
 //   M7 Synthesizer (5 個 sub-step: SSI + TCM + Alignment + Grade + Kelly)
-export { Synthesizer, synthesizeAll, type SynthesizeInput } from './modules/synthesizer.ts';
+// 大少 2026-09-12 07:07 — §M7 v2.0.4 Phase 12 frontend 拎走 永久 rule
+//   拎走 `export { Synthesizer, synthesizeAll, type SynthesizeInput } from './modules/synthesizer.ts'`
+//   拎走 synthesizer.ts 整個 file (frontend 8 stage 重做違規, 違反「數據處理 Server 內部做」永久 rule)
+//   M7 算法完全 backend 跑 (backend/algorithms/synthesizer/algorithm.py 1064 行, v2.0.3 8 stage)
+//   frontend testing page 用 fetch backend `/api/algorithms/run?algo=synthesizer` 拎 verdict
+//   對齊 §數據處理 Server 內部做 + §Algorithm Backend-only + 模組化永久 rule
 //   M8 Decision Engine (Sprint 2 將加: finalAction 8 個 + trading card + 短期走勢 + 人話解讀)
 export { DecisionEngine, type FinalAction, type ForecastScenario, type DecisionVerdict } from './modules/decision-engine.ts';
 // 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返

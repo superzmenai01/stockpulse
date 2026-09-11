@@ -3600,3 +3600,163 @@ if (!rsiSeries || !macdSeries) {
 - 還原: `git checkout 76a3c423^ -- backend/algorithms/synthesizer/algorithm.py algorithms/AS-03-cycle-detection/modules/synthesizer.ts algorithms/AS-03-cycle-detection/types.ts`
 
 **對應 commit**: 即將 push (Spec Sync #62 v2.0.0)
+
+### M7 Synthesizer v2.0.2 Kelly state guard 永久 rule (大少 2026-09-12 06:31 trigger, Spec Sync #63)
+
+**凡人話**: 大少 9月12日 06:31 撳 M7 跑 00700 見到 verdict `state=DOWN, Kelly=quarter (1/4 倉)` 揭發 M7 algorithm 嘅 `_compute_kelly()` 完全冇睇 state — 跌 verdict (00700 DOWN) 都畀 quarter 倉, 違反 spec doc §7 Cycle State 判定 (Grade D/F → SELL action, 唔開新倉)。
+
+**Root cause**:
+- 之前 `_compute_kelly()` 只睇 6 個 module 嘅 `avg max_drawdown_estimate` 自動切 half/quarter/octo
+- 完全冇睇 final_state (UP/DOWN/SIDEWAYS)
+- 跌 + 高 DD = octo (1/8 倉) ← 算法覺得「跌但風險高, 落少少」
+- 跌 + 低 DD = **half (1/2 倉)** ← 呢個就離晒譜!跌但落 1/2 倉 = 博反彈 = 賭身家
+- 跌 + 中 DD = quarter (1/4 倉) ← 00700 嘅 case
+- **算法盲點**: 當咗股票係「中性」, 只計倉位大小, 冇諗過「呢隻股票根本唔應該落注」呢個 case
+
+**v2.0.2 fix (凡人話決策)**:
+- 跟 spec doc §7 Cycle State 對應表: Grade D/F → SELL action → 唔開新倉
+- 加 state guard: `final_state == DOWN` 或 `SIDEWAYS` → Kelly = 0 (zero 倉)
+- 對齊凡人話: 副校長見到跌 verdict 唔會叫人開新倉, 只會叫人走
+- 對齊永久 rule §M2 self-check penalty (Step 19.5) spirit: 對齊 spec spirit
+- 對齊永久 rule §M2 self-check weight 折扣 (Stage 3) spirit: 對齊 backend 統一 emit audit field
+
+**3 個 audit field 永久 emit**:
+- `meta.kelly_state_guard_triggered: bool` — 係咪觸發咗 state guard
+- `meta.kelly_state_guard_reason: str` — 凡人話解釋 (點解 Kelly=0)
+- 凡人話: 大少撳跑 M7 見到 Kelly 顯示 0 倉嗰陣, 可以即時睇到「點解 0 倉」嘅 reason(對齊 §M2 self-check penalty 永久 rule `original_confidence` field spirit)
+
+**永久 rule checklist**:
+- ✅ Backend `_compute_kelly(verdicts, final_state)` 永遠先睇 state, DOWN/SIDEWAYS → Kelly=0 (零倉)
+- ✅ Backend `SynthesizerAlgorithm.run()` 永遠 reorder: Stage 4 (conflict) + Stage 5 (consensus) + Stage 7 (state derivation) 提前到 Step 5 Kelly 之前(拎 finalState 之後先 call _compute_kelly)
+- ✅ Frontend `modules/synthesizer.ts` `computeKelly(verdicts, finalState)` 1:1 port 對齊 backend
+- ✅ Frontend `adapter.mjs` `decisionEngineKellyLabel()` + `renderKellyDonut()` 加 'zero' case 顯示「零倉 0% (state guard 觸發)」深灰 #666
+- ✅ `types.ts` `SynthesizerVerdict` 加 `kelly_state_guard_triggered` + `kelly_state_guard_reason` 2 個新 field + `KellyFraction` type 加 'zero' union
+- ✅ Backend emit 永遠 include 2 個 audit field (對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule)
+- ✅ 改 backend 之後必 restart backend (`./start.sh`) + curl 5 隻 stock verify(對齊 §Backend hot-reload 永久 rule)
+- ✅ 改 adapter.mjs / testing-page.js 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X`(對齊 §Cache bust self-check 永久 rule 21:24)
+- ✅ Spec doc `MODULE-07-SYNTHESIZER.md` 加 v2.0.2 section(對齊 §Spec doc 改為「還原方法」永久 rule)
+
+**5 隻 stock verify 結果** (大少 9月12日 trigger 後 verify):
+| Stock | final_state | grade | kelly_fraction | state_guard |
+|---|---|---|---|---|
+| HK.00700 騰訊 | DOWN | C+ | **zero (0%)** | ✅ 觸發 |
+| HK.00005 匯豐 | SIDEWAYS | C+ | **zero (0%)** | ✅ 觸發 |
+| US.AAPL | SIDEWAYS | C+ | **zero (0%)** | ✅ 觸發 |
+| US.MSFT | UP | B | **quarter (25%)** | ❌ 唔觸發 |
+| US.GOOGL | SIDEWAYS | B | **zero (0%)** | ✅ 觸發 |
+
+**凡人話 verify 結論**: 4 隻 DOWN/SIDEWAYS verdict 全部 Kelly=0 (對齊 spec doc §7 Grade D/F SELL action), 1 隻 UP (MSFT) 跟 avg DD 正常計 quarter (25%) 倉 ✅
+
+**對應文件**:
+- `backend/algorithms/synthesizer/algorithm.py` v2.0.2 (Kelly state guard + reorder + audit field)
+- `algorithms/AS-03-cycle-detection/modules/synthesizer.ts` v2.0.2 (1:1 port)
+- `algorithms/AS-03-cycle-detection/types.ts` v2.0.2 (加 2 個新 field + 'zero' union)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` (decisionEngineKellyLabel + renderKellyDonut 加 'zero' case)
+- `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` v2.0.2
+- `testing-page/index.html` (cache bust ?v=2.3.174 → 2.3.175)
+- `testing-page/testing-page.js` (ALGO_CACHE_BUST 4.95.0 → 4.96.0)
+
+**對應 commit**: 即將 push (Spec Sync #63 v2.0.2) — 等大少 trigger
+
+### M7 Synthesizer v2.0.3 Phase 11 frontend 拎走 永久 rule (大少 2026-09-12 06:59 trigger, Spec Sync #64)
+
+**凡人話**: 大少 9月12日 06:59 撳跑 M7 對 4 隻 stock (00038/00079/00524/00002) verify 揭發 frontend testing page 撳跑出嚟嘅 grade 全部比 backend emit 低 1 級 (例: 00038 frontend=C+ backend=B, 00524 frontend=B+ backend=A, 00002 frontend=B+ backend=B)。凡人話:frontend 揸住 1 條舊 chain 自己計 grade, 同 backend 算法唔對齊, 永遠差 1 級。
+
+**Root cause**:
+- Phase 1 (4.18.0) 拎走 M1 frontend → fetch backend
+- Phase 3 (4.19.0) 拎走 M2 frontend → fetch backend
+- Phase 4 (4.20.0) 拎走 M3 frontend → fetch backend
+- Phase 5+6 (4.21.0) 拎走 M4+M5 frontend → fetch backend
+- Phase 7+8 拎走 M6+ZigZag frontend
+- Phase 10 (4.25.0) 拎走 M8 frontend → fetch backend
+- **Phase 9 / M7 從來冇拎走 frontend!**
+- frontend testing page 一直跑緊 frontend 自己嘅 `analyzeDecisionEngine` (155 行 chain 包括 6 個 module 自己跑 + 5 個 sub-step aggregation + 7 個 warning 注入)
+- frontend 算法同 backend algorithm 唔對齊 (6 個 module 拎法唔同, alignment 計法唔同, 永遠低 1 級)
+- 大少撳 testing page 撳 M7 → frontend 自己 chain 跑 verdict → 拎 frontend 計嘅 grade (低 1 級)
+- 大少 curl backend `/api/algorithms/run?algo=synthesizer` 拎 backend emit 嘅 grade (高 1 級)
+- 兩個永遠差 1 級, 凡人話:frontend 同 backend 算法分裂
+
+**v2.0.3 fix (Phase 11 永久 rule)**:
+- Frontend `analyzeDecisionEngine` 拎走 155 行 chain (6 個 module 自己跑 + 5 個 sub-step aggregation + 7 個 warning 注入)
+- 換 1 個 fetch backend `/api/algorithms/run?algo=synthesizer` stub (對齊 §Phase 10 永久 rule 沿用 8月20日 22:08 M8 拎走 pattern)
+- Frontend normalize backend emit 嘅 `meta.X` field 落 frontend shape
+- 對齊 §M7 v2.0.2 frontend display path fix 永久 rule spirit: frontend display 永遠對齊 backend verdict shape
+- 對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule (9月10日 23:45)
+- 對齊 §AS-03 進度 11/11 peer algorithm backend done — M1+M2+M3+M4+M5+M6+M7+M8+M9+ZigZag 全部 backend port 完成
+
+**永久 rule checklist**:
+- ✅ Frontend `analyzeDecisionEngine` 永遠 fetch backend `/api/algorithms/run?algo=synthesizer`, 唔好自己跑 (Phase 11 永久 rule)
+- ✅ Frontend normalize 永遠拎 backend emit shape: `verdict.X` 拎 top-level, `verdict.meta.X` 拎 meta field (對齊 §M7 v2.0.2 frontend display path fix 永久 rule)
+- ✅ Frontend 拎 `verdict.warnings` 拎 top-level (對齊 §Backend 永久改 emit field name 永久 rule, 唔再 _warnings leading underscore)
+- ✅ Frontend fetch backend 失敗時 emit `POST_FAILED` critical warning (對齊 §Phase 10 永久 rule M8 pattern)
+- ✅ Backend emit shape 係 source of truth (backend algorithm.py 永久 rule: v2.0.0 8-stage + v2.0.1 Fix D + v2.0.2 Kelly state guard + v2.0.3 frontend 對齊)
+- ✅ 改 adapter.mjs 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (對齊 §Cache bust self-check 永久 rule 21:24)
+- ✅ 改 backend emit shape 之後必先 `grep -rn "舊 field 名" frontend/` 全 reference 對齊 (對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule 9月10日 23:45)
+- ✅ 改完 spec doc + AGENTS.md 永久 rule, commit 之前必 present fix 結果 (對齊 §改完先 ask 修正先 Commit 9月9日 07:23 永久 rule)
+
+**4 隻 stock verify 結果** (大少 9月12日 06:59 trigger 後 verify):
+| Stock | Phase 11 之前 frontend chain 拎 | Backend emit | Phase 11 之後 frontend 拎 backend emit |
+|---|---|---|---|
+| HK.00038 | C+ | B (grade_score=61.2) | **B** ✅ 對齊 backend |
+| HK.00079 | D | C (grade_score=40.8) | **C** ✅ 對齊 backend |
+| HK.00524 | B+ | A (grade_score=81.4) | **A** ✅ 對齊 backend |
+| HK.00002 | B | B+ (grade_score=79.7) | **B+** ✅ 對齊 backend |
+
+**凡人話 verify 結論**: 4 隻 stock 全部確認 frontend chain 拎嘅 grade 差 backend emit 1 級, Phase 11 之後 frontend 拎 backend emit 完全對齊 backend, 確認 fix 成功。
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` v2.0.3 (analyzeDecisionEngine 拎走 chain 換 fetch backend stub)
+- `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` v2.0.3
+- `testing-page/index.html` (cache bust ?v=2.3.175 → 2.3.176)
+- `testing-page/testing-page.js` (ALGO_CACHE_BUST 4.96.0 → 4.97.0)
+
+**對應 commit**: 即將 push (Spec Sync #64 v2.0.3) — 等大少 trigger
+
+### M7 Synthesizer v2.0.4 Phase 12 frontend 拎走 永久 rule (大少 2026-09-12 07:07 trigger, Spec Sync #65)
+
+**凡人話**: Phase 11 拎走咗 M7 testing page entry 嘅 frontend chain 換 fetch backend, 但係 frontend 仲有 3 個 file 喺度偷偷計:
+- `cycle-synthesizer.ts` (276 行) — 拎 K 線喺 frontend 計 MA5/MA20 + 5 個 trigger + turn-around
+- `synthesizer.ts` (515+ 行) — 8 個 stage frontend 重做 backend 已經 emit 嘅結果
+- `decision-engine.ts` 仲 import `synthesizeCycle` 喺 frontend
+
+大少 9月12日 07:07 trigger「全面檢查 M7 frontend 有沒有在前台計算的動作,因為所有需要計算的都是在後台完成,前台只是負責顯示信息」,揭發 frontend 仲有 3 個 file 違規。
+
+**v2.0.4 fix (Phase 12 永久 rule)**:
+
+- ✅ 拎走 frontend `modules/cycle-synthesizer.ts` 整個 file (276 行): `computeMA()` 拎 `klineCloses` 計 MA5/MA20 + `synthesizeCycle()` 加權綜合 + `computeTriggers()` 5 個 trigger + `computeTransitions()` turn-around
+- ✅ 拎走 frontend `modules/synthesizer.ts` 整個 file (515+ 行): `applyWeightDiscounts()` / `detectConflicts()` / `computeConsensus()` / `computeSSI()` / `computeTCM()` / `computeAlignment()` / `computeGrade()` / `computeKelly()` / `Synthesizer.synthesize()` 8 stage frontend 重做
+- ✅ 拎走 `modules/decision-engine.ts` 嘅 `import { synthesizeCycle } from './cycle-synthesizer.ts'` + frontend call (line 1224-1228), 改用 backend emit fallback (line 1230+)
+- ✅ 拎走 `tests/test-cycle-synth.mjs` + `__tests__/synthesizer.test.mjs` 2 個 frontend test (frontend synthesizeCycle call 拎走, frontend test 冇意義)
+- ✅ 加 `backend/tests/test_synthesizer.py` 7 個 pytest 對齊 backend 8 stage 計算 (沿用 §Algorithm Backend-only + 模組化永久 rule)
+- ✅ Update `index.ts` 拎走 `synthesizer.ts` re-export (dead code 因為 testing page 用 fetch backend)
+- ✅ 對齊 §Cache bust self-check 永久 rule 21:24 sync bump `?v=2.3.176 → 2.3.177` + `ALGO_CACHE_BUST 4.97.0 → 4.98.0`
+
+**永久 rule checklist**:
+- ✅ frontend testing page M7 entry 永遠 fetch backend `/api/algorithms/run?algo=synthesizer` 拎 verdict (Phase 11 + Phase 12 沿用)
+- ✅ frontend 唔可以再拎 K 線喺 frontend 計 MA5/MA20 (對齊 §數據處理 Server 內部做永久 rule b2d851ca 2026-08-23)
+- ✅ frontend 唔可以再 8 stage 重做 backend emit 結果 (對齊 §Algorithm Backend-only + 模組化永久 rule 2026-08-22)
+- ✅ 對齊 §M7 v2.0.2 Frontend display path fix 永久 rule — frontend display 永遠拎 `verdict.meta.*` 對齊 backend emit shape
+- ✅ 對齊 §M7 v2.0.3 Phase 11 永久 rule — adapter.mjs `analyzeDecisionEngine` 拎走 chain 換 fetch backend
+- ✅ 對齊 §Backend hot-reload 永久 rule — 改 backend 必 restart + curl verify (今次冇改 backend algorithm.py, 唔需要 restart, 但 4 隻 stock curl verify 確認 backend M7 仲係 work)
+
+**凡人話 verify 結論**:
+- 7 個 backend pytest 全部通過: `test_synthesizer_registered_in_registry` / `test_synthesizer_empty_verdicts` / `test_synthesizer_unanimous_up_high_confidence` / `test_synthesizer_conflict_pair_detection` / `test_synthesizer_weight_discount_generalized` / `test_synthesizer_meta_shape_for_frontend` / `test_synthesizer_aggregated_warnings_propagation`
+- 4 隻 stock curl verify backend M7 仲係 work (data_window_days=1260):
+  - HK.00700: state=DOWN conf=0.536 ssi=49.3 grade=C+(53.6) kelly=zero consensus=DOWN(0.75) conflicts=3 warnings=14
+  - HK.00019: state=UP conf=0.556 ssi=52.6 grade=C+(55.6) kelly=quarter consensus=UP(0.68) conflicts=0 warnings=8
+  - US.AAPL: state=SIDEWAYS conf=0.516 ssi=46.0 grade=C+(51.6) kelly=zero consensus=SIDEWAYS(0.71) conflicts=0 warnings=8
+  - US.MSFT: state=UP conf=0.63 ssi=60.5 grade=B(63.0) kelly=quarter consensus=UP(0.73) conflicts=0 warnings=2
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/modules/cycle-synthesizer.ts` (拎走, 276 行)
+- `algorithms/AS-03-cycle-detection/modules/synthesizer.ts` (拎走, 515+ 行)
+- `algorithms/AS-03-cycle-detection/modules/decision-engine.ts` v2.0.4 (拎走 synthesizeCycle import + frontend call, 改用 backend emit fallback)
+- `algorithms/AS-03-cycle-detection/index.ts` v2.0.4 (拎走 synthesizer.ts re-export)
+- `algorithms/AS-03-cycle-detection/tests/test-cycle-synth.mjs` (拎走, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/synthesizer.test.mjs` (拎走, dead code)
+- `backend/tests/test_synthesizer.py` v2.0.4 (新加 7 個 pytest, 對齊 backend 8 stage)
+- `testing-page/index.html` (cache bust ?v=2.3.176 → 2.3.177)
+- `testing-page/testing-page.js` (ALGO_CACHE_BUST 4.97.0 → 4.98.0)
+- `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` v2.0.4 (待更新)
+
+**對應 commit**: 即將 push (Spec Sync #65 v2.0.4) — 等大少 trigger

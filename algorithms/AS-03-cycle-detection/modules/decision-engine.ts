@@ -8,6 +8,12 @@
 //   8 個 finalAction 決策樹: BUY / ADD / HOLD / REDUCE / SELL / WAIT / TRAP / TRANSITION
 //   從 SynthesizerVerdict + moduleVerdicts + marketData 推導
 //
+// 大少 2026-09-12 07:07 — §M7 v2.0.4 Phase 12 frontend 拎走 永久 rule
+//   拎走 `import { synthesizeCycle } from './cycle-synthesizer.ts'` (frontend 計算違規)
+//   拎走 cycle-synthesizer.ts + synthesizer.ts 整個 file (dead code + 違規計算)
+//   對齊 §數據處理 Server 內部做 + §Algorithm Backend-only + 模組化永久 rule
+//   decidePosition() 入面 frontend synthesizeCycle call 拎走, 改用 synthesizer verdict fallback (line 1186+)
+//
 // Sprint 2 整體範圍 (大少 2026-08-08 13:30 confirm):
 //   2.1 8 個 finalAction 決策樹 (本 commit)
 //   2.2 Trading card 4 個 fields (下個 commit, trading_card 嘅 adaptive formula)
@@ -25,10 +31,48 @@ import type {
   CycleModuleId, CycleState, Grade, ModuleStandardVerdict, Sentiment6D, SynthesizerVerdict,
 } from '../types.ts';
 
-import type {
-  CycleSynthesizerResult, CycleVerdict as CycleSynthVerdict,
-} from './cycle-synthesizer.ts';
-import { synthesizeCycle } from './cycle-synthesizer.ts';
+// 大少 2026-09-12 07:07 — §M7 v2.0.4 Phase 12 frontend 拎走 永久 rule
+// 拎走 import { CycleSynthesizerResult, CycleVerdict as CycleSynthVerdict, synthesizeCycle } from './cycle-synthesizer.ts'
+// 拎走 cycle-synthesizer.ts 整個 file (frontend 計算違規, 違反「數據處理 Server 內部做」永久 rule)
+// CycleSynthesizerResult 改為 local interface (見下面), 避免拎走之後 break DecideInput type
+// synthesizeCycle() frontend call 改用 synthesizer verdict fallback (見 decidePosition line 1186+)
+
+// Local interface (拎走 cycle-synthesizer.ts 之後, frontend decidePosition() 拎 backend emit fallback shape)
+/** Cycle verdict 簡化版 (拎 backend M1/zmen verdict emit 拎 path) */
+interface CycleSynthVerdict {
+  state: CycleState;
+  confidence: number;
+  interpretation?: string;
+  meta?: Record<string, unknown>;
+}
+
+/** Cycle synthesizer 結果 (拎 backend emit fallback shape, frontend-only 兩線策略)
+ *  凡人話: backend M7 algorithm.py 8 stage 冇 emit 兩線策略 5 個 trigger + turn-around,
+ *         frontend decidePosition() 拎 backend emit 拎 synth, 拎走 frontend synthesizeCycle
+ */
+interface CycleSynthesizerResult {
+  state: CycleState | 'CONFLICT';
+  confidence: number;
+  conflict: boolean;
+  warning: string | null;
+  m1State: CycleState;
+  zmenState: CycleState;
+  weights: { m1: number; zmen: number };
+  transitions: { turnAroundDetected: boolean; adjustmentComplete: boolean };
+  triggers: {
+    ma5StopTriggered: boolean;
+    ma5BreakDay1: boolean;
+    ma5BreakDay2: boolean;
+    ma20Break: boolean;
+    ma5RetestSuccess: boolean;
+  };
+  meta: {
+    currentPrice: number | null;
+    ma5: number | null;
+    ma20: number | null;
+    consensus: 'aligned' | 'conflict' | 'sideways';
+  };
+}
 
 // =============================================================
 // 大少 2026-08-09 19:06 — 兩線策略 (Position + Swing)
@@ -1173,15 +1217,12 @@ export class DecisionEngine {
     const currentPrice = md.currentPrice ?? 0;
 
     // 1. 拎 / 計 cycle synthesizer 結果
+    // 大少 2026-09-12 07:07 — §M7 v2.0.4 Phase 12 frontend 拎走 永久 rule
+    // 拎走 frontend synthesizeCycle() call (line 1224-1228), 改為統一拎 backend emit fallback
+    // 對齊 §數據處理 Server 內部做永久 rule — frontend 唔再拎 K 線計 MA5/MA20
     let synth: CycleSynthesizerResult;
     if (input.cycleSynthesizerResult) {
       synth = input.cycleSynthesizerResult;
-    } else if (input.m1Verdict && input.zmenVerdict && input.klineCloses) {
-      synth = synthesizeCycle({
-        m1Verdict: input.m1Verdict,
-        zmenVerdict: input.zmenVerdict,
-        klineCloses: input.klineCloses,
-      });
     } else {
       // 冇足夠 input, fallback 用 synthesizer verdict 嘅 state 推一個 minimal synth
       synth = {
