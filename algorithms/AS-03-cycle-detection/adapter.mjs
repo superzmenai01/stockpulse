@@ -2201,6 +2201,9 @@ async function analyzeVolumePrice(klines, options = {}) {
   if (!verdict.ok) {
     throw new Error(`Backend M5 verdict fail: ${verdict.error || "unknown"}`);
   }
+  // 大少 2026-09-10 23:45 — frontend normalize backend emit `verdict.warnings` 落 `_warnings`
+  // 對齊 8月31日 Batch 2 永久 rule (512a2138) + §Module Warning v1.0.0
+  verdict._warnings = verdict.warnings || verdict.meta?.warnings || [];
   // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 state / confidence / signal / matchedRules / etc)
   return verdict;
 }
@@ -2858,6 +2861,9 @@ async function analyzeVolatility(klines, options = {}) {
   if (!verdict.ok) {
     throw new Error(`Backend M6 verdict fail: ${verdict.error || "unknown"}`);
   }
+  // 大少 2026-09-10 23:45 — frontend normalize backend emit `verdict.warnings` 落 `_warnings`
+  // 對齊 8月31日 Batch 2 永久 rule (512a2138) + §Module Warning v1.0.0
+  verdict._warnings = verdict.warnings || verdict.meta?.warnings || [];
   // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 state / confidence / squeeze / matchedRules / etc)
   return verdict;
 }
@@ -3672,10 +3678,12 @@ async function analyzeHLStructure(klines, options = {}) {
     throw new Error(`Backend M2 verdict fail: ${verdict.error || "unknown"}`);
   }
   // 大少 2026-09-07 Fix A — M2 frontend propagate `_warnings` 落 verdict 頂層
-  // 永久 rule §Module Warning v1.0.0: frontend testing page 拎 verdict._warnings 渲染頂部 banner
+  // 大少 2026-09-10 23:45 — 改拎 backend emit `verdict.warnings` (冇 underscore, 8月31日 Batch 2 永久 rule 512a2138)
+  // 對齊 §Module Warning v1.0.0: frontend internal 用 `_warnings` 畀 UI helper (warnings.mjs/.ts) 拎
   // 永久 rule §Module Warning v1.1.0: 警告分 2 category (system / stock_state)
-  // backend emit 嘅係 meta._warnings (ModuleWarning object array) + top-level warnings, frontend 統一拎 top-level _warnings
-  verdict._warnings = verdict.meta?._warnings || verdict.warnings || [];
+  // backend emit 嘅係 top-level `warnings` array (ModuleWarning object), frontend normalize 落 `_warnings`
+  // 凡人話: 之前 frontend 拎 `meta._warnings` 永遠 None (backend 冇emit 落 meta), 拎 `warnings` 就拎到
+  verdict._warnings = verdict.warnings || verdict.meta?.warnings || [];
   // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 cycle / peaks / troughs / etc)
   return verdict;
 }
@@ -4161,6 +4169,10 @@ async function analyzeTrendline(klines, options = {}) {
   if (!verdict.ok) {
     throw new Error(`Backend M3 verdict fail: ${verdict.error || "unknown"}`);
   }
+  // 大少 2026-09-10 23:45 — frontend normalize backend emit `verdict.warnings` 落 `_warnings`
+  // 對齊 8月31日 Batch 2 永久 rule (512a2138) + §Module Warning v1.0.0
+  // 凡人話: 之前 frontend 永遠拎唔到 backend emit 嘅 warning, 強跌/Hurst+ADX gate 等 banner 永遠唔出
+  verdict._warnings = verdict.warnings || verdict.meta?.warnings || [];
   // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 state / confidence / matchedRules / etc)
   return verdict;
 }
@@ -4690,6 +4702,9 @@ async function analyzeIndicators(klines, options = {}) {
   if (!verdict.ok) {
     throw new Error(`Backend M4 verdict fail: ${verdict.error || "unknown"}`);
   }
+  // 大少 2026-09-10 23:45 — frontend normalize backend emit `verdict.warnings` 落 `_warnings`
+  // 對齊 8月31日 Batch 2 永久 rule (512a2138) + §Module Warning v1.0.0
+  verdict._warnings = verdict.warnings || verdict.meta?.warnings || [];
   // backend verdict shape 已經跟 frontend 兼容 (frontend 拎 verdict.meta.* 拎 state / confidence / signal / rsiSeries / etc)
   return verdict;
 }
@@ -5544,6 +5559,12 @@ async function analyzeMAAlignmentV2(klines, options = {}) {
   if (!verdict.ok) {
     throw new Error(`Backend M1 verdict fail: ${verdict.error || 'unknown'}`);
   }
+  // 大少 2026-09-10 23:45 — frontend normalize backend emit `verdict.warnings` 落 `_warnings`
+  // 對齊 8月31日 Batch 2 永久 rule (512a2138): backend emit `warnings` 冇 underscore
+  // 對齊 §Module Warning v1.0.0: frontend internal 用 `_warnings` 畀 UI helper (warnings.mjs/.ts) 拎
+  // 對齊 §M7 v2.0.1 Fix D spirit: frontend display 永遠對齊 backend verdict shape
+  // 凡人話: 之前 frontend 永遠拎唔到 backend emit 嘅 warning (拎 _warnings = None), 強跌/弱勢等 stock_state banner 永遠唔出
+  verdict._warnings = verdict.warnings || verdict.meta?.warnings || [];
   // backend verdict shape 已經跟 frontend 兼容 (maValues / maRanks / maSlopes / etc)
   return verdict;
 }
@@ -6682,12 +6703,15 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
     module_specific,
     timestamp: verdict.timestamp,
     // 大少 2026-09-07 Fix B — decisionEngineToStandardVerdict propagate `_warnings` 落 standard verdict
+    // 大少 2026-09-10 23:45 — 改拎 backend emit `verdict.warnings` (冇 underscore, 8月31日 Batch 2 永久 rule 512a2138)
     // 永久 rule §M2 self-check warning (大少 2026-09-06 15:08): M7 Synthesizer 拎 M2 self-check warning
     // 自動降 M2 weight 0.15 → 0.05, 5 個其他 module 等比例 normalize 補返 0.10
     // backend M7 algorithm.py line 410 拎 v.get("warnings", []), 即係靠 standard verdict 嘅 warnings field
     // Fix 前 decisionEngineToStandardVerdict 永遠冇 propagate _warnings, M7 永遠拎唔到 → 永遠唔 trigger discount
     // 對齊 §Module Warning v1.0.0 永久 rule: 對外一定要有 _warnings array (propagate chain M1-M6 → M7 → M8 → M9)
-    warnings: verdict._warnings || verdict.meta?._warnings || [],
+    // 凡人話: 之前 frontend 拎 `verdict._warnings` 永遠 None (backend 8月31日 Batch 2 已永久改 emit `warnings`),
+    //         M7 Synthesizer 永遠拎唔到 module warning, self-check warning 永遠 trigger 唔到 weight discount
+    warnings: verdict.warnings || verdict.meta?.warnings || verdict._warnings || [],
   };
 }
 
