@@ -292,9 +292,15 @@ export interface SynthesizerVerdict {
   grade_reason: string;      // 中文 (點解畀呢個 grade)
 
   // Kelly 倉位
-  kelly_fraction: KellyFraction;
-  kelly_numeric: number;     // 0.5 / 0.25 / 0.125
+  kelly_fraction: KellyFraction | 'zero';  // v2.0.2 加 'zero' state guard case (大少 9月12日 trigger)
+  kelly_numeric: number;     // 0.5 / 0.25 / 0.125 / 0.0
   kelly_position: number;    // 0-1 (position size)
+
+  // v2.0.2 (大少 2026-09-12 Spec Sync #63): Kelly state guard audit field
+  // 凡人話: 大少 trigger 揭發 Kelly 算法完全冇睇 state, 加 2 個 audit field 顯示點解 Kelly=0
+  // 對齊 spec doc §7 Cycle State 判定: Grade D/F → SELL action, 唔開新倉
+  kelly_state_guard_triggered: boolean;  // 係咪觸發咗 state guard (DOWN/SIDEWAYS → 0)
+  kelly_state_guard_reason: string;       // 凡人話解釋 (點解 Kelly=0)
 
   // v2.0.0 Stage 3: Weight discount generalization (大少 2026-09-10 23:06)
   // 對齊 backend algorithm.py 嘅 _apply_weight_discounts output

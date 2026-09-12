@@ -811,11 +811,16 @@ function renderSlopeMomentumResult(verdict) {
     TRANSITION: '轉折 (斜率反轉)',
   };
 
-  const color = stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
-  const confidencePct = (verdict.confidence * 100).toFixed(1);
-  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 多條 rule 確認'
-    : verdict.confidence >= 0.5 ? '中等信心, 部分 rule 確認'
+  // 9月11日 Fix — 拎 state / confidence 對齊 backend verdict shape (對齊 §M7 v2.0.2 永久 rule pattern)
+  // Backend 統一將 state / confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  // Fix 前 frontend 拎 verdict.state (top level) 永遠 undefined, fallback SIDEWAYS 0 + NaN%
+  const state = verdict.meta?.state ?? verdict.state;
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
+  const color = stateColors[state] || '#666';
+  const stateLabel = stateLabels[state] || state;
+  const confidencePct = (confidence * 100).toFixed(1);
+  const confidenceExplain = confidence >= 0.7 ? '高信心, 多條 rule 確認'
+    : confidence >= 0.5 ? '中等信心, 部分 rule 確認'
     : '低信心, 只有 weak rule';
 
   const matchedRules = verdict.meta?.matchedRules || [];
@@ -1109,12 +1114,16 @@ function renderMultiTFResult(verdict) {
     CONFLICT: '轉折 (CONFLICT 唔好入場)',
   };
 
-  const rawState = verdict.meta?.rawState || verdict.state;
-  const color = stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
-  const confidencePct = (verdict.confidence * 100).toFixed(1);
-  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 3 TF 一致大方向'
-    : verdict.confidence >= 0.5 ? '中等信心, 部分 TF 分歧'
+  // 9月11日 Fix — 拎 state / confidence 對齊 backend verdict shape (對齊 §M7 v2.0.2 永久 rule pattern)
+  // Backend 統一將 state / confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  const state = verdict.meta?.state ?? verdict.state;
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
+  const rawState = verdict.meta?.rawState || state;
+  const color = stateColors[state] || '#666';
+  const stateLabel = stateLabels[state] || state;
+  const confidencePct = (confidence * 100).toFixed(1);
+  const confidenceExplain = confidence >= 0.7 ? '高信心, 3 TF 一致大方向'
+    : confidence >= 0.5 ? '中等信心, 部分 TF 分歧'
     : '低信心, 多個 TF 分歧';
 
   const consensus = verdict.meta?.consensus || {};
@@ -1511,9 +1520,13 @@ function renderSynthesizedResult(verdict) {
     TRANSITION: '轉折',
   };
 
-  const color = stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
-  const confidencePct = (verdict.confidence * 100).toFixed(1);
+  // 9月11日 Fix — 拎 state / confidence 對齊 backend verdict shape (對齊 §M7 v2.0.2 永久 rule pattern)
+  // Backend 統一將 state / confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  const state = verdict.meta?.state ?? verdict.state;
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
+  const color = stateColors[state] || '#666';
+  const stateLabel = stateLabels[state] || state;
+  const confidencePct = (confidence * 100).toFixed(1);
   const moduleVerdicts = verdict.meta.moduleVerdicts;
 
   // Render 每個 module 嘅 individual verdict card
@@ -1730,11 +1743,15 @@ function renderMAResult(verdict) {
   const positionTooltipKey = `zmen_${layer2CyclePosition || 'range_bound'}`;
   const hasConsecutiveDays = (layer2Cycle === 'decelerating_up' || layer2Cycle === 'decelerating_down') && layer2ConsecutiveDays > 0;
 
+  // 9月11日 Fix — 拎 state / confidence 對齊 backend verdict shape (對齊 §M7 v2.0.2 永久 rule pattern)
+  // Backend 統一將 state / confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  const state = verdict.meta?.state ?? verdict.state;
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
   // 顏色優先 Layer 2 sub-scenario, fallback Layer 1 4 個 state
-  const cycleColor = ZMEN_SCENARIO_COLOR_MAP[layer2Cycle] || stateColors[verdict.state] || '#666';
-  const stateLabel = stateLabels[verdict.state] || verdict.state;
-  const confidencePct = (verdict.confidence * 100).toFixed(1);
-  const confidenceExplain = verdict.confidence >= 0.7 ? '高信心, 信號強' : verdict.confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
+  const cycleColor = ZMEN_SCENARIO_COLOR_MAP[layer2Cycle] || stateColors[state] || '#666';
+  const stateLabel = stateLabels[state] || state;
+  const confidencePct = (confidence * 100).toFixed(1);
+  const confidenceExplain = confidence >= 0.7 ? '高信心, 信號強' : confidence >= 0.4 ? '中等信心, 信號一般' : '低信心, 信號弱';
 
   const matchedRules = verdict.meta?.matchedRules || [];
   const evidence = verdict.evidence || [];
@@ -1871,7 +1888,11 @@ function renderMAResult(verdict) {
 // ===== Help text =====
 // ===== 詳細解讀 section (MA alignment) =====
 function renderDetailedExplanationMA(verdict) {
-  const confidencePct = (verdict.confidence * 100).toFixed(0);
+  // 9月11日 Fix — 拎 state / confidence 對齊 backend verdict shape (對齊 §M7 v2.0.2 永久 rule pattern)
+  // Backend 統一將 state / confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  const state = verdict.meta?.state ?? verdict.state;
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
+  const confidencePct = (confidence * 100).toFixed(0);
   const matchedRules = verdict.meta?.matchedRules || [];
   const evidence = verdict.evidence || [];
 
@@ -1932,9 +1953,13 @@ function renderDetailedExplanationMA(verdict) {
 
 // ===== 策略建議 section (MA alignment) =====
 function renderStrategyAdviceMA(verdict) {
-  const confidencePct = (verdict.confidence * 100).toFixed(0);
-  const isHighConf = verdict.confidence >= 0.7;
-  const isLowConf = verdict.confidence < 0.5;
+  // 9月11日 Fix — 拎 state / confidence 對齊 backend verdict shape (對齊 §M7 v2.0.2 永久 rule pattern)
+  // Backend 統一將 state / confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  const state = verdict.meta?.state ?? verdict.state;
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
+  const confidencePct = (confidence * 100).toFixed(0);
+  const isHighConf = confidence >= 0.7;
+  const isLowConf = confidence < 0.5;
   const matchedRules = verdict.meta?.matchedRules || [];
 
   // 大少 2026-08-15 — Zmen v1.0 — 凡人話 strategy advice 對應 9 個 sub-scenario (跟 M1 v2.1.0 同樣 style)
@@ -6641,9 +6666,12 @@ function decisionEngineMaxDD(klines) {
 // 配合 Level 3 expert rules: strong_uptrend + conf ≥ 0.8 + 全部 MA slope 同方向 → weight 加到 0.40
 // 大少 揀項 1: 動態 weight, 唔保持固定 0.25
 function getM1DynamicWeight(verdict) {
+  // 9月11日 Fix — 拎 conf 對齊 backend verdict shape (對齊 §M7 v2.0.2 永久 rule pattern)
+  // Backend 統一將 confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
   const cycle = verdict.meta?.cycle;
   const cyclePosition = verdict.meta?.cyclePosition;
-  const conf = verdict.confidence;
+  const conf = confidence;
   const maSlopes = verdict.meta?.maSlopes || {};
   const allSlopesSameDirection = (() => {
     const signs = Object.values(maSlopes).map(s => s >= 0 ? 1 : -1);
@@ -6675,9 +6703,12 @@ function decisionEngineToStandardVerdict(verdict, klines, moduleId) {
   // (只有少數舊 algo 例如 volatility 仍然 emit 喺 top level, 所以 fallback top level)
   // Fix 前 frontend 拎 verdict.state (top level) 永遠 undefined, fallback SIDEWAYS 0
   // → 6 個 module 全部顯示「橫行」+「未確認」+ 信心 0, 完全錯晒
-  // 對齊 §M7 v2.0.1 永久 rule: frontend display 永遠對齊 backend verdict shape
-  const rawState = verdict.meta?.state ?? verdict.state;
-  const rawConfidence = verdict.meta?.confidence ?? verdict.confidence;
+  // 對齊 §M7 v2.0.2 永久 rule: frontend display 永遠對齊 backend verdict shape
+  // 9月11日 Fix — 用 local variable 拎 state / confidence (對齊 F4a-F4e pattern), rawState / rawConfidence alias 畀第 4 個 caller 兼容
+  const state = verdict.meta?.state ?? verdict.state;
+  const confidence = verdict.meta?.confidence ?? verdict.confidence;
+  const rawState = state;
+  const rawConfidence = confidence;
   const expected_return = decisionEngineExpectedReturn(rawState, rawConfidence);
   const max_drawdown_estimate = decisionEngineMaxDD(klines);
   const sentiment_6d = decisionEngineSentiment6D(klines);
@@ -6889,190 +6920,176 @@ function decisionEngineComputeKelly(verdicts) {
 }
 
 // ============================================================================
-//  M7 Synthesizer 主入口 — analyzeDecisionEngine (M7 v1.0.0 — Sprint 2 收官)
+//  M7 Synthesizer 主入口 — analyzeDecisionEngine (M7 v2.0.3 — Phase 11 backend port)
 //
 //  目的: 拎 6 個子模組 verdict (M1 均線 / M2 峰谷 / M3 趨勢線 / M4 動能 /
-//        M5 量價 / M6 波動), 跑 5 個 sub-step 推導出最終 ssi_score / grade /
+//        M5 量價 / M6 波動), 跑 8 個 stage 推導出最終 ssi_score / grade /
 //        6×6 TCM matrix / 凱利倉位 fraction。
+//
+//  Phase 11 永久 rule (大少 2026-09-12 06:59 trigger, Spec Sync #64):
+//    - 拎走 frontend analyzeDecisionEngine chain (155 行, 6 個 module 自己跑 + 5 個 sub-step aggregation)
+//    - 換 1 個 fetch backend /api/algorithms/run?algo=synthesizer stub
+//    - 大少 9月12日 06:59 trigger 揭發 frontend 計嘅 grade 同 backend emit 嘅 grade 差 1 級
+//      (例: 00038 frontend=B backend=C+, 00524 frontend=A backend=B+, 00002 frontend=B+ backend=B)
+//    - Root cause: Phase 1-10 拎走咗 M1/M2/M3/M4/M5/M6/M8 frontend, 但 M7 從來冇拎走
+//      frontend testing page 一直跑緊 frontend 自己嘅 algorithm, 同 backend 算法唔對齊
+//    - Phase 11 拎走 frontend chain, 統一 fetch backend 拎 verdict, frontend 對齊 backend emit shape
+//    - 對齊 §Phase 10 永久 rule 沿用 (大少 8月20日 22:08 M8 拎走 frontend pattern)
 //
 //  Input  : klines  = 標準化 K 線 array (open/high/low/close/volume/...)
 //           options = { code, dataWindowDays, ... } 額外選項
 //
-//  Output : SynthesizerVerdict 結構, 包含:
-//           - ssi_score (0-100, 越高越強)  / grade (A+ ~ F)
-//           - tcm_matrix 6×6 配對表 (每對 module 嘅 pairing verdict)
-//           - alignment_score (6 個 module 嘅 confidence 平均)
-//           - kelly_fraction / kelly_numeric / kelly_position (凱利倉位)
-//           - module_verdicts: 6 個 sub-verdict
-//           - _warnings: 5 個層級 inline 警告 (依 Module Warning System 永久 rule)
+//  Output : SynthesizerVerdict 結構, 對齊 backend emit shape (拎 verdict.meta.X):
+//           - state / confidence / symbol (top-level)
+//           - ssi_score (0-100)  / grade (A+ ~ F) / grade_score / grade_reason
+//           - tcm_matrix 6×6 配對表 / alignment_score / alignment_score_after_penalty
+//           - kelly_fraction / kelly_numeric / kelly_position
+//           - kelly_state_guard_triggered / kelly_state_guard_reason (v2.0.2)
+//           - module_summary / consensus_state / consensus_score / simple_majority_state
+//           - weight_discounts / conflict_pairs / module_verdicts
+//           - warnings: top-level (對齊 §Backend 永久改 emit field name 後 frontend 必 grep 對齊永久 rule)
 //
-//  Algorithm 5 個 sub-step:
-//    1. 跑 6 個 analyze*() 模組 (Promise.all 並行)
-//    2. 透過 decisionEngineToStandardVerdict 轉做 standard format
-//    3. computeSentiment6D: 6 維情緒雷達 (consistency/conf_avg/rules_cov/sent_6d/cycle/health)
-//    4. computeAlignment: 6 個 module verdict 嘅 alignment score (平均 confidence)
-//    5. computeGrade: SSI×60% + Alignment×40% → grade_score → A+/A/B/C/D/F
-//    6. computeKelly: 平均 max_drawdown_estimate → half/quarter/octo
-//    7. propagate warnings: collect 6 個 module 嘅 _warnings + 加 M7 自己嘅 (e.g. MODULE_PARTIAL)
-//
-//  ⚠️ 永久 rule: 對外一定要有 _warnings array (Module Warning System v1.0.0)
+//  ⚠️ 永久 rule: 對外一定要有 warnings array (Module Warning System v1.0.0/v1.1.0)
 //  ⚠️ Warning 永遠 inlined verdict 入面, 唔好寫入 DB table
-//  ⚠️ Cross-ref: lib/warnings.mjs (makeWarning), backend/services/warning_collector.py
+//  ⚠️ Frontend 拎 backend emit shape 對齊: verdict.X 拎 top-level, verdict.meta.X 拎 meta field
+//  ⚠️ Cross-ref: backend/algorithms/synthesizer/algorithm.py (v2.0.3 source of truth)
 // ============================================================================
 export async function analyzeDecisionEngine(klines, options = {}) {
-  // 1) 跑 6 個 modules
-  const [
-    maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict,
-  ] = await Promise.all([
-    analyzeMAAlignmentV2(klines, options),
-    analyzeHLStructure(klines, options),
-    analyzeTrendline(klines, options),
-    analyzeIndicators(klines, options),
-    analyzeVolumePrice(klines, options),
-    analyzeVolatility(klines, options),
-  ]);
+  const symbol = options.symbol || options.code || 'unknown';
+  const dataWindowDays = options.dataWindowDays ?? 1260;
 
-  // 2) Transform 去 standard verdict
-  const standardVerdicts = [
-    decisionEngineToStandardVerdict(maVerdict, klines, 'ma-alignment'),
-    decisionEngineToStandardVerdict(hlVerdict, klines, 'hl-structure'),
-    decisionEngineToStandardVerdict(tlVerdict, klines, 'trendline'),
-    decisionEngineToStandardVerdict(indVerdict, klines, 'indicators'),
-    decisionEngineToStandardVerdict(vpVerdict, klines, 'volume'),
-    decisionEngineToStandardVerdict(volVerdict, klines, 'volatility'),
-  ];
+  console.log(`[synthesizerAdapter] start analyze ${symbol} (Phase 11: fetch backend stub)`);
 
-  // 3) 5 個 sub-step aggregation
-  if (standardVerdicts.length === 0) {
+  // Phase 11 永久 rule: 拎走 frontend chain (6 個 module 跑 + 5 個 sub-step aggregation + 7 個 warning 注入)
+  // 換 1 個 fetch backend /api/algorithms/run?algo=synthesizer call
+  // 對齊 Phase 10 永久 rule (大少 2026-08-20 22:08 M8 拎走 frontend pattern)
+  let resp;
+  try {
+    resp = await fetch(`http://localhost:18792/api/algorithms/run?algo=synthesizer&symbol=${encodeURIComponent(symbol)}&period=1d&data_window_days=${dataWindowDays}`);
+  } catch (e) {
+    console.error('[synthesizerAdapter] fetch backend failed:', e);
     return {
-      ssi_score: 0, ssi_breakdown: { consistency: 0, confidence_avg: 0, rules_coverage: 0 },
-      tcm_matrix: [], alignment_score: 0, grade: 'F', grade_score: 0,
-      grade_reason: '無 module verdicts',
-      kelly_fraction: 'quarter', kelly_numeric: 0.25, kelly_position: 0.25,
-      module_verdicts: [], module_cycle_verdicts: { maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict },
+      ok: false,
+      symbol,
+      algorithm: 'synthesizer',
+      version: '2.0.3',
+      period: '1d',
+      klines_count: (klines || []).length,
+      points: [],
+      meta: { error: 'Backend fetch failed: ' + e.message, state: 'SIDEWAYS', grade: 'F', grade_score: 0 },
+      warnings: [
+        makeWarning('critical', 'M7', 'POST_FAILED',
+          'Fetch backend /api/algorithms/run failed (Phase 11 backend stub)',
+          { issue: 'Backend fetch exception: ' + e.message, impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { error: e.message, symbol } }
+        ),
+      ],
+      error: e.message,
       timestamp: Date.now(),
     };
   }
 
-  const { ssi_score, breakdown } = decisionEngineComputeSSI(standardVerdicts);
-  const tcm_matrix = decisionEngineComputeTCM(standardVerdicts);
-  const alignment_score = decisionEngineComputeAlignment(standardVerdicts);
-
-  // 大少 2026-08-21 12:04 — Stage 2 第一步: ZigZagSlope cross-module alignment enrichment
-  // 拎 M1 verdict 嘅 meta.zigzagSlope 做 cross-module alignment check
-  // 扣 alignment 但唔直接改 grade (跟 spec: Level 4 cross-module alignment enrich)
-  const zigzagAlignment = decisionEngineComputeZigzagAlignment(standardVerdicts);
-  const zigzag_alignment_penalty = zigzagAlignment.penalty;
-  const zigzag_alignment_reasons = zigzagAlignment.reasons;
-  const alignment_score_after_penalty = Math.max(0, alignment_score - zigzag_alignment_penalty);
-
-  // Step 4: Grade (用 penalty 後嘅 alignment_score)
-  const { grade, grade_score, reason } = decisionEngineComputeGrade(ssi_score, alignment_score_after_penalty);
-  const { fraction, numeric, position } = decisionEngineComputeKelly(standardVerdicts);
-
-  // 大少 2026-08-11 — Module Warning System v1.0.0 (Phase 5a) — M7 Synthesizer
-  // 收集 6 個 module verdict 嘅 _warnings (propagation M1-M6 → M7) + M7 自己 generate
-  // 警告注入:
-  //   🔴 NAN_RESULT: ssi_score / alignment_score / grade_score 任何一個 NaN
-  //   🟡 MODULE_PARTIAL: 6 個 module 入面拎唔到 1+ 個 (standardVerdicts.length < 6)
-  //   🟡 CONFLICT_STATE: 兩個 module state 衝突 (M1 UP + zmen DOWN, 需用 maVerdict + zmen)
-  const m7Warnings = [];
-  // 1. 收集 M1-M6 嘅 _warnings (propagation)
-  //    用 raw verdicts (maVerdict etc.) 而唔係 standardVerdicts, 因為 decisionEngineToStandardVerdict 唔 propagate _warnings
-  const allModuleVerdicts = [maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict];
-  for (const v of allModuleVerdicts) {
-    if (v && v._warnings && Array.isArray(v._warnings)) {
-      m7Warnings.push(...v._warnings);
-    }
-  }
-  // 2. M7 自己 generate
-  // 2a. NAN check
-  const nanFields = [];
-  if (!isFinite(ssi_score)) nanFields.push('ssi_score');
-  if (!isFinite(alignment_score)) nanFields.push('alignment_score');
-  if (!isFinite(grade_score)) nanFields.push('grade_score');
-
-  // 2b. 大少 2026-08-15 — M7 優化 Level 3 — 2 條 M1 expert rules override
-  //   Rule 1: M1 cycle = decelerating_up + consecutiveDays ≥ 5 → M7 自動加 TRANSITION 警號
-  //   Rule 2: M1 cycle = decelerating_down + consecutiveDays ≥ 5 → M7 自動加 TRANSITION 警號
-  //   Rule 3: M1 cycle = strong_uptrend/downtrend + conf ≥ 0.8 + 全部 MA slope 同方向 → M1 weight 加到 0.40 (已經喺 getM1DynamicWeight 做咗)
-  if (maVerdict && maVerdict.meta) {
-    const m1Cycle = maVerdict.meta.cycle;
-    const consecutiveDays = maVerdict.meta.consecutiveDays || 0;
-    if (m1Cycle === 'decelerating_up' && consecutiveDays >= 5) {
-      m7Warnings.push(makeWarning('warning', 'M7', 'CONFLICT_STATE',
-        'M7 見到 M1 到頂轉勢警號',
-        {
-          issue: `M1 cycle = ${m1Cycle} + 連跌 ${consecutiveDays} 日 (≥ 5 日, 見頂跡象, 即使其他 module 仲見 UP)`,
-          impact: 'Verdict 已經準確, 留意股票狀態',
-          fix: '睇其他 module 確認 / 留意 M7 alignment',
-          context: { m1_cycle: m1Cycle, consecutive_days: consecutiveDays, override: 'transition_alert' },
-        }
-      ));
-    }
-    if (m1Cycle === 'decelerating_down' && consecutiveDays >= 5) {
-      m7Warnings.push(makeWarning('warning', 'M7', 'CONFLICT_STATE',
-        'M7 見到 M1 到底轉勢警號',
-        {
-          issue: `M1 cycle = ${m1Cycle} + 連升 ${consecutiveDays} 日 (≥ 5 日, 見底跡象, 即使其他 module 仲見 DOWN)`,
-          impact: 'Verdict 已經準確, 留意股票狀態',
-          fix: '睇其他 module 確認 / 留意 M7 alignment',
-          context: { m1_cycle: m1Cycle, consecutive_days: consecutiveDays, override: 'transition_alert' },
-        }
-      ));
-    }
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    console.error(`[synthesizerAdapter] backend returned ${resp.status}:`, errText);
+    return {
+      ok: false,
+      symbol,
+      algorithm: 'synthesizer',
+      version: '2.0.3',
+      period: '1d',
+      klines_count: (klines || []).length,
+      points: [],
+      meta: { error: `Backend HTTP ${resp.status}: ${errText}`, state: 'SIDEWAYS', grade: 'F', grade_score: 0 },
+      warnings: [
+        makeWarning('critical', 'M7', 'POST_FAILED',
+          `Backend /api/algorithms/run returned ${resp.status} (Phase 11 backend stub)`,
+          { issue: `Backend HTTP error: ${errText}`, impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { status: resp.status, symbol } }
+        ),
+      ],
+      error: `HTTP ${resp.status}: ${errText}`,
+      timestamp: Date.now(),
+    };
   }
 
-  if (nanFields.length > 0) {
-    m7Warnings.push(makeWarning('critical', 'M7', 'NAN_RESULT',
-      'M7 綜合判定計算結果 NaN',
-      {
-        issue: `${nanFields.join('/')} 結果係 NaN 或 Infinity`,
-        impact: 'Verdict 唔可信, 唔好落單',
-        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-        context: { nan_fields: nanFields, ssi_score, alignment_score, grade_score },
-      }
-    ));
+  let backendVerdict;
+  try {
+    backendVerdict = await resp.json();
+  } catch (e) {
+    console.error('[synthesizerAdapter] failed to parse backend JSON:', e);
+    return {
+      ok: false,
+      symbol,
+      algorithm: 'synthesizer',
+      version: '2.0.3',
+      period: '1d',
+      klines_count: (klines || []).length,
+      points: [],
+      meta: { error: 'Backend JSON parse failed: ' + e.message, state: 'SIDEWAYS', grade: 'F', grade_score: 0 },
+      warnings: [
+        makeWarning('critical', 'M7', 'POST_FAILED',
+          'Backend /api/algorithms/run returned invalid JSON (Phase 11 backend stub)',
+          { issue: 'Backend JSON parse error: ' + e.message, impact: 'Verdict 唔可信, 唔好落單', fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc', context: { error: e.message, symbol } }
+        ),
+      ],
+      error: 'JSON parse error: ' + e.message,
+      timestamp: Date.now(),
+    };
   }
-  // 2b. MODULE_PARTIAL check
-  const validVerdicts = standardVerdicts.filter(v => v && v.state);
-  if (validVerdicts.length < 6) {
-    m7Warnings.push(makeWarning('warning', 'M7', 'MODULE_PARTIAL',
-      `6 個 module 入面拎唔到 ${6 - validVerdicts.length} 個`,
-      {
-        issue: `standardVerdicts.length = ${validVerdicts.length} < 6`,
-        impact: 'Verdict 唔可信, 唔好落單',
-        fix: 'Re-run / 檢查 K 線 / 檢查 cache / 睇 spec doc',
-        context: { valid_count: validVerdicts.length, missing: 6 - validVerdicts.length },
-      }
-    ));
-  }
-  // 2c. CONFLICT_STATE check (M1 vs zmen, 需要拎 zmen verdict, 但 zmen 喺 decisionEngineAdapter 跑嘅, 呢度冇)
-  // 簡化: 睇 maVerdict 嘅 state, 如果唔一致就 conflict
-  const maState = maVerdict?.state;
-  if (maState === 'UP' || maState === 'DOWN') {
-    // 暫時 skip (zmen verdict 喺 M8 度拎)
-  }
+
+  // 對齊 §M7 v2.0.2 frontend display path fix 永久 rule spirit:
+  // Frontend display 永遠對齊 backend verdict shape
+  // Backend emit:
+  //   - top-level: ok / symbol / algorithm / state (None) / confidence / error / timestamp
+  //   - meta.X: state / grade / grade_score / ssi_score / alignment_score / kelly_* / module_summary / consensus_* / etc
+  //   - warnings top-level (對齊 §Backend 永久改 emit field name 永久 rule, 唔再 _warnings)
+  const m = backendVerdict.meta || {};
 
   return {
-    ssi_score,
-    ssi_breakdown: breakdown,
-    tcm_matrix,
-    alignment_score,
-    // 大少 2026-08-21 12:04 — Stage 2 第一步: ZigZagSlope enrichment
-    alignment_score_after_penalty,
-    zigzag_alignment_penalty,
-    zigzag_alignment_reasons,
-    grade,
-    grade_score,
-    grade_reason: reason,
-    kelly_fraction: fraction,
-    kelly_numeric: numeric,
-    kelly_position: position,
-    module_verdicts: standardVerdicts,
-    module_cycle_verdicts: { maVerdict, hlVerdict, tlVerdict, indVerdict, vpVerdict, volVerdict },
-    _warnings: m7Warnings,  // 大少 2026-08-11 v1.0.0
-    timestamp: Date.now(),
+    ok: backendVerdict.ok !== false,
+    symbol: backendVerdict.symbol || symbol,
+    algorithm: 'synthesizer',
+    version: '2.0.3',
+    period: '1d',
+    klines_count: (klines || []).length,
+    points: [],
+    // Top-level: 拎 backend emit (state 永遠 None, 對齊 §M7 v2.0.1 spec)
+    state: backendVerdict.state ?? m.state ?? 'SIDEWAYS',
+    confidence: backendVerdict.confidence ?? 0,
+    error: backendVerdict.error,
+    timestamp: backendVerdict.timestamp || Date.now(),
+    // Meta field 統一: 拎 backend emit meta.X
+    meta: m,
+    // Warnings top-level: 對齊 §Backend 永久改 emit field name 永久 rule (大少 8月31日改 _warnings → warnings)
+    warnings: backendVerdict.warnings || [],
+    // 為咗 renderDecisionEngineResult 兼容 (frontend display 拎 verdict.X 拎 field)
+    // 拎 backend emit meta.X 落 top-level 對齊 render path
+    grade: m.grade,
+    grade_score: m.grade_score,
+    grade_reason: m.grade_reason,
+    ssi_score: m.ssi_score,
+    ssi_breakdown: m.ssi_breakdown,
+    tcm_matrix: m.tcm_matrix,
+    alignment_score: m.alignment_score,
+    alignment_score_after_penalty: m.alignment_score_after_penalty,
+    zigzag_alignment_penalty: m.zigzag_alignment_penalty,
+    zigzag_alignment_reasons: m.zigzag_alignment_reasons,
+    kelly_fraction: m.kelly_fraction,
+    kelly_numeric: m.kelly_numeric,
+    kelly_position: m.kelly_position,
+    // v2.0.2 (大少 9月12日 trigger): Kelly state guard audit field
+    kelly_state_guard_triggered: m.kelly_state_guard_triggered,
+    kelly_state_guard_reason: m.kelly_state_guard_reason,
+    // v2.0.0 Stage 3-7 output
+    module_summary: m.module_summary,
+    consensus_state: m.consensus_state,
+    consensus_score: m.consensus_score,
+    consensus_achieved: m.consensus_achieved,
+    simple_majority_state: m.simple_majority_state,
+    state_breakdown: m.state_breakdown,
+    weight_discounts: m.weight_discounts,
+    conflict_pairs: m.conflict_pairs,
+    conflict_count: m.conflict_count,
+    module_verdicts: m.module_verdicts || [],
   };
 }
 
@@ -7092,6 +7109,7 @@ function decisionEngineGradeColor(grade) {
 }
 
 function decisionEngineKellyLabel(fraction) {
+  if (fraction === 'zero') return '零倉 (0%) — state guard 觸發';
   if (fraction === 'half') return '半倉 (50%)';
   if (fraction === 'quarter') return '四分一倉 (25%)';
   return '八分一倉 (12.5%)';
@@ -7573,12 +7591,15 @@ function renderSentimentRadar(sentiment, title, colorHex = '#1890ff') {
 /** 2️⃣ Kelly Position Donut (倉位分數 donut chart)
  *  half = 0.5 / quarter = 0.25 / octo = 0.125
  *  顏色: half=#26BA75 (綠), quarter=#F39C12 (黃), octo=#EE5151 (紅)
+ *  v2.0.2 (大少 2026-09-12 Spec Sync #63): 加 'zero' case (state guard 觸發, state=DOWN/SIDEWAYS → 0 倉)
+ *  顏色: zero=#666 深灰 (唔開新倉, 對齊 spec doc §7 Grade D/F SELL action)
  */
 function renderKellyDonut(kellyFraction) {
   const map = {
     half: { value: 0.5, label: '半倉 50%', color: '#26BA75' },
     quarter: { value: 0.25, label: '四分一 25%', color: '#F39C12' },
     octo: { value: 0.125, label: '八分一 12.5%', color: '#EE5151' },
+    zero: { value: 0, label: '零倉 0% (state guard 觸發)', color: '#666' },
   };
   const k = map[kellyFraction] || map.quarter;
   const radius = 50;
@@ -8594,15 +8615,22 @@ function renderPositionDecisionEngine(verdict) {
   const actionColor = finalActionColor(final_action);
   const actionLabel = finalActionLabel(final_action);
 
+  // 9月11日 Fix — 拎 m1_verdict / zmen_verdict state / confidence 對齊 backend verdict shape
+  // Backend 統一將 state / confidence emit 喺 verdict.meta.* 下面, top level 永遠 null placeholder
+  const m1_state = m1_verdict?.meta?.state ?? m1_verdict?.state;
+  const m1_confidence = m1_verdict?.meta?.confidence ?? m1_verdict?.confidence;
+  const zmen_state = zmen_verdict?.meta?.state ?? zmen_verdict?.state;
+  const zmen_confidence = zmen_verdict?.meta?.confidence ?? zmen_verdict?.confidence;
+
   // 第一個結果: M1 (新版均線演算法 v2.0) 嘅 cycle verdict
   const m1ResultHTML = m1_verdict ? `
     <div class="cycle-synth-result m8-verdict-tooltip" data-help="M1: 新版均線演算法 v2.0 (AS-03-MA v2.0, 用 5 日線/10 日線/20 日線配合 13 條 rule 判斷大方向, 較新, 用嚟做中長線 trading 嘅主力)" style="background:#f0f8ff;border:2px solid #1890ff;border-radius:8px;padding:12px;">
       <div style="font-size:13px;font-weight:700;color:#1890ff;margin-bottom:6px;">① M1 (新版均線演算法 v2.0)</div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <span class="state-pill" style="background:${stateColors[m1_verdict.state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
-          ${stateLabels[m1_verdict.state] || m1_verdict.state}
+        <span class="state-pill" style="background:${stateColors[m1_state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
+          ${stateLabels[m1_state] || m1_state}
         </span>
-        <span style="font-size:14px;font-weight:600;">${(m1_verdict.confidence * 100).toFixed(0)}% 信心</span>
+        <span style="font-size:14px;font-weight:600;">${(m1_confidence * 100).toFixed(0)}% 信心</span>
       </div>
       <div style="font-size:11px;color:#666;margin-top:4px;">${m1_verdict.meta?.source || '新版均線演算法 v2.0'}</div>
     </div>
@@ -8613,10 +8641,10 @@ function renderPositionDecisionEngine(verdict) {
     <div class="cycle-synth-result m8-verdict-tooltip" data-help="zmen 均算法: 舊版均線演算法 v0.3.0 (zmen 風格, 較舊但穩定, 用嚟做 cross-check 同 M1 對比共識, 60/40 加權)" style="background:#fff7e6;border:2px solid #fa8c16;border-radius:8px;padding:12px;">
       <div style="font-size:13px;font-weight:700;color:#fa8c16;margin-bottom:6px;">② zmen (舊版均線演算法 v0.3.0)</div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <span class="state-pill" style="background:${stateColors[zmen_verdict.state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
-          ${stateLabels[zmen_verdict.state] || zmen_verdict.state}
+        <span class="state-pill" style="background:${stateColors[zmen_state] || '#666'};color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
+          ${stateLabels[zmen_state] || zmen_state}
         </span>
-        <span style="font-size:14px;font-weight:600;">${(zmen_verdict.confidence * 100).toFixed(0)}% 信心</span>
+        <span style="font-size:14px;font-weight:600;">${(zmen_confidence * 100).toFixed(0)}% 信心</span>
       </div>
       <div style="font-size:11px;color:#666;margin-top:4px;">${zmen_verdict.meta?.source || '舊版均線演算法 v0.3.0'}</div>
     </div>
