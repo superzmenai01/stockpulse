@@ -5875,5 +5875,76 @@ M7 Synthesizer 跑 00981 嗰陣, frontend 嗰度 inject 🔴 NAN_RESULT warning 
 - **M2 hl_structure** (3 個地方拎 `options.get("code", "TEST")`) 改 `options.get("code") or options.get("symbol", "TEST")`, 對齊其他 7 個 algo 拎 caller symbol
 - 之後任何 algorithm 加新 field 寫入 meta, 必須對齊「caller value pattern」(永遠用 caller 嘅 value, 唔可以 hardcode default)
 
+---
+
+## §15.73 — Spec Sync #64-#67 v2.x Frontend 拎走 + Synthesizer Alignment 永久 rule (大少 2026-09-12 trigger) [2026-09-12]
+
+### 觸發原因
+
+- 大少 2026-09-12 早上 07:07 trigger「拎走 M7 frontend 全部計算」(Spec Sync #66 sub-phase), 之後陸續 trigger M1-M6 frontend 拎走 (#66) + M8-M9 frontend 拎走 (#67) + frontend verdict shape 對齊 backend (#64) + synthesizer v2.0.5 alignment 拎走 SIDEWAYS bonus (#65)
+- 9月11日 23:06 trigger「大少 explicit: 廢之前 8月29日 22:44 + 9月9日 07:23 永久 rule, Mavis 自己行」之後, Mavis auto-execute 連串拎走 sprint, 大少隔日 22:22 trigger 「Update StockPulse」等 spec doc 同步返
+
+### 改動內容 (4 個 Spec Sync, 9月12日)
+
+#### Spec Sync #64 — Frontend Verdict Shape Fix (b6a1a382)
+- ✅ `algorithms/AS-03-cycle-detection/adapter.mjs` 14 處拎 `verdict.meta.state` / `verdict.meta.confidence` 改返拎 backend 頂層 `verdict.state` / `verdict.confidence` (對齊 backend `v2.0.3` Verdict contract)
+- ✅ Spec Sync 永遠 emit 拎 backend Verdict dataclass 頂層 field 優先, fallback `verdict.meta.X` 兜 backend 唔 emit 嘅 case (reg gate fail 早 return verdict 嘅 7 個 audit field)
+
+#### Spec Sync #65 — Synthesizer v2.0.5 Alignment (adb487a3, 大少 9月12日 07:28 trigger)
+- ✅ 拎走 synthesizer alignment 方案 A 嘅 SIDEWAYS 共識 bonus, **HK.00524** 對齊結果由 A 級 → C 級
+- ✅ 凡人話: 之前 5 個 module 都判 SIDEWAYS 嗰陣會加 bonus, 但係 5 個 SIDEWAYS 唔等於 5 個一致強烈橫行共識, 拎走 bonus 對齊真實強度
+
+#### Spec Sync #66 — M1-M6 Frontend 拎走 (f0501cef)
+- ✅ 拎走 frontend 6 個 module: `m1-ma-alignment.ts` / `m2-hl-structure.ts` / `m3-trendline.ts` / `m4-indicators.ts` / `m5-volume-price.ts` / `m6-volatility.ts` + `std-verdict.ts` + 8 個 frontend test file
+- ✅ 改 `index.ts` 拎走 `CycleDetector` (frontend 唔再 orchestrate M1-M6 順序, 直接 call backend)
+- ✅ 加 backend pytest 對齊 backend 8 stage 計算 (verify backend 計算 = frontend 拎走前拎到嘅)
+- ✅ Frontend `adapter.mjs` 6 個 `analyzeXxx` 直接 call backend `/api/algorithms/run?algo=xxx`, 唔再自己用 JS 重算
+
+#### Spec Sync #67 — M8-M9 Frontend 拎走 (83310355)
+- ✅ 拎走 26 個 frontend file: 5 bundle + 4 script + 5 module + 4 orchestrator + 9 test + 1 data-loader
+- ✅ `adapter.mjs` M8 SlopeMomentum chain 拎走 13951 chars (JS 重算 M8 risk score 邏輯全部拎走)
+- ✅ Backend pytest 36/36 100% 綠 (新加 pytest test 對齊 backend 8 stage 計算)
+
+### 凡人話解釋
+
+- **之前架構**: Frontend 自己跑 M1-M9 算法 (JS TypeScript), 然後聚合, 再 call backend 拎 K 線 → 算法同 K 線分開兩邊做, frontend 自己演算法結果
+- **之後架構**: Frontend 永遠只係**顯示器**, call backend `/api/algorithms/run` 拎 verdict (`{state, confidence, warnings, _warnings, meta}`) 之後, 純粹用 verdict 嘅 field 顯示
+- 對齊永久 rule §Algorithm Backend-only + 模組化 (大少 8月22日 23:20 trigger) — 算法永遠 backend Python, frontend 只 render verdict
+- 對齊 §M2 self-check weight 折扣永久 rule spirit — frontend 拎到 backend emit `_warnings` 之後, 統一由 `lib/warnings.mjs` 處理 banner 顯示
+
+### Evidence
+
+- Spec Sync #66 backend pytest verify: 6 個 algo 嘅 backend algorithm output = frontend 拎走前拎到嘅 JS output (100% 一致)
+- Spec Sync #67 backend pytest 36/36 100% 綠
+- Spec Sync #64 frontend testing page 撳 M1 / M3 跑 HK.00700 見到 `state` / `confidence` 顯示正常 (對齊 backend verdict shape)
+- Spec Sync #65 HK.00524 由 A 級 → C 級, 對齊「拎走 SIDEWAYS 共識 bonus」後新 alignment table
+- 凡人話: 9月12日 22:21 git push 確認 main SHA 83310355 同 origin/main 一致, 4 個 Spec Sync 全部已 push 上 GitHub
+
+### 永久 rule checklist
+
+- ✅ Frontend 永遠唔可以再 port backend algorithm 落 JS / TypeScript (frontend 只 render backend verdict, 對齊 §Algorithm Backend-only 永久 rule)
+- ✅ Frontend `adapter.mjs` 6 個 `analyzeXxx` + 之前拎走嘅 M8-M9 永遠直接 call backend `/api/algorithms/run?algo=xxx`, 唔可以自己用 K 線重算
+- ✅ Frontend testing page 拎 backend verdict 之後, 永遠用 backend 頂層 field (`verdict.state` / `verdict.confidence` / `verdict.warnings`) 優先, fallback `verdict.meta.X` 兜 backend 唔 emit 嘅 case
+- ✅ Frontend `index.ts` 拎走 `CycleDetector` 之後, 唔可以再 orchestrate M1-M6 順序 (frontend 唔再做 SSI 計算)
+- ✅ Backend algorithm 改動, frontend 唔需要跟住改 (只更新 path 對齊 verdict shape), frontend commit 永遠只係 display 改動
+- ✅ Synthesizer alignment 永遠拎走 SIDEWAYS 共識 bonus (對齊 Spec Sync #65)
+- ✅ 之後新加 algorithm / backend stage 改動, frontend 完全唔郁, 100% backend-only (對齊 8月22日 23:20 永久 rule spirit)
+- ✅ Backend algorithm 改動之後必加 backend pytest verify (對齊 36/36 100% 綠 standard, Spec Sync #67)
+- ✅ Spec Sync 觸發「Update StockPulse」時, MiniMax Code auto-execute 4 steps, OpenClaw 做 Step 2/3, MiniMax Code 做 Step 1 (ARCHITECTURE.md append) + Step 4 (commit + push), 對齊 §Spec Sync Protocol (大少 #10203, 2026-08-04 07:56)
+
+### 對應 commit
+
+- Spec Sync #64: `b6a1a382` fix(frontend-verdict-shape): adapter.mjs 14 處拎 verdict.meta.state/confidence 對齊 backend (v2.0.3 frontend display path fix)
+- Spec Sync #65: `adb487a3` fix(synthesizer-v2.0.5): alignment 方案 A 拎走 SIDEWAYS 共識 bonus, 00524 由 A 級 → C 級
+- Spec Sync #66: `f0501cef` refactor(m1-m6): 拎走 frontend 6 個 module + std-verdict + 8 個 frontend test, 改 index.ts 拎走 CycleDetector, 加 backend pytest
+- Spec Sync #67: `83310355` refactor(m8-m9-frontend): 拎走 26 個 file + adapter.mjs M8 SlopeMomentum chain 拎走 13951 chars, 36/36 pytest 100% 綠
+- 對應: AGENTS.md §v2.x frontend 拎走 永久 rule (即將加 section)
+
+### Follow-up sprint (唔喺今次 scope)
+
+- 之前 Spec Sync #54 (M6 v2.0.0) / #60 (cache-bust) / #61 (M1 self-check) / #62 (M7 v2.0.0 8-stage) 4 個 9月10-11日 Spec Sync 未寫入 ARCHITECTURE.md, 大少下次 trigger 「Update StockPulse」可一次過補返 (或者之後 Sprint 補)
+- 之後 frontend testing page 拎 backend verdict 嘅 entry point 改動, 必先 grep 全 reference 對齊 (對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 永久 rule, 9月10日 23:45)
+- Frontend `lib/warnings.mjs` 拎 backend emit `warning.issue` / `warning.impact` / `warning.fix` 永久 rule 沿用 Spec Sync 對齊 #63
+
 
 
