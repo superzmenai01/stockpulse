@@ -239,7 +239,8 @@ def test_decision_engine_llm_hook_interface():
 
     # 拎 coroutine 確認係 async function
     coro = generate_interpretation(ctx)
-    result = asyncio.get_event_loop().run_until_complete(coro) if asyncio.get_event_loop().is_running() else asyncio.run(coro)
+    # 大少 2026-09-12 11:50 — Python 3.14 fix: asyncio.get_event_loop() 已 deprecated, 用 asyncio.run() 直接
+    result = asyncio.run(coro)
     assert "應該買入" in result
 
 

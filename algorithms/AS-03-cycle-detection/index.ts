@@ -46,13 +46,14 @@ export { ZmenMAAlignmentModule } from './modules/zmen-ma-alignment.ts';  // 大�
 //   M7 算法完全 backend 跑 (backend/algorithms/synthesizer/algorithm.py 1064 行, v2.0.3 8 stage)
 //   frontend testing page 用 fetch backend `/api/algorithms/run?algo=synthesizer` 拎 verdict
 //   對齊 §數據處理 Server 內部做 + §Algorithm Backend-only + 模組化永久 rule
-//   M8 Decision Engine (Sprint 2 將加: finalAction 8 個 + trading card + 短期走勢 + 人話解讀)
-export { DecisionEngine, type FinalAction, type ForecastScenario, type DecisionVerdict } from './modules/decision-engine.ts';
-// 大少 2026-08-07 23:15 — SlopeMomentum 暫時隱藏,Stage 1 done 最後先做返
-// export { SlopeMomentum } from './modules/slope-momentum.ts';
-
-export { MultiTFOrchestrator } from './orchestrator/multi-tf.ts';
-// 大少 2026-08-08 13:30 — OrchSynthesizer 唔再 export 出去 (避免同 M7 Synthesizer 衝突),
-//   testing page 用 M7 嗰個就夠
-export { RegimeChangeAlerter } from './orchestrator/alert.ts';
-export { Aggregator } from './orchestrator/aggregator.ts';
+//
+// 大少 2026-09-12 10:07 — §M8-M9 v2.0.5 frontend 拎走 永久 rule (Phase 19-21)
+//   拎走 `export { DecisionEngine, type FinalAction, type ForecastScenario, type DecisionVerdict }` 4 個 re-export
+//     (frontend decision-engine.ts 拎走 chain, M8 backend algorithm 完全 server-side 跑)
+//   拎走 `export { MultiTFOrchestrator }` + `export { RegimeChangeAlerter }` + `export { Aggregator }` 3 個 re-export
+//     (orchestrator 拎走 chain, frontend testing page 用 backend `/api/algorithms/run?algo=decision_engine` 拎 verdict)
+//   拎走 `// export { SlopeMomentum }` comment (frontend slope-momentum.ts 拎走 chain, 永久 comment 拎走)
+//   拎走 `modules/multi-tf.ts` (frontend orchestrator 拎走 chain, 對齊 §Algorithm Backend-only + 模組化永久 rule)
+//   M8 backend 拎 path: `backend/algorithms/decision_engine/algorithm.py` (v1.x, 完全 server-side 跑)
+//   M9 backend 拎 path: `backend/algorithms/back_test/algorithm.py` (v1.x, 完全 server-side 跑)
+//   M5 orchestrator backend 拎 path: backend 冇對應 orchestrator, 拎走成個 multi-tf frontend chain (永久 rule §Frontend 0 個計算 function)

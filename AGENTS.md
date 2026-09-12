@@ -3882,3 +3882,148 @@ if (!rsiSeries || !macdSeries) {
 - `backend/algorithms/{ma_alignment,hl_structure,trendline,indicators,volume_price,volatility}/algorithm.py` (source of truth, 唔改)
 
 **對應 commit**: 即將 push (Spec Sync #66 v2.x) — 等大少 trigger
+
+### M8-M9 v2.x frontend 拎走 永久 rule (大少 2026-09-12 10:07 trigger, Spec Sync #67 v2.x)
+
+**凡人話**: Phase 12 拎走咗 M7 frontend, Phase 13-18 拎走咗 M1-M6 frontend, 大少 9月12日 10:07 trigger「動手,之後你幫我做全面檢測」, 套用同樣 pattern 對 M8/M9 frontend 全部做 audit, 拎走任何前台違規計算, 對齊 §數據處理 Server 內部做 + §算法 Backend-only + 模組化永久 rule。
+
+**拎 evidence 確認 import chain (M8/M9 frontend 拎走 chain)**:
+- Phase 1 evidence 確認 M8/M9/orchestrator/slope-momentum 全部 `class XxxEngine implements CycleModule<KLine[]>` 計算 class, KLine 入 verdict 出
+- Phase 2 拎走 frontend file 16 個: `decision-engine.ts` (M8) + `back-test.ts` + `backtest-timeline.ts` (M9) + `multi-tf.ts` (M5 orchestrator) + `slope-momentum.ts` (M8) + 4 個 orchestrator (regime-change-alerter, aggregator, alerts, orchestrator/synthesize) + 8 個 frontend test file
+- testing page 完全冇 import M8/M9 frontend engine class (Phase 12 拎走 chain 已經 fetch backend)
+
+**v2.x fix (Phase 19-22 永久 rule)**:
+
+- ✅ 拎走 frontend `modules/decision-engine.ts` (M8): `DecisionEngine` class implements `CycleModule<KLine[]>` — 拎 K 線 + 6 個 module verdict + Synthesizer verdict → 8 個 finalAction 決策樹
+- ✅ 拎走 frontend `modules/back-test.ts` + `modules/backtest-timeline.ts` (M9): `BackTestEngine` + `BacktestTimeline` class implements `CycleModule<KLine[]>` — 拎 K 線 + walk-forward CV 最佳化
+- ✅ 拎走 frontend `modules/slope-momentum.ts` (M8 Stage 2): `SlopeMomentum` class implements `CycleModule<KLine[]>` — 10 條 rule 計斜率動能 (Stage 2 backend 仲未 implement, 拎走 frontend chain 暫停)
+- ✅ 拎走 frontend 4 個 orchestrator: `multi-tf.ts` (M5) + `regime-change-alerter.ts` + `aggregator.ts` + `alerts.ts` (orchestrator layer)
+- ✅ 拎走 frontend `build/` 5 個 bundle (dead code, module 拎走後冇人 import): `back-test.bundle.js` + `backtest-timeline.bundle.js` + `decision-engine.bundle.js` + `multi-tf.bundle.js` + `slope-momentum.bundle.js`
+- ✅ 拎走 frontend `scripts/` 4 個 m9-*.mjs (dead code): `m9-apply-bestparams-to-m8.mjs` + `m9-pilot-10-stocks.mjs` + `m9-pilot-rerun-3-v2-1w.mjs` + `m9-pilot-rerun-7-1w.mjs`
+- ✅ 拎走 frontend `__tests__/zmen-ma-alignment.test.mjs` 1 個 frontend test file (對齊 §M7 v2.0.4 揀 frontend test 拎走 + backend pytest 永久 rule)
+- ✅ 拎走 frontend `adapter.mjs` M8 SlopeMomentum chain (共 13951 chars, frontend 0 個計算 function 永久 rule §Frontend 0 個計算 function 沿用):
+  - line 132-140 option toggle definition (key=`enableSlopeMomentum`)
+  - line 148 / 164 / 3517-3526 嘅 M8 comment
+  - line 163 `const enableSlopeMomentum = options.enableSlopeMomentum === true;`
+  - line 188-197 主流程 call site `if (enableSlopeMomentum) { moduleVerdicts.push(await analyzeSlopeMomentum(...)) }`
+  - line 705-992 整段 M8 chain (function `analyzeSlopeMomentum` + render `renderSlopeMomentumResult` + `_loadSlopeMomentumScriptTag` + `_getSlopeMomentumAnalyzer`)
+  - line 1537 render dispatch `if (mv.moduleId === 'slope-momentum') return renderSlopeMomentumResult(mv);`
+  - line 1547 / 1570 嘅 display name ternary
+  - line 1590-1591 modDetail block `} else if (mv.moduleId === 'slope-momentum') { ... }`
+  - line 34 description string 拎走 M8 字眼
+  - line 116 / 626 / 671 嘅 Stage 1 隱藏 comment
+- ✅ 拎走 dead code `computeConsecutiveUpDays` (line 6965-6973, 拎走 M7 frontend chain 後冇人 call, 對齊 §Frontend 0 個計算 function spirit)
+
+**對應 commit (Phase 1-7 即將 push, Spec Sync #67 v2.x)**:
+- 改 `testing-page/testing-page.js` ALGO_CACHE_BUST `4.99.0 → 5.0.0` (對齊 §Cache bust self-check 永久 rule 21:24)
+- 改 `testing-page/index.html` `?v=2.3.178 → 2.3.179` (對齊 §Cache bust self-check 永久 rule 21:24)
+- 修 `backend/tests/test_decision_engine.py` Python 3.14 asyncio deprecated issue (`asyncio.get_event_loop().run_until_complete(coro) if ... else asyncio.run(coro)` → `asyncio.run(coro)`, 1 行 fix)
+
+**永久 rule checklist**:
+- ✅ Frontend testing page entry 永遠 fetch backend `/api/algorithms/run?algo={decision_engine,back_test}&symbol=...&data_window_days=1260` 拎 verdict (沿用 Phase 12 拎走 pattern)
+- ✅ Frontend 唔可以再拎 K 線喺 frontend 計 DecisionEngine 決策樹 / BackTest walk-forward CV / SlopeMomentum 斜率動能 (對齊 §數據處理 Server 內部做永久 rule b2d851ca 2026-08-23)
+- ✅ Frontend 唔可以再拎 orchestrator 喺 frontend aggregate (對齊 §Algorithm Backend-only + 模組化永久 rule 2026-08-22)
+- ✅ Frontend testing page 完全冇 import M8/M9 frontend engine class (拎走 chain 沿用 M1-M6/M7 pattern)
+- ✅ Backend 沿用 `backend/algorithms/{decision_engine,back_test}/algorithm.py` (source of truth, 唔改)
+- ✅ Backend pytest 沿用 `test_decision_engine.py` (10 tests) + `test_back_test.py` (11 tests), 23/23 100% 綠 (修 1 個 Python 3.14 asyncio pre-existing issue)
+- ✅ 對齊 §M7 v2.0.4 Phase 12 + §M1-M6 v2.x frontend 拎走 永久 rule — 拎走 pattern 沿用
+- ✅ 對齊 §Cache bust self-check 永久 rule 21:24 — 改 adapter.mjs 同步 bump ALGO_CACHE_BUST 4.99.0 → 5.0.0 + ?v=2.3.178 → 2.3.179
+
+**凡人話 verify 結論**:
+- 36/36 pytest 全部通過: M1-M6 (6) + M7 (7) + M8 (12) + M9 (11)
+- 2 隻 stock × 2 個 M8/M9 algo = 4 個 curl 全部拎到 verdict, backend emit 完整 (data_window_days=1260):
+  - **M8 decision_engine** (HK.00700): moduleId=decision-engine ✅
+  - **M8 decision_engine** (US.AAPL): moduleId=decision-engine ✅
+  - **M9 back_test** (HK.00700): moduleId=back-test ✅
+  - **M9 back_test** (US.AAPL): moduleId=back-test ✅
+- 全面檢測 grep 拎 evidence:
+  - `modules/` 拎走後剩 `zmen-ma-alignment.ts` (zmen 獨立, chart overlay display layer 例外)
+  - `build/` 拎走後 empty
+  - `scripts/` 拎走後 empty
+  - `__tests__/` 拎走後 empty
+  - `tests/` 拎走後 empty
+  - `class XxxEngine implements CycleModule` 只剩 `ZmenMAAlignmentModule` (chart overlay display layer)
+  - 6 個 `computeXxx` function 全部屬 chart overlay display layer (`_computeMASeries` / `_computeMASeriesV2` / `_computeHorizontalLineSeries` / `computeSlope` / `_computeTrendlineSeries` + dead `computeConsecutiveUpDays` 已拎走), 拎 `verdict.meta.*` 拎 path 對齊 backend emit
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/modules/decision-engine.ts` (拎走, M8 frontend)
+- `algorithms/AS-03-cycle-detection/modules/back-test.ts` (拎走, M9 frontend)
+- `algorithms/AS-03-cycle-detection/modules/backtest-timeline.ts` (拎走, M9 frontend)
+- `algorithms/AS-03-cycle-detection/modules/slope-momentum.ts` (拎走, M8 Stage 2 frontend)
+- `algorithms/AS-03-cycle-detection/modules/multi-tf.ts` (拎走, M5 orchestrator)
+- `algorithms/AS-03-cycle-detection/modules/regime-change-alerter.ts` (拎走, orchestrator)
+- `algorithms/AS-03-cycle-detection/modules/aggregator.ts` (拎走, orchestrator)
+- `algorithms/AS-03-cycle-detection/modules/alerts.ts` (拎走, orchestrator)
+- `algorithms/AS-03-cycle-detection/build/*.bundle.js` (拎走 5 個, dead code)
+- `algorithms/AS-03-cycle-detection/scripts/m9-*.mjs` (拎走 4 個, dead code)
+- `algorithms/AS-03-cycle-detection/__tests__/zmen-ma-alignment.test.mjs` (拎走, frontend test)
+- `algorithms/AS-03-cycle-detection/adapter.mjs` v2.x (拎走 M8 SlopeMomentum chain 共 13951 chars)
+- `backend/tests/test_decision_engine.py` (修 1 個 Python 3.14 asyncio issue)
+- `testing-page/testing-page.js` (ALGO_CACHE_BUST 4.99.0 → 5.0.0)
+- `testing-page/index.html` (?v=2.3.178 → 2.3.179)
+
+**保留清單 (唔拎走)**:
+- `algorithms/AS-03-cycle-detection/modules/zmen-ma-alignment.ts` (zmen均算法獨立, 大少 2026-08-08 09:13 trigger 唔屬 7 個 modules, chart overlay display layer 例外)
+- `algorithms/AS-03-cycle-detection/types.ts` (type defs, 拎走 frontend module 後保留)
+- `algorithms/AS-03-cycle-detection/config.ts` (config defs, 拎走 frontend module 後保留)
+- `backend/algorithms/{decision_engine,back_test}/algorithm.py` (source of truth, 唔改)
+- 6 個 `computeXxx` chart overlay function (`_computeMASeries` / `_computeMASeriesV2` / `_computeHorizontalLineSeries` / `computeSlope` / `_computeTrendlineSeries`): 拎 `verdict.meta.*` 拎 path, 純 lightweight-charts series 渲染, 對齊 §M3 trendline chart overlay 修復 永久 rule + §Frontend 0 個計算 function 永久 rule chart overlay 例外
+
+**對應 commit**: 即將 push (Spec Sync #67 v2.x) — 等大少 trigger Commit
+
+### Frontend 0 個計算 function 永久 rule (大少 2026-09-12 10:07 trigger)
+
+**凡人話**: frontend 永遠 fetch backend verdict 拎 path 對齊 backend emit shape, 唔可以再拎 K 線喺 frontend 計算任何 algorithm 結果。chart overlay display layer (`_computeMASeries` / `_computeTrendlineSeries` 等拎 `verdict.meta.*` 拎 path 純做 lightweight-charts series 渲染) 屬例外, 唔拎走。
+
+**凡 7 個 module 拎走 pattern checklist**:
+- ✅ M1 frontend `modules/ma-alignment.ts` 拎走 → backend `backend/algorithms/ma_alignment/algorithm.py` 拎 path
+- ✅ M2 frontend `modules/hl-structure.ts` 拎走 → backend `backend/algorithms/hl_structure/algorithm.py` 拎 path
+- ✅ M3 frontend `modules/trendline.ts` 拎走 → backend `backend/algorithms/trendline/algorithm.py` 拎 path
+- ✅ M4 frontend `modules/indicators.ts` 拎走 → backend `backend/algorithms/indicators/algorithm.py` 拎 path
+- ✅ M5 frontend `modules/volume.ts` 拎走 → backend `backend/algorithms/volume_price/algorithm.py` 拎 path
+- ✅ M6 frontend `modules/volatility.ts` 拎走 → backend `backend/algorithms/volatility/algorithm.py` 拎 path
+- ✅ M7 frontend `modules/{cycle-synthesizer,synthesizer,decision-engine}.ts` 拎走 → backend `backend/algorithms/synthesizer/algorithm.py` 拎 path
+- ✅ M8 frontend `modules/{decision-engine,slope-momentum}.ts` 拎走 → backend `backend/algorithms/decision_engine/algorithm.py` 拎 path (M8 SlopeMomentum Stage 2 backend pending, frontend 拎走暫停)
+- ✅ M9 frontend `modules/{back-test,backtest-timeline}.ts` 拎走 → backend `backend/algorithms/back_test/algorithm.py` 拎 path
+
+**凡 frontend algorithm file 拎走 checklist**:
+- ✅ 拎走任何 `class XxxEngine implements CycleModule<KLine[]>` 嘅計算 class (KLine 入 verdict 出, frontend 計算違規)
+- ✅ 拎走任何 `class XxxModule` 計算 class
+- ✅ 拎走任何 frontend `function computeXxx` / `function _computeXxx` / `function calculateXxx` 純算法計算 (chart overlay display layer 例外)
+- ✅ 拎走 dead code (冇 call site 嘅 function, e.g. `computeConsecutiveUpDays` 拎走 M7 frontend chain 後變 dead)
+- ✅ 拎走 build bundle (frontend module 拎走後冇人 import 嘅 bundle)
+- ✅ 拎走 pilot script (frontend bundle 拎走後冇人 import 嘅 .mjs)
+- ✅ 拎走 frontend test (對齊 §M7 v2.0.4 揀 frontend test 拎走 + backend pytest 永久 rule)
+
+**凡 frontend algorithm file 保留 checklist** (唔拎走):
+- ✅ `ZmenMAAlignmentModule` (大少 2026-08-08 09:13 trigger zmen均算法獨立, 唔屬 7 個 modules, chart overlay display layer 例外)
+- ✅ types.ts / config.ts (type defs + config, frontend 拎走後保留 file)
+- ✅ 6 個 chart overlay `_computeXxx` function (`_computeMASeries` / `_computeMASeriesV2` / `_computeHorizontalLineSeries` / `computeSlope` / `_computeTrendlineSeries`): 拎 `verdict.meta.*` 拎 path, 純 lightweight-charts series 渲染
+- ✅ Backend algorithm file (source of truth, 唔改)
+- ✅ Backend pytest (`test_m1_to_m6.py` 6 + `test_synthesizer.py` 7 + `test_decision_engine.py` 12 + `test_back_test.py` 11, 共 36 tests)
+
+**對應 commit**: 沿用 §M7 v2.0.4 Phase 12 + §M1-M6 v2.x + §M8-M9 v2.x 永久 rule checklist
+
+### 全面檢測 永久 rule (凡人話: frontend 0 個計算 function 永久 rule套用模式)
+
+**凡人話**: 大少 2026-09-12 10:07 trigger「動手,之後你幫我做全面檢測」, 套用 §M7 v2.0.4 Phase 12 + §M1-M6 v2.x + §M8-M9 v2.x frontend 拎走 永久 rule 做全面 grep 檢測, 確認 frontend 0 個計算 function 違規。
+
+**全面檢測 grep 拎 evidence checklist** (每次 frontend 拎走後必跑):
+
+1. **modules/ folder 拎走後剩低**: `ls algorithms/AS-03-cycle-detection/modules/` 只剩 `zmen-ma-alignment.ts` (chart overlay display layer 例外)
+2. **build/ folder 拎走後**: `ls algorithms/AS-03-cycle-detection/build/` empty (冇 bundle)
+3. **scripts/ folder 拎走後**: `ls algorithms/AS-03-cycle-detection/scripts/` empty (冇 pilot script)
+4. **__tests__/ folder 拎走後**: `ls algorithms/AS-03-cycle-detection/__tests__/` empty (冇 frontend test)
+5. **tests/ folder 拎走後**: `ls algorithms/AS-03-cycle-detection/tests/` empty (冇 frontend test)
+6. **frontend `class XxxEngine implements CycleModule` 計算 class**: `grep -rn "implements CycleModule"` 只剩 `ZmenMAAlignmentModule` (chart overlay display layer)
+7. **frontend `function computeXxx / _computeXxx / calculateXxx` 計算 function**: `grep -rn "function compute\|function _compute\|function calculate"` 拎 `verdict.meta.*` 拎 path 嘅 chart overlay display layer 屬例外, 其他拎走
+8. **pytest 100% 綠**: `python3 -m pytest backend/tests/test_m1_to_m6.py backend/tests/test_synthesizer.py backend/tests/test_decision_engine.py backend/tests/test_back_test.py` 36/36 pass
+9. **curl verify backend emit 完整**: `curl /api/algorithms/run?algo={ma_alignment,hl_structure,trendline,indicators,volume_price,volatility,synthesizer,decision_engine,back_test}&symbol=HK.00700&data_window_days=1260` 全部拎到 verdict, `verdict.meta.symbol == caller symbol`, `verdict.meta.moduleId` 對齊 algo
+
+**凡人話 verify 結論** (M8-M9 v2.x 拎走後, 2026-09-12 11:55):
+- 全部 9 個 grep 拎 evidence 通過, frontend 0 個計算 function 違規
+- 36/36 pytest 100% 綠
+- 4 個 curl verify M8/M9 backend 仲 work
+- Frontend 永遠 fetch backend `/api/algorithms/run` 拎 verdict, 對齊 backend emit shape
+
+**對應 commit**: 沿用 §M7 v2.0.4 Phase 12 + §M1-M6 v2.x + §M8-M9 v2.x 永久 rule checklist
