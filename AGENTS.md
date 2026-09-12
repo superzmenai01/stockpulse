@@ -3712,6 +3712,47 @@ if (!rsiSeries || !macdSeries) {
 
 **對應 commit**: 即將 push (Spec Sync #64 v2.0.3) — 等大少 trigger
 
+### M7 Synthesizer v2.0.5 Alignment 方案 A 拎走 SIDEWAYS 共識 bonus 永久 rule (大少 2026-09-12 07:28 trigger, Spec Sync #65)
+
+**凡人話**: 大少 9月12日 07:28 撳跑 M7 對 HK.00524 verify 揭發 grade 出 A 級 (81.4) 但 6 個老師全部都話 SIDEWAYS (冇方向共識), 副校長(副校長) 卻畀 A 級 = BUY 動作 ← 邏輯矛盾。Root cause: `_compute_alignment` 舊公式 `max_group_size / total_count`, 6 個老師 SIDEWAYS 100% 同意都當 100% 對齊拎 bonus, 但 SIDEWAYS 係「冇方向」, 唔應該當「對齊」。方案 A (大少 7:28 trigger 揀): alignment 只計「方向對齊」(UP/DOWN), SIDEWAYS 共識 → alignment = 0 (冇方向 = 冇對齊)。
+
+**00524 修正 evidence**:
+- v2.0.2 之前: A (81.4) ← 太鬆, 6 個朋友都話「冇所謂」但副校長畀 A 級買入
+- v2.0.5 之後: C (41.4) ← 凡人話「冇能力」就係 C 級觀望 ✅
+- 數學: 41.4 = SSI 69.0 × 0.6 + Alignment 0.0 × 100 × 0.4
+
+**5 隻 stock 凡人話對比**:
+
+| Stock | 共識 | v2.0.2 之前 grade | v2.0.5 之後 grade | 凡人話解 |
+|---|---|---|---|---|
+| HK.00524 | SIDEWAYS | A (81.4) | **C (41.4)** | 6 老師 SIDEWAYS → alignment 0 → A → C ✅ |
+| HK.00700 | DOWN | C+ (53.6) | C+ (53.6) | DOWN 共識 → alignment 60% 正常計, grade 保留 ✅ |
+| HK.00005 | SIDEWAYS | B (61.2) | F (26.3) | SIDEWAYS 共識 → alignment 0, B → F |
+| US.AAPL | SIDEWAYS | B (61.2) | F (27.6) | SIDEWAYS 共識 → alignment 0, B → F |
+| US.MSFT | UP | B (61.2) | B (63.0) | UP 共識 → alignment 66.7% 正常計, grade 保留 ✅ |
+| US.GOOGL | SIDEWAYS | C (40.8) | D (34.6) | SIDEWAYS 共識 → alignment 0, C → D |
+
+**凡人話結論**:
+- ✅ **方向共識 (UP/DOWN) → alignment 正常計, grade 保留**: HK.00700 DOWN 共識 C+ 觀望, US.MSFT UP 共識 B 級
+- ✅ **冇方向共識 (SIDEWAYS) → alignment 0%, grade 自動降一級**: HK.00005 B → F, US.AAPL B → F, US.GOOGL C → D, 00524 A → C
+- 凡人話: 00524 「冇呢個能力」就係 C 級觀望, 唔可以畀 A 級 BUY ✅
+
+**v2.0.5 fix (Alignment 方案 A 永久 rule)**:
+
+- ✅ M7 `_compute_alignment` 永遠拎走 SIDEWAYS 共識 bonus (方案 A 永遠 0)
+- ✅ 凡人話:「6 個朋友都話冇所謂 (SIDEWAYS)」係「冇方向共識」, 唔應該當「100% 對齊」拎 alignment bonus
+- ✅ Backend 改完必 restart (`./start.sh`) + curl verify
+- ✅ 改 `algorithm.py` 之後 Spec Sync 必 update MODULE-07-SYNTHESIZER.md + AGENTS.md 永久 rule section
+- ✅ Frontend Phase 11 拎走 chain 之後, frontend 自動 fetch backend, 唔需要再 port 1:1 (唔影響 frontend display path)
+- ✅ 對齊 §M7 v2.0.3 Phase 11 永久 rule — frontend testing page 統一 fetch backend, alignment 公式改動只影響 backend emit
+- ✅ 對齊 §Backend hot-reload 永久 rule — restart backend 之後 5 隻 stock 拎新 grade verify 確認 fix 對齊凡人話邏輯
+
+**對應文件**:
+- `backend/algorithms/synthesizer/algorithm.py` v2.0.5 (`_compute_alignment` 加 SIDEWAYS 共識 guard, line 190-218)
+- `docs/research/AS-03-cycle-detection/MODULE-07-SYNTHESIZER.md` v2.0.5 (Spec Sync #65 section, 5 stock 對比 evidence)
+
+**對應 commit**: 即將 push (Spec Sync #65 v2.0.5) — 等大少 trigger
+
 ### M7 Synthesizer v2.0.4 Phase 12 frontend 拎走 永久 rule (大少 2026-09-12 07:07 trigger, Spec Sync #65)
 
 **凡人話**: Phase 11 拎走咗 M7 testing page entry 嘅 frontend chain 換 fetch backend, 但係 frontend 仲有 3 個 file 喺度偷偷計:

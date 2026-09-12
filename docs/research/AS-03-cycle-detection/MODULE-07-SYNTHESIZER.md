@@ -1,4 +1,11 @@
-# AS-03 · Module 7: 終極綜合判定 (Synthesizer v2.0.0)
+# AS-03 · Module 7: 終極綜合判定 (Synthesizer v2.0.5)
+
+> **對應 docx**: `docs/演算法概念SPECS/07多時間框架一致性與極端情緒校準法.docx` (M7 部分)
+> **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/synthesizer.ts` (M7, 559 行 v2.0.2, frontend Phase 11 之後拎走, fetch backend stub)
+> **對應 types**: `algorithms/AS-03-cycle-detection/types.ts` (SynthesizerVerdict interface, v2.0.2 加 2 個新 field)
+> **對應 backend**: `backend/algorithms/synthesizer/algorithm.py` (M7, v2.0.5, alignment 方案 A 拎走 SIDEWAYS 共識 bonus)
+> **對應 tests**: `algorithms/AS-03-cycle-detection/__tests__/synthesizer.test.mjs` (64 個 assertions)
+> **對應 adapter**: `algorithms/AS-03-cycle-detection/adapter.mjs` (`synthesizerAdapter` + decisionEngineKellyLabel / renderKellyDonut 加 'zero' case)
 
 > **對應 docx**: `docs/演算法概念SPECS/07多時間框架一致性與極端情緒校準法.docx` (M7 部分)
 > **對應 TS 檔**: `algorithms/AS-03-cycle-detection/modules/synthesizer.ts` (M7, 559 行 v2.0.0)
@@ -26,6 +33,213 @@
 > **大少 2026-08-08 11:57 指示**: UX 多圖少文字, 顏色對應狀態, 永遠全 Show (將來可收埋個別 section)。
 >
 > **大少 2026-08-08 13:30 永久 rule (Memory)**: M8 嘅人話詳細解讀 (render function) 必須有 `async generateInterpretation(ctx): Promise<string>` interface, 將來可以 swap 落 LLM call (OpenAI / MiniMax / Kimi)。Sprint 2 而家用 hardcoded template, 大少話「記底日後提我去做返」。
+
+---
+
+## v2.0.5 永久改動 (大少 2026-09-12 07:28 Spec Sync #65, Alignment 方案 A 拎走 SIDEWAYS 共識 bonus)
+
+### 凡人話總結
+
+大少 9月12日 07:28 撳跑 M7 對 HK.00524 verify 揭發 grade 出 A 級 (81.4) 但 6 個老師全部都話 SIDEWAYS (冇方向共識), 副校長(副校長) 卻畀 A 級 = BUY 動作 ← 邏輯矛盾。Root cause: `_compute_alignment` 舊公式 `max_group_size / total_count`, 6 個老師 SIDEWAYS 100% 同意都當 100% 對齊拎 bonus, 但 SIDEWAYS 係「冇方向」, 唔應該當「對齊」。方案 A (大少 7:28 trigger 揀): alignment 只計「方向對齊」(UP/DOWN), SIDEWAYS 共識 → alignment = 0 (冇方向 = 冇對齊)。
+
+**凡人話決策**:
+- 「6 個朋友都話冇所謂 (SIDEWAYS)」係「冇方向共識」, 唔應該當「100% 對齊」拎 alignment bonus
+- Alignment 修正: max_state = "SIDEWAYS" → alignment = 0
+- 00524 修正: A (81.4) → C (41.4) ← 凡人話「冇能力」就係 C 級觀望 ✅
+- 5 隻 stock 影響: 方向共識 (UP/DOWN) → alignment 正常計保留, SIDEWAYS 共識 → alignment 0 → grade 自動降一級
+- 對齊凡人話邏輯: 冇方向共識 → 最多 C 級觀望, 唔可以畀 A 級 BUY
+
+### v2.0.4 改動詳情
+
+#### 1. Backend `_compute_alignment` 加 SIDEWAYS 共識 guard
+
+```python
+# backend/algorithms/synthesizer/algorithm.py line 190-218
+def _compute_alignment(verdicts: List[Dict[str, Any]]) -> float:
+    """Alignment Score (0-1): 6 個 module (M1-M6) state 一致程度
+    v2.0.4 (大少 2026-09-12 07:28 Spec Sync #65) — 方案 A 拎走 SIDEWAYS 共識 bonus
+    凡人話: 6 個朋友都話「冇所謂」(SIDEWAYS 共識), 唔應該當「100% 對齊」拎 bonus
+    對齊 plan v2 §H Stage 5 (consensus scoring)
+    """
+    if not verdicts:
+        return 0.0
+    state_count: Dict[str, int] = {}
+    for v in verdicts:
+        state = v.get("state", "SIDEWAYS")
+        state_count[state] = state_count.get(state, 0) + 1
+
+    # v2.0.4 方案 A (大少 9月12日 07:28 Spec Sync #65):
+    # 拎最多 state, 如果係 SIDEWAYS → 對齊分 = 0
+    # 凡人話: 6 個老師都話「唔郁」, 唔應該當「對齊」拎 alignment bonus
+    max_state = max(state_count, key=state_count.get)
+    if max_state == "SIDEWAYS":
+        return 0.0
+
+    max_count = state_count[max_state]
+    return round((max_count / len(verdicts)) * 1000) / 1000
+```
+
+#### 2. 5 隻 stock 凡人話對比 evidence (Spec Sync #65)
+
+| Stock | v2.0.2/3 grade | v2.0.4 grade | 凡人話解 |
+|---|---|---|---|
+| HK.00524 | A (81.4) | **C (41.4)** | 6 個老師 SIDEWAYS → alignment 100% → 0, A → C ✅ |
+| HK.00700 | C+ (53.6) | C+ (53.6) | DOWN 共識 → alignment 60% 正常計, grade 保留 ✅ |
+| HK.00005 | B (61.2) | F (26.3) | SIDEWAYS 共識 → alignment 0, B → F (對齊 spec §7 唔開新倉) |
+| US.AAPL | B (61.2) | F (27.6) | SIDEWAYS 共識 → alignment 0, B → F (對齊 spec §7 唔開新倉) |
+| US.MSFT | B (61.2) | B (63.0) | UP 共識 → alignment 66.7% 正常計, grade 保留 ✅ |
+| US.GOOGL | C (40.8) | D (34.6) | SIDEWAYS 共識 → alignment 0, C → D (對齊 spec §7 SELL) |
+
+**凡人話結論**:
+- ✅ **方向共識 (UP/DOWN) → alignment 正常計, grade 保留**: HK.00700 DOWN 共識 C+ 觀望, US.MSFT UP 共識 B 級
+- ✅ **冇方向共識 (SIDEWAYS) → alignment 0%, grade 自動降一級**: HK.00005 B → F, US.AAPL B → F, US.GOOGL C → D, 00524 A → C
+- 凡人話: 00524 「冇呢個能力」就係 C 級觀望, 唔可以畀 A 級 BUY ✅
+
+### v2.0.4 對齊永久 rule checklist
+
+- ✅ M7 `_compute_alignment` 永遠拎走 SIDEWAYS 共識 bonus (方案 A 永遠 0)
+- ✅ Backend 改完必 restart (`./start.sh`) + curl verify
+- ✅ 改 `algorithm.py` 之後 Spec Sync 必 update MODULE-07-SYNTHESIZER.md + AGENTS.md 永久 rule section
+- ✅ Frontend Phase 11 拎走 chain 之後, frontend 自動 fetch backend, 唔需要再 port 1:1
+
+---
+
+## v2.0.3 永久改動 (大少 2026-09-12 06:59 Spec Sync #64, Phase 11 frontend 拎走)
+
+### 凡人話總結
+
+大少 9月12日 06:59 撳跑 M7 對 4 隻 stock 00038/00079/00524/00002 verify 揭發 frontend 計出嚟嘅 grade 全部比 backend emit 低 1 級 (例: 00038 frontend=C+ backend=B, 00524 frontend=B+ backend=A)。Root cause: Phase 1-10 拎走咗 M1/M2/M3/M4/M5/M6/M8 frontend 改 fetch backend, 但 **M7 Synthesizer 從來冇拎走 frontend**, frontend testing page 一直跑緊 frontend 自己嘅 algorithm (155 行 chain 包括 6 個 module 自己跑 + 5 個 sub-step aggregation + 7 個 warning 注入), 同 backend algorithm 唔對齊。Phase 11 拎走 frontend chain 改 fetch backend stub, 對齊 §Phase 10 永久 rule 沿用 (大少 8月20日 22:08 M8 拎走 pattern)。
+
+**凡人話決策**:
+- Frontend 同 backend 算法唔對齊係 spec bug, 凡人話:大少撳 testing page 睇到嘅 grade 同 backend emit 嘅 grade 唔同, 永遠差 1 級, 違反「frontend display 對齊 backend verdict shape」永久 rule spirit
+- Phase 11 拎走 frontend chain, 統一 fetch backend `/api/algorithms/run?algo=synthesizer` 拎 verdict
+- Frontend normalize backend emit 嘅 field 落 frontend shape, 對齊 §M7 v2.0.2 frontend display path fix 永久 rule spirit
+- 對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule (9月10日 23:45)
+
+### v2.0.3 改動詳情
+
+#### 1. Frontend `analyzeDecisionEngine` 拎走 chain (大少 9月12日 trigger)
+
+**改前**: frontend 155 行 chain:
+```js
+// 1) 跑 6 個 modules (自己跑 M1-M6 frontend algorithm)
+// 2) Transform 去 standard verdict (decisionEngineToStandardVerdict)
+// 3) 5 個 sub-step aggregation (SSI / TCM / alignment / Grade / Kelly)
+// 4) ZigZagSlope cross-module alignment enrichment
+// 5) Step 4 Grade (用 penalty 後 alignment_score)
+// 6) 7 個 warning 注入 (M1-M6 propagation + M7 自己 3 個 generate)
+```
+
+**改後**: 換 fetch backend stub (對齊 Phase 10 永久 rule):
+```js
+const resp = await fetch(`http://localhost:18792/api/algorithms/run?algo=synthesizer&symbol=${encodeURIComponent(symbol)}&period=1d&data_window_days=${dataWindowDays}`);
+// 拎 backend verdict, normalize backend emit 嘅 meta.X field 落 frontend shape
+return {
+  state: m.state, grade: m.grade, ssi_score: m.ssi_score, ...,
+  warnings: backendVerdict.warnings || [],  // 對齊 §Backend 永久改 emit field name 永久 rule
+  ...
+};
+```
+
+#### 2. Frontend normalize 對齊 backend emit shape (對齊 §M7 v2.0.2 frontend display path fix 永久 rule)
+
+Frontend `analyzeDecisionEngine` return 嘅 field 全部拎 `verdict.meta.X`:
+- top-level: `state` / `confidence` / `symbol` / `ok` / `error` / `timestamp`
+- 拎 `meta.X` 落 top-level 對齊 `renderDecisionEngineResult` 拎 path: `grade` / `grade_score` / `grade_reason` / `ssi_score` / `ssi_breakdown` / `tcm_matrix` / `alignment_score` / `alignment_score_after_penalty` / `zigzag_alignment_penalty` / `zigzag_alignment_reasons` / `kelly_fraction` / `kelly_numeric` / `kelly_position` / `kelly_state_guard_triggered` / `kelly_state_guard_reason` / `module_summary` / `consensus_state` / `consensus_score` / `consensus_achieved` / `simple_majority_state` / `state_breakdown` / `weight_discounts` / `conflict_pairs` / `conflict_count` / `module_verdicts`
+- `warnings` 拎 backend emit top-level (對齊 §Backend 永久改 emit field name 永久 rule, 唔再 _warnings leading underscore)
+
+#### 3. Error handling 永久 rule
+
+frontend fetch backend 失敗時 emit 1 個 `POST_FAILED` critical warning (對齊 §Phase 10 永久 rule M8 pattern):
+- Backend fetch exception → 拎 `makeWarning('critical', 'M7', 'POST_FAILED')`
+- Backend HTTP 4xx/5xx → 拎 `makeWarning('critical', 'M7', 'POST_FAILED')`
+- Backend JSON parse failed → 拎 `makeWarning('critical', 'M7', 'POST_FAILED')`
+
+### 4 隻 stock verify 結果 (大少 9月12日 06:59 trigger 後 verify)
+
+| Stock | Backend emit (Phase 11 之前 frontend 拎) | Frontend chain 拎 (Phase 11 之前 frontend 自己跑) | Phase 11 之後 frontend 拎 backend emit |
+|---|---|---|---|
+| HK.00038 | B (grade_score=61.2) | C+ | **B** ✅ 對齊 backend |
+| HK.00079 | C (grade_score=40.8) | D | **C** ✅ 對齊 backend |
+| HK.00524 | A (grade_score=81.4) | B+ | **A** ✅ 對齊 backend |
+| HK.00002 | B+ (grade_score=79.7) | B | **B+** ✅ 對齊 backend |
+
+**凡人話 verify 結論**: 4 隻 stock 全部確認 frontend chain 拎嘅 grade 差 backend emit 1 級, Phase 11 之後 frontend 拎 backend emit 完全對齊 backend, 確認 fix 成功。
+
+---
+
+## v2.0.2 永久改動 (大少 2026-09-12 06:31 Spec Sync #63, Kelly state guard)
+
+### 凡人話總結
+
+大少 9月12日 06:31 trigger 揭發 M7 algorithm 嘅 `_compute_kelly()` 完全冇睇 state — 跌 verdict (00700 DOWN) 都畀 quarter 倉, 違反 spec doc §7 Cycle State 判定 (Grade D/F → SELL action, 唔開新倉)。凡人話:跌訊號/觀望 verdict 唔應該開新倉。
+
+**凡人話決策**:
+- 跟 Grade A+~F 對應表 (spec doc §7) — Grade D/F 對應 SELL action,即係「唔開新倉」
+- 現實嘅 Kelly 計算跟 avg DD 自動切 half/quarter/octo,但唔睇 state,跌 verdict + 高 DD = 1/8 倉 = 仲叫人博反彈,離譜
+- v2.0.2 加 state guard:state = DOWN 或 SIDEWAYS → Kelly = 0 (zero 倉)
+- 對齊凡人話: 副校長見到跌 verdict 唔會叫人開新倉,只會叫人走(對齊 Grade D/F SELL action)
+
+### v2.0.2 改動詳情
+
+#### 1. Backend `_compute_kelly()` 加 state guard (大少 9月12日 trigger)
+
+**改 signature**:
+```python
+def _compute_kelly(verdicts, final_state="SIDEWAYS") -> Dict[str, Any]:
+    # v2.0.2 state guard: DOWN / SIDEWAYS → 0 倉 (對齊 spec doc §7 Grade D/F SELL action)
+    if final_state in ("DOWN", "SIDEWAYS"):
+        return {
+            "fraction": "zero",
+            "numeric": 0.0,
+            "position": 0.0,
+            "state_guard_triggered": True,
+            "state_guard_reason": f"state={final_state} (DOWN/SIDEWAYS) → 0 倉, 對齊 spec doc §7 Grade D/F SELL action, 唔開新倉",
+        }
+    # ... 之前 avg DD 邏輯 (state=UP 嗰陣先行)
+```
+
+**凡人話**: algorithm 而家會先睇 final_state,跌/觀望 → 直接 Kelly=0;UP → 跟 avg DD 正常計。
+
+#### 2. Backend `SynthesizerAlgorithm.run()` reorder (Stage 4/5/7 提前)
+
+**改動**: 將 conflict detection (Stage 4) + consensus scoring (Stage 5) + state derivation (Stage 7) 提前到 Step 5 Kelly 之前。原本 Step 5 已經 call `_compute_kelly(verdicts_for_synth)` 但 final_state 仲未計。reorder 之後先計 final_state, 然後 call `_compute_kelly(verdicts_for_synth, final_state)`。
+
+#### 3. Backend emit 3 個 audit field
+
+`meta` 新加:
+- `kelly_state_guard_triggered: bool` — 係咪觸發咗 state guard
+- `kelly_state_guard_reason: str` — 凡人話解釋 (點解 Kelly=0)
+
+**凡人話**: 大少撳跑 M7 見到 Kelly 顯示 0 倉嗰陣,可以即時睇到「點解 0 倉」嘅 reason(對齊 §M2 self-check penalty 永久 rule `original_confidence` field spirit)。
+
+#### 4. Frontend 1:1 port 落 `modules/synthesizer.ts`
+
+- `computeKelly(verdicts, finalState)` 加 state guard(對齊 backend)
+- `synthesize()` reorder 拎 finalState 先, 然後 call computeKelly
+- empty input case 加 2 個新 field
+- `types.ts` `SynthesizerVerdict` 加 `kelly_state_guard_triggered` + `kelly_state_guard_reason` 2 個新 field
+- `types.ts` `KellyFraction` type 加 'zero' union
+
+#### 5. Frontend display 對齊 backend emit
+
+`adapter.mjs`:
+- `decisionEngineKellyLabel()` 加 'zero' case → 「零倉 (0%) — state guard 觸發」
+- `renderKellyDonut()` 加 'zero' entry(深灰 #666 顏色)
+
+**凡人話**: 大少撳跑 M7 見到 Kelly 餅圖變深灰 0%, 即時知道 state guard 觸發。
+
+### 5 隻 stock verify 結果 (大少 9月12日 trigger 後 verify)
+
+| Stock | final_state | grade | kelly_fraction | state_guard |
+|---|---|---|---|---|
+| HK.00700 騰訊 | DOWN | C+ | **zero (0%)** | ✅ 觸發 |
+| HK.00005 匯豐 | SIDEWAYS | C+ | **zero (0%)** | ✅ 觸發 |
+| US.AAPL | SIDEWAYS | C+ | **zero (0%)** | ✅ 觸發 |
+| US.MSFT | UP | B | **quarter (25%)** | ❌ 唔觸發 |
+| US.GOOGL | SIDEWAYS | B | **zero (0%)** | ✅ 觸發 |
+
+**凡人話 verify 結論**: 4 隻 DOWN/SIDEWAYS verdict 全部 Kelly=0 (對齊 spec doc §7 Grade D/F SELL action), 1 隻 UP (MSFT) 跟 avg DD 正常計 quarter (25%) 倉 ✅
 
 ---
 

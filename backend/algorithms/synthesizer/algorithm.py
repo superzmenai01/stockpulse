@@ -189,12 +189,16 @@ def _compute_tcm(verdicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _compute_alignment(verdicts: List[Dict[str, Any]]) -> float:
     """Alignment Score (0-1): 6 個 module (M1-M6) state 一致程度
+    v2.0.4 (大少 2026-09-12 07:28 Spec Sync #65) — 方案 A 拎走 SIDEWAYS 共識 bonus
+    凡人話: 6 個朋友都話「冇所謂」(SIDEWAYS 共識), 唔應該當「100% 對齊」拎 bonus
+    對齊 plan v2 §H Stage 5 (consensus scoring)
+
     v2.0.0 (大少 2026-09-10 Spec Sync #62) — 拎走 v1.2.0 M4 filter 邏輯
     M4 拎方案 A 拎 state 落 verdict['state'] (Stage 2 _normalize_module_verdicts 處理),
     TCM/Alignment 用 6 個 module 拎對齊
-    對齊 plan v2 §H Stage 5 (consensus scoring)
 
-    alignment_score = max_group_size / total_count
+    alignment_score = max_group_size / total_count, 但 SIDEWAYS 最多 → 0
+    (冇方向 = 冇對齊)
     """
     if not verdicts:
         return 0.0
@@ -202,7 +206,15 @@ def _compute_alignment(verdicts: List[Dict[str, Any]]) -> float:
     for v in verdicts:
         state = v.get("state", "SIDEWAYS")
         state_count[state] = state_count.get(state, 0) + 1
-    max_count = max(state_count.values())
+
+    # v2.0.4 方案 A (大少 9月12日 07:28 Spec Sync #65):
+    # 拎最多 state, 如果係 SIDEWAYS → 對齊分 = 0
+    # 凡人話: 6 個老師都話「唔郁」, 唔應該當「對齊」拎 alignment bonus
+    max_state = max(state_count, key=state_count.get)
+    if max_state == "SIDEWAYS":
+        return 0.0
+
+    max_count = state_count[max_state]
     return round((max_count / len(verdicts)) * 1000) / 1000
 
 
@@ -612,14 +624,39 @@ def _compute_grade(ssi_score: float, alignment_score: float) -> Tuple[str, float
 # Step 5: Kelly 倉位分數
 # ============================================================
 
-def _compute_kelly(verdicts: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _compute_kelly(verdicts: List[Dict[str, Any]], final_state: str = "SIDEWAYS") -> Dict[str, Any]:
     """Kelly fraction — 跟 6 個 modules 嘅 avg max_drawdown_estimate 自動切
     - avg DD < 0.05: half (0.5)   — 波動低
     - 0.05 ≤ avg DD < 0.10: quarter (0.25)  — 波動中
     - avg DD ≥ 0.10: octo (0.125) — 波動高
+
+    v2.0.2 (大少 2026-09-12 Spec Sync #63, 凡人話 trigger "Kelly 應該 0"): state guard
+    - state=DOWN 或 SIDEWAYS → Kelly = 0 (zero, 唔開新倉)
+    - 對齊 spec doc §7 Cycle State 判定: Grade D/F → SELL action (唔開倉)
+    - 對齊凡人話: 跌訊號 / 觀望 verdict 唔應該開新倉
+    - frontend 拎 kelly_state_guard_triggered 3 個 audit field 顯示原因
+
+    凡人話: 大少 9月12日 06:31 trigger 揭發 M7 Kelly 計算完全冇睇 state,
+    跌 verdict 都畀 quarter 倉係 spec bug, 改 state guard 對齊 spec doc §7 spirit。
     """
+    # v2.0.2 state guard: DOWN / SIDEWAYS → 0 倉 (對齊 spec doc §7 Grade D/F SELL action)
+    if final_state in ("DOWN", "SIDEWAYS"):
+        return {
+            "fraction": "zero",
+            "numeric": 0.0,
+            "position": 0.0,
+            "state_guard_triggered": True,
+            "state_guard_reason": f"state={final_state} (DOWN/SIDEWAYS) → 0 倉, 對齊 spec doc §7 Grade D/F SELL action, 唔開新倉",
+        }
+
     if not verdicts:
-        return {"fraction": "quarter", "numeric": 0.25, "position": 0.25}
+        return {
+            "fraction": "quarter",
+            "numeric": 0.25,
+            "position": 0.25,
+            "state_guard_triggered": False,
+            "state_guard_reason": "fallback (no verdicts)",
+        }
 
     avg_dd = sum(v.get("max_drawdown_estimate", 0.05) for v in verdicts) / len(verdicts)
 
@@ -633,7 +670,13 @@ def _compute_kelly(verdicts: List[Dict[str, Any]]) -> Dict[str, Any]:
         fraction = "octo"
         numeric = 0.125
 
-    return {"fraction": fraction, "numeric": numeric, "position": numeric}
+    return {
+        "fraction": fraction,
+        "numeric": numeric,
+        "position": numeric,
+        "state_guard_triggered": False,
+        "state_guard_reason": f"state=UP, avg DD {avg_dd:.4f} → {fraction} 倉",
+    }
 
 
 # ============================================================
@@ -851,9 +894,6 @@ class SynthesizerAlgorithm(Algorithm):
         # 對齊 frontend adapter.mjs:5927 永久 rule, backend 一致 inject
         # 對應 spec: MODULE-07-SYNTHESIZER.md + MODULE-WARNING-SYSTEM.md NAN_RESULT
 
-        # Step 5: Kelly
-        kelly = _compute_kelly(verdicts_for_synth)
-
         # ============ v2.0.0 Stage 4: Conflict detection (大少 2026-09-10 23:06 永久 rule) ============
         # 凡人話: 拎 UP↔DOWN 直接矛盾 pairs, 凡人話: M1 升 + M2 跌 互相打架 → emit warning
         conflict_pairs = _detect_conflicts(verdicts_for_synth)
@@ -871,6 +911,10 @@ class SynthesizerAlgorithm(Algorithm):
             else consensus["simple_majority_state"]
         )
         majority_state = final_state  # backward compat alias
+
+        # Step 5: Kelly (v2.0.2 大少 9月12日 trigger, 加 final_state 入 signature)
+        # 凡人話: state=DOWN/SIDEWAYS → Kelly=0, 對齊 spec doc §7 Grade D/F SELL action
+        kelly = _compute_kelly(verdicts_for_synth, final_state)
 
         # v2.0.1 永久 rule: Cycle label 跟 state 而唔係 grade (大少 11/9 確認)
         # 對齊 §M7 Synthesizer spirit: 副校長嘅 label 應該跟老師嘅 state 寫, 唔再睇 grade
@@ -944,6 +988,10 @@ class SynthesizerAlgorithm(Algorithm):
             "kelly_fraction": kelly["fraction"],
             "kelly_numeric": kelly["numeric"],
             "kelly_position": kelly["position"],
+            # v2.0.2 (大少 2026-09-12 Spec Sync #63): Kelly state guard audit field
+            # 凡人話: 大少 trigger 揭發 Kelly 算法完全冇睇 state, 加 3 個 audit field 顯示點解 Kelly=0
+            "kelly_state_guard_triggered": kelly.get("state_guard_triggered", False),
+            "kelly_state_guard_reason": kelly.get("state_guard_reason", "fallback"),
             # v2.0.1 永久 rule: module_verdicts emit normalized weight (對齊 backend 計嘅 discount + normalize)
             # 凡人話: frontend 拎到嘅 base_weight 對齊 backend 計嘅, 避免 raw/discounted 不一致
             "module_verdicts": [
