@@ -158,6 +158,9 @@ CYCLE_LABELS: Dict[str, str] = {
     "downtrend_bounce":            "下跌反彈中",
     "decelerating_up":             "到頂轉勢中",
     "decelerating_down":           "到底轉勢中",
+    # 對稱 sub-scenario (大少 2026-09-13 17:00 trigger)
+    "bearish_initial_rise":        "跌勢初升週期",  # 跌勢中嘅反彈初段 (峰頂未突破 + 谷底抬高)
+    "bullish_initial_decline":     "升勢初跌週期",  # 升勢中嘅回調初段 (峰頂降底 + 谷底未跌穿)
 }
 
 POSITION_LABELS: Dict[str, str] = {
@@ -169,6 +172,9 @@ POSITION_LABELS: Dict[str, str] = {
     "bounce_in_progress":          "反彈進行中",
     "late_stage_topping":          "到頂轉勢中 (見頂跡象)",
     "late_stage_bottoming":        "到底轉勢中 (見底跡象)",
+    # 對稱 sub-scenario position (大少 2026-09-13 17:00 trigger)
+    "early_bounce":                "反彈初段 (跌勢初升)",
+    "early_pullback":              "回調初段 (升勢初跌)",
 }
 
 VOLUME_SIGNAL_LABELS: Dict[str, str] = {
@@ -177,8 +183,9 @@ VOLUME_SIGNAL_LABELS: Dict[str, str] = {
     "neutral":   "持平",
 }
 
-# 8 個 sub-scenario map 返 3 個 high-level state (M7 Synthesizer 用)
+# 10 個 sub-scenario map 返 3 個 high-level state (M7 Synthesizer 用)
 # 凡人話: 大少 2026-09-08 拎走「強升中整固」sub_scenario, v2.4.0 剩 8 個 cycle
+# 2026-09-13 17:00 trigger: 加 2 個對稱 sub_scenario (跌勢初升 / 升勢初跌), v2.6.0 變 10 個 cycle
 STATE_MAP: Dict[str, str] = {
     "strong_uptrend":              "UP",
     "weak_uptrend":                "UP",
@@ -189,6 +196,8 @@ STATE_MAP: Dict[str, str] = {
     "downtrend_bounce":            "DOWN",       # 下跌反彈中, 仍算下跌
     "decelerating_up":             "SIDEWAYS",   # 到頂轉勢中, 算過渡
     "decelerating_down":           "SIDEWAYS",   # 到底轉勢中, 算過渡
+    "bearish_initial_rise":        "DOWN",       # 跌勢初升, 仍算下跌趨勢 (反彈初段)
+    "bullish_initial_decline":     "UP",         # 升勢初跌, 仍算上升趨勢 (回調初段)
 }
 
 
@@ -295,9 +304,9 @@ def _get_recent_zigzag_points(klines: List[Dict[str, Any]], options: Dict[str, A
 
 
 class MAAlignmentV2Algorithm(Algorithm):
-    """M1 MA Alignment v2.2.0 algorithm (凡人話 contract) - Adaptive ThresholdPct (大少 2026-08-21 18:37)"""
+    """M1 MA Alignment v2.6.1 algorithm (凡人話 contract) - 2026-09-13 加 2 個對稱 sub_scenario (跌勢初升 + 升勢初跌), Priority 2.7 / 3.7, v2.6.1 修訂 P1>P3 / P1<P3 + 拎走 P2>P4 / P2<P4"""
     name = "ma_alignment"
-    version = "2.2.0"
+    version = "2.6.1"
 
     def run(self, klines: List[Dict[str, Any]], options: Dict[str, Any]) -> Verdict:
         cfg = options.get("config", DEFAULT_MA_ALIGNMENT_V2_CONFIG)
@@ -554,6 +563,25 @@ class MAAlignmentV2Algorithm(Algorithm):
             adjustment_log.append(
                 f"初升跡象 (大少 2026-09-04 17:12 trigger): 上升趨勢中 (MA60 斜率 {slope_ma60*100:.2f}% + MA5 斜率 {slope_ma5*100:.2f}%), 谷底抬高 (P2={p2_value:.2f}>P4={p4_value:.2f}, P2.type=Trough), 峰頂未突破 (P1={p1_value:.2f}<=P3={p3_value:.2f}) → 趨勢剛起步 / 整固中"
             )
+        # Priority 2.7: 跌勢初升 (大少 2026-09-13 17:00 trigger, 對稱升勢初跌)
+        # 條件 v2.6.1 修訂 (大少 2026-09-13 23:26 trigger): MA60 負 + MA5 正 + P2=Trough + P1>P3 (拎走 P2>P4)
+        # 凡人話: 下跌趨勢中, 短期反彈已衝破前高 → 反彈初段 / 趨勢可能逆轉初段
+        # Fallback: 拎唔夠 4 個 P 點 → 條件 skip, fall through 去下一個 elif
+        # 對齊 Priority 2.5 初升 trigger, 唯一分別係 MA60 斜率 < 0 (跌勢中) + P1 > P3 (峰頂已突破)
+        # v2.6.1 改動原因: HK.01888 case (P1=50.75 > P3=36.50 + P2=26.48 < P4=28.56) 應 trigger 但舊條件 skip,
+        # 因為谷底再降底 (lower low) 唔代表反彈初段唔成立, 反彈衝破前高已經夠 sign of reversal
+        elif (
+            slope_ma60 < 0
+            and slope_ma5 > 0
+            and zz_ok_4
+            and p2_type == "Trough"
+            and p1_value > p3_value
+        ):
+            sub_scenario = "bearish_initial_rise"
+            cycle_position = "early_bounce"
+            adjustment_log.append(
+                f"跌勢初升跡象 (大少 2026-09-13 17:00 trigger + 2026-09-13 23:26 v2.6.1 修訂 P1>P3 + 拎走 P2>P4): 下跌趨勢中 (MA60 斜率 {slope_ma60*100:.2f}% + MA5 斜率 {slope_ma5*100:.2f}%), 短期反彈已衝破前高 (P1={p1_value:.2f}>P3={p3_value:.2f}, P2.type=Trough) → 跌勢中嘅反彈初段, trend 可能逆轉"
+            )
         # Priority 2.6: 強升中整固 — v2.4.0 (大少 2026-09-08 trigger) 拎走, 217 stock audit 證明 0 隻 stock 真係 hit 過
         # Fallback 落去 Priority 3 強跌 / Priority 3.5 初跌 / Priority 4 上升回調 / Priority 4 下跌回彈 / Default 橫行
         # Priority 3: 強下跌 / 初下跌 (大少 9月4日 10:34 trigger, 對稱, 加 P 點趨勢確認)
@@ -595,6 +623,25 @@ class MAAlignmentV2Algorithm(Algorithm):
             cycle_position = "tentative_fall"
             adjustment_log.append(
                 f"初跌跡象 (大少 2026-09-04 17:12 trigger): 下跌趨勢中 (MA60 斜率 {slope_ma60*100:.2f}% + MA5 斜率 {slope_ma5*100:.2f}%), 峰頂降底 (P2={p2_value:.2f}<P4={p4_value:.2f}, P2.type=Peak), 谷底未跌穿 (P1={p1_value:.2f}>=P3={p3_value:.2f}) → 趨勢剛起步 / 整固中"
+            )
+        # Priority 3.7: 升勢初跌 (大少 2026-09-13 17:00 trigger, 對稱跌勢初升)
+        # 條件 v2.6.1 修訂 (大少 2026-09-13 23:26 trigger): MA60 正 + MA5 負 + P2=Peak + P1<P3 (拎走 P2<P4)
+        # 凡人話: 上升趨勢中, 短期回調已跌穿前低 → 回調初段 / 趨勢可能逆轉初段
+        # Fallback: 拎唔夠 4 個 P 點 → 條件 skip, fall through 去下一個 elif
+        # 對齊 Priority 3.5 初跌 trigger, 唯一分別係 MA60 斜率 > 0 (升勢中) + P1 < P3 (谷底已跌穿)
+        # v2.6.1 改動原因: 對稱跌勢初升 (大少 23:26 揀), 拎走 P2<P4 因為峰頂未降底唔代表回調初段唔成立,
+        # 回調跌穿前低已經夠 sign of reversal (對齊跌勢初升 v2.6.1 spirit)
+        elif (
+            slope_ma60 > 0
+            and slope_ma5 < 0
+            and zz_ok_4
+            and p2_type == "Peak"
+            and p1_value < p3_value
+        ):
+            sub_scenario = "bullish_initial_decline"
+            cycle_position = "early_pullback"
+            adjustment_log.append(
+                f"升勢初跌跡象 (大少 2026-09-13 17:00 trigger + 2026-09-13 23:26 v2.6.1 修訂 P1<P3 + 拎走 P2<P4): 上升趨勢中 (MA60 斜率 {slope_ma60*100:.2f}% + MA5 斜率 {slope_ma5*100:.2f}%), 短期回調已跌穿前低 (P1={p1_value:.2f}<P3={p3_value:.2f}, P2.type=Peak) → 升勢中嘅回調初段, trend 可能逆轉"
             )
         # Priority 4: 上升回調 (大少 2026-09-04 15:06 trigger, C 方案 v2.3.0, 6 條件: P 點 + MA5/MA60 斜率 + spread 過濾)
         # 新 trigger (大少 9月4日 15:06): zz_ok_4 + P2=Peak + P1>P3 + P2>P4 + MA60 斜率正 + MA5 斜率負
@@ -670,8 +717,9 @@ class MAAlignmentV2Algorithm(Algorithm):
             base_confidence = min(0.80, 0.50 + max_spread_pct * 4.0)
             if max_spread_pct < 0.05:
                 base_confidence *= 0.7  # 細 spread 折扣 (對齊 v2.4.0 邏輯)
-        elif candidate in ("weak_uptrend", "weak_downtrend"):
+        elif candidate in ("weak_uptrend", "weak_downtrend", "bearish_initial_rise", "bullish_initial_decline"):
             # 凡人話: spread 0% → 0.35, 7.5%+ → 0.50
+            # 大少 2026-09-13 17:00 trigger: 跌勢初升 + 升勢初跌 對稱 weak 系列, 同 base confidence
             base_confidence = min(0.50, 0.35 + max_spread_pct * 2.0)
         else:  # sideways
             base_confidence = max(
@@ -710,11 +758,12 @@ class MAAlignmentV2Algorithm(Algorithm):
                 adjustment_log.append(f"短斜率正 (+{cfg['boostShortSlopePos']:.2f})")
 
         # 配對 3: 長斜率分裂 (強升長正 boost, 強跌長正 penalty)
+        # 大少 2026-09-13 17:00 trigger: bullish_initial_decline 屬 UP 系, bearish_initial_rise 屬 DOWN 系
         if cfg["enableSlopeCheck"]:
-            if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction"):
+            if candidate in ("strong_uptrend", "weak_uptrend", "uptrend_correction", "bullish_initial_decline"):
                 if ma_slopes.get(f"MA{long_period}", 0) > 0:
                     boost += cfg["boostLongSlopeUptrend"]
-            elif candidate in ("strong_downtrend", "weak_downtrend", "downtrend_bounce"):
+            elif candidate in ("strong_downtrend", "weak_downtrend", "downtrend_bounce", "bearish_initial_rise"):
                 if ma_slopes.get(f"MA{long_period}", 0) > 0:
                     penalty += cfg["penaltyLongSlopeDowntrend"]
                     adjustment_log.append(f"長斜率正 (強跌) (-{cfg['penaltyLongSlopeDowntrend']:.2f}) 下跌動能減弱")

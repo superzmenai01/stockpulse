@@ -394,6 +394,10 @@ confidence = ROUND(confidence, 4);
 | Date | Version | 改動 | Commit |
 |------|---------|------|--------|
 | 2026-08-15 | v2.1.0 | **9 個 sub-scenario extend** (大少 2026-08-15 揀項甲): 加 Step 5.5 9 個 sub-scenario 細分判定 (強上升 / 初上升 / 橫行 / 初下跌 / 強下跌 / 上升回調 / 下跌反彈 / 到頂轉勢 / 到底轉勢) + 5 個判定優先級 (Priority 1 轉勢 → Priority 2 強趨勢 → Priority 3 初升趨勢 → Priority 4 過渡形態 → Default 橫行) + 14 個 output field (加 cyclePosition / cyclePositionLabel / consecutiveDays / volumeSignalLabel) + 9 個 sub-scenario 凡人話 popup 註解 (跟 M7/M8/M9 同樣 .m1-verdict-tooltip inline style) + 凡人話 12 步 step-by-step guide + 凡人話 strategy advice 對應 9 個 scenario + stateMap 9 個 sub-scenario map 返 3 個 high-level state + warning 注入 (FALLBACK_USED / THRESHOLD_BREACH / CONFLICT_STATE 跟 Spec Sync #18 template) | TBD |
+| 2026-09-13 | v2.6.0 | **2 個對稱 sub-scenario** (大少 2026-09-13 17:00 trigger): 加「跌勢初升」(`bearish_initial_rise`, Priority 2.7) + 「升勢初跌」(`bullish_initial_decline`, Priority 3.7)。對齊初升 / 初跌 trigger, 唯一分別係 MA60 斜率方向: 跌勢初升 = MA60<0 + MA5>0 (跌勢中反彈初段), 升勢初跌 = MA60>0 + MA5<0 (升勢中回調初段)。凡人話: 大跌市中短線開始反彈但峰頂未衝破, 大升市中短線開始回調但谷底未跌穿 → trend 可能逆轉嘅初段。stateMap 跌勢初升 → DOWN, 升勢初跌 → UP (仲屬原有 trend 系)。Cycle position 加 `early_bounce` / `early_pullback`。Frontend adapter.mjs 對齊 CYCLE_LABELS / POSITION_LABELS / ZMEN_SCENARIO_COLOR_MAP / ZMEN_SCENARIO_INTERPRETATION 4 個 dict (剩 4 個純 UI dict 屬 v2.6.1 follow-up) | TBD |
+| 2026-09-13 | v2.6.1 | **跌勢初升 / 升勢初跌 trigger 修訂** (大少 2026-09-13 23:26 trigger): 跌勢初升 P1≤P3 改 P1>P3 (峰頂已衝破前高) + 拎走 P2>P4 (唔再要求谷底抬高); 升勢初跌對稱 P1≥P3 改 P1<P3 (谷底已跌穿前低) + 拎走 P2<P4 (唔再要求峰頂降底)。改動原因: HK.01888 case (P1=50.75>P3=36.50 + P2=26.48<P4=28.56) 屬下跌後大反彈過前高, 舊 trigger 因為谷底再降底 (lower low) skip 咗, 凡人話: 谷底再降底唔代表反彈初段唔成立, 反彈衝破前高已經夠 sign of reversal。升勢初跌對稱同理。Sub_scenario 名 / cyclePosition / stateMap 唔變 | TBD |
+
+
 | 2026-08-21 | v2.2.0 | **Adaptive ThresholdPct** (大少 2026-08-21 18:37): 原本 hard-code `thresholdPct=0.02` (2%) 改用 per-stock adaptive (20 日 ATR% × 1.5, clamp 0.5%-5%)。每隻股用自己嘅 20 日真實波幅自動計, 低波動股門檻細, 高波動股門檻大 (capped 5%)。30 隻 stock test 證實影響範圍 1 隻 (HK.00001 長和 uptrend_correction → sideways, 3.4%)。Verdict meta 加 5 個新 field (`thresholdPctUsed` / `thresholdPctUsedPctDisplay` / `thresholdPctSource` / `adaptiveAtrPct` / `adaptiveAtrPctDisplay` / `adaptiveRawThreshold`) | TBD |
 | 2026-08-08 | v2.0.0 | 全新 module, 跟 docx Kimi v2.0 spec, 3 cycles + volume + slope 兩維度擴展 | TBD |
 | 2026-08-08 | — | 舊 v0.3.0 (10 rules A-J) 抽離做 zmen均算法 獨立算法 | `861bd921` |
@@ -413,13 +417,16 @@ confidence = ROUND(confidence, 4);
 | 1 | 到底轉勢 (decelerating_down) | 見底跡象 | MA5 急升 3%+ + MA60 仲跌 + 連升 4+ 日 |
 | 2 | 強上升 (strong_uptrend) | 趨勢中期, 上升動能強 | MA 完美多頭排列 + 全部 MA 斜率正 + 放量 |
 | 2 | 強下跌 (strong_downtrend) | 趨勢中期, 下跌動能強 | MA 完美空頭排列 + 全部 MA 斜率負 + 放量 |
-| 3 | 初上升 (weak_uptrend) | 剛起勢升, 信心打折 | MA 多頭排列但部分斜率 / 量能唔配合 |
-| 3 | 初下跌 (weak_downtrend) | 剛起勢跌, 信心打折 | MA 空頭排列但部分斜率 / 量能唔配合 |
+| 2.5 | 初升 (weak_uptrend) | 上升趨勢中, 谷底抬高但峰頂未突破 → 趨勢剛起步 / 整固中 | MA60 斜率正 + MA5 斜率正 + zz_ok_4 + P2=Trough + P1<=P3 + P2>P4 |
+| 2.7 | **跌勢初升 (bearish_initial_rise)** (v2.6.1) | **下跌趨勢中, 短期反彈已衝破前高 → 跌勢中嘅反彈初段, trend 可能逆轉** | **MA60 斜率負 + MA5 斜率正 + zz_ok_4 + P2=Trough + P1>P3 (v2.6.1 拎走 P2>P4)** |
+| 3 | 強下跌 (strong_downtrend) | 趨勢中期, 下跌動能強 | MA 完美空頭排列 + 全部 MA 斜率負 + 放量 |
+| 3.5 | 初跌 (weak_downtrend) | 下跌趨勢中, 峰頂降底但谷底未跌穿 → 趨勢剛起步 / 整固中 | MA60 斜率負 + MA5 斜率負 + zz_ok_4 + P2=Peak + P1>=P3 + P2<P4 |
+| 3.7 | **升勢初跌 (bullish_initial_decline)** (v2.6.1) | **上升趨勢中, 短期回調已跌穿前低 → 升勢中嘅回調初段, trend 可能逆轉** | **MA60 斜率正 + MA5 斜率負 + zz_ok_4 + P2=Peak + P1<P3 (v2.6.1 拎走 P2<P4)** |
 | 4 | 上升回調 (uptrend_correction) | 仍屬上升趨勢中的修正 | 短期均線急跌但長期均線仲升 + spread ≥ 2% |
 | 4 | 下跌反彈 (downtrend_bounce) | 仍屬下跌趨勢中的反彈 | 短期均線急升但長期均線仲跌 + spread ≥ 2% |
 | 5 (Default) | 橫行 (sideways) | 冇明確方向, 等突破 | 排列亂 + spread < 2% |
 
-**8 個 cyclePosition** (跟 CSV spec):
+**10 個 cyclePosition** (跟 CSV spec, v2.6.0 加 2 個):
 
 | cyclePosition | 凡人話解釋 |
 |---------------|-----------|
@@ -431,13 +438,15 @@ confidence = ROUND(confidence, 4);
 | bounce_in_progress | 反彈進行中 |
 | late_stage_topping | 到頂轉勢中 (見頂跡象) |
 | late_stage_bottoming | 到底轉勢中 (見底跡象) |
+| **early_bounce (v2.6.0)** | **反彈初段 (跌勢初升)** |
+| **early_pullback (v2.6.0)** | **回調初段 (升勢初跌)** |
 
-**stateMap 對齊 3 個 high-level state** (Synthesizer 跟其他 module 對齊):
+**stateMap 對齊 3 個 high-level state** (Synthesizer 跟其他 module 對齊, v2.6.0 加 2 個):
 
 | sub-scenario | high-level state |
 |--------------|------------------|
-| strong_uptrend / weak_uptrend / uptrend_correction | UP |
-| strong_downtrend / weak_downtrend / downtrend_bounce | DOWN |
+| strong_uptrend / weak_uptrend / uptrend_correction / **bullish_initial_decline (v2.6.0)** | UP |
+| strong_downtrend / weak_downtrend / downtrend_bounce / **bearish_initial_rise (v2.6.0)** | DOWN |
 | sideways / decelerating_up / decelerating_down | SIDEWAYS |
 
 **凡人話**: 上升回調中仍算上升趨勢 (UP), 下跌反彈中仍算下跌趨勢 (DOWN), 到頂 / 到底轉勢算過渡 (SIDEWAYS), 唔強烈指向一邊。
@@ -456,6 +465,58 @@ confidence = ROUND(confidence, 4);
 - ✅ **凡人話 warning context precision 統一**: number value 統一 4 位小數 + 去 trailing zero (parseFloat(v.toFixed(4))), object 仍然 JSON.stringify
 - ✅ **30 隻 stock comprehensive test** (10 港科技 + 10 港金融地產公用 + 10 港其他行業), 9 個 sub-scenario 觸發 8 個, 剩「強上升」+「到底轉勢」2 個 scenario 0 隻 (大市悶市合理)
 - ✅ **M1 v2.1.0 adapter version 2.0.0 → 2.1.0**, testing page ALGO_CACHE_BUST 4.6.3 → 4.7.0, index.html ?v=2.3.53 → 2.3.54
+
+## 15a. v2.6.0 對稱 sub-scenario 永久 Rule (大少 2026-09-13 17:00 trigger)
+
+**凡人話解釋**: 之前 8 個 sub_scenario 漏咗「跌勢中嘅初升」(熊市短線反彈) 同「升勢中嘅初跌」(牛市短線回調) 兩個 case, 會 fall through 去「強升中整固」(拎走咗) /「上升回調」/「下跌反彈」嗰度, 對 trend 可能逆轉初段嘅判斷唔夠 detail。v2.6.0 加返兩個對稱 sub_scenario, 對齊 Priority 2.5 初升 / 3.5 初跌, 唯一分別係 MA60 斜率方向。
+
+**新增 Priority** (對齊 Spec Sync 永久 rule pattern, v2.6.1 修訂):
+
+| Priority | sub_scenario | cyclePosition | STATE_MAP | 判定條件 |
+|----------|--------------|---------------|-----------|----------|
+| 2.7 | **bearish_initial_rise (跌勢初升)** (v2.6.1) | early_bounce | DOWN | `slope_ma60 < 0` + `slope_ma5 > 0` + `zz_ok_4` + `p2_type == "Trough"` + `p1_value > p3_value` (v2.6.1 拎走 `p2_value > p4_value`) |
+| 3.7 | **bullish_initial_decline (升勢初跌)** (v2.6.1) | early_pullback | UP | `slope_ma60 > 0` + `slope_ma5 < 0` + `zz_ok_4` + `p2_type == "Peak"` + `p1_value < p3_value` (v2.6.1 拎走 `p2_value < p4_value`) |
+
+**凡人話對比表** (v2.6.1 修訂, 大少 2026-09-13 23:26 trigger):
+
+| 條件 | 強升 | 初升 (2.5) | **跌勢初升 (2.7 v2.6.1)** | 強跌 | 初跌 (3.5) | **升勢初跌 (3.7 v2.6.1)** |
+|------|------|-----------|---------|------|-----------|---------|
+| MA60 斜率 | > 0 | > 0 | **< 0** | < 0 | < 0 | **> 0** |
+| MA5 斜率 | > 0 | > 0 | **> 0** | < 0 | < 0 | **< 0** |
+| P2 type | Trough | Trough | **Trough** | Peak | Peak | **Peak** |
+| P1 vs P3 | > (突破) | <= (未突破) | **> (已突破, v2.6.1 改)** | < (跌穿) | >= (未跌穿) | **< (已跌穿, v2.6.1 改)** |
+| P2 vs P4 | > (抬高) | > (抬高) | **(v2.6.1 拎走)** | < (降底) | < (降底) | **(v2.6.1 拎走)** |
+
+**v2.6.1 改動原因** (大少 2026-09-13 23:26 trigger):
+- HK.01888 case (P1=50.75 > P3=36.50 + P2=26.48 < P4=28.56) 屬下跌後大反彈過前高, 屬 trend reversal 初段
+- 舊 v2.6.0 trigger 因為谷底再降底 (P2<P4) skip 咗, 凡人話: 谷底再降底唔代表反彈初段唔成立, 反彈衝破前高已經夠 sign of reversal
+- 升勢初跌對稱同理: 谷底已跌穿 (P1<P3) 已經夠 sign of reversal, 唔再要求峰頂降底 (P2<P4)
+
+**跟初升/初跌嘅唯一分別**: MA60 斜率方向, 用嚟區分「升勢中嘅初升」vs「跌勢中嘅初升」, 「升勢中嘅初跌」vs「跌勢中嘅初跌」。
+
+**STATE_MAP 對齊 3 個 high-level state** (v2.6.0):
+- `bearish_initial_rise` → DOWN (跌勢中嘅反彈, 仍算下跌趨勢)
+- `bullish_initial_decline` → UP (升勢中嘅回調, 仍算上升趨勢)
+
+**Confidence 對齊 weak 系列** (v2.6.0):
+- `bearish_initial_rise` / `bullish_initial_decline` 同 `weak_uptrend` / `weak_downtrend` 一齊 fall 喺 `elif candidate in (..., "bearish_initial_rise", "bullish_initial_decline")` branch, base confidence formula = `min(0.50, 0.35 + max_spread_pct * 2.0)` (spread 0% → 0.35, 7.5%+ → 0.50)
+- 永遠 floor 0.30 + cap 0.95 (對齊 M3 Layer 4 永久 rule)
+
+**Long slope 配對 3** (v2.6.0):
+- UP 系: `strong_uptrend` / `weak_uptrend` / `uptrend_correction` / **`bullish_initial_decline`** → MA60 正 boost `boostLongSlopeUptrend`
+- DOWN 系: `strong_downtrend` / `weak_downtrend` / `downtrend_bounce` / **`bearish_initial_rise`** → MA60 正 penalty `penaltyLongSlopeDowntrend`
+
+**Frontend 對齊 4 個 dict** (v2.6.0, 對齊 9月6日 23:17 + 9月10日 23:45 frontend 永久 rule):
+- ✅ `MA_V2_CYCLE_LABELS` (adapter.mjs line 5168) — 加 `bearish_initial_rise` / `bullish_initial_decline` 凡人話 label
+- ✅ `MA_V2_POSITION_LABELS` (adapter.mjs line 5184) — 加 `early_bounce` / `early_pullback` 凡人話 label
+- ✅ `ZMEN_SCENARIO_COLOR_MAP` (adapter.mjs line 1398) — 加 2 個新 sub_scenario 顏色 (淡紅 / 淡綠)
+- ✅ `ZMEN_SCENARIO_INTERPRETATION` (adapter.mjs line 1463) — 加 2 個新 sub_scenario summary / detail / advice
+
+**Frontend 純 UI dict follow-up** (v2.6.1 TODO, 唔影響 verdict):
+- ⏳ Line 1629-1633 sub-scenario list (HTML `<li>` list) — 加 2 個新 sub_scenario bullet
+- ⏳ Line 1659-1663 strategy HTML dict — 加 2 個新 sub_scenario 策略建議
+- ⏳ Line 5293-5298 解釋 dict (`m1_*` keys) — 加 2 個新 sub_scenario 凡人話解釋
+- ⏳ Line 5353-5357 顏色 dict (second instance) — 加 2 個新 sub_scenario 顏色
 
 ## 16. v2.2.0 Adaptive ThresholdPct (大少 2026-08-21 18:37 揀方向 1)
 

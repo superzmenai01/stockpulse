@@ -1394,7 +1394,7 @@ function renderMAResult(verdict) {
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   </style>`;
 
-  // 9 個 sub-scenario 對應顏色 (跟 M1 v2.1.0 同樣)
+  // 11 個 sub-scenario 對應顏色 (跟 M1 v2.1.0 同樣, 2026-09-13 加 2 個對稱 sub_scenario)
   const ZMEN_SCENARIO_COLOR_MAP = {
     strong_uptrend: '#1FA960',     // 深綠
     weak_uptrend: '#7DD89F',        // 淺綠
@@ -1405,6 +1405,9 @@ function renderMAResult(verdict) {
     strong_downtrend: '#C0392B',    // 深紅
     decelerating_up: '#8E44AD',     // 紫
     decelerating_down: '#2980B9',   // 藍
+    // 2026-09-13 17:00 trigger: 對稱 sub_scenario, 跌勢中反彈初段用淡紅, 升勢中回調初段用淡綠
+    bearish_initial_rise: '#E6B0AA',    // 淡紅 (跌勢初升, 仍屬跌勢反彈)
+    bullish_initial_decline: '#D5F5E3',  // 淡綠 (升勢初跌, 仍屬升勢回調)
   };
 
   const stateColors = {
@@ -1502,6 +1505,17 @@ function renderMAResult(verdict) {
       summary: `Zmen Layer 1 觸發 H-reverse-up rule (跌勢轉升勢), 配合 Layer 2 短期 MA 急升 3%+ + 連升 ${layer2ConsecutiveDays} 日, 見底跡象明顯。10 條 rule 觸發 ${matchedRules.length} 條。`,
       detail: `短期 MA 急升 ${((verdict.meta.maSlopes?.MA5 || 0) * 100).toFixed(2)}% + 長期 MA 仲跌 + 連升 ${layer2ConsecutiveDays} 日, 到底轉勢中 (late_stage_bottoming), 下跌趨勢可能見底。`,
       advice: '如想撈底要等確認: M2 HL Structure 出現 HH (見底確認) + M4 Indicators RSI 唔再背馳。先小注試單, 唔好一次過 all-in。',
+    },
+    // 2026-09-13 17:00 trigger: 對稱 sub_scenario (v2.6.0)
+    bearish_initial_rise: {
+      summary: `下跌趨勢中嘅反彈初段 (大少 2026-09-13 17:00 trigger, v2.6.0 對稱 sub_scenario): MA60 斜率負 (跌勢中) + MA5 斜率正 (短線反彈) + P 點形態確認 (谷底抬高 P2>P4 但峰頂未突破 P1<=P3)。`,
+      detail: '反彈初段 (early_bounce), 趨勢仲未確認逆轉, 仍屬下跌趨勢中嘅技術性反彈。10 條 rule 觸發 ' + matchedRules.length + ' 條, 對齊 M1 v2.6.0 對稱 sub_scenario。',
+      advice: '觀察多幾日, 等峰頂突破前高 (P1>P3) 先確認反轉。唔好因為短線反彈就以為見底, 留意 M2 HL Structure 有冇破壞 LL / LH 結構。',
+    },
+    bullish_initial_decline: {
+      summary: `上升趨勢中嘅回調初段 (大少 2026-09-13 17:00 trigger, v2.6.0 對稱 sub_scenario): MA60 斜率正 (升勢中) + MA5 斜率負 (短線回調) + P 點形態確認 (峰頂降底 P2<P4 但谷底未跌穿 P1>=P3)。`,
+      detail: '回調初段 (early_pullback), 趨勢仲未確認逆轉, 仍屬上升趨勢中嘅技術性回調。10 條 rule 觸發 ' + matchedRules.length + ' 條, 對齊 M1 v2.6.0 對稱 sub_scenario。',
+      advice: '觀察多幾日, 等谷底跌穿前低 (P1<P3) 先確認反轉。唔好因為短線回調就沽貨, 留意 M2 HL Structure 有冇破壞 HH / HL 結構。',
     },
   };
 
@@ -5166,7 +5180,8 @@ const MA_ALIGNMENT_V2_DEFAULTS = {
 };
 
 const MA_V2_CYCLE_LABELS = {
-  // 9 個 sub-scenario (大少 2026-08-15 M1 v2.1.0 — 跟 CSV spec)
+  // 11 個 sub-scenario (大少 2026-08-15 M1 v2.1.0 — 跟 CSV spec)
+  // 2026-09-13 17:00 trigger: 加 2 個對稱 sub_scenario (跌勢初升 + 升勢初跌), v2.6.0
   strong_uptrend: '強上升週期',
   weak_uptrend: '初升週期',
   sideways: '橫行週期',
@@ -5176,6 +5191,8 @@ const MA_V2_CYCLE_LABELS = {
   downtrend_bounce: '下跌反彈中',
   decelerating_up: '到頂轉勢中',
   decelerating_down: '到底轉勢中',
+  bearish_initial_rise: '跌勢初升週期',       // 跌勢中嘅反彈初段
+  bullish_initial_decline: '升勢初跌週期',    // 升勢中嘅回調初段
   // 向後兼容 (舊 3 個 state)
   uptrend: '上升週期',
   downtrend: '下跌週期',
@@ -5190,6 +5207,9 @@ const MA_V2_POSITION_LABELS = {
   bounce_in_progress: '反彈進行中',
   late_stage_topping: '到頂轉勢中 (見頂跡象)',
   late_stage_bottoming: '到底轉勢中 (見底跡象)',
+  // 2026-09-13 17:00 trigger: 對稱 sub_scenario position label
+  early_bounce: '反彈初段 (跌勢初升)',
+  early_pullback: '回調初段 (升勢初跌)',
 };
 
 const MA_V2_VOLUME_SIGNAL_LABELS = {
