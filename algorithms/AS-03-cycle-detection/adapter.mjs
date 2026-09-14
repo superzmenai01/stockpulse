@@ -3674,6 +3674,10 @@ function renderHLStructureChartOverlay(verdict, klines, chart) {
         text: `谷 ${t.close.toFixed(1)}`,
       });
     }
+    // 大少 2026-09-14 23:53 trigger — Fix M2 peaks/troughs markers pan/zoom 嗰陣消失嘅 bug (對齊 fix 11 + fix 12a + fix 12b pattern):
+    //   peaks 先 push (可能 DESC), troughs 之後 push (可能 DESC), combined 唔係嚴格 ASC, LWC v5 internal time series index 會 silently dropped 一部分 markers
+    //   Fix: markers.sort((a, b) => a.time - b.time) ascending 對齊 LWC v5 internal index (time 已經係 number, 因為 normalizeTimeForMarker 用 UTC midnight seconds)
+    markers.sort((a, b) => a.time - b.time);
     if (markers.length > 0) {
       try {
         LightweightCharts.createSeriesMarkers(series, markers);
@@ -5749,6 +5753,10 @@ const BRACK_TEST_PANEL_STYLE = `
   .brack-test-card .brack-error { padding:12px; background:#ffebee; border:1px solid #ef5350; border-radius:4px; color:#c62828; margin-top:8px; }
   .brack-test-card .breakdown-mini { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:6px; margin-top:8px; font-size:12px; }
   .brack-test-card .breakdown-mini-item { background:#fff; padding:6px 8px; border-radius:4px; border:1px solid #ffcc80; }
+  /* 大少 2026-09-14 23:18 trigger — Chart top banner (圖表上方顯示當前揀緊嘅 sub-scenario, 用 cycle 顏色 background + 白字, 對齊 Futu health banner style spirit) */
+  .brack-chart-banner { padding: 10px 16px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  /* 大少 9月14日 23:34 trigger — banner dot 跟返 chart marker circle (改用 inline style: background=cycle color + 白色 border 對比 banner background), 唔再用 default background:#fff */
+  .brack-chart-banner .cycle-color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
 </style>`;
 
 function renderBrackTestCard(verdict) {
@@ -5848,31 +5856,74 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
     if (time == null) return null;
     // 對齊 BRACK_TEST_CYCLE_COLOR_MAP (Brack Test 模塊內, 內容 = ZMEN_SCENARIO_COLOR_MAP line 1398-1411)
     const color = BRACK_TEST_CYCLE_COLOR_MAP[h.cycle] || '#666';
+    // 大少 2026-09-14 23:38 trigger — 加強 marker visibility:
+    //   (a) size 1 → 2 (LWC v5 medium, 預設 1 太細搵唔到)
+    //   (b) borderColor '#000' + borderWidth 1 (testing page chart background 係白色 #ffffff, 大少 chart-config line 1797 確認, 淡紅色 marker 對比白底會溶入, 加黑色 outline 對比清楚)
+    //   (c) text 顯示 cycle 中文 label + displayIndex (大少肉眼掃 reference point, e.g. 「下跌反彈 #42」)
     return {
       time,
       position: h.state === 'UP' ? 'belowBar' : h.state === 'DOWN' ? 'aboveBar' : 'inBar',
       color,
+      borderColor: '#000',  // 大少 23:38 — 黑色 outline 對比白色 chart background (淡紅色 marker 對比白底會溶入, 必須加 border)
+      borderWidth: 1,
+      size: 2,  // 大少 23:38 trigger — LWC v5 size 2 (預設 1 太細)
       shape: h.cycle === 'strong_uptrend' ? 'arrowUp'
            : h.cycle === 'strong_downtrend' ? 'arrowDown'
            : h.cycle === 'decelerating_up' ? 'arrowDown'
            : h.cycle === 'decelerating_down' ? 'arrowUp'
            : 'circle',
-      text: h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle,
+      text: (h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle) + (h.displayIndex != null ? ` #${h.displayIndex}` : ''),
     };
   }).filter(Boolean);
 
-  // 對齊 4.49.0 永久 rule: Lightweight Charts v5 用 createSeriesMarkers plugin API
-  // 失敗 fallback v4 candleSeries.setMarkers
-  if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+  // 大少 2026-09-14 23:47 trigger — Fix markers pan/zoom 嗰陣消失嘅 bug (lightweight-charts issue #1766 + python issue #32):
+  //   Root cause (3 個 source 確認): LWC v5 marker primitive 內部用 time series index 渲染 markers, **markers 必須按時間升序 (ascending) 排列**, 否則 chart pan/zoom 嗰陣 markers 會 silently dropped
+  //     - lightweight-charts-python issue #32: "It appears this happens when markers are placed in a non chronological order. You could append each marker to a list and then sort the list by date"
+  //     - lightweight-charts GitHub issue #1766: "I think I've figured out what causes it! My markers weren't ordered correctly time wise, but now that I've adjusted the processing of them to result in a time ordered list of dictionaries, it's fixed."
+  //     - GitCode blog: "标记点消失的根本原因是标记点数据未按时间顺序排序. Lightweight Charts 内部对标记点的渲染机制依赖于时间序列的正确排序, 当数据未排序时, 在视图变化(缩放或滚动)时可能导致部分标记点无法正确显示"
+  //   Backend 嘅 verdict.points sort by date_desc (新 → 舊, displayIndex=1 = 最新), 但 LWC v5 需要 ascending (舊 → 新), 所以前端要重新 sort
+  //   Fix: markers.sort((a, b) => a.time - b.time) ascending 對齊 LWC v5 internal time series index 期望, 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「testing page chart overlay 嘅 silent return ... 唔可以淨靠 console log 確認」spirit
+  markers.sort((a, b) => a.time - b.time);
+
+  // 大少 23:38 trigger — 凡人話 visual evidence: log markers 真係有 add 落 chart (證實 handle 真係 set 落 markers, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
+  console.log(`[renderBrackTestChartOverlay] markers=${markers.length}, sample[0]=${JSON.stringify(markers[0] || null)}, activeCycle=${activeCycle || 'all'}`);
+
+  // 大少 23:38 trigger — 凡人話 visual evidence: log markers 真係有 add 落 chart (證實 handle 真係 set 落 markers, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
+  console.log(`[renderBrackTestChartOverlay] markers=${markers.length}, sample[0]=${JSON.stringify(markers[0] || null)}, activeCycle=${activeCycle || 'all'}`);
+
+  // 大少 9月14日 23:34 trigger — 撳 cycle / 切 tab 嗰陣 chart 上面睇唔到 marker fix
+  // Root cause: 之前每次 call 都用 createSeriesMarkers(candleSeries, markers) 拎新 handle, 但唔清返舊 handle, LWC v5 plugin 重複 register 撞 (舊 handle 仲喺 candle series 佔住位, 新 handle 嘅 markers render 唔到)
+  // Fix: 對齊 testing-page.js 4.63.0 zigzagSequenceMarkers pattern (line 1879-1889) — reuse 同一個 plugin handle, 用 handle.setMarkers(markers) 直接 update, 唔好每次新 createSeriesMarkers (避免 plugin 重複 register 撞)
+  //   ✅ chartRefs.brackTestMarkers 結構對齊 line 1879: `{ handle, setMarkers, markers }`
+  //   ✅ 第一次 call (mode='all' 跑 init, handle 唔存在) → createSeriesMarkers 拎 handle, save 落 chartRefs.brackTestMarkers
+  //   ✅ 撳 cycle / 切 tab 嗰陣 (handle 已存在) → reuse handle.setMarkers(markers) update markers
+  //   ✅ 對齊 4.49.0 永久 rule + 4.63.0 handle refactor pattern
+  const existingHandle = chartRefs.brackTestMarkers && chartRefs.brackTestMarkers.handle;
+  if (existingHandle && typeof existingHandle.setMarkers === 'function') {
+    // Reuse handle, 直接 update markers (避免 plugin 重複 register 撞)
+    try {
+      existingHandle.setMarkers(markers);
+      chartRefs.brackTestMarkers.markers = markers;
+      // 大少 23:38 trigger — 凡人話 visual evidence: verify handle 真係 set 落 markers (證實 marker 真係有 render 落 chart, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
+      const handleMarkersAfter = existingHandle.markers ? existingHandle.markers.length : '(no markers getter)';
+      console.log(`[renderBrackTestChartOverlay] reuse handle.setMarkers, set ${markers.length} markers, handle.markers.length=${handleMarkersAfter} (activeCycle=${activeCycle || 'all'})`);
+    } catch (e) {
+      console.error('[renderBrackTestChartOverlay] handle.setMarkers 失敗:', e);
+    }
+  } else if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+    // 第一次 call (handle 唔存在) → createSeriesMarkers 拎 handle
+    // 對齊 4.49.0 永久 rule: Lightweight Charts v5 用 createSeriesMarkers plugin API
     try {
       const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
       chartRefs.brackTestMarkers = { handle, setMarkers: handle && handle.setMarkers, markers };
-      console.log(`[renderBrackTestChartOverlay] v5 createSeriesMarkers OK, ${markers.length} markers (activeCycle=${activeCycle || 'all'})`);
+      // 大少 23:38 trigger — 凡人話 visual evidence: verify createSeriesMarkers 真係拎返 handle
+      console.log(`[renderBrackTestChartOverlay] v5 createSeriesMarkers OK, set ${markers.length} markers, handle typeof=${typeof handle}, handle.setMarkers typeof=${typeof (handle && handle.setMarkers)} (activeCycle=${activeCycle || 'all'})`);
     } catch (e) {
       console.error('[renderBrackTestChartOverlay] v5 createSeriesMarkers 失敗:', e);
       try { candleSeries.setMarkers(markers); } catch (e2) { /* ignore */ }
     }
   } else if (typeof candleSeries.setMarkers === 'function') {
+    // v4 fallback
     try { candleSeries.setMarkers(markers); } catch (e) { /* ignore */ }
   }
 }
@@ -5925,6 +5976,33 @@ function renderBrackTestFilterInfo(hits, activeCycle) {
   const color = BRACK_TEST_CYCLE_COLOR_MAP[activeCycle] || '#666';
   const label = BRACK_TEST_CYCLE_LABELS[activeCycle] || activeCycle;
   return `<div class="brack-filter-info">📊 當前顯示 <strong>${filteredCount}</strong> 條 / 全部 <strong>${totalCount}</strong> 條 · <span class="cycle-color-dot" style="background:${color};"></span><strong>${_brackEscapeHtml(label)}</strong></div>`;
+}
+
+// 大少 2026-09-14 23:18 trigger — Chart top banner (圖表上方顯示當前揀緊嘅 sub-scenario)
+// 凡人話: Tab B 揀咗指定 cycle 嗰陣, chart 上面即時顯示 1 個 banner, 用嗰個 cycle 嘅 color 做 background + 白字 + 「🎯 當前顯示: 🟢 強上升 (X / Y 條)」, 大少唔使 scroll 去 brack-test-panel 表格上面嘅 filter info
+// activeCycle='all' / Tab A / 撳跑其他 algo → 返 empty string (banner hidden, 對齊 chart 上面 11 種顏色 markers 已經夠視覺 reference)
+// 對齊 renderBrackTestFilterInfo pattern (line 5919-5928) 但用 cycle 顏色 background + 白字
+// 對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」: 用 _brackEscapeHtml 處理 label
+function renderBrackTestChartBanner(verdict, activeCycle) {
+  if (!activeCycle || activeCycle === 'all') return '';
+  const hits = (verdict && verdict.points) || [];
+  const filteredCount = hits.filter(h => h.cycle === activeCycle).length;
+  const totalCount = hits.length;
+  const color = BRACK_TEST_CYCLE_COLOR_MAP[activeCycle] || '#666';
+  const label = BRACK_TEST_CYCLE_LABELS[activeCycle] || activeCycle;
+  // 大少 9月14日 23:34 trigger — banner dot 跟返 chart marker circle 一樣用 cycle color fill (大少話「跟返sub-scenario的那個圓形的一樣顏色」), 但加白色 border 對比 banner background (因為 background 同 dot 都係 cycle color 會撞色)
+  return `
+    <div class="brack-chart-banner" style="background: ${color};">
+      🎯 當前顯示: <span class="cycle-color-dot" style="background:${color};border:2px solid #fff;"></span><strong>${_brackEscapeHtml(label)}</strong> (${filteredCount} 條 / 全部 ${totalCount} 條)
+    </div>
+  `;
+}
+
+// Helper: 同步 update chart banner (mode / cycle handler 用, 對齊 _brackTestModeHandler / _brackTestCycleHandler pattern line 6055-6066, 6076-6086)
+// 凡人話: 大少切 tab / 揀 cycle 嗰陣, chart 上面 banner 同步更新 (顯示對應 cycle 顏色 + label + 命中數量)
+function updateBrackTestChartBanner(verdict, activeCycle) {
+  const banner = document.getElementById('brack-chart-banner');
+  if (banner) banner.innerHTML = renderBrackTestChartBanner(verdict, activeCycle);
 }
 
 function renderBrackTestSummary(meta) {
@@ -6058,6 +6136,8 @@ window._brackTestModeHandler = function(panelId, mode) {
   // 大少 22:20 trigger — filter info 同步更新 (tab 切換嗰陣)
   const filterInfo = panel.querySelector('.brack-filter-info');
   if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(verdict.points || [], activeCycle);
+  // 大少 9月14日 23:18 trigger — chart banner 同步更新 (tab 切換嗰陣, 圖表上方顯示當前揀緊嘅 sub-scenario)
+  updateBrackTestChartBanner(verdict, activeCycle);
 
   const chartRefs = window.lastChartRefs;
   const klines = window.lastKlines;
@@ -6078,6 +6158,8 @@ window._brackTestCycleHandler = function(panelId, cycleValue) {
   // 大少 22:20 trigger — filter info 同步更新 (dropdown 揀 cycle 嗰陣)
   const filterInfo = panel.querySelector('.brack-filter-info');
   if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(verdict.points || [], cycleValue);
+  // 大少 9月14日 23:18 trigger — chart banner 同步更新 (dropdown 揀 cycle 嗰陣, 圖表上方顯示當前揀緊嘅 sub-scenario)
+  updateBrackTestChartBanner(verdict, cycleValue);
 
   const chartRefs = window.lastChartRefs;
   const klines = window.lastKlines;
@@ -6402,6 +6484,17 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             );
           }
 
+          // 大少 2026-09-14 23:53 trigger — Fix ZigZag P 點 marker pan/zoom 嗰陣消失嘅 bug (對齊 Brack Test fix 11 pattern):
+          //   Root cause: LWC v5 marker primitive 內部用 time series index 渲染 markers, **markers 必須按時間升序 (ascending) 排列**, 否則 chart pan/zoom 嗰陣 markers 會 silently dropped (對齊 lightweight-charts issue #1766 + python issue #32)
+          //   Backend emit `verdict.meta.zigzagPoints` 嘅 order 已經係 `新 → 舊` (P1=最新, P10=最舊), 但 LWC v5 需要 ascending (舊 → 新), 所以前端要 reverse sort
+          //   因為 marker `time` 係 business day object {year, month, day}, 唔可以直接 `a.time - b.time` (NaN), 所以用 composite key 對齊
+          //   Fix: _dedupedPmarkers.sort ascending by `time.year*10000 + time.month*100 + time.day` (舊 → 新)
+          _dedupedPmarkers.sort((a, b) => {
+            const aKey = a.time.year * 10000 + a.time.month * 100 + a.time.day;
+            const bKey = b.time.year * 10000 + b.time.month * 100 + b.time.day;
+            return aKey - bKey;
+          });
+
           // 大少 9月1日 23:46 trigger (4.63.0 fix) — 拎返 v5 createSeriesMarkers plugin API, 拎走 v4 setMarkers fallback (死火 dead code)
           //   ❌ 4.62.3 commit `880c8459` 拎返嘅 `candleSeries.setMarkers` fallback 完全冇用: Lightweight Charts v5.0+ migration
           //      doc 確認 `series.setMarkers` method 已經拎走, 系列 marker 改為獨立 plugin 介面 `createSeriesMarkers(series, markers)`,
@@ -6444,14 +6537,20 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               return false;
             }
           };
-          let _visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount);
+          // 大少 2026-09-14 23:57 trigger — Fix 12a sort ASC 之後拎錯 P 點嘅 bug (對齊 §M3 trendline chart overlay 修復永久 rule spirit「改 array access 之前必先 curl 拎 evidence 確認」):
+          //   curl /api/algorithms/run?algo=zigzag evidence: backend verdict.points 234 個, order DESC (idx=1258 最新 → P1, idx=0 最舊 → P234)
+          //   我 fix 12a sort ASC 之後 _dedupedPmarkers 變成 [P234, P233, ..., P1] (舊 → 新), 之前 line `_visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount)` 拎前 10 個 = 最舊嘅 10 個 (P225-P234, date 喺 2021-2022), 大少睇唔到因為遠離 chart 半年 visible range (2026-03-18 開始)
+          //   大少 9月1日 23:46 4.63.0 永久 rule: 「只要顯示 P1-P10 就可以了」= 最新嘅 10 個 P 點 (P1, P2, ..., P10)
+          //   Fix: sort ASC + slice(-_pmarkerMaxCount) 拎 ASC array 最尾 10 個 = 最新 10 個 P 點 (P1-P10)
+          //   對齊 §M3 trendline chart overlay 修復永久 rule spirit「改 array access 之前必先 curl 拎 evidence 確認」+ §M1 sub-scenario 永久 rule (8月16日 19:21)「改任何 sub_scenario display 都要即刻 update spec doc」
+          let _visiblePmarkers = _dedupedPmarkers.slice(-_pmarkerMaxCount);
           if (chartRefs.candleSeries && _visiblePmarkers.length > 0) {
             if (!_tryAttachPmarkers(_visiblePmarkers, 1)) {
               // Fallback 1: 收緊到 5 個
-              _visiblePmarkers = _dedupedPmarkers.slice(0, 5);
+              _visiblePmarkers = _dedupedPmarkers.slice(-5);
               if (_visiblePmarkers.length > 0 && !_tryAttachPmarkers(_visiblePmarkers, 2)) {
                 // Fallback 2: 收緊到 3 個 (最後兜底)
-                _visiblePmarkers = _dedupedPmarkers.slice(0, 3);
+                _visiblePmarkers = _dedupedPmarkers.slice(-3);
                 if (_visiblePmarkers.length > 0 && !_tryAttachPmarkers(_visiblePmarkers, 3)) {
                   // 全部 crash, log + 唔 render P 點 marker (紫色 ZigZag 線仍然 render)
                   console.error('[M1 v2.0] ❌ v5 plugin 對 3/5/10 markers 全部 crash, P 點 marker 唔 render (紫色 ZigZag 線仍然 render)');
@@ -6525,6 +6624,13 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
                   ...(chartRefs.zigzagSequenceMarkers.markers || []),
                   ..._visibleTriggers,
                 ];
+                // 大少 2026-09-14 23:53 trigger — Fix combined markers pan/zoom 嗰陣消失嘅 bug (對齊 fix 11 + fix 12a pattern):
+                //   P 點 markers DESC (新→舊), Trigger markers 也唔確定 order, combined 必須 sort ascending 對齊 LWC v5 internal time series index
+                _combinedMarkers.sort((a, b) => {
+                  const aKey = a.time.year * 10000 + a.time.month * 100 + a.time.day;
+                  const bKey = b.time.year * 10000 + b.time.month * 100 + b.time.day;
+                  return aKey - bKey;
+                });
                 chartRefs.zigzagSequenceMarkers.handle.setMarkers(_combinedMarkers);
                 chartRefs.zigzagSequenceMarkers.markers = _combinedMarkers;  // update for re-set block
                 console.log('[M1 v2.0] ✅ 紅色觸發點 (Trigger 確認點) marker (4.64.0 拎返 4.61.0 design, Option D arrow):',
@@ -9394,7 +9500,7 @@ export const backTestAdapter = {
 // 大少 2026-09-14 22:22 fix scope error: testing-page.js runAlgorithm handler 動態 import `{ renderBrackTestFilterInfo }` 但 function 唔係 named export (對齊之前 renderBrackTestCard 同樣 fix pattern)
 // 對齊其他 render* function 嘅 export pattern (e.g. line 1194 export function renderResult)
 // Export 落 module 尾等 testing-page.js 拎到 named import
-export { renderBrackTestCard, renderBrackTestFilterInfo };
+export { renderBrackTestCard, renderBrackTestFilterInfo, renderBrackTestChartBanner };
 
 // ---------- backtestTimelineAdapter export (M11 v0.1.0 — Stage 2 第三次 focus 2026-08-10 00:13) ----------
 //   大少 2026-08-10 00:04 — 4 個 design decision confirm 全 A
