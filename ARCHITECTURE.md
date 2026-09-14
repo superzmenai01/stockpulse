@@ -5946,5 +5946,51 @@ M7 Synthesizer 跑 00981 嗰陣, frontend 嗰度 inject 🔴 NAN_RESULT warning 
 - 之後 frontend testing page 拎 backend verdict 嘅 entry point 改動, 必先 grep 全 reference 對齊 (對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 永久 rule, 9月10日 23:45)
 - Frontend `lib/warnings.mjs` 拎 backend emit `warning.issue` / `warning.impact` / `warning.fix` 永久 rule 沿用 Spec Sync 對齊 #63
 
+---
+
+## §15.74 — Feature Branch Sync Delete 永久 rule (大少 2026-09-15 06:39 trigger) [2026-09-15]
+
+### 觸發原因
+
+- 大少 2026-09-15 06:39 trigger「commit，合併main，push」— 凡人話 investigation 結果: commit + 合併 main + push **已經全部做晒** (12 個 Brack Test commits + merge commit `804c610f` 已經 push 落 origin/main)。大少 trigger 嘅真正意思係**收尾清理** — sync 刪除 `feature/M1-Bracktest-chart` branch (local + remote), 對齊 §15.45 純 branch 還原點永久 rule。
+
+### 凡人話解釋
+
+之前 §15.45 純 branch 還原點永久 rule 規定大項目改動之前必開 `Backup-` branch 嘅「還原點 set 流程」, 但**冇**規定 feature branch merge 落 main 之後嘅「sync delete 流程」。今次 Brack Test 工作 (12 個 commits + merge commit) push 落 main 之後, `feature/M1-Bracktest-chart` local + remote 仲存在, 凡人話 spirit 應該 sync 刪 (避免 GitHub UI 撞 stale branch, 將來 audit 混亂)。
+
+### 永久 rule (對齊 §15.45 純 branch 還原點永久 rule)
+
+- ✅ **Feature branch merge 落 main 之後必 sync 刪**:
+  - `git branch -d feature/<description>` 刪 local branch (用 `-d` 唔用 `-D`, 因為 main 已經 contains feature HEAD, 唔需要 force)
+  - `git push origin --delete feature/<description>` 刪 remote branch
+- ✅ **預先 verify main 已經 fully merged feature HEAD**:
+  - `git branch --contains origin/feature/<description> -a` 確認 main + feature HEAD 都喺 list 入面
+  - `git merge-base origin/main origin/feature/<description>` = feature HEAD SHA → fully merged
+- ✅ **還原方法永遠用 commit SHA**:
+  - 對齊 §15.45 純 commit SHA 還原點 pattern
+  - 例如 Brack Test: `git checkout adcf5b75` (feature/M1-Bracktest-chart 嘅最後 commit) 拎返 feature branch 嘅最後狀態
+- ❌ **唔 push tag** (`git push --tags`), 對齊 §15.45「純 branch 還原點, 唔再需要 tag」
+- ❌ **唔整 restore script**, 對齊 §15.45「restore script 拎走」
+- ❌ **唔自己特登整一鍵還原點** (大少 9月8日 22:41 永久 rule), 純粹 commit SHA 已經夠
+
+### 對應 commit (sync branch delete)
+
+- `feature/M1-Bracktest-chart` HEAD: `adcf5b75` (12th commit of Brack Test work)
+- `git branch -d feature/M1-Bracktest-chart` ✅ (deleted, was adcf5b75)
+- `git push origin --delete feature/M1-Bracktest-chart` ✅ (- [deleted] feature/M1-Bracktest-chart)
+- 對應 Spec Sync: ARCHITECTURE.md §15.74 (本段) + AGENTS.md 「Mavis 自己行永久 rule (大少 2026-09-10 23:06)」section
+
+### 對齊永久 rule
+
+- §15.45 純 branch 還原點永久 rule (大少 9月8日 21:00 trigger) — feature branch merge 後 sync delete 對齊 §15.45 spirit
+- 大少 9月8日 22:41 永久 rule「唔好自己特登整一鍵還原點」— 純粹 commit SHA 拎返就夠
+- 大少 9月10日 23:06 永久 rule「Mavis 自己行」— 大少 trigger「commit，合併main，push」即係 trigger sync branch delete, 唔需要再 confirm
+
+### 套用情境
+
+- 之後任何 feature branch (`feat/` / `feature/` prefix) merge 落 main 之後必 sync 刪 (local + remote)
+- Backup branch (`Backup-` prefix) **唔適用**呢個 rule — Backup branch 永遠保留 (對齊 §15.45「還原點 branch 必 push 去 origin, 大少可以隨時拎返」)
+- 之後 audit trail 應該睇得到 sync delete 嘅 commit SHA + Spec Sync 對應 section
+
 
 
