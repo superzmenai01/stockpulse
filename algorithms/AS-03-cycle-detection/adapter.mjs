@@ -5872,6 +5872,15 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
     };
   }).filter(Boolean);
 
+  // 大少 2026-09-14 23:47 trigger — Fix markers pan/zoom 嗰陣消失嘅 bug (lightweight-charts issue #1766 + python issue #32):
+  //   Root cause (3 個 source 確認): LWC v5 marker primitive 內部用 time series index 渲染 markers, **markers 必須按時間升序 (ascending) 排列**, 否則 chart pan/zoom 嗰陣 markers 會 silently dropped
+  //     - lightweight-charts-python issue #32: "It appears this happens when markers are placed in a non chronological order. You could append each marker to a list and then sort the list by date"
+  //     - lightweight-charts GitHub issue #1766: "I think I've figured out what causes it! My markers weren't ordered correctly time wise, but now that I've adjusted the processing of them to result in a time ordered list of dictionaries, it's fixed."
+  //     - GitCode blog: "标记点消失的根本原因是标记点数据未按时间顺序排序. Lightweight Charts 内部对标记点的渲染机制依赖于时间序列的正确排序, 当数据未排序时, 在视图变化(缩放或滚动)时可能导致部分标记点无法正确显示"
+  //   Backend 嘅 verdict.points sort by date_desc (新 → 舊, displayIndex=1 = 最新), 但 LWC v5 需要 ascending (舊 → 新), 所以前端要重新 sort
+  //   Fix: markers.sort((a, b) => a.time - b.time) ascending 對齊 LWC v5 internal time series index 期望, 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「testing page chart overlay 嘅 silent return ... 唔可以淨靠 console log 確認」spirit
+  markers.sort((a, b) => a.time - b.time);
+
   // 大少 23:38 trigger — 凡人話 visual evidence: log markers 真係有 add 落 chart (證實 handle 真係 set 落 markers, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
   console.log(`[renderBrackTestChartOverlay] markers=${markers.length}, sample[0]=${JSON.stringify(markers[0] || null)}, activeCycle=${activeCycle || 'all'}`);
 
