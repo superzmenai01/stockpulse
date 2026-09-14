@@ -6108,6 +6108,18 @@ window._brackTestRunHandler = async function(panelId, symbol) {
     const filterInfo = panel.querySelector('.brack-filter-info');
     if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(data.points || [], defaultActiveCycle);
 
+    // 大少 2026-09-15 06:35 trigger — Toggle cycle dropdown visible (因為 Tab B「按 sub-scenario 揀」默認 active, 對齊 _brackTestModeHandler line 6165 `dropdown.style.display = mode === 'cycle' ? '' : 'none'` pattern)
+    // 凡人話: 撳跑 Brack Test 第一眼 (Tab B 默認 active), 大少應該見到 cycle dropdown (select list), 但之前 v0.2.1 改 Tab order 但漏 toggle dropdown 嘅 display, 因為 HTML 默認 `style="display:none;"`, 而 _brackTestRunHandler 唔 call _brackTestModeHandler, 所以 dropdown 永遠唔見
+    // Fix: inline toggle dropdown visible (避免重複 call _ModeHandler 重 render data), 對齊 _brackTestModeHandler line 6155-6166 pattern spirit (UI toggle only, 唔重 render data)
+    const dropdown = panel.querySelector('.cycle-dropdown');
+    if (dropdown) {
+      dropdown.style.display = '';  // mode='cycle' 默認 active → display=''
+    }
+    // 大少 06:35 trigger — Toggle mode-tab active class 對齊 cycle (HTML 默認 cycle active 但 explicit toggle 確保 active state 對齊 _brackTestModeHandler spirit)
+    panel.querySelectorAll('.mode-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.mode === 'cycle');
+    });
+
     // Render chart markers (Mode B = 第一個 cycle「強上升」, 對齊大少 06:29 trigger「預設是🎯 按 sub-scenario 揀」)
     const chartRefs = window.lastChartRefs;
     const klines = window.lastKlines;
