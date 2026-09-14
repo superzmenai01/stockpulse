@@ -5751,7 +5751,8 @@ const BRACK_TEST_PANEL_STYLE = `
   .brack-test-card .breakdown-mini-item { background:#fff; padding:6px 8px; border-radius:4px; border:1px solid #ffcc80; }
   /* 大少 2026-09-14 23:18 trigger — Chart top banner (圖表上方顯示當前揀緊嘅 sub-scenario, 用 cycle 顏色 background + 白字, 對齊 Futu health banner style spirit) */
   .brack-chart-banner { padding: 10px 16px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-  .brack-chart-banner .cycle-color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.2); }
+  /* 大少 9月14日 23:34 trigger — banner dot 跟返 chart marker circle (改用 inline style: background=cycle color + 白色 border 對比 banner background), 唔再用 default background:#fff */
+  .brack-chart-banner .cycle-color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
 </style>`;
 
 function renderBrackTestCard(verdict) {
@@ -5864,18 +5865,36 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
     };
   }).filter(Boolean);
 
-  // 對齊 4.49.0 永久 rule: Lightweight Charts v5 用 createSeriesMarkers plugin API
-  // 失敗 fallback v4 candleSeries.setMarkers
-  if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+  // 大少 9月14日 23:34 trigger — 撳 cycle / 切 tab 嗰陣 chart 上面睇唔到 marker fix
+  // Root cause: 之前每次 call 都用 createSeriesMarkers(candleSeries, markers) 拎新 handle, 但唔清返舊 handle, LWC v5 plugin 重複 register 撞 (舊 handle 仲喺 candle series 佔住位, 新 handle 嘅 markers render 唔到)
+  // Fix: 對齊 testing-page.js 4.63.0 zigzagSequenceMarkers pattern (line 1879-1889) — reuse 同一個 plugin handle, 用 handle.setMarkers(markers) 直接 update, 唔好每次新 createSeriesMarkers (避免 plugin 重複 register 撞)
+  //   ✅ chartRefs.brackTestMarkers 結構對齊 line 1879: `{ handle, setMarkers, markers }`
+  //   ✅ 第一次 call (mode='all' 跑 init, handle 唔存在) → createSeriesMarkers 拎 handle, save 落 chartRefs.brackTestMarkers
+  //   ✅ 撳 cycle / 切 tab 嗰陣 (handle 已存在) → reuse handle.setMarkers(markers) update markers
+  //   ✅ 對齊 4.49.0 永久 rule + 4.63.0 handle refactor pattern
+  const existingHandle = chartRefs.brackTestMarkers && chartRefs.brackTestMarkers.handle;
+  if (existingHandle && typeof existingHandle.setMarkers === 'function') {
+    // Reuse handle, 直接 update markers (避免 plugin 重複 register 撞)
+    try {
+      existingHandle.setMarkers(markers);
+      chartRefs.brackTestMarkers.markers = markers;
+      console.log(`[renderBrackTestChartOverlay] reuse handle.setMarkers, ${markers.length} markers (activeCycle=${activeCycle || 'all'})`);
+    } catch (e) {
+      console.error('[renderBrackTestChartOverlay] handle.setMarkers 失敗:', e);
+    }
+  } else if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+    // 第一次 call (handle 唔存在) → createSeriesMarkers 拎 handle
+    // 對齊 4.49.0 永久 rule: Lightweight Charts v5 用 createSeriesMarkers plugin API
     try {
       const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
       chartRefs.brackTestMarkers = { handle, setMarkers: handle && handle.setMarkers, markers };
-      console.log(`[renderBrackTestChartOverlay] v5 createSeriesMarkers OK, ${markers.length} markers (activeCycle=${activeCycle || 'all'})`);
+      console.log(`[renderBrackTestChartOverlay] v5 createSeriesMarkers, ${markers.length} markers (activeCycle=${activeCycle || 'all'})`);
     } catch (e) {
       console.error('[renderBrackTestChartOverlay] v5 createSeriesMarkers 失敗:', e);
       try { candleSeries.setMarkers(markers); } catch (e2) { /* ignore */ }
     }
   } else if (typeof candleSeries.setMarkers === 'function') {
+    // v4 fallback
     try { candleSeries.setMarkers(markers); } catch (e) { /* ignore */ }
   }
 }
@@ -5942,9 +5961,10 @@ function renderBrackTestChartBanner(verdict, activeCycle) {
   const totalCount = hits.length;
   const color = BRACK_TEST_CYCLE_COLOR_MAP[activeCycle] || '#666';
   const label = BRACK_TEST_CYCLE_LABELS[activeCycle] || activeCycle;
+  // 大少 9月14日 23:34 trigger — banner dot 跟返 chart marker circle 一樣用 cycle color fill (大少話「跟返sub-scenario的那個圓形的一樣顏色」), 但加白色 border 對比 banner background (因為 background 同 dot 都係 cycle color 會撞色)
   return `
     <div class="brack-chart-banner" style="background: ${color};">
-      🎯 當前顯示: <span class="cycle-color-dot" style="background:#fff;"></span><strong>${_brackEscapeHtml(label)}</strong> (${filteredCount} 條 / 全部 ${totalCount} 條)
+      🎯 當前顯示: <span class="cycle-color-dot" style="background:${color};border:2px solid #fff;"></span><strong>${_brackEscapeHtml(label)}</strong> (${filteredCount} 條 / 全部 ${totalCount} 條)
     </div>
   `;
 }
