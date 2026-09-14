@@ -5983,6 +5983,24 @@ function renderBrackTestFilterInfo(hits, activeCycle) {
 // activeCycle='all' / Tab A / 撳跑其他 algo → 返 empty string (banner hidden, 對齊 chart 上面 11 種顏色 markers 已經夠視覺 reference)
 // 對齊 renderBrackTestFilterInfo pattern (line 5919-5928) 但用 cycle 顏色 background + 白字
 // 對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」: 用 _brackEscapeHtml 處理 label
+// 大少 2026-09-15 00:03 trigger — Cycle 中文解釋 dict (對齊 §M1 sub-scenario spec doc §3-§5 trigger 解釋)
+//   凡人話: 大少撳 banner ⓘ icon 嗰陣顯示對應 cycle 中文解釋 (對齊 §M3 trendline chart overlay 修復永久 rule spirit「凡人話 visual evidence」)
+//   ✅ 11 個 cycle 全部有對應解釋 (對齊 §M1 sub-scenario 永久 rule)
+//   ✅ 用 `_brackEscapeHtml` 對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」
+const BRACK_TEST_CYCLE_EXPLANATIONS = {
+  strong_uptrend: '強上升: Zmen 強升 rule (A 連續 5 日 MA5 > MA60 等) + Layer 2 全部 MA 同方向 → mid_stage, 典型多頭排列確認, 股價穩步上升, 連續創新高',
+  weak_uptrend: '弱上升: 股價上升但動能減弱, 高點可能唔再破前高, 留意見頂信號, 短期均線仲喺長期均線上面但斜率收窄',
+  uptrend_correction: '升勢調整: 升勢中嘅短暫回調, 通常唔會破壞長期上升趨勢, 屬於健康調整 (Zmen D 規則, MA5 跌穿 MA10 但仍然 MA10 > MA60)',
+  sideways: '橫行: 股價喺一個範圍內震盪, 高低點都唔破前高前低, 短期均線圍繞長期均線等待方向突破',
+  downtrend_bounce: '下跌反彈中: Zmen G rule (跌勢調整向上) + Layer 2 短期 MA 急升但長期仲跌 → bounce_in_progress, 屬於下跌趨勢中嘅短暫反彈',
+  weak_downtrend: '弱下跌: 股價下跌但動能減弱, 低點可能唔再破前低, 留意見底信號, 短期均線仲喺長期均線下面但斜率收窄',
+  strong_downtrend: '強下跌: Zmen 強跌 rule (B 連續 5 日 MA5 < MA60 等) + Layer 2 全部 MA 同方向, 典型空頭排列確認, 股價穩步下跌, 連續創新低',
+  decelerating_up: '動能減弱上升: 上升動能減弱, 高點唔再擴大, 留意見頂信號 (Zmen F 規則, 升勢調整向下), 短期均線斜率轉負',
+  decelerating_down: '動能減弱下跌: 下跌動能減弱, 低點唔再擴大, 留意見底信號 (Zmen G 規則反向), 短期均線斜率轉正',
+  bearish_initial_rise: '跌勢初升: 跌勢初期嘅短暫反彈, 通常 1-3 日, 屬於假突破, 反彈完通常繼續跌',
+  bullish_initial_decline: '升勢初跌: 升勢初期嘅短暫回調, 通常 1-3 日, 屬於健康調整, 回調完通常繼續升',
+};
+
 function renderBrackTestChartBanner(verdict, activeCycle) {
   if (!activeCycle || activeCycle === 'all') return '';
   const hits = (verdict && verdict.points) || [];
@@ -5990,10 +6008,11 @@ function renderBrackTestChartBanner(verdict, activeCycle) {
   const totalCount = hits.length;
   const color = BRACK_TEST_CYCLE_COLOR_MAP[activeCycle] || '#666';
   const label = BRACK_TEST_CYCLE_LABELS[activeCycle] || activeCycle;
-  // 大少 9月14日 23:34 trigger — banner dot 跟返 chart marker circle 一樣用 cycle color fill (大少話「跟返sub-scenario的那個圓形的一樣顏色」), 但加白色 border 對比 banner background (因為 background 同 dot 都係 cycle color 會撞色)
+  // 大少 2026-09-15 00:03 trigger — banner 加 ⓘ icon, click 顯示對應 cycle 中文解釋 tooltip (對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」)
+  const explanation = BRACK_TEST_CYCLE_EXPLANATIONS[activeCycle] || '暫時未有解釋';
   return `
     <div class="brack-chart-banner" style="background: ${color};">
-      🎯 當前顯示: <span class="cycle-color-dot" style="background:${color};border:2px solid #fff;"></span><strong>${_brackEscapeHtml(label)}</strong> (${filteredCount} 條 / 全部 ${totalCount} 條)
+      🎯 當前顯示: <span class="cycle-color-dot" style="background:${color};border:2px solid #fff;"></span><strong>${_brackEscapeHtml(label)}</strong><span class="cycle-info-trigger" data-explanation="${_brackEscapeHtml(explanation)}" data-cycle="${_brackEscapeHtml(label)}" title="撳一下睇 ${_brackEscapeHtml(label)} 解釋">ⓘ</span> (${filteredCount} 條 / 全部 ${totalCount} 條)
     </div>
   `;
 }

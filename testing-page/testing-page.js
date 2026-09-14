@@ -629,8 +629,9 @@ async function fetchAndInjectBackendZigZag(thresholdMode, manualThreshold, lookb
 // 大少 2026-09-14 23:47 — M1 Brack Test chart markers pan/zoom 嗰陣消失 fix (大少 23:47 trigger「現在看到了，但還有些Bug, 當放大縮小或左右移動時那個Marker有時會消失有時會出現, 你上網研究下怎樣可以解決這問題」). Web search 拎 evidence 3 個 source 一致 (lightweight-charts-python issue #32 + lightweight-charts GitHub issue #1766 + GitCode blog): LWC v5 marker primitive 內部用 time series index 渲染 markers, markers 必須按時間升序 (ascending) 排列, 否則 chart pan/zoom 嗰陣 markers 會 silently dropped. Backend 嘅 verdict.points sort by date_desc (新→舊, displayIndex=1=最新, 對齊 §M1 sub-scenario 永久 rule), 但 LWC v5 需要 ascending (舊→新), 所以前端要重新 sort. Fix: adapter.mjs renderBrackTestChartOverlay 入面, markers map + filter(Boolean) 之後加 `markers.sort((a, b) => a.time - b.time)` ascending, 對齊 LWC v5 internal time series index 期望, 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「testing page chart overlay 嘅 silent return ... 唔可以淨靠 console log 確認」spirit; 凡人話 (8月14日 19:02 trigger) + 「用『取』唔用『拎』」(8月20日 trigger); 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) — spec doc Change log 加 v0.1.0-fix11 entry; 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.191 → ?v=2.3.192 + 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) 改 backend algo 必 restart + curl verify (backend 唔改所以唔需要); Mavis 自己行 (9月10日 23:06) — fix bug 後 commit
 // 大少 2026-09-14 23:53 — M1 ZigZag P 點 marker + M2 peaks/troughs marker pan/zoom 消失 fix (大少 23:53 trigger「另外我也發現ZigZag的P點Marker 也有消失的問題, 你也修正他吧」). 對齊 fix 11 (Brack Test marker sort) pattern, 套用落所有 LWC v5 marker creation sites: (a) M1 ZigZag P 點 markers (line 6492 `_dedupedPmarkers.sort((a, b) => aKey - bKey)` 用 composite key 因為 marker time 係 business day object); (b) M1 Trigger + P 點 combined markers (line 6623 `_combinedMarkers.sort`); (c) M2 peaks/troughs combined markers (line 3680 `markers.sort((a, b) => a.time - b.time)` 因為 peaks DESC + troughs DESC, combined 唔係嚴格 ASC). M3/M4/M5/M6 唔 render candle series marker (淨 render line series / panes), 所以唔需要 sort. 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「testing page chart overlay 嘅 silent return ... 唔可以淨靠 console log 確認」spirit — 同一個 root cause (LWC v5 marker 必須 ascending) 影響多個 module 嘅 chart overlay; 凡人話 (8月14日 19:02 trigger) + 「用『取』唔用『拎』」(8月20日 trigger); 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) — spec doc Change log 加 v0.1.0-fix12 entry; 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.192 → ?v=2.3.193 + 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) 改 backend algo 必 restart + curl verify (backend 唔改所以唔需要); Mavis 自己行 (9月10日 23:06) — fix bug 後 commit
 // 大少 2026-09-14 23:57 — Fix 13: ZigZag P 點 sort ASC + slice(-N) 拎最新 10 個 (P1-P10) (大少 23:57 trigger「現在的zigzag P點全部無晒了, 你是不是做錯了地方？你做了要檢查」). 凡人話 evidence (curl backend /api/algorithms/run?algo=zigzag): backend verdict.points 234 個, order DESC (idx=1258 最新 → P1, idx=0 最舊 → P234). 我 fix 12a sort ASC 之後 _dedupedPmarkers 變成 [P234, P233, ..., P1] (舊 → 新), 之前 line _visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount) 拎前 10 個 = 最舊嘅 10 個 (P225-P234, date 喺 2021-2022), 大少睇唔到因為遠離 chart 半年 visible range (2026-03-18 開始). 大少 9月1日 23:46 4.63.0 永久 rule「只要顯示 P1-P10 就可以了」= 最新嘅 10 個 P 點. Fix: slice(0, N) → slice(-N), 拎 ASC array 最尾 10 個 = 最新 10 個 P 點 (P1-P10). 對齊 §M3 trendline chart overlay 修復永久 rule spirit「改 array access 之前必先 curl 拎 evidence 確認」+ §M1 sub-scenario 永久 rule「改任何 sub_scenario display 都要即刻 update spec doc」; 凡人話 (8月14日 19:02 trigger) + 「用『取』唔用『拎』」(8月20日 trigger); 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.193 → ?v=2.3.194 + 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) 改 backend algo 必 restart + curl verify (backend 唔改所以唔需要); Mavis 自己行 (9月10日 23:06) — fix bug 後 commit
+// 大少 2026-09-15 00:03 — M1 Brack Test 2 個新 feature (大少 00:03 trigger「現在可以做 - 加 legend 喺 chart 入面 - banner 入面加 cycle 嘅中文 explanation tooltip」): (1) Cycle legend 喺 chart 入面 overlay (對齊 §M6 dashboard panel pattern: chart-section 入面 conditional render, 撳跑 M1 + Brack Test button 之後先 render); (2) Cycle explanation tooltip 喺 banner 入面 (adapter.mjs 新加 BRACK_TEST_CYCLE_EXPLANATIONS dict 11 個 cycle 中文解釋對齊 §M1 sub-scenario spec doc §3-§5 trigger, renderBrackTestChartBanner 加 ⓘ icon, testing-page.js 加 showCycleTooltip function + click delegation). 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「凡人話 visual evidence」spirit; §M1 sub-scenario 永久 rule (8月16日 19:21)「改任何 sub_scenario display 都要即刻 update spec doc」; 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」: tooltip + legend + banner 全部用 escapeHtml/_brackEscapeHtml; 凡人話 (8月14日 19:02 trigger) + 「用『取』唔用『拎』」(8月20日 trigger); 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.194 → ?v=2.3.195 + 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) 改 backend algo 必 restart + curl verify (backend 唔改所以唔需要); Mavis 自己行 (9月10日 23:06) — 新 feature 後 commit
 // 大少 2026-09-14 23:34 — M1 Brack Test chart banner dot + chart marker fix (大少 23:34 trigger「1. banner 個圓形圖案要跟返 sub-scenario 嘅圓形嘅一樣顏色」+「2. 揀 cycle 嗰陣 K 線圖入面睇唔到 marker」): (a) adapter.mjs renderBrackTestChartBanner (line 5938) 改 banner dot 用 cycle color fill (跟 chart marker circle 一樣) + 白色 border 對比 banner background (因為 background 同 dot 都係 cycle color 會撞色, 大少話「背景不用轉」所以保留 background + 改 dot 用 cycle color fill + 白色 border); BRACK_TEST_PANEL_STYLE (line 5753) 拎走 default background:#fff + box-shadow 改 inline style 提供 (b) adapter.mjs renderBrackTestChartOverlay (line 5833) fix 撳 cycle / 切 tab 嗰陣 chart marker 唔見嘅 bug — Root cause: 之前每次 call 都用 createSeriesMarkers(candleSeries, markers) 拎新 handle, 但唔清返舊 handle, LWC v5 plugin 重複 register 撞 (舊 handle 仲喺 candle series 佔住位, 新 handle 嘅 markers render 唔到); Fix: 對齊 testing-page.js 4.63.0 zigzagSequenceMarkers pattern (line 1879-1889) — reuse 同一個 plugin handle, 用 handle.setMarkers(markers) 直接 update, 唔好每次新 createSeriesMarkers (避免 plugin 重複 register 撞); chartRefs.brackTestMarkers 結構對齊 line 1879: `{ handle, setMarkers, markers }`; 第一次 call (handle 唔存在) → createSeriesMarkers 拎 handle; 撳 cycle / 切 tab (handle 已存在) → reuse handle.setMarkers(markers) update markers; 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — render function 永遠拎 verdict.points; 凡人話 verify (對齊 9月6日 16:47 永久 rule): 大少 hard reload testing page + 撳跑 M1 (HK.00700) + Tab B 揀「下跌反彈中」, 肉眼 verify (a) banner 個 dot 用 cycle color (淡紅) fill + 白色 border 對比淡紅 background 清楚 (b) K 線圖入面 112 個淡紅 circle marker 同步 render; 對齊 §M1 sub-scenario 永久 rule「改任何 sub_scenario display 都要即刻 update spec doc」spec doc §7 Chart top banner 更新 + Change log v0.1.0-fix8 entry; 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.188 → ?v=2.3.189 + 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) 改 backend algo 必 restart + curl verify (backend 唔改所以唔需要); 凡人話 (8月14日 19:02 trigger) + 「用『取』唔用『拎』」(8月20日 trigger); 對齊 8月22日 23:20 §K-line Cache full flow + 算法 Backend-only + 模組化 — backend 唔改
-const ALGO_CACHE_BUST = '5.3.3';  // 大少 2026-09-14 23:24 — M1 Brack Test chart top banner (大少 23:18 trigger「在 Bracktest 結果裡的『按 sub-scenario 揀』Tab, 揀指定 sub-scenario 嗰陣, 喺 K 線圖表上方顯示嗰個 sub-scenario banner」): adapter.mjs 新加 renderBrackTestChartBanner(verdict, activeCycle) helper (對齊 line 5919-5928 renderBrackTestFilterInfo pattern, 但用 cycle 顏色 background + 白字, activeCycle='all' 返 empty string) + updateBrackTestChartBanner(verdict, activeCycle) helper (拎 #brack-chart-banner DOM + populate innerHTML) + 修改 _ModeHandler / _CycleHandler 2 個 handler 同步 call updateBrackTestChartBanner (對齊 line 6055-6066 / 6076-6086 pattern); BRACK_TEST_PANEL_STYLE 加 .brack-chart-banner CSS (cycle color background + 白字 + 圓角 + box-shadow 對齊 Futu health banner style spirit); module 尾 `export { renderBrackTestCard, renderBrackTestFilterInfo, renderBrackTestChartBanner }` 加返 renderBrackTestChartBanner named export (對齊之前 renderBrackTestCard / renderBrackTestFilterInfo SCOPE fix pattern 21:35 / 22:22); testing-page.js 加 lastBrackChartBannerVerdict global state 對齊 lastChartRefs pattern (line 783-784) + runAlgorithm handler 加 initBrackChartBanner 對齊 M6 dashboard panel pattern (line 1555-1574, chart-section 入面 chart-container 之前 conditional render) + resetResultPanel 加清 brack-chart-banner (對齊 m6-dashboard-panel pattern); index.html 加 `<div id="brack-chart-banner"></div>` 喺 chart-container 之前 + ?v=2.3.187 → ?v=2.3.188 sync bump 對齊 21:24 cache bust self-check 永久 rule; 對齊 §M1 sub-scenario 永久 rule「改任何 sub_scenario display 都要即刻 update spec doc」spec doc §7 Chart top banner 新加 + Change log v0.1.0-fix7 entry; backend 唔需要改 (純 frontend UI 改動); 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.187 → ?v=2.3.188 + 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) 改 backend algo 必 restart + curl verify (backend 唔改所以唔需要)
+const ALGO_CACHE_BUST = '5.4.0';  // 大少 2026-09-14 23:24 — M1 Brack Test chart top banner (大少 23:18 trigger「在 Bracktest 結果裡的『按 sub-scenario 揀』Tab, 揀指定 sub-scenario 嗰陣, 喺 K 線圖表上方顯示嗰個 sub-scenario banner」): adapter.mjs 新加 renderBrackTestChartBanner(verdict, activeCycle) helper (對齊 line 5919-5928 renderBrackTestFilterInfo pattern, 但用 cycle 顏色 background + 白字, activeCycle='all' 返 empty string) + updateBrackTestChartBanner(verdict, activeCycle) helper (拎 #brack-chart-banner DOM + populate innerHTML) + 修改 _ModeHandler / _CycleHandler 2 個 handler 同步 call updateBrackTestChartBanner (對齊 line 6055-6066 / 6076-6086 pattern); BRACK_TEST_PANEL_STYLE 加 .brack-chart-banner CSS (cycle color background + 白字 + 圓角 + box-shadow 對齊 Futu health banner style spirit); module 尾 `export { renderBrackTestCard, renderBrackTestFilterInfo, renderBrackTestChartBanner }` 加返 renderBrackTestChartBanner named export (對齊之前 renderBrackTestCard / renderBrackTestFilterInfo SCOPE fix pattern 21:35 / 22:22); testing-page.js 加 lastBrackChartBannerVerdict global state 對齊 lastChartRefs pattern (line 783-784) + runAlgorithm handler 加 initBrackChartBanner 對齊 M6 dashboard panel pattern (line 1555-1574, chart-section 入面 chart-container 之前 conditional render) + resetResultPanel 加清 brack-chart-banner (對齊 m6-dashboard-panel pattern); index.html 加 `<div id="brack-chart-banner"></div>` 喺 chart-container 之前 + ?v=2.3.187 → ?v=2.3.188 sync bump 對齊 21:24 cache bust self-check 永久 rule; 對齊 §M1 sub-scenario 永久 rule「改任何 sub_scenario display 都要即刻 update spec doc」spec doc §7 Chart top banner 新加 + Change log v0.1.0-fix7 entry; backend 唔需要改 (純 frontend UI 改動); 跟 cache bust self-check 永久 rule (21:24) sync bump ?v=2.3.187 → ?v=2.3.188 + 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) 改 backend algo 必 restart + curl verify (backend 唔改所以唔需要)
 //   ✅ 4.64.0 紅色 #FF5252 撞 K 線跌 body 紅色 #ef5350, 大少 00:48 trigger「用鮮紫色」改 #BA68C8 (Material Design Purple 300)
 //   ✅ 4.64.0 position 'inBar' 喺 K 線 body 內紅撞紅視覺唔 clear, 大少 00:48 trigger「不要在那支竹內, 要在離開那支竹少少」改 aboveBar/belowBar
 //   ✅ 對齊 P 點 marker 4.51.0 永久 rule position pattern (P 點 high→aboveBar, low→belowBar), 鮮紫 trigger 喺對面 side, 視覺 unified
@@ -904,6 +905,14 @@ function resetResultPanel() {
   const brackChartBanner = document.getElementById('brack-chart-banner');
   if (brackChartBanner) brackChartBanner.innerHTML = '';
   lastBrackChartBanner = null;
+  // 大少 2026-09-15 00:03 trigger — 清 cycle legend (對齊 m6-dashboard-panel pattern, 切換 algo / 撳跑新 algo 唔殘留舊 legend)
+  const cycleLegend = document.getElementById('cycle-legend');
+  if (cycleLegend) {
+    cycleLegend.classList.remove('show');
+    cycleLegend.innerHTML = '';
+  }
+  // 大少 2026-09-15 00:03 trigger — 清任何 stale tooltip
+  document.querySelectorAll('.cycle-tooltip').forEach(el => el.remove());
 }
 
 async function init() {
@@ -1359,6 +1368,52 @@ function renderAutocomplete(input) {
   return wrapper;
 }
 
+// 大少 2026-09-15 00:03 trigger — Cycle explanation tooltip handler (banner ⓘ icon click)
+// 凡人話: 大少撳 banner ⓘ icon 嗰陣, 喺 ⓘ 下面顯示 tooltip panel 講解當前 cycle 中文解釋 (e.g. 「下跌反彈中: Zmen G rule + 短期急升但長期仲跌」)
+// 對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」 — _brackEscapeHtml 對齊 banner pattern
+function showCycleTooltip(triggerEl) {
+  // 拎返 data-explanation + data-cycle
+  const explanation = triggerEl.dataset.explanation || '暫時未有解釋';
+  const cycle = triggerEl.dataset.cycle || '';
+  // 拎 trigger position
+  const rect = triggerEl.getBoundingClientRect();
+  const scrollX = window.scrollX || window.pageXOffset;
+  const scrollY = window.scrollY || window.pageYOffset;
+
+  // 清返舊 tooltip
+  document.querySelectorAll('.cycle-tooltip').forEach(el => el.remove());
+
+  // 整新 tooltip
+  const tooltip = document.createElement('div');
+  tooltip.className = 'cycle-tooltip';
+  tooltip.innerHTML = `
+    <div class="cycle-tooltip-title">${escapeHtml(cycle)} · 中文解釋</div>
+    <div>${escapeHtml(explanation)}</div>
+  `;
+  tooltip.style.left = (rect.left + scrollX) + 'px';
+  tooltip.style.top = (rect.bottom + scrollY + 6) + 'px';
+  document.body.appendChild(tooltip);
+
+  // 撳其他地方或者再撳 ⓘ → 關 tooltip
+  const closeHandler = (e) => {
+    if (!tooltip.contains(e.target) && e.target !== triggerEl && !triggerEl.contains(e.target)) {
+      tooltip.remove();
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  // defer 一個 tick 避免 immediate close
+  setTimeout(() => document.addEventListener('click', closeHandler), 0);
+}
+
+// Event delegation 監聽 ⓘ icon click (對齊 testing-page.js 4.5.0 永久 rule spirit — event delegation)
+document.addEventListener('click', (e) => {
+  if (e.target.classList && e.target.classList.contains('cycle-info-trigger')) {
+    e.preventDefault();
+    e.stopPropagation();
+    showCycleTooltip(e.target);
+  }
+});
+
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -1643,6 +1698,43 @@ async function runAlgorithm() {
         // 撳跑其他 algo → 清 chart banner (避免顯示 M1 舊 verdict)
         brackChartBannerEl.innerHTML = '';
         lastBrackChartBanner = null;
+      }
+    }
+
+    // 大少 2026-09-15 00:03 trigger — Cycle legend 喺 chart 入面 overlay (對齊 §M6 dashboard panel pattern: chart-section 入面 conditional render, 撳跑 M1 + Brack Test button 之後先 render)
+    // 凡人話: 大少可以肉眼對照 chart 入面 marker 對應返邊個 sub_scenario, 11 個 sub_scenario 用 BRACK_TEST_CYCLE_COLOR_MAP + BRACK_TEST_CYCLE_LABELS 對齊
+    // 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「凡人話 visual evidence」spirit — legend 對齊 chart marker 視覺 reference
+    const cycleLegendEl = document.getElementById('cycle-legend');
+    if (cycleLegendEl) {
+      if (currentAdapter.id === 'AS-03-MA') {
+        try {
+          const adapterModule = await import('../algorithms/AS-03-cycle-detection/adapter.mjs?v=' + ALGO_CACHE_BUST);
+          const colorMap = adapterModule.BRACK_TEST_CYCLE_COLOR_MAP || {};
+          const labelMap = adapterModule.BRACK_TEST_CYCLE_LABELS || {};
+          const cells = Object.entries(colorMap).map(([cycle, color]) => {
+            const label = labelMap[cycle] || cycle;
+            const explanation = (adapterModule.BRACK_TEST_CYCLE_EXPLANATIONS || {})[cycle] || '';
+            return `
+              <div class="cycle-legend-cell" title="${escapeHtml(explanation)}">
+                <span class="dot" style="background:${color};"></span>
+                <span class="label">${escapeHtml(label)}</span>
+              </div>
+            `;
+          }).join('');
+          cycleLegendEl.innerHTML = `
+            <div class="cycle-legend-title">📊 Cycle Legend (${Object.keys(colorMap).length} 個 sub_scenario)</div>
+            <div class="cycle-legend-grid">${cells}</div>
+          `;
+          cycleLegendEl.classList.add('show');
+        } catch (err) {
+          console.error('[Cycle legend] render failed:', err);
+          cycleLegendEl.classList.remove('show');
+          cycleLegendEl.innerHTML = '';
+        }
+      } else {
+        // 撳跑其他 algo → 清 cycle legend (避免殘留 M1 legend)
+        cycleLegendEl.classList.remove('show');
+        cycleLegendEl.innerHTML = '';
       }
     }
 
