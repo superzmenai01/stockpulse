@@ -5757,6 +5757,10 @@ const BRACK_TEST_PANEL_STYLE = `
   .brack-chart-banner { padding: 10px 16px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
   /* 大少 9月14日 23:34 trigger — banner dot 跟返 chart marker circle (改用 inline style: background=cycle color + 白色 border 對比 banner background), 唔再用 default background:#fff */
   .brack-chart-banner .cycle-color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  /* 大少 2026-09-15 06:45 trigger — Hit row click → K 線圖 pan/zoom (click 整行 trigger, 日期 cell 加 hover visual cue) */
+  .brack-test-card .brack-hit-table tr[data-hit-date]:hover { background:#ffe0b2; cursor:pointer; }
+  .brack-test-card .brack-hit-table .brack-hit-date { cursor:pointer; }
+  .brack-test-card .brack-hit-table .brack-hit-date:hover { text-decoration:underline; color:#d4380d; }
 </style>`;
 
 function renderBrackTestCard(verdict) {
@@ -5953,9 +5957,9 @@ function renderBrackTestHitTable(hits, symbol, activeCycle) {
     // 大少 22:47 trigger: filtered view Index = viewIdx + 1, Mode A Index = backend displayIndex 1..N (sorted by date_desc 嘅 global position, 對齊 spec doc §4.1)
     const displayIndex = isFiltered ? (viewIdx + 1) : (h.displayIndex != null ? h.displayIndex : (viewIdx + 1));
     return `
-      <tr>
+      <tr data-hit-date="${_brackEscapeHtml(h.date || '')}">
         <td>${displayIndex}</td>
-        <td>${_brackEscapeHtml(h.date || '—')}</td>
+        <td class="brack-hit-date">${_brackEscapeHtml(h.date || '—')}</td>
         <td>${_brackEscapeHtml(symbol || '—')}</td>
         <td>${close}</td>
         <td><span class="cycle-color-dot" style="background:${color};"></span>${_brackEscapeHtml(cycleLabel)}</td>
@@ -5965,6 +5969,90 @@ function renderBrackTestHitTable(hits, symbol, activeCycle) {
       </tr>
     `;
   }).join('');
+}
+
+// 大少 2026-09-15 06:45 trigger — Click hit row 日期 → K 線圖 pan/zoom helper
+// 凡人話: 拎 hit.date → 計 from/to UTC timestamp (秒數), 範圍 ≈ 3 個月 (90 日)
+// - 預設 from = hit.date - 45 days, to = hit.date + 45 days (hit.date 喺 viewport 中間)
+// - Edge case (大少 06:46 confirm Option 1): K 線 first date 早過 hit.date - 45 days 嗰陣, from fallback 用 K 線 first date
+// - Edge case: K 線 last date 早過 hit.date + 45 days 嗰陣, to fallback 用 K 線 last date (clip)
+// - Edge case: hit.date 唔喺 K 線入面 (週末/假期), LWC v5 setVisibleRange 自動 snap nearest trading day
+// 對齊 §Cross-module 統一 date parsing 永久 rule (8月29日 22:35 trigger): ${hitDate}T00:00:00Z 強制 UTC midnight
+function _brackHitDateToChartRange(hitDate, klines) {
+  if (!hitDate) return null;
+  const hitDateMs = Date.parse(`${hitDate}T00:00:00Z`);
+  if (!Number.isFinite(hitDateMs)) return null;
+  const hitTsSec = Math.floor(hitDateMs / 1000);
+
+  // 凡人話: 預設 3 個月範圍 (hit.date - 45 days ~ hit.date + 45 days)
+  const fromTsSec = hitTsSec - (45 * 24 * 60 * 60);
+  const toTsSec = hitTsSec + (45 * 24 * 60 * 60);
+
+  if (!klines || klines.length === 0) {
+    return { from: fromTsSec, to: toTsSec };
+  }
+
+  // K 線 first/last date 拎 (對齊 testing-page.js renderChart pattern, K 線有 'time' field UTC ISO datetime)
+  const klinesFirstDate = klines[0].time || klines[0].date || null;
+  const klinesLastDate = klines[klines.length - 1].time || klines[klines.length - 1].date || null;
+
+  let finalFrom = fromTsSec;
+  let finalTo = toTsSec;
+
+  // Edge case 1 (Option 1 大少 confirm): K 線 first date 早過 from, fallback 用 K 線 first date
+  if (klinesFirstDate) {
+    const klinesFirstDateStr = String(klinesFirstDate).split(' ')[0];
+    const klinesFirstMs = Date.parse(`${klinesFirstDateStr}T00:00:00Z`);
+    if (Number.isFinite(klinesFirstMs) && Math.floor(klinesFirstMs / 1000) > finalFrom) {
+      finalFrom = Math.floor(klinesFirstMs / 1000);
+    }
+  }
+
+  // Edge case 2: K 線 last date 早過 to, fallback 用 K 線 last date (加 1 日 包含 K 線 last date 當日)
+  if (klinesLastDate) {
+    const klinesLastDateStr = String(klinesLastDate).split(' ')[0];
+    const klinesLastMs = Date.parse(`${klinesLastDateStr}T00:00:00Z`) + (24 * 60 * 60);
+    if (Number.isFinite(klinesLastMs) && Math.floor(klinesLastMs / 1000) < finalTo) {
+      finalTo = Math.floor(klinesLastMs / 1000);
+    }
+  }
+
+  return { from: finalFrom, to: finalTo };
+}
+
+// 大少 2026-09-15 06:45 trigger — Brack Test hit row click handler
+// 凡人話: 大少撳 hit row 嘅任何 cell (尤其係日期 cell) → K 線圖 pan/zoom 到 hit.date 中間 + 3 個月
+// Click delegation 對整個 <tr data-hit-date> 做 (大少 06:46 confirm Option 3), 撳任何 cell 都 trigger
+// 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
+function _brackTestRowClickHandler(event, chartRefs, klines) {
+  // 凡人話: 拎 event target 嘅 closest <tr data-hit-date>, 拎 hit.date
+  const row = event.target.closest('tr[data-hit-date]');
+  if (!row) return;
+  const hitDate = row.getAttribute('data-hit-date');
+  if (!hitDate) return;
+
+  // 凡人話: chart instance guard (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47)
+  if (!chartRefs || !chartRefs.chart || !klines || klines.length === 0) {
+    console.warn('[Brack Test row click] chart 未 init 或 K 線 missing, skip pan/zoom');
+    return;
+  }
+
+  // 凡人話: 計 from/to timestamp + 3 個月範圍 + edge fallback
+  const range = _brackHitDateToChartRange(hitDate, klines);
+  if (!range) {
+    console.warn('[Brack Test row click] hit.date 解析失敗:', hitDate);
+    return;
+  }
+
+  // 凡人話: LWC v5 setVisibleRange call, silent fail if chart state 唔對
+  try {
+    chartRefs.chart.timeScale().setVisibleRange({ from: range.from, to: range.to });
+    const fromDate = new Date(range.from * 1000).toISOString().slice(0, 10);
+    const toDate = new Date(range.to * 1000).toISOString().slice(0, 10);
+    console.log(`[Brack Test row click] pan/zoom 到 ${hitDate}, 範圍 [${fromDate}, ${toDate}]`);
+  } catch (err) {
+    console.error('[Brack Test row click] setVisibleRange 失敗:', err);
+  }
 }
 
 // Helper: 顯示當前 filter 結果數量 (大少 9月14日 22:20 trigger 「當選擇指定的 sub-scenario 後, 要顯示該 sub-scenario 有多少個結果」)
@@ -6006,6 +6094,9 @@ const BRACK_TEST_CYCLE_EXPLANATIONS = {
 function renderBrackTestChartBanner(verdict, activeCycle) {
   if (!activeCycle || activeCycle === 'all') return '';
   const hits = (verdict && verdict.points) || [];
+  // 大少 2026-09-15 06:55 trigger — defensive guard: verdict.points empty 唔 render misleading banner
+  // 凡人話: testing-page.js init 已經 guard, 但 updateBrackTestChartBanner 透過 _ModeHandler / _CycleHandler 都可能拎 empty verdict (例如撳跑其他 algo 之後切 cycle 嗰陣 race condition), defensive guard 對齊 §M3 trendline chart overlay 修復永久 rule spirit「silent return 唔 throw」
+  if (hits.length === 0) return '';
   const filteredCount = hits.filter(h => h.cycle === activeCycle).length;
   const totalCount = hits.length;
   const color = BRACK_TEST_CYCLE_COLOR_MAP[activeCycle] || '#666';
@@ -9549,7 +9640,8 @@ export const backTestAdapter = {
 // 大少 2026-09-14 22:22 fix scope error: testing-page.js runAlgorithm handler 動態 import `{ renderBrackTestFilterInfo }` 但 function 唔係 named export (對齊之前 renderBrackTestCard 同樣 fix pattern)
 // 對齊其他 render* function 嘅 export pattern (e.g. line 1194 export function renderResult)
 // Export 落 module 尾等 testing-page.js 拎到 named import
-export { renderBrackTestCard, renderBrackTestFilterInfo, renderBrackTestChartBanner };
+// 大少 2026-09-15 06:45 trigger — 加 _brackTestRowClickHandler export (testing-page.js 拎嚟 attach click delegation 入 #brack-test-panel)
+export { renderBrackTestCard, renderBrackTestFilterInfo, renderBrackTestChartBanner, _brackTestRowClickHandler };
 
 // ---------- backtestTimelineAdapter export (M11 v0.1.0 — Stage 2 第三次 focus 2026-08-10 00:13) ----------
 //   大少 2026-08-10 00:04 — 4 個 design decision confirm 全 A

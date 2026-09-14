@@ -363,6 +363,63 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 - ✅ 唔好自己特登整一鍵還原點 (9月8日 22:41) — 純粹 commit SHA, 唔 push tag
 - ✅ Stock 永遠指 stockpulse.db (9月8日 17:16) — Brack Test 對齊
 - ✅ §M1 card 加卡模式 (大少 2026-09-14 21:16 confirm, 22:04 移到 K線圖框內最下邊) — testing page REGISTRY 唔加新 entry, Brack Test card 對齊 §M6 dashboard panel pattern (testing-page.js line 1555-1574), 撳跑 M1 之後 testing-page.js conditional populate `#brack-test-panel` (chart-section 入面, m6-dashboard-panel 之後, result section 之前), 視線一離開 chart 即刻見到 Brack Test 入口
+- ✅ **Banner init guard (大少 2026-09-15 06:55 trigger, v0.3.1)** — 撳跑 M1 但**仲未撳**「🎯 跑 Brack Test」button 嗰陣, chart banner 唔 render (hidden), 唔顯示 misleading text「(0 條 / 全部 0 條)」。Root cause: `renderBrackTestChartBanner` 拎 `hits = (verdict && verdict.points) || []`, 撳跑 M1 嗰陣 M1 verdict.points 唔存在 → empty array → filteredCount=0 + totalCount=0 → misleading banner。Fix 2 個地方: (a) `testing-page.js` line 1696 chart banner init 加 guard `if (verdict && verdict.points && verdict.points.length > 0)` 先 render banner, 否則 innerHTML = '' (hidden); (b) `adapter.mjs` `renderBrackTestChartBanner` line 6096 加 defensive guard `if (hits.length === 0) return '';` 對齊 §M3 trendline chart overlay 修復永久 rule spirit「silent return 唔 throw」, 涵蓋 `updateBrackTestChartBanner` + `_ModeHandler` / `_CycleHandler` 等所有 callers
+
+---
+
+## §7.1 Hit Row Click → Chart Pan/Zoom (大少 2026-09-15 06:45 trigger, v0.3.0)
+
+### 凡人話
+
+大少撳 Brack Test hit table 入面 hit row 嘅任何 cell (尤其係日期 cell) → K 線圖即時 pan + zoom 到嗰個 hit.date 喺 viewport 中間, 範圍 ≈ 3 個月 (90 日)。對齊既有 chart instance reference pattern (`window.lastChartRefs` + `window.lastKlines` testing-page.js line 1746-1754), 唔需要新加 chart 結構。
+
+### 大少 confirm (06:46)
+
+- **Click target**: Option 3 (撳日期 cell + 整行 hover 高亮) — click delegation 對整個 `<tr data-hit-date>` 做, 撳任何 cell 都 trigger, 日期 cell 加 hover cursor pointer + underline visual cue
+- **Edge fallback**: Option 1 (用 K 線 first date 做 from) — K 線 first date 早過 hit.date - 45 days 嗰陣, from fallback 用 K 線 first date
+
+### 凡人話 verify (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「凡人話 visual evidence」)
+
+大少 hard reload testing page + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」button + 撳其中一個 hit row 嘅日期 cell, K 線圖即時 pan/zoom 到嗰個 hit.date 喺 viewport 中間, 範圍 ≈ 3 個月 (60-65 個交易日, 約 90 日)。Console log 印 `[Brack Test row click] pan/zoom 到 2026-XX-XX, 範圍 [YYYY-MM-DD, YYYY-MM-DD]`。
+
+### 凡人話 edge cases
+
+- ✅ **K 線 first date 早過 hit.date - 45 days**: from fallback 用 K 線 first date (大少 06:46 confirm Option 1)
+- ✅ **K 線 last date 早過 hit.date + 45 days**: to fallback 用 K 線 last date (clip)
+- ✅ **hit.date 唔喺 K 線入面 (週末/假期)**: LWC v5 setVisibleRange 自動 snap nearest trading day, 不需要 binary search
+- ✅ **chart 未 init 或 K 線 missing**: silent warn + return 唔 throw (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47)
+- ✅ **切其他 algo**: `#brack-test-panel.innerHTML = ''` 清 hit table DOM, click delegation 仍然 attached, `event.target.closest('tr[data-hit-date]')` return null silent return
+- ✅ **多次撳跑 M1**: `brackTestRowClickAttached` flag 確保 click delegation 只 attach 1 次 (避免多次 runAlgorithm 重複 trigger)
+
+### 凡人話 UX (Option 3 大少 confirm)
+
+- ✅ **Click delegation 對整個 `<tr data-hit-date>` 做**: 撳任何 cell 都 trigger pan/zoom (大少唔需要對準日期 cell)
+- ✅ **日期 cell 加 `.brack-hit-date` class**: hover cursor pointer + underline + 紅色 `#d4380d` (Option 3 visual cue)
+- ✅ **Row hover background `#ffe0b2` (淺橙) + cursor pointer**: 整行 hover 高亮 (Option 3)
+
+### 改動 scope (4 個 file)
+
+| # | File | 改動 |
+|---|------|------|
+| 1 | `algorithms/AS-03-cycle-detection/adapter.mjs` line 5933 `renderBrackTestHitTable` | 加 `<tr data-hit-date="${hit.date}">` + `<td class="brack-hit-date">` |
+| 2 | `algorithms/AS-03-cycle-detection/adapter.mjs` `BRACK_TEST_PANEL_STYLE` (line 5760+) | 加 3 條 CSS rules (row hover + date cell hover + date cursor) |
+| 3 | `algorithms/AS-03-cycle-detection/adapter.mjs` 新加 `_brackHitDateToChartRange` helper (line 5973+) | 計 from/to UTC timestamp + 3 個月範圍 + Option 1 fallback |
+| 4 | `algorithms/AS-03-cycle-detection/adapter.mjs` 新加 `_brackTestRowClickHandler` function (line 6010+) | click delegation handler, LWC v5 setVisibleRange call |
+| 5 | `algorithms/AS-03-cycle-detection/adapter.mjs` module 尾 export (line 9642+) | 加 `_brackTestRowClickHandler` named export |
+| 6 | `testing-page/testing-page.js` line 798 module-level state | 加 `let brackTestRowClickAttached = false;` flag |
+| 7 | `testing-page/testing-page.js` runAlgorithm handler (line 1708+) | attach click delegation 落 `#brack-test-panel`, 拎 `window.lastChartRefs` + `window.lastKlines` 對齊 line 1752-1754 pattern |
+| 8 | `testing-page/testing-page.js` line 636 `ALGO_CACHE_BUST` | `5.4.2` → `5.4.3` (sync bump 對齊 21:24 cache bust self-check 永久 rule) |
+| 9 | `testing-page/index.html` line 214 `?v=` | `2.3.197` → `2.3.198` (sync bump 對齊 21:24 cache bust self-check 永久 rule) |
+| 10 | `docs/research/AS-03-cycle-detection/MODULE-BRACK-TEST.md` (本段) | 加 §7.1 + Change log v0.3.0 entry |
+
+### 對齊永久 rule
+
+- ✅ §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — chart overlay silent return 唔 throw, 凡人話肉眼 verify pan/zoom 效果
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改 hit table display 即刻 update spec doc (本段)
+- ✅ HTML escape 永久 rule (9月7日 21:50) — `data-hit-date` 用 `_brackEscapeHtml` escape hit.date value
+- ✅ Cache bust self-check 永久 rule (21:24) — sync bump `ALGO_CACHE_BUST` `5.4.2` → `5.4.3` + `?v=2.3.197` → `?v=2.3.198`
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — Backend 唔需要 restart (frontend only fix)
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — `${hitDate}T00:00:00Z` 強制 UTC midnight, 防 backend date format 混雜
 
 ---
 
@@ -387,3 +444,5 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 | v0.2.0 | 2026-09-15 00:03 | 大少 trigger「現在可以做 - 加 legend 喺 chart 入面 - banner 入面加 cycle 嘅中文 explanation tooltip」 | 2 個新 feature: (1) **Cycle legend 喺 chart 入面 overlay** (對齊 §M6 dashboard panel pattern: chart-section 入面 conditional render, 撳跑 M1 + Brack Test button 之後先 render, 撳跑其他 algo → 清返 legend). `index.html` 加 `<div id="cycle-legend"></div>` (line 187); `testing-page.css` 加 `.cycle-legend` + `.cycle-legend-grid` + `.cycle-legend-cell` (line 745-763); `testing-page.js` 加 init cycle legend block (line 1706-1739), 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「凡人話 visual evidence」spirit. (2) **Cycle explanation tooltip 喺 banner 入面** (`adapter.mjs` 加 `BRACK_TEST_CYCLE_EXPLANATIONS` dict line 5990-6003, 11 個 cycle 中文解釋對齊 §M1 sub-scenario spec doc §3-§5 trigger; `renderBrackTestChartBanner` 加 ⓘ icon line 6015; `testing-page.css` 加 `.cycle-tooltip` + `.cycle-tooltip::after` + `.cycle-tooltip-title` line 765-789; `testing-page.js` 加 `showCycleTooltip` function line 1373 + click delegation line 1409). 凡人話: 撳 banner ⓘ icon → tooltip panel 顯示對應 cycle 中文解釋. 對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」: tooltip + legend + banner 全部用 `_brackEscapeHtml` + `escapeHtml`. 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21)「改任何 sub_scenario display 都要即刻 update spec doc」: spec doc §7 + §8 新加, Change log v0.2.0 entry. Cache bust `5.3.3` → `5.4.0` (新 feature, 升 v0.4.0), `?v=2.3.194` → `?v=2.3.195` |
 | v0.2.1 | 2026-09-15 06:29 | 大少 trigger「brack test結果的 TAb 我想先放"🎯 按 sub-scenario 揀"，之後才到"📅 按時間排"，預設是🎯 按 sub-scenario 揀」 | 改 4 個地方: (a) **Tab HTML 順序對調** (adapter.mjs line 5780-5783): 「🎯 按 sub-scenario 揀」Tab 放第一個 + 默認 active; 「📅 按時間排」Tab 放第二個 + 非 active (對齊大少 trigger「先放 🎯 按 sub-scenario 揀」). (b) **Dropdown 默認 selected** (adapter.mjs line 5789): `<option value="strong_uptrend" selected>🟢 強上升</>` 是第一個 selected cycle, 「全部 sub_scenario」unselected (對齊大少 trigger「預設是 🎯 按 sub-scenario 揀」). (c) **`_brackTestRunHandler` default activeCycle** (adapter.mjs line 6102-6127): `const defaultActiveCycle = 'strong_uptrend'`, 撳跑 Brack Test 第一眼見到強上升 markers + banner, 而唔係 11 種顏色全部 marker + banner hidden. renderBrackTestHitTable / renderBrackTestFilterInfo / renderBrackTestChartOverlay / renderBrackTestChartBanner 全部 default 拎 defaultActiveCycle. (d) **`testing-page.js init chart banner`** (testing-page.js line 1681-1696): defaultBannerCycle = 'strong_uptrend', 撳跑 M1 init chart banner 嗰陣 default 顯示「🟢 強上升 (X / Y 條)」banner (對齊 Tab B 默認 + Dropdown 默認). 凡人話 verify: 大少 hard reload testing page + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」button, 第一眼見到 (i) Tab B「🎯 按 sub-scenario 揀」active 高亮橙色 + Tab A「📅 按時間排」inactive; (ii) Dropdown 默認「🟢 強上升」selected; (iii) Banner 出現「🎯 當前顯示: 🟢 強上升 (X / Y 條)」深綠色; (iv) Chart 入面只見深綠強上升 marker, 100 條 (半年內 20 條). 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21)「改任何 sub_scenario display 都要即刻 update spec doc」: spec doc §7 update 默認 Tab + Dropdown 行為. Cache bust `5.4.0` → `5.4.1`, `?v=2.3.195` → `?v=2.3.196` |
 | v0.2.2 | 2026-09-15 06:35 | 大少 trigger「在"🎯 按 sub-scenario 揀"的第一次開啟時消失了"sub-scenario"的select list，你去修正這問題」 | Root cause 確認: v0.2.1 改 Tab order 但漏 toggle dropdown visible (HTML 默認 `style="display:none;"`, 因為 `_brackTestRunHandler` 唔 call `_brackTestModeHandler` 嚟 trigger dropdown toggle, 所以撳跑 Brack Test 第一眼見到 dropdown 永遠唔見). Fix (adapter.mjs line 6110-6120): inline toggle dropdown visible (`dropdown.style.display = ''` 對齊 `_brackTestModeHandler` line 6177 pattern `mode === 'cycle' ? '' : 'none'`) + toggle mode-tab active class 對齊 cycle (HTML 默認 cycle active 但 explicit toggle 確保 active state 對齊 `_brackTestModeHandler` spirit). 凡人話: 撳跑 Brack Test 第一眼見到 cycle dropdown (select list) 顯示 11 個 cycle options + Tab B「按 sub-scenario 揀」active 高亮橙色. Fix 唔重複 call `_brackTestModeHandler` 重 render data (避免 §K-line Cache 永久 rule 重 render), 只 inline toggle UI state 對齊既有 handler logic. Cache bust `5.4.1` → `5.4.2`, `?v=2.3.196` → `?v=2.3.197` |
+| v0.3.0 | 2026-09-15 06:45 | 大少 trigger「click Brack Test hit row 日期 → K 線圖 pan/zoom 到嗰個日子中間 + 3 個月」 | Click delegation 對整個 `<tr data-hit-date>` 做, 撳任何 cell 都 trigger, 日期 cell 加 `.brack-hit-date` class + hover cursor pointer + underline 紅色 (大少 06:46 confirm Option 3)。範圍 `from = hit.date - 45 days`, `to = hit.date + 45 days` (90 日, hit.date 喺 viewport 中間)。Edge cases: K 線 first date 早過 from → fallback 用 K 線 first date (Option 1 大少 confirm); K 線 last date 早過 to → fallback 用 K 線 last date (clip); hit.date 唔喺 K 線入面 (週末/假期) → LWC v5 setVisibleRange 自動 snap nearest trading day。Chart 未 init / K 線 missing → silent warn + return 唔 throw (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47)。Click delegation 用 `brackTestRowClickAttached` flag 確保只 attach 1 次 (避免多次 runAlgorithm 重複 trigger)。凡人話 verify (對齊 §M3 永久 rule 凡人話肉眼 verify): 大少 hard reload testing page + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」button + 撳其中一個 hit row 嘅日期 cell, K 線圖即時 pan/zoom 到嗰個 hit.date 喺 viewport 中間, 範圍 ≈ 3 個月 (60-65 個交易日)。對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) 改任何 sub_scenario display 即刻 update spec doc (§7.1 加咗); HTML escape 永久 rule (9月7日 21:50) `data-hit-date` 用 `_brackEscapeHtml` escape; Cache bust `5.4.2` → `5.4.3`, `?v=2.3.197` → `?v=2.3.198` (對齊 21:24 cache bust self-check 永久 rule); §Backend hot-reload 永久 rule (8月31日 11:01) — backend 唔需要 restart (frontend only fix) |
+| v0.3.1 | 2026-09-15 06:55 | 大少 trigger「當我跑了算法，但還沒有跑Brack Test時，不要顯示"當前顯示: 強上升週期 (0 條 / 全部 0 條)"」 | Fix 未跑 Brack Test 唔顯示 misleading banner: (a) `testing-page.js` line 1696 chart banner init 加 guard `if (verdict && verdict.points && verdict.points.length > 0)` 先 render banner, 否則 innerHTML = '' (hidden) 對齊既有 catch block fallback pattern; (b) `adapter.mjs` `renderBrackTestChartBanner` line 6096 加 defensive guard `if (hits.length === 0) return '';` 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) spirit「silent return 唔 throw」, 涵蓋 `updateBrackTestChartBanner` + `_ModeHandler` / `_CycleHandler` 等所有 callers (對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule 9月10日 23:45)。凡人話 verify (對齊 §M3 永久 rule 凡人話肉眼 verify): 大少 hard reload testing page (`?v=2.3.199`) + 撳跑 M1 (HK.00700) 但**唔撳**「🎯 跑 Brack Test」button → chart banner 應該**唔顯示** (hidden), 冇「(0 條 / 全部 0 條)」misleading text。對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) 改任何 sub_scenario display 即刻 update spec doc (§7 caveat 加咗); Cache bust `5.4.3` → `5.4.4`, `?v=2.3.198` → `?v=2.3.199` (對齊 21:24 cache bust self-check 永久 rule); §Backend hot-reeload 永久 rule (8月31日 11:01) — backend 唔需要 restart (frontend only fix) |
