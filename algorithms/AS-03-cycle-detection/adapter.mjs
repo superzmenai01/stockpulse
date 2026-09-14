@@ -6537,14 +6537,20 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
               return false;
             }
           };
-          let _visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount);
+          // 大少 2026-09-14 23:57 trigger — Fix 12a sort ASC 之後拎錯 P 點嘅 bug (對齊 §M3 trendline chart overlay 修復永久 rule spirit「改 array access 之前必先 curl 拎 evidence 確認」):
+          //   curl /api/algorithms/run?algo=zigzag evidence: backend verdict.points 234 個, order DESC (idx=1258 最新 → P1, idx=0 最舊 → P234)
+          //   我 fix 12a sort ASC 之後 _dedupedPmarkers 變成 [P234, P233, ..., P1] (舊 → 新), 之前 line `_visiblePmarkers = _dedupedPmarkers.slice(0, _pmarkerMaxCount)` 拎前 10 個 = 最舊嘅 10 個 (P225-P234, date 喺 2021-2022), 大少睇唔到因為遠離 chart 半年 visible range (2026-03-18 開始)
+          //   大少 9月1日 23:46 4.63.0 永久 rule: 「只要顯示 P1-P10 就可以了」= 最新嘅 10 個 P 點 (P1, P2, ..., P10)
+          //   Fix: sort ASC + slice(-_pmarkerMaxCount) 拎 ASC array 最尾 10 個 = 最新 10 個 P 點 (P1-P10)
+          //   對齊 §M3 trendline chart overlay 修復永久 rule spirit「改 array access 之前必先 curl 拎 evidence 確認」+ §M1 sub-scenario 永久 rule (8月16日 19:21)「改任何 sub_scenario display 都要即刻 update spec doc」
+          let _visiblePmarkers = _dedupedPmarkers.slice(-_pmarkerMaxCount);
           if (chartRefs.candleSeries && _visiblePmarkers.length > 0) {
             if (!_tryAttachPmarkers(_visiblePmarkers, 1)) {
               // Fallback 1: 收緊到 5 個
-              _visiblePmarkers = _dedupedPmarkers.slice(0, 5);
+              _visiblePmarkers = _dedupedPmarkers.slice(-5);
               if (_visiblePmarkers.length > 0 && !_tryAttachPmarkers(_visiblePmarkers, 2)) {
                 // Fallback 2: 收緊到 3 個 (最後兜底)
-                _visiblePmarkers = _dedupedPmarkers.slice(0, 3);
+                _visiblePmarkers = _dedupedPmarkers.slice(-3);
                 if (_visiblePmarkers.length > 0 && !_tryAttachPmarkers(_visiblePmarkers, 3)) {
                   // 全部 crash, log + 唔 render P 點 marker (紫色 ZigZag 線仍然 render)
                   console.error('[M1 v2.0] ❌ v5 plugin 對 3/5/10 markers 全部 crash, P 點 marker 唔 render (紫色 ZigZag 線仍然 render)');
