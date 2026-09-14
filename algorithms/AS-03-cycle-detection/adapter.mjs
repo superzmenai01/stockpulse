@@ -5749,6 +5749,9 @@ const BRACK_TEST_PANEL_STYLE = `
   .brack-test-card .brack-error { padding:12px; background:#ffebee; border:1px solid #ef5350; border-radius:4px; color:#c62828; margin-top:8px; }
   .brack-test-card .breakdown-mini { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:6px; margin-top:8px; font-size:12px; }
   .brack-test-card .breakdown-mini-item { background:#fff; padding:6px 8px; border-radius:4px; border:1px solid #ffcc80; }
+  /* 大少 2026-09-14 23:18 trigger — Chart top banner (圖表上方顯示當前揀緊嘅 sub-scenario, 用 cycle 顏色 background + 白字, 對齊 Futu health banner style spirit) */
+  .brack-chart-banner { padding: 10px 16px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  .brack-chart-banner .cycle-color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.2); }
 </style>`;
 
 function renderBrackTestCard(verdict) {
@@ -5927,6 +5930,32 @@ function renderBrackTestFilterInfo(hits, activeCycle) {
   return `<div class="brack-filter-info">📊 當前顯示 <strong>${filteredCount}</strong> 條 / 全部 <strong>${totalCount}</strong> 條 · <span class="cycle-color-dot" style="background:${color};"></span><strong>${_brackEscapeHtml(label)}</strong></div>`;
 }
 
+// 大少 2026-09-14 23:18 trigger — Chart top banner (圖表上方顯示當前揀緊嘅 sub-scenario)
+// 凡人話: Tab B 揀咗指定 cycle 嗰陣, chart 上面即時顯示 1 個 banner, 用嗰個 cycle 嘅 color 做 background + 白字 + 「🎯 當前顯示: 🟢 強上升 (X / Y 條)」, 大少唔使 scroll 去 brack-test-panel 表格上面嘅 filter info
+// activeCycle='all' / Tab A / 撳跑其他 algo → 返 empty string (banner hidden, 對齊 chart 上面 11 種顏色 markers 已經夠視覺 reference)
+// 對齊 renderBrackTestFilterInfo pattern (line 5919-5928) 但用 cycle 顏色 background + 白字
+// 對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」: 用 _brackEscapeHtml 處理 label
+function renderBrackTestChartBanner(verdict, activeCycle) {
+  if (!activeCycle || activeCycle === 'all') return '';
+  const hits = (verdict && verdict.points) || [];
+  const filteredCount = hits.filter(h => h.cycle === activeCycle).length;
+  const totalCount = hits.length;
+  const color = BRACK_TEST_CYCLE_COLOR_MAP[activeCycle] || '#666';
+  const label = BRACK_TEST_CYCLE_LABELS[activeCycle] || activeCycle;
+  return `
+    <div class="brack-chart-banner" style="background: ${color};">
+      🎯 當前顯示: <span class="cycle-color-dot" style="background:#fff;"></span><strong>${_brackEscapeHtml(label)}</strong> (${filteredCount} 條 / 全部 ${totalCount} 條)
+    </div>
+  `;
+}
+
+// Helper: 同步 update chart banner (mode / cycle handler 用, 對齊 _brackTestModeHandler / _brackTestCycleHandler pattern line 6055-6066, 6076-6086)
+// 凡人話: 大少切 tab / 揀 cycle 嗰陣, chart 上面 banner 同步更新 (顯示對應 cycle 顏色 + label + 命中數量)
+function updateBrackTestChartBanner(verdict, activeCycle) {
+  const banner = document.getElementById('brack-chart-banner');
+  if (banner) banner.innerHTML = renderBrackTestChartBanner(verdict, activeCycle);
+}
+
 function renderBrackTestSummary(meta) {
   // 凡人話: 顯示 totalRuns / totalHits / hitRatePct + breakdown
   if (!meta) return '';
@@ -6058,6 +6087,8 @@ window._brackTestModeHandler = function(panelId, mode) {
   // 大少 22:20 trigger — filter info 同步更新 (tab 切換嗰陣)
   const filterInfo = panel.querySelector('.brack-filter-info');
   if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(verdict.points || [], activeCycle);
+  // 大少 9月14日 23:18 trigger — chart banner 同步更新 (tab 切換嗰陣, 圖表上方顯示當前揀緊嘅 sub-scenario)
+  updateBrackTestChartBanner(verdict, activeCycle);
 
   const chartRefs = window.lastChartRefs;
   const klines = window.lastKlines;
@@ -6078,6 +6109,8 @@ window._brackTestCycleHandler = function(panelId, cycleValue) {
   // 大少 22:20 trigger — filter info 同步更新 (dropdown 揀 cycle 嗰陣)
   const filterInfo = panel.querySelector('.brack-filter-info');
   if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(verdict.points || [], cycleValue);
+  // 大少 9月14日 23:18 trigger — chart banner 同步更新 (dropdown 揀 cycle 嗰陣, 圖表上方顯示當前揀緊嘅 sub-scenario)
+  updateBrackTestChartBanner(verdict, cycleValue);
 
   const chartRefs = window.lastChartRefs;
   const klines = window.lastKlines;
@@ -9394,7 +9427,7 @@ export const backTestAdapter = {
 // 大少 2026-09-14 22:22 fix scope error: testing-page.js runAlgorithm handler 動態 import `{ renderBrackTestFilterInfo }` 但 function 唔係 named export (對齊之前 renderBrackTestCard 同樣 fix pattern)
 // 對齊其他 render* function 嘅 export pattern (e.g. line 1194 export function renderResult)
 // Export 落 module 尾等 testing-page.js 拎到 named import
-export { renderBrackTestCard, renderBrackTestFilterInfo };
+export { renderBrackTestCard, renderBrackTestFilterInfo, renderBrackTestChartBanner };
 
 // ---------- backtestTimelineAdapter export (M11 v0.1.0 — Stage 2 第三次 focus 2026-08-10 00:13) ----------
 //   大少 2026-08-10 00:04 — 4 個 design decision confirm 全 A

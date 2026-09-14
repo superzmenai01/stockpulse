@@ -307,6 +307,39 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 
 ---
 
+## §7 Chart top banner (大少 2026-09-14 23:18 trigger)
+
+**凡人話**: 撳「🎯 按 sub-scenario 揀」Tab + dropdown 揀指定 sub_scenario 嗰陣 (cycle ≠ 'all'), 喺 K 線圖表頂部即時顯示 1 個 banner, 用嗰個 cycle 嘅 color 做 background (`BRACK_TEST_CYCLE_COLOR_MAP`) + 白字 + 「🎯 當前顯示: 🟢 強上升 (X / Y 條)」。大少唔使 scroll 去 brack-test-panel 表格上面嘅 filter info 先知揀咗邊個 sub_scenario, chart 上面就有顯眼 visual indicator。
+
+**位置**:
+- `#brack-chart-banner` DOM element 喺 `index.html` line 184 (`#chart-container` 之前, chart-section 入面)
+- Conditional render: 撳跑 M1 (`currentAdapter.id === 'AS-03-MA'`) 先 render, 撳跑其他 algo → 清返 banner (對齊 §M6 dashboard panel pattern `testing-page.js` line 1555-1574)
+
+**Banner HTML 結構** (`renderBrackTestChartBanner` helper):
+```javascript
+<div class="brack-chart-banner" style="background: ${color};">
+  🎯 當前顯示: <span class="cycle-color-dot" style="background:#fff;"></span>
+  <strong>${_brackEscapeHtml(label)}</strong> (${filteredCount} 條 / 全部 ${totalCount} 條)
+</div>
+```
+
+**Frontend handler 整合**:
+- `renderBrackTestChartBanner(verdict, activeCycle)` (adapter.mjs line 5931+) — 對齊 `renderBrackTestFilterInfo` pattern (line 5919-5928) 但用 cycle 顏色 background + 白字
+  - activeCycle === 'all' / falsy → 返 empty string (banner hidden)
+  - 用 `_brackEscapeHtml` 處理 label (對齊 9月7日 21:50 trigger「凡新加 render function 必 escape HTML」永久 rule)
+- `updateBrackTestChartBanner(verdict, activeCycle)` (adapter.mjs) — 拎 `#brack-chart-banner` DOM element + populate innerHTML, 對齊 `_ModeHandler` / `_CycleHandler` pattern (line 6055-6066, 6076-6086)
+- `window._brackTestModeHandler` + `window._brackTestCycleHandler` 同步 call `updateBrackTestChartBanner(verdict, activeCycle)`, 切 tab / 揀 cycle 嗰陣 chart 上面 banner 即時更新
+
+**對齊現有永久 rule**:
+- ✅ §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — Frontend render function 永遠拎 verdict.points
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — spec doc 同步 update (即呢個 §7)
+- ✅ HTML escape 永久 rule (9月7日 21:50) — `_brackEscapeHtml` 對齊 renderBrackTestFilterInfo pattern
+- ✅ Brack Test card 加卡模式永久 rule (9月14日 21:16) — 對齊 M6 dashboard panel pattern
+- ✅ Cache bust self-check 永久 rule (21:24) — testing-page.js ALGO_CACHE_BUST 5.2.6 → 5.2.7 + index.html ?v=2.3.187 → ?v=2.3.188 同步 bump
+- ✅ 凡人話 visual verify (9月6日 16:47 trigger) — chart banner 對齊「肉眼 verify chart overlay」spirit
+
+---
+
 ## 對齊永久 rule checklist
 
 - ✅ §KlineCache full flow (8月22日 23:20 永久 rule) — Backend runner 用 cache.get_or_fetch
@@ -343,4 +376,5 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 | v0.1.0-fix3 | 2026-09-14 22:15 | 大少 trigger「把 Brack Test 結果固定只顯示 16 行, 其他要 scroll down 去睇」 | 表格固定高度: adapter.mjs BRACK_TEST_PANEL_STYLE 入面加 `.brack-hit-table-scroll { max-height:480px; overflow-y:auto; }` + `.brack-hit-table thead th { position:sticky; top:0; z-index:1; background:#ffcc80; box-shadow:0 1px 0 #ffa726; }` (16 行 ≈ 480px max-height, header 固定 scroll 期間唔郁). renderBrackTestCard table HTML 包 `<div class="brack-hit-table-scroll">` scroll container. Cache bust `5.2.2` → `5.2.3`, `?v=2.3.183` → `?v=2.3.184` |
 | v0.1.0-fix4 | 2026-09-14 22:20 | 大少 trigger「Brack Test 結果修改: 把日期從大至小排例, 在日期左邊加多一例 Index number, 當選擇指定的 sub-scenario 後, 要顯示該 sub-scenario 有多少個結果」 | 表格內容 3 個 modify: (1) renderBrackTestHitTable sort 改 descending `(a, b) => String(b.date).localeCompare(String(a.date))`, 大少睇最新嘅 hit 排喺最頂, (2) header 加 `<th>Index</th>` 第一個 column + 每 row 顯示 `hit.index` value (hit dict backend emit 已有 index field 對齊 plan §Verdict shape), (3) adapter.mjs 新加 `renderBrackTestFilterInfo(hits, activeCycle)` helper, 表格上方加 `<div class="brack-filter-info">` 顯示「📊 當前顯示 X 條 / 全部 Y 條 · 🟢 強上升」, testing-page.js runAlgorithm handler + adapter.mjs _ModeHandler / _CycleHandler 3 個 handler populate filter-info element. Cache bust `5.2.3` → `5.2.4`, `?v=2.3.184` → `?v=2.3.185` |
 | v0.1.0-fix5 | 2026-09-14 22:22 | 大少 manual verify testing page 撳跑 M1 之後見 error `M1 Brack Test 渲染失敗: renderBrackTestFilterInfo is not a function` | Scope fix: adapter.mjs module 尾 `export { renderBrackTestCard, renderBrackTestFilterInfo }` 加返 renderBrackTestFilterInfo named export (對齊之前 renderBrackTestCard SCOPE fix pattern 2026-09-14 21:35). Cache bust `5.2.4` → `5.2.5`, `?v=2.3.185` → `?v=2.3.186` |
-| v0.1.0-fix6 | 2026-09-14 22:47 | 大少 trigger「修正 Index 的規則, 不管 Brack Test 怎樣排列, 例如轉去了不同的 sub-scenario, 最上的第一個就是 Index 1, 由大至小排例, 這個 Index 排例要在後台做好, 因為當我說 Index 第幾個時, 你要清楚知道我在說那一個」 | Backend sort by date_desc + emit displayIndex field (1..N global, 對齊 spec doc §4.1 Index 規則). Meta emit displaySortBy="date_desc" 寫低規則. Frontend Mode A 用 backend displayIndex, Mode B filtered 用 frontend local enumerate 1..M (filtered view index). 不論 mode, 第 1 row 永遠 = Index 1. Cache bust `5.2.5` → `5.2.6`, `?v=2.3.186` → `?v=2.3.187` |
+| v0.1.0-fix6 | 2026-09-14 22:47 | 大少 trigger「修正 Index 的規則, 不管 Brack Test 怎樣排列, 例如轉去了不同的 sub-scenario, 最上的第一個就是 Index 1, 由大至小排例, 這個 Index 排列要在後台做好, 因為當我說 Index 第幾個時, 你要清楚知道我在說那一個」 | Backend sort by date_desc + emit displayIndex field (1..N global, 對齊 spec doc §4.1 Index 規則). Meta emit displaySortBy="date_desc" 寫低規則. Frontend Mode A 用 backend displayIndex, Mode B filtered 用 frontend local enumerate 1..M (filtered view index). 不論 mode, 第 1 row 永遠 = Index 1. Cache bust `5.2.5` → `5.2.6`, `?v=2.3.186` → `?v=2.3.187` |
+| v0.1.0-fix7 | 2026-09-14 23:18 | 大少 trigger「在 Bracktest 結果裡的『按 sub-scenario 揀』Tab, 揀指定 sub_scenario 嗰陣 (除咗『全部 sub_scenario』), 喺 K 線圖表上方顯示嗰個 sub_scenario banner」 | Chart top banner (對齊 §M3 trendline chart overlay 修復永久 rule): adapter.mjs 新加 `renderBrackTestChartBanner(verdict, activeCycle)` helper (對齊 `renderBrackTestFilterInfo` pattern line 5919-5928 但用 cycle 顏色 background + 白字 + `🎯 當前顯示: 🟢 強上升 (X / Y 條)`, activeCycle='all' 返 empty string) + `updateBrackTestChartBanner(verdict, activeCycle)` helper (拎 `#brack-chart-banner` DOM + populate innerHTML) + 修改 `_ModeHandler` / `_CycleHandler` 2 個 handler 同步 call `updateBrackTestChartBanner` (對齊 line 6055-6066 / 6076-6086 pattern). BRACK_TEST_PANEL_STYLE 加 `.brack-chart-banner` CSS (cycle color background + 白字 + 圓角 + box-shadow, 對齊 Futu health banner style spirit). Module 尾 `export { renderBrackTestChartBanner }` 加返 named export (對齊之前 `renderBrackTestCard` / `renderBrackTestFilterInfo` SCOPE fix pattern 21:35 / 22:22). testing-page.js 加 `lastBrackChartBanner` global state + runAlgorithm handler 加 init chart banner 對齊 §M6 dashboard panel pattern (line 1555-1574, chart-section 入面 chart-container 之前 conditional render, M1 先 render 其他 algo 清返) + resetResultPanel 加清 brack-chart-banner. index.html 加 `<div id="brack-chart-banner"></div>` 喺 chart-container 之前. Spec doc §7 Chart top banner 新加 (對齊 §M1 sub-scenario 永久 rule). Backend 唔需要改 (純 frontend UI 改動, verdict shape 唔變). Cache bust `5.2.6` → `5.2.7`, `?v=2.3.187` → `?v=2.3.188` |
