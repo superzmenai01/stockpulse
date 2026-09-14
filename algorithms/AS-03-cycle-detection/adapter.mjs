@@ -5852,18 +5852,31 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
     if (time == null) return null;
     // 對齊 BRACK_TEST_CYCLE_COLOR_MAP (Brack Test 模塊內, 內容 = ZMEN_SCENARIO_COLOR_MAP line 1398-1411)
     const color = BRACK_TEST_CYCLE_COLOR_MAP[h.cycle] || '#666';
+    // 大少 2026-09-14 23:38 trigger — 加強 marker visibility:
+    //   (a) size 1 → 2 (LWC v5 medium, 預設 1 太細搵唔到)
+    //   (b) borderColor '#000' + borderWidth 1 (testing page chart background 係白色 #ffffff, 大少 chart-config line 1797 確認, 淡紅色 marker 對比白底會溶入, 加黑色 outline 對比清楚)
+    //   (c) text 顯示 cycle 中文 label + displayIndex (大少肉眼掃 reference point, e.g. 「下跌反彈 #42」)
     return {
       time,
       position: h.state === 'UP' ? 'belowBar' : h.state === 'DOWN' ? 'aboveBar' : 'inBar',
       color,
+      borderColor: '#000',  // 大少 23:38 — 黑色 outline 對比白色 chart background (淡紅色 marker 對比白底會溶入, 必須加 border)
+      borderWidth: 1,
+      size: 2,  // 大少 23:38 trigger — LWC v5 size 2 (預設 1 太細)
       shape: h.cycle === 'strong_uptrend' ? 'arrowUp'
            : h.cycle === 'strong_downtrend' ? 'arrowDown'
            : h.cycle === 'decelerating_up' ? 'arrowDown'
            : h.cycle === 'decelerating_down' ? 'arrowUp'
            : 'circle',
-      text: h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle,
+      text: (h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle) + (h.displayIndex != null ? ` #${h.displayIndex}` : ''),
     };
   }).filter(Boolean);
+
+  // 大少 23:38 trigger — 凡人話 visual evidence: log markers 真係有 add 落 chart (證實 handle 真係 set 落 markers, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
+  console.log(`[renderBrackTestChartOverlay] markers=${markers.length}, sample[0]=${JSON.stringify(markers[0] || null)}, activeCycle=${activeCycle || 'all'}`);
+
+  // 大少 23:38 trigger — 凡人話 visual evidence: log markers 真係有 add 落 chart (證實 handle 真係 set 落 markers, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
+  console.log(`[renderBrackTestChartOverlay] markers=${markers.length}, sample[0]=${JSON.stringify(markers[0] || null)}, activeCycle=${activeCycle || 'all'}`);
 
   // 大少 9月14日 23:34 trigger — 撳 cycle / 切 tab 嗰陣 chart 上面睇唔到 marker fix
   // Root cause: 之前每次 call 都用 createSeriesMarkers(candleSeries, markers) 拎新 handle, 但唔清返舊 handle, LWC v5 plugin 重複 register 撞 (舊 handle 仲喺 candle series 佔住位, 新 handle 嘅 markers render 唔到)
@@ -5878,7 +5891,9 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
     try {
       existingHandle.setMarkers(markers);
       chartRefs.brackTestMarkers.markers = markers;
-      console.log(`[renderBrackTestChartOverlay] reuse handle.setMarkers, ${markers.length} markers (activeCycle=${activeCycle || 'all'})`);
+      // 大少 23:38 trigger — 凡人話 visual evidence: verify handle 真係 set 落 markers (證實 marker 真係有 render 落 chart, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
+      const handleMarkersAfter = existingHandle.markers ? existingHandle.markers.length : '(no markers getter)';
+      console.log(`[renderBrackTestChartOverlay] reuse handle.setMarkers, set ${markers.length} markers, handle.markers.length=${handleMarkersAfter} (activeCycle=${activeCycle || 'all'})`);
     } catch (e) {
       console.error('[renderBrackTestChartOverlay] handle.setMarkers 失敗:', e);
     }
@@ -5888,7 +5903,8 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
     try {
       const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
       chartRefs.brackTestMarkers = { handle, setMarkers: handle && handle.setMarkers, markers };
-      console.log(`[renderBrackTestChartOverlay] v5 createSeriesMarkers, ${markers.length} markers (activeCycle=${activeCycle || 'all'})`);
+      // 大少 23:38 trigger — 凡人話 visual evidence: verify createSeriesMarkers 真係拎返 handle
+      console.log(`[renderBrackTestChartOverlay] v5 createSeriesMarkers OK, set ${markers.length} markers, handle typeof=${typeof handle}, handle.setMarkers typeof=${typeof (handle && handle.setMarkers)} (activeCycle=${activeCycle || 'all'})`);
     } catch (e) {
       console.error('[renderBrackTestChartOverlay] v5 createSeriesMarkers 失敗:', e);
       try { candleSeries.setMarkers(markers); } catch (e2) { /* ignore */ }
