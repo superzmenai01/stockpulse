@@ -185,6 +185,9 @@
           <!-- 大少 2026-09-10 10:03 trigger — M6 Dashboard 搬到圖表下邊 (chart-section 入面, chart-container 之後, result section 之前) -->
           <!-- 凡人話: 撳完 M6 跑算法之後, dashboard 即刻喺 chart 下面顯示 3 個燈 + 5 種 setup 動作 + 凡人話解讀, 視線一離開 chart 即刻見到 verdict 結果, 唔使 scroll 落去 result section -->
           <div id="m6-dashboard-panel"></div>
+          <!-- 大少 2026-09-14 22:04 trigger — M1 Brack Test 移到 K線圖框內最下邊 (chart-section 入面, m6-dashboard-panel 之後, result section 之前) -->
+          <!-- 凡人話: 撳跑 M1 之後, Brack Test panel (「🎯 跑 Brack Test」button + 表格 + chart marker) 即刻喺 chart-section 最下邊顯示, 對齊 M6 dashboard panel pattern (line 1556-1573 testing-page.js), 大少撳跑 M1 視線一離開 chart 即刻見到 Brack Test 入口 -->
+          <div id="brack-test-panel"></div>
         </section>
 
         <section class="result">
@@ -205,6 +208,6 @@
   </div>
 
   <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="testing-page.js?v=2.3.179"></script>  <!-- 大少 2026-09-12 11:50: bump ?v=2.3.178 → 2.3.179 (testing-page.js ALGO_CACHE_BUST 4.99.0 → 5.0.0, M1-M6 v2.x frontend 拎走 永久 rule: 拎走 frontend 6 個 module file (ma-alignment/hl-structure/trendline/indicators/volume/volatility) + std-verdict.ts 348 行 + CycleDetector class 整個 + 8 個 frontend test file, 改 index.ts 拎走 6 個 module import/re-export + 4 個 orchestrator import/re-export, 加 backend pytest test_m1_to_m6.py 6 個 test 對齊 M1-M6 backend emit shape, 對齊「數據處理 Server 內部做」+「算法 Backend-only + 模組化」永久 rule, 全部 frontend fetch backend 拎 path 對齊 backend emit shape) -->
+  <script type="module" src="testing-page.js?v=2.3.187"></script>  <!-- 大少 2026-09-14 22:47: bump ?v=2.3.186 → 2.3.187 (testing-page.js ALGO_CACHE_BUST 5.2.5 → 5.2.6, M1 Brack Test fix Index 規則: backend sort by date_desc + emit displayIndex field 1..N global + meta emit displaySortBy="date_desc" 對齊 spec doc §4.1 Index 規則; frontend Mode A 用 backend displayIndex, Mode B filtered 用 frontend local enumerate 1..M) --> (testing-page.js ALGO_CACHE_BUST 5.2.3 → 5.2.4, Brack Test 結果 3 個 modify: 日期由大至小排 + 加 Index column + 揀 cycle 顯示 filter info「當前 X 條 / 全部 Y 條」) --> (testing-page.js ALGO_CACHE_BUST 5.2.1 → 5.2.2, M1 Brack Test 移到 K線圖框內最下邊: adapter.mjs renderMAAlignmentV2Result verdict card HTML 入面拎走 renderBrackTestCard() append, 改為 testing-page.js runAlgorithm 之後 conditional render Brack Test card 寫入 #brack-test-panel (chart-section 入面, m6-dashboard-panel 之後, result section 之前, 對齊 §M6 dashboard panel pattern); adapter.mjs module 尾加 `export { renderBrackTestCard }`; index.html 加 `<div id="brack-test-panel"></div>` 喺 m6-dashboard-panel 之後) -->
 </body>
 </html>

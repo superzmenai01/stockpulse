@@ -5666,6 +5666,426 @@ function renderMAAlignmentV2UsageGuide(verdict) {
   `;
 }
 
+// ===== Brack Test sub-feature (大少 2026-09-14 21:16 confirm) =====
+// 凡人話: 將 M1 對歷史每日逐日回放, 收集每次 trigger sub_scenario 嘅 hit 記錄
+// 對齊 plan: docs/research/AS-03-cycle-detection/MODULE-BRACK-TEST.md
+// 永久 rule 對齊:
+// - §M3 trendline chart overlay 修復永久 rule (9月6日 16:47): render function 永遠拎 verdict.points
+// - §Module Warning v1.0.0 (8月11日): backend emit warnings
+// - §M1 sub-scenario 永久 rule (8月16日 19:21): spec doc 永遠 update
+// - 「用『取』唔用『拎』」(8月20日 trigger)
+// - 凡人話 (8月14日 19:02 trigger)
+
+// 11 個 sub_scenario 凡人話 label 對齊 M1 verdict meta.cycleLabel
+// 對齊 backend CYCLE_LABELS dict
+const BRACK_TEST_CYCLE_LABELS = {
+  strong_uptrend: '強上升週期',
+  weak_uptrend: '初升週期',
+  bearish_initial_rise: '跌勢初升週期',
+  strong_downtrend: '強下跌週期',
+  weak_downtrend: '初跌週期',
+  bullish_initial_decline: '升勢初跌週期',
+  uptrend_correction: '上升回調中',
+  downtrend_bounce: '下跌反彈中',
+  decelerating_up: '到頂轉勢中',
+  decelerating_down: '到底轉勢中',
+  sideways: '橫行週期',
+};
+
+// 11 個 sub_scenario 顏色 (對齊 adapter.mjs line 1398 ZMEN_SCENARIO_COLOR_MAP, 大少 9月14日 21:32 trigger error fix)
+// Root cause: ZMEN_SCENARIO_COLOR_MAP 係 renderMAResult(verdict) function 內部 local const (line 1398), scope 唔共享
+// Fix: Brack Test 自己 define 一份同名 map (內容 100% 對齊原本嗰份, 對齊 §M3 trendline chart overlay 修復永久 rule spirit)
+// Future refactor 可以將 ZMEN_SCENARIO_COLOR_MAP hoist 做 module-level, 但 Brack Test scope 已經 self-contained
+const BRACK_TEST_CYCLE_COLOR_MAP = {
+  strong_uptrend: '#1FA960',           // 深綠
+  weak_uptrend: '#7DD89F',              // 淺綠
+  uptrend_correction: '#A8D5BA',       // 淡綠
+  sideways: '#faad14',                  // 黃
+  downtrend_bounce: '#F5B7B1',          // 淡紅
+  weak_downtrend: '#F1948A',            // 淺紅
+  strong_downtrend: '#C0392B',          // 深紅
+  decelerating_up: '#8E44AD',           // 紫
+  decelerating_down: '#2980B9',         // 藍
+  bearish_initial_rise: '#E6B0AA',      // 淡紅 (跌勢初升, 對稱 sub_scenario v2.6.0)
+  bullish_initial_decline: '#D5F5E3',  // 淡綠 (升勢初跌, 對稱 sub_scenario v2.6.0)
+};
+
+// Local escapeHtml helper (對齊 testing-page.js line 1348, adapter.mjs 入面 internal use)
+// 大少 9月7日 「Brack Test card 入面 render 嘅 string 全部要 escape, 避免 XSS」
+function _brackEscapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Brack Test Panel CSS (inline style, 對齊 testing page 永久 rule 唔改 generic CSS)
+const BRACK_TEST_PANEL_STYLE = `
+<style>
+  .brack-test-card { background:#fff8e1; border:2px solid #ffa726; border-radius:8px; padding:16px; margin-top:16px; }
+  .brack-test-card h3 { margin:0 0 12px 0; color:#e65100; font-size:16px; }
+  .brack-test-card .brack-run-btn { background:#ff6f00; color:#fff; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-size:14px; font-weight:bold; }
+  .brack-test-card .brack-run-btn:hover { background:#e65100; }
+  .brack-test-card .brack-run-btn:disabled { background:#ccc; cursor:not-allowed; }
+  .brack-test-card .mode-tabs { display:flex; gap:8px; margin:12px 0 8px 0; border-bottom:2px solid #ffcc80; }
+  .brack-test-card .mode-tab { padding:8px 16px; cursor:pointer; border:1px solid transparent; border-radius:6px 6px 0 0; background:#fff3e0; color:#666; }
+  .brack-test-card .mode-tab.active { background:#ffa726; color:#fff; border-color:#e65100; }
+  .brack-test-card .mode-content { padding:12px 0; }
+  .brack-test-card .cycle-dropdown { padding:8px 12px; border:1px solid #ffa726; border-radius:4px; font-size:14px; }
+  .brack-test-card .brack-summary { background:#fff3e0; padding:10px; border-radius:4px; margin:8px 0; font-size:14px; }
+  .brack-test-card .brack-summary strong { color:#e65100; }
+  .brack-test-card .brack-hit-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  .brack-test-card .brack-hit-table th { background:#ffcc80; padding:8px; text-align:left; border-bottom:2px solid #ffa726; }
+  .brack-test-card .brack-hit-table td { padding:6px 8px; border-bottom:1px solid #ffe0b2; }
+  .brack-test-card .brack-hit-table tr:hover { background:#fff3e0; }
+  /* 大少 2026-09-14 22:15 trigger — Brack Test 結果固定只顯示 16 行, 其他要 scroll down 去睇 (對齊表格固定高度 + thead sticky pattern) */
+  .brack-test-card .brack-hit-table-scroll { max-height:480px; overflow-y:auto; border:1px solid #ffe0b2; border-radius:4px; }
+  .brack-test-card .brack-hit-table thead th { position:sticky; top:0; z-index:1; background:#ffcc80; box-shadow:0 1px 0 #ffa726; }
+  .brack-test-card .cycle-color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .brack-test-card .brack-loading { padding:20px; text-align:center; color:#666; font-style:italic; }
+  .brack-test-card .brack-error { padding:12px; background:#ffebee; border:1px solid #ef5350; border-radius:4px; color:#c62828; margin-top:8px; }
+  .brack-test-card .breakdown-mini { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:6px; margin-top:8px; font-size:12px; }
+  .brack-test-card .breakdown-mini-item { background:#fff; padding:6px 8px; border-radius:4px; border:1px solid #ffcc80; }
+</style>`;
+
+function renderBrackTestCard(verdict) {
+  // 凡人話: 大少撳跑 M1 之後, verdict card 底部自動 render 1 個 Brack Test panel
+  // panel 入面有「🎯 跑 Brack Test」button, 大少撳 button 嗰陣去 fetch backend + render chart marker + 表格
+  const symbol = (verdict.meta && verdict.meta.symbol) || (window.lastKlines && window.lastKlines.length ? 'UNKNOWN' : 'UNKNOWN');
+  const panelId = `brack-test-panel-${Math.random().toString(36).slice(2, 8)}`;
+
+  return `
+    <div class="result-section">
+      ${BRACK_TEST_PANEL_STYLE}
+      <div class="brack-test-card" id="${panelId}" data-symbol="${symbol}">
+        <h3>🎯 Brack Test (M1 過往 replay)</h3>
+        <p style="margin:0 0 12px 0; color:#555; font-size:13px;">
+          將 M1 對歷史每日逐日回放, 由第 65 日開始每次加一日跑 1 次 M1, 收集每次觸發 sub_scenario 嘅記錄。
+          對齊大少 trigger「如果中了某個 sub-scenario 就把它的 sub-scenario 的結果包括日期, 價格, 那一個 sub-scenario 等等資料記錄下來」。
+        </p>
+        <button class="brack-run-btn" onclick="window._brackTestRunHandler('${panelId}', '${symbol}')">
+          🎯 跑 Brack Test
+        </button>
+        <div class="mode-tabs" style="display:none;" data-when="loaded">
+          <div class="mode-tab active" data-mode="time" onclick="window._brackTestModeHandler('${panelId}', 'time')">📅 按時間排</div>
+          <div class="mode-tab" data-mode="cycle" onclick="window._brackTestModeHandler('${panelId}', 'cycle')">🎯 按 sub-scenario 揀</div>
+        </div>
+        <div class="mode-content" data-when="loaded" style="display:none;">
+          <select class="cycle-dropdown" data-mode="cycle" style="display:none;" onchange="window._brackTestCycleHandler('${panelId}', this.value)">
+            <option value="all">全部 sub_scenario</option>
+            <option value="strong_uptrend">🟢 強上升</option>
+            <option value="weak_uptrend">🟢 初升</option>
+            <option value="bearish_initial_rise">🟢 跌勢初升</option>
+            <option value="strong_downtrend">🔴 強下跌</option>
+            <option value="weak_downtrend">🔴 初跌</option>
+            <option value="bullish_initial_decline">🔴 升勢初跌</option>
+            <option value="uptrend_correction">🟢 上升回調</option>
+            <option value="downtrend_bounce">🔴 下跌反彈</option>
+            <option value="decelerating_up">🟣 到頂轉勢</option>
+            <option value="decelerating_down">🔵 到底轉勢</option>
+          </select>
+        </div>
+        <div class="brack-summary" data-when="loaded" style="display:none;"></div>
+        <div class="brack-breakdown" data-when="loaded" style="display:none;"></div>
+        <div class="brack-hit-table-container" data-when="loaded" style="display:none;">
+          <div class="brack-filter-info" data-when="loaded"></div>
+          <div class="brack-hit-table-scroll">
+            <table class="brack-hit-table">
+              <thead>
+                <tr>
+                  <th>Index</th>
+                  <th>日期</th>
+                  <th>股票</th>
+                  <th>收市價</th>
+                  <th>sub-scenario</th>
+                  <th>週期位置</th>
+                  <th>State</th>
+                  <th>信心</th>
+                </tr>
+              </thead>
+              <tbody class="brack-hit-rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Helper: 將 hit.time/date 轉做 Lightweight Charts time field (number seconds)
+// 對齊 §M3 trendline chart overlay 修復永久 rule spirit: frontend 統一 UTC parse
+function _brackHitToLwcTime(hit) {
+  const timeStr = hit.time || hit.date;
+  if (!timeStr) return null;
+  if (typeof timeStr === 'number') return timeStr > 1e10 ? Math.floor(timeStr / 1000) : timeStr;
+  // 統一 strip ' ' + 加 'T00:00:00Z' (對齊 8月29日 22:35 UTC 統一永久 rule)
+  const dateOnly = String(timeStr).split('T')[0].split(' ')[0];
+  return Math.floor(new Date(dateOnly + 'T00:00:00Z').getTime() / 1000);
+}
+
+function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
+  // 凡人話: 加 chart marker, 每個 hit 對應 1 個 marker (11 個 sub_scenario 11 種顏色)
+  // 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47): render function 永遠拎 verdict.points
+  // 對齊 §M3 trendline chart overlay 修復永久 rule spirit: 拎 verdict.points 而唔係 verdict.meta.points
+  if (!chartRefs || !chartRefs.chart || !chartRefs.candleSeries) {
+    console.warn('[renderBrackTestChartOverlay] chartRefs.chart 或 candleSeries 缺失');
+    return;
+  }
+  if (!verdict || !verdict.points || !Array.isArray(verdict.points)) {
+    console.warn('[renderBrackTestChartOverlay] verdict.points 缺失或唔係 array');
+    return;
+  }
+  const candleSeries = chartRefs.candleSeries;
+  const filteredHits = activeCycle && activeCycle !== 'all'
+    ? verdict.points.filter(h => h.cycle === activeCycle)
+    : verdict.points;
+
+  const markers = filteredHits.map(h => {
+    const time = _brackHitToLwcTime(h);
+    if (time == null) return null;
+    // 對齊 BRACK_TEST_CYCLE_COLOR_MAP (Brack Test 模塊內, 內容 = ZMEN_SCENARIO_COLOR_MAP line 1398-1411)
+    const color = BRACK_TEST_CYCLE_COLOR_MAP[h.cycle] || '#666';
+    return {
+      time,
+      position: h.state === 'UP' ? 'belowBar' : h.state === 'DOWN' ? 'aboveBar' : 'inBar',
+      color,
+      shape: h.cycle === 'strong_uptrend' ? 'arrowUp'
+           : h.cycle === 'strong_downtrend' ? 'arrowDown'
+           : h.cycle === 'decelerating_up' ? 'arrowDown'
+           : h.cycle === 'decelerating_down' ? 'arrowUp'
+           : 'circle',
+      text: h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle,
+    };
+  }).filter(Boolean);
+
+  // 對齊 4.49.0 永久 rule: Lightweight Charts v5 用 createSeriesMarkers plugin API
+  // 失敗 fallback v4 candleSeries.setMarkers
+  if (typeof LightweightCharts !== 'undefined' && typeof LightweightCharts.createSeriesMarkers === 'function') {
+    try {
+      const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
+      chartRefs.brackTestMarkers = { handle, setMarkers: handle && handle.setMarkers, markers };
+      console.log(`[renderBrackTestChartOverlay] v5 createSeriesMarkers OK, ${markers.length} markers (activeCycle=${activeCycle || 'all'})`);
+    } catch (e) {
+      console.error('[renderBrackTestChartOverlay] v5 createSeriesMarkers 失敗:', e);
+      try { candleSeries.setMarkers(markers); } catch (e2) { /* ignore */ }
+    }
+  } else if (typeof candleSeries.setMarkers === 'function') {
+    try { candleSeries.setMarkers(markers); } catch (e) { /* ignore */ }
+  }
+}
+
+function renderBrackTestHitTable(hits, symbol, activeCycle) {
+  // 凡人話: 將 hits render 入表格, 大少 9月14日 22:20 trigger: 日期由大至小排 (新 → 舊)
+  // 大少 9月14日 22:47 trigger: 不論 Brack Test 點排列, 第 1 row = Index 1, 由大至小排, Index 排例 backend 做好
+  // Backend emit hit.displayIndex (1..N global sort by date desc, 對齊 spec doc §4.1 Index 規則)
+  // Frontend 喺 Mode A (全部) 用 backend displayIndex (同 backend 一致), Mode B filtered 用 frontend local enumerate (1..M filtered view index)
+  // 凡人話: 大少講「Index 第幾個」= sorted view 內第幾個, filtered view 嘅 Index 1 = 該 cycle 最新嗰個 hit
+  const filteredHits = activeCycle && activeCycle !== 'all'
+    ? hits.filter(h => h.cycle === activeCycle)
+    : hits;
+  // 大少 22:20 trigger: 日期由大至小排 (新 → 舊), 大少睇最新嘅 hit 排喺最頂
+  const sortedHits = [...filteredHits].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  // 大少 22:47 trigger: filtered view 內 Index 永遠由 1 開始 (大少話「最上的第一個就是 Index 1」)
+  // 凡人話: filtered 後嘅 list 第 1 row = Index 1, 第 2 row = Index 2, ..., 第 M row = Index M
+  const isFiltered = activeCycle && activeCycle !== 'all';
+  return sortedHits.map((h, viewIdx) => {
+    const color = BRACK_TEST_CYCLE_COLOR_MAP[h.cycle] || '#666';
+    const cycleLabel = h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle;
+    const positionLabel = h.cyclePositionLabel || '—';
+    const conf = ((h.confidence || 0) * 100).toFixed(1);
+    const close = (h.close != null && Number.isFinite(h.close)) ? h.close.toFixed(2) : '—';
+    // 大少 22:47 trigger: filtered view Index = viewIdx + 1, Mode A Index = backend displayIndex 1..N (sorted by date_desc 嘅 global position, 對齊 spec doc §4.1)
+    const displayIndex = isFiltered ? (viewIdx + 1) : (h.displayIndex != null ? h.displayIndex : (viewIdx + 1));
+    return `
+      <tr>
+        <td>${displayIndex}</td>
+        <td>${_brackEscapeHtml(h.date || '—')}</td>
+        <td>${_brackEscapeHtml(symbol || '—')}</td>
+        <td>${close}</td>
+        <td><span class="cycle-color-dot" style="background:${color};"></span>${_brackEscapeHtml(cycleLabel)}</td>
+        <td>${_brackEscapeHtml(positionLabel)}</td>
+        <td>${_brackEscapeHtml(h.state || '—')}</td>
+        <td>${conf}%</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Helper: 顯示當前 filter 結果數量 (大少 9月14日 22:20 trigger 「當選擇指定的 sub-scenario 後, 要顯示該 sub-scenario 有多少個結果」)
+// 凡人話: tab B 揀咗 cycle 嗰陣, 表格上方顯示「🟢 強上升: 100 條 (全部 613 條)」, 大少即時知揀緊嘅 sub_scenario 佔幾多
+function renderBrackTestFilterInfo(hits, activeCycle) {
+  const totalCount = (hits || []).length;
+  if (!activeCycle || activeCycle === 'all') {
+    return `<div class="brack-filter-info">📊 當前顯示 <strong>${totalCount}</strong> 條 hit (全部 sub_scenario)</div>`;
+  }
+  const filteredCount = (hits || []).filter(h => h.cycle === activeCycle).length;
+  const color = BRACK_TEST_CYCLE_COLOR_MAP[activeCycle] || '#666';
+  const label = BRACK_TEST_CYCLE_LABELS[activeCycle] || activeCycle;
+  return `<div class="brack-filter-info">📊 當前顯示 <strong>${filteredCount}</strong> 條 / 全部 <strong>${totalCount}</strong> 條 · <span class="cycle-color-dot" style="background:${color};"></span><strong>${_brackEscapeHtml(label)}</strong></div>`;
+}
+
+function renderBrackTestSummary(meta) {
+  // 凡人話: 顯示 totalRuns / totalHits / hitRatePct + breakdown
+  if (!meta) return '';
+  const breakdownByCycle = meta.breakdownByCycle || {};
+  const breakdownByState = meta.breakdownByState || {};
+
+  // Top 5 cycle breakdown (sort by count desc)
+  const cycleEntries = Object.entries(breakdownByCycle)
+    .filter(([k, v]) => k !== 'sideways' && v > 0)  // 拎走 sideways 0 + 拎走 value 0
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  const cycleMiniHtml = cycleEntries.map(([cycle, count]) => {
+    const color = BRACK_TEST_CYCLE_COLOR_MAP[cycle] || '#666';
+    const label = BRACK_TEST_CYCLE_LABELS[cycle] || cycle;
+    return `
+      <div class="breakdown-mini-item">
+        <span class="cycle-color-dot" style="background:${color};"></span>
+        <strong>${_brackEscapeHtml(label)}</strong>: ${count}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="brack-summary">
+      跑了 <strong>${meta.totalRuns}</strong> 次 M1
+      (由第 ${(meta.startIndex || 65) + 1} 日到第 ${meta.totalRuns + (meta.startIndex || 65)} 日),
+      觸發 <strong>${meta.totalHits}</strong> 次 sub_scenario (<strong>${meta.hitRatePct}</strong>)
+      ${meta.skippedRuns > 0 ? ` · skip <strong>${meta.skippedRuns}</strong> 次 (M1 verdict 唔 ok)` : ''}
+    </div>
+    <div class="breakdown-mini">
+      <div class="breakdown-mini-item">📊 <strong>State 分布</strong>: UP=${breakdownByState.UP || 0} / DOWN=${breakdownByState.DOWN || 0} / SIDEWAYS=${breakdownByState.SIDEWAYS || 0} / TRANSITION=${breakdownByState.TRANSITION || 0}</div>
+      ${cycleMiniHtml}
+    </div>
+  `;
+}
+
+// ============================================================
+// Brack Test 全局 event handlers (onClick 撳 button / 切 tab / 揀 cycle)
+// 對齊 plan §Frontend 架構 大少 21:16 trigger: Brack Test card 喺 M1 verdict card 內加卡模式
+// ============================================================
+window._brackTestRunHandler = async function(panelId, symbol) {
+  // 凡人話: 大少撳「🎯 跑 Brack Test」button → fetch backend + render chart marker + 表格 + summary
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const btn = panel.querySelector('.brack-run-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 跑緊 M1 sub-loop...'; }
+
+  try {
+    // 對齊 §K-line Cache 永久 rule: 拎 data_window_days 預設 1260 (5 年)
+    const dataWindowDays = (window.lastKlines && window.lastKlines.length) || 1260;
+    const url = `${window.BACKEND_URL || 'http://localhost:18792'}/api/algorithms/run?algo=m1_brack_test&symbol=${encodeURIComponent(symbol)}&data_window_days=${dataWindowDays}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+    }
+    const data = await resp.json();
+    if (!data.ok) {
+      throw new Error(data.error || 'Brack Test verdict 唔 ok');
+    }
+
+    // Store verdict 落 panel dataset 畀後續 mode toggle handler 用
+    panel._brackVerdict = data;
+
+    // 顯示 tab + table + summary section
+    panel.querySelectorAll('[data-when="loaded"]').forEach(el => el.style.display = '');
+
+    // Render summary + breakdown
+    const summaryEl = panel.querySelector('.brack-summary');
+    if (summaryEl) summaryEl.innerHTML = renderBrackTestSummary(data.meta);
+
+    // Render default Mode A (按時間排全部, 日期由大至小, 對齊大少 22:20 trigger)
+    const tbody = panel.querySelector('.brack-hit-rows');
+    if (tbody) tbody.innerHTML = renderBrackTestHitTable(data.points || [], symbol, 'all');
+    // 大少 22:20 trigger — filter info 顯示當前 cycle 揀咗幾多條 hit
+    const filterInfo = panel.querySelector('.brack-filter-info');
+    if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(data.points || [], 'all');
+
+    // Render chart markers (Mode A = 全部)
+    const chartRefs = window.lastChartRefs;
+    const klines = window.lastKlines;
+    if (chartRefs && klines && klines.length) {
+      renderBrackTestChartOverlay(data, klines, chartRefs, 'all');
+    } else {
+      console.warn('[brackTestRunHandler] lastChartRefs 或 lastKlines 缺失, skip chart overlay');
+    }
+
+    // Button 變返做「🔄 重跑」對齊 §Config UX 模式 (8月19日 13:03) — 可重跑
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔄 重跑 Brack Test';
+    }
+  } catch (e) {
+    console.error('[brackTestRunHandler] error:', e);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🎯 跑 Brack Test';
+    }
+    const summaryEl = panel.querySelector('.brack-summary');
+    if (summaryEl) {
+      summaryEl.style.display = '';
+      summaryEl.innerHTML = `<div class="brack-error">⚠️ Brack Test 跑失敗: ${_brackEscapeHtml(e.message)}</div>`;
+    }
+  }
+};
+
+window._brackTestModeHandler = function(panelId, mode) {
+  // 凡人話: 大少撳 tab (時間 / 分類), 切換顯示 dropdown 同表格內容
+  const panel = document.getElementById(panelId);
+  if (!panel || !panel._brackVerdict) return;
+  const verdict = panel._brackVerdict;
+  const symbol = panel.dataset.symbol;
+
+  // 切 tab active state
+  panel.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.mode === mode);
+  });
+  // 切 dropdown visibility (mode=cycle 先顯示)
+  const dropdown = panel.querySelector('.cycle-dropdown');
+  if (dropdown) {
+    dropdown.style.display = mode === 'cycle' ? '' : 'none';
+  }
+  // 切 activeCycle (mode=cycle 用 dropdown value, mode=time 用 'all')
+  const activeCycle = mode === 'cycle' ? (dropdown ? dropdown.value : 'all') : 'all';
+
+  // Re-render table + chart markers 過濾後
+  const tbody = panel.querySelector('.brack-hit-rows');
+  if (tbody) tbody.innerHTML = renderBrackTestHitTable(verdict.points || [], symbol, activeCycle);
+  // 大少 22:20 trigger — filter info 同步更新 (tab 切換嗰陣)
+  const filterInfo = panel.querySelector('.brack-filter-info');
+  if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(verdict.points || [], activeCycle);
+
+  const chartRefs = window.lastChartRefs;
+  const klines = window.lastKlines;
+  if (chartRefs && klines && klines.length) {
+    renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle);
+  }
+};
+
+window._brackTestCycleHandler = function(panelId, cycleValue) {
+  // 凡人話: 大少喺 tab B (分類) 揀 cycle, 表格 + chart 同步過濾
+  const panel = document.getElementById(panelId);
+  if (!panel || !panel._brackVerdict) return;
+  const verdict = panel._brackVerdict;
+  const symbol = panel.dataset.symbol;
+
+  const tbody = panel.querySelector('.brack-hit-rows');
+  if (tbody) tbody.innerHTML = renderBrackTestHitTable(verdict.points || [], symbol, cycleValue);
+  // 大少 22:20 trigger — filter info 同步更新 (dropdown 揀 cycle 嗰陣)
+  const filterInfo = panel.querySelector('.brack-filter-info');
+  if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(verdict.points || [], cycleValue);
+
+  const chartRefs = window.lastChartRefs;
+  const klines = window.lastKlines;
+  if (chartRefs && klines && klines.length) {
+    renderBrackTestChartOverlay(verdict, klines, chartRefs, cycleValue);
+  }
+};
+
 function getMAAlignmentV2Help() {
   return `
     <h3>第一模組 v2.1.0 — 均線系統週期判斷法 (9 個 sub-scenario)</h3>
@@ -6155,6 +6575,10 @@ export const maAlignmentV2Adapter = {
   renderResult: renderMAAlignmentV2Result,
   renderChartOverlay: renderMAAlignmentV2ChartOverlay,
   getHelp: getMAAlignmentV2Help,
+  // 大少 2026-09-14 22:04 trigger — Brack Test card 由 M1 verdict card 底部搬到 K線圖框內最下邊
+  // testing-page.js 撳跑 M1 之後, populate #brack-test-panel (chart-section 入面) 用呢個 function
+  // 對齊 M6 dashboard panel pattern (testing-page.js line 1556-1573)
+  renderBrackTestCard: renderBrackTestCard,
 };
 
 // =====================================================================
@@ -8965,6 +9389,12 @@ export const backTestAdapter = {
     return html;
   },
 };
+
+// 大少 2026-09-14 22:04 trigger — testing-page.js dynamic import `{ renderBrackTestCard }` 拎呢個 function 寫入 #brack-test-panel (chart-section 最下邊)
+// 大少 2026-09-14 22:22 fix scope error: testing-page.js runAlgorithm handler 動態 import `{ renderBrackTestFilterInfo }` 但 function 唔係 named export (對齊之前 renderBrackTestCard 同樣 fix pattern)
+// 對齊其他 render* function 嘅 export pattern (e.g. line 1194 export function renderResult)
+// Export 落 module 尾等 testing-page.js 拎到 named import
+export { renderBrackTestCard, renderBrackTestFilterInfo };
 
 // ---------- backtestTimelineAdapter export (M11 v0.1.0 — Stage 2 第三次 focus 2026-08-10 00:13) ----------
 //   大少 2026-08-10 00:04 — 4 個 design decision confirm 全 A
