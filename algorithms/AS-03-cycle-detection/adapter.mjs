@@ -5778,13 +5778,15 @@ function renderBrackTestCard(verdict) {
           🎯 跑 Brack Test
         </button>
         <div class="mode-tabs" style="display:none;" data-when="loaded">
-          <div class="mode-tab active" data-mode="time" onclick="window._brackTestModeHandler('${panelId}', 'time')">📅 按時間排</div>
-          <div class="mode-tab" data-mode="cycle" onclick="window._brackTestModeHandler('${panelId}', 'cycle')">🎯 按 sub-scenario 揀</div>
+          <!-- 大少 2026-09-15 06:29 trigger — Tab 順序對調, 「🎯 按 sub-scenario 揀」做默認 active tab 對齊大少 trigger「我想先放"🎯 按 sub-scenario 揀", 之後才到"📅 按時間排", 預設是🎯 按 sub-scenario 揀」 -->
+          <div class="mode-tab active" data-mode="cycle" onclick="window._brackTestModeHandler('${panelId}', 'cycle')">🎯 按 sub-scenario 揀</div>
+          <div class="mode-tab" data-mode="time" onclick="window._brackTestModeHandler('${panelId}', 'time')">📅 按時間排</div>
         </div>
         <div class="mode-content" data-when="loaded" style="display:none;">
           <select class="cycle-dropdown" data-mode="cycle" style="display:none;" onchange="window._brackTestCycleHandler('${panelId}', this.value)">
+            <!-- 大少 2026-09-15 06:29 trigger — Dropdown 默認 selected 第一個 cycle「🟢 強上升」, 唔揀「全部 sub_scenario」對齊大少 trigger「預設是🎯 按 sub-scenario 揀」 -->
             <option value="all">全部 sub_scenario</option>
-            <option value="strong_uptrend">🟢 強上升</option>
+            <option value="strong_uptrend" selected>🟢 強上升</option>
             <option value="weak_uptrend">🟢 初升</option>
             <option value="bearish_initial_rise">🟢 跌勢初升</option>
             <option value="strong_downtrend">🔴 強下跌</option>
@@ -6095,20 +6097,36 @@ window._brackTestRunHandler = async function(panelId, symbol) {
     const summaryEl = panel.querySelector('.brack-summary');
     if (summaryEl) summaryEl.innerHTML = renderBrackTestSummary(data.meta);
 
-    // Render default Mode A (按時間排全部, 日期由大至小, 對齊大少 22:20 trigger)
+    // 大少 2026-09-15 06:29 trigger — 預設 activeCycle 由 'all' 改為 'strong_uptrend' (對齊大少 trigger「預設是🎯 按 sub-scenario 揀」+ 「按 sub-scenario 揀」Tab 默認 active + Dropdown selected 第一個 cycle「強上升」)
+    // 凡人話: 大少撳跑 Brack Test 第一眼見到一個 cycle 嘅 markers + banner, 而唔係 11 種顏色全部 marker
+    const defaultActiveCycle = 'strong_uptrend';
+
+    // Render default Mode B (按 sub-scenario 揀, 默認第一個 cycle「強上升」, 對齊大少 06:29 trigger)
     const tbody = panel.querySelector('.brack-hit-rows');
-    if (tbody) tbody.innerHTML = renderBrackTestHitTable(data.points || [], symbol, 'all');
+    if (tbody) tbody.innerHTML = renderBrackTestHitTable(data.points || [], symbol, defaultActiveCycle);
     // 大少 22:20 trigger — filter info 顯示當前 cycle 揀咗幾多條 hit
     const filterInfo = panel.querySelector('.brack-filter-info');
-    if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(data.points || [], 'all');
+    if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(data.points || [], defaultActiveCycle);
 
-    // Render chart markers (Mode A = 全部)
+    // Render chart markers (Mode B = 第一個 cycle「強上升」, 對齊大少 06:29 trigger「預設是🎯 按 sub-scenario 揀」)
     const chartRefs = window.lastChartRefs;
     const klines = window.lastKlines;
     if (chartRefs && klines && klines.length) {
-      renderBrackTestChartOverlay(data, klines, chartRefs, 'all');
+      renderBrackTestChartOverlay(data, klines, chartRefs, defaultActiveCycle);
     } else {
       console.warn('[brackTestRunHandler] lastChartRefs 或 lastKlines 缺失, skip chart overlay');
+    }
+
+    // 大少 2026-09-15 06:29 trigger — chart banner init (默認 activeCycle 第一個 cycle「強上升」, 對齊 Tab B 默認)
+    // 凡人話: 大少撳跑 Brack Test 第一眼見到 banner 顯示「🟢 強上升 (X / Y 條)」, 唔係 hidden
+    const brackChartBannerEl = panel.querySelector('.brack-chart-banner') || document.getElementById('brack-chart-banner');
+    if (brackChartBannerEl) {
+      try {
+        const html = renderBrackTestChartBanner(data, defaultActiveCycle);
+        brackChartBannerEl.innerHTML = html;
+      } catch (err) {
+        console.error('[brackTestRunHandler] banner render failed:', err);
+      }
     }
 
     // Button 變返做「🔄 重跑」對齊 §Config UX 模式 (8月19日 13:03) — 可重跑
