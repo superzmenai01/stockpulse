@@ -3674,6 +3674,10 @@ function renderHLStructureChartOverlay(verdict, klines, chart) {
         text: `谷 ${t.close.toFixed(1)}`,
       });
     }
+    // 大少 2026-09-14 23:53 trigger — Fix M2 peaks/troughs markers pan/zoom 嗰陣消失嘅 bug (對齊 fix 11 + fix 12a + fix 12b pattern):
+    //   peaks 先 push (可能 DESC), troughs 之後 push (可能 DESC), combined 唔係嚴格 ASC, LWC v5 internal time series index 會 silently dropped 一部分 markers
+    //   Fix: markers.sort((a, b) => a.time - b.time) ascending 對齊 LWC v5 internal index (time 已經係 number, 因為 normalizeTimeForMarker 用 UTC midnight seconds)
+    markers.sort((a, b) => a.time - b.time);
     if (markers.length > 0) {
       try {
         LightweightCharts.createSeriesMarkers(series, markers);
@@ -6480,6 +6484,17 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
             );
           }
 
+          // 大少 2026-09-14 23:53 trigger — Fix ZigZag P 點 marker pan/zoom 嗰陣消失嘅 bug (對齊 Brack Test fix 11 pattern):
+          //   Root cause: LWC v5 marker primitive 內部用 time series index 渲染 markers, **markers 必須按時間升序 (ascending) 排列**, 否則 chart pan/zoom 嗰陣 markers 會 silently dropped (對齊 lightweight-charts issue #1766 + python issue #32)
+          //   Backend emit `verdict.meta.zigzagPoints` 嘅 order 已經係 `新 → 舊` (P1=最新, P10=最舊), 但 LWC v5 需要 ascending (舊 → 新), 所以前端要 reverse sort
+          //   因為 marker `time` 係 business day object {year, month, day}, 唔可以直接 `a.time - b.time` (NaN), 所以用 composite key 對齊
+          //   Fix: _dedupedPmarkers.sort ascending by `time.year*10000 + time.month*100 + time.day` (舊 → 新)
+          _dedupedPmarkers.sort((a, b) => {
+            const aKey = a.time.year * 10000 + a.time.month * 100 + a.time.day;
+            const bKey = b.time.year * 10000 + b.time.month * 100 + b.time.day;
+            return aKey - bKey;
+          });
+
           // 大少 9月1日 23:46 trigger (4.63.0 fix) — 拎返 v5 createSeriesMarkers plugin API, 拎走 v4 setMarkers fallback (死火 dead code)
           //   ❌ 4.62.3 commit `880c8459` 拎返嘅 `candleSeries.setMarkers` fallback 完全冇用: Lightweight Charts v5.0+ migration
           //      doc 確認 `series.setMarkers` method 已經拎走, 系列 marker 改為獨立 plugin 介面 `createSeriesMarkers(series, markers)`,
@@ -6603,6 +6618,13 @@ function renderMAAlignmentV2ChartOverlay(verdict, klines, chartRefs) {
                   ...(chartRefs.zigzagSequenceMarkers.markers || []),
                   ..._visibleTriggers,
                 ];
+                // 大少 2026-09-14 23:53 trigger — Fix combined markers pan/zoom 嗰陣消失嘅 bug (對齊 fix 11 + fix 12a pattern):
+                //   P 點 markers DESC (新→舊), Trigger markers 也唔確定 order, combined 必須 sort ascending 對齊 LWC v5 internal time series index
+                _combinedMarkers.sort((a, b) => {
+                  const aKey = a.time.year * 10000 + a.time.month * 100 + a.time.day;
+                  const bKey = b.time.year * 10000 + b.time.month * 100 + b.time.day;
+                  return aKey - bKey;
+                });
                 chartRefs.zigzagSequenceMarkers.handle.setMarkers(_combinedMarkers);
                 chartRefs.zigzagSequenceMarkers.markers = _combinedMarkers;  // update for re-set block
                 console.log('[M1 v2.0] ✅ 紅色觸發點 (Trigger 確認點) marker (4.64.0 拎返 4.61.0 design, Option D arrow):',
