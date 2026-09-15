@@ -123,7 +123,7 @@ def run_algorithm(
         }
 
     # 大少 #11070 永久 rule: 1d 默認 start = 1.5x calendar days back
-    end_date = datetime.date.today().isoformat()
+    end_date_default = datetime.date.today().isoformat()
     if period == "1d":
         calendar_days_back = max(int(data_window_days * 1.5), 180)
     elif period == "1w":
@@ -132,7 +132,16 @@ def run_algorithm(
         calendar_days_back = max(int(data_window_days * 31 * 1.1), 365)
     else:
         calendar_days_back = max(int(data_window_days * 1.5), 180)
-    start_date = (datetime.date.today() - datetime.timedelta(days=calendar_days_back)).isoformat()
+    start_date_default = (datetime.date.today() - datetime.timedelta(days=calendar_days_back)).isoformat()
+
+    # 大少 2026-09-16 06:16 trigger — 拎 caller 嘅 dateFrom + dateTo 落 start_date + end_date 對齊 frontend 傳嘅 start/end
+    # 凡人話: 大少 trigger screenshot 顯示 zigzag 紫線 + P 點超出 K 線 range, 因為 backend runner 拎 K 線 hardcode today - calendar_days_back, 忽略 frontend 傳嘅 start/end params (frontend /api/algorithms.py 已經 pass 落 options dict)
+    # 對齊 §K-line Cache 永久 rule spirit (8月22日 23:20)「Frontend 拎 data, Backend 拎 K 線」, K 線 filtered 喺 KlineCache layer
+    # silent fallback: caller 冇傳 dateFrom / dateTo → 用 today - calendar_days_back 既有 default, 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) spirit「silent return 唔 throw」
+    date_from = options.get("dateFrom")
+    date_to = options.get("dateTo")
+    start_date = date_from if date_from else start_date_default
+    end_date = date_to if date_to else end_date_default
 
     klines = cache.get_klines(symbol, period, start=start_date, end=end_date)
 

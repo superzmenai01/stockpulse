@@ -766,10 +766,13 @@ class KlineCache:
                 )
 
                 # Filter fetched by user's start/end (OpenD might return extra)
+                # 大少 2026-09-16 06:16 trigger (v0.4.4 fix #2) — 用 substr(time, 1, 10) date-only normalized 比對, 對齊 SQL filter line 295-299 pattern
+                # 凡人話: K 線 time field 拎 datetime format (e.g. "2026-04-24 00:00:00") 會撞 string compare bug — `k['time'] >= start` 拎 "2026-04-24 00:00:00" >= "2026-05-01" = True (string 字首比對)
+                # 對齊 §K-line Cache 永久 rule spirit (8月22日 23:20)「Frontend 拎 data, Backend 拎 K 線」, K 線 filtered 喺 KlineCache layer
                 if start:
-                    fetched = [k for k in fetched if k['time'] >= start]
+                    fetched = [k for k in fetched if k['time'][:10] >= start[:10]]
                 if end:
-                    fetched = [k for k in fetched if k['time'] <= end]
+                    fetched = [k for k in fetched if k['time'][:10] <= end[:10]]
                 fetch_count = len(fetched)
 
                 # 大少 2026-08-30 00:50 A3 治本 fix: 永遠 INSERT fetched (< today) 入 DB,

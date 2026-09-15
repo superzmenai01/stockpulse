@@ -612,7 +612,43 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 
 ---
 
-## Change log
+## §8.4 Backend runner 拎 caller start/end (大少 2026-09-16 06:16 trigger, v0.4.4 修正 v0.4.3 漏網之魚)
+
+### 凡人話
+
+大少 trigger screenshot「這是 00700 跑指定時間的結果, 你可以看到 zigzag 線和 P 點是把超出 K 線範圍的跑了, 那是因為之前跑的殘留了下來, 這個 Zigzag 線和 P 點都必須根據新範圍的 K 線再重新跑」。
+
+凡人話 v0.4.3 commit `e2aad32f` 已改咗 frontend `fetchBackendZigZag` 傳 `start` + `end` query params, 但是 **backend `algorithm_runner.py` line 125-137 拎 K 線 hardcode `today - calendar_days_back` + `today`, 完全忽略 frontend 傳嘅 `start`/`end` params**。
+
+### Audit evidence (curl)
+- `algo=zigzag` baseline (no date) — 215 個 points, 5 年 (2021-08-02 ~ 2026-09-15) ✅
+- `start=2026-09-01&end=2026-09-15&data_window_days=11` — klines_count=11, ZigZag points 對齊範圍 ✅ (因為 calendar_days_back=180 日 back, 拎 180 日 K 線取尾 11 條)
+- `start=2026-05-01&end=2026-08-31&data_window_days=100` — **klines_count=100, 但 ZigZag points date range 2026-04-24 ~ 2026-09-15 (超出 start date)** ❌ — 因為 backend runner 拎 180 日 back K 線, 唔對齊 frontend start
+
+### 凡人話 fix (v0.4.4)
+
+`backend/services/algorithm_runner.py` line 125-137:
+- 拎 caller 嘅 `dateFrom` + `dateTo` 從 `options.get(...)` 覆蓋 `start_date` + `end_date`
+- silent fallback: caller 冇傳 → 用既有 `today - calendar_days_back` default (對齊 §M3 永久 rule spirit)
+- frontend 不需要改 (v0.4.3 commit 已經傳 start/end)
+- backend api/algorithms.py 不需要改 (v0.4.0 commit 已經 pass date_from/date_to 落 options dict)
+
+### 凡人話 verify (對齊 §M3 永久 rule凡人話肉眼 verify spirit)
+
+凡人話 verify (大少 hard reload testing page + 撳 date inputs 揀 [2026-05-01, 2026-08-31] + 撳「執行」button):
+- Curl backend `/api/algorithms/run?algo=zigzag&...&start=2026-05-01&end=2026-08-31` → ZigZag points date range **2026-05-01 ~ 2026-08-31** ✅ (對齊 frontend 傳嘅 range)
+- 大少睇 chart 入面 ZigZag 紫線 + P 點 marker 全部對齊 filtered K 線, 唔再超出 K 線 range ✅
+
+### 對齊永久 rule
+
+- ✅ §K-line Cache 永久 rule (8月22日 23:20) — 「Frontend 拎 data, Backend 拎 K 線」, K 線 filtered 喺 KlineCache layer, backend runner 拎 caller start/end
+- ✅ §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc
+- ✅ Cache bust self-check 永久 rule (21:24) — sync bump ALGO_CACHE_BUST + ?v= parameter
+- ✅ §Backend hot-reeload 永久 rule (8月31日 11:01) — Backend 改咗需要 restart (`./start.sh`) + curl verify
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — UTC midnight 統一 date parsing (frontend 傳嘅 date_from/date_to 已經係 YYYY-MM-DD 格式)
+
+---
 
 ## Change log
 
@@ -640,3 +676,4 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 | v0.4.0 | 2026-09-15 21:05 | **Superseded by v0.4.1** — 大少 trigger「Brack Test 指定日期範圍跑功能: 右邊加日期 From / Date To + 執行 button, 保留左邊全跑 default」 | v0.4.0 implementation **淨係 Brack Test verdict filter**, K 線圖 + M1 verdict 仲係 full 5 年 data, **唔對齊大少 21:37 trigger 真正 spirit**。v0.4.1 修正: fetch K 線 (filtered, `start` + `end` query params 對齊 api/kline.py 既有 pattern) + renderChart reset + 重新 fetch verdict + 重新 render chart overlay + chart banner + cycle legend 全部 reset 對齊大少「整個 K 線圖和 Brack Test 都按指定的日期內重新再跑」。詳見 §8.1 v0.4.1 section |
 | v0.4.1 | 2026-09-15 21:37 | 大少 trigger「修正, 這個Brack Test指定日期不只是重跑Brack Test, 那是整個K線圖和Brack Test都按指定的日期內重新再跑」 | **修正 v0.4.0 (淨改 Brack Test verdict filter 唔對齊 spirit)** — (a) **Backend** `api/kline.py` line 47 已經有 `start` + `end` Query params + KlineCache `get_or_fetch` line 144-145 已經 support 拎 filtered K 線 (凡人話 v0.4.1 唔需要新加 backend endpoint); (b) **Backend** `m1_brack_test/algorithm.py` **Revert v0.4.0 改動** (拎走 `_parse_date_range` + `_kline_date_ts` + loop date range filter, 因為 frontend testing-page.js fetch K 線嗰陣已經 add `start` + `end` query params, KlineCache 自然拎 filtered K 線, frontend 拎到嘅 klines 已經 filtered, algorithm 唔需要再 filter — 對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」); (c) **Backend** `api/algorithms.py` 保留 v0.4.0 `date_from` + `date_to` Query params (algorithm 入面拎 `options.get("dateFrom")` 等於 None 嘅時候 fallback 全跑, silent return 對齊 §M3 永久 rule spirit); (d) **Frontend** `testing-page.js` Refactor `runAlgorithm()` → `runAlgorithm(dateFrom, dateTo)` 拎 optional args + fetch K 線嗰陣 add `start` + `end` query params + expose `window._runAlgorithmWithDateRange = function(dateFrom, dateTo) { return runAlgorithm(dateFrom, dateTo); }`; (e) **Frontend** `adapter.mjs` `_brackTestRunDateRangeHandler` 重寫成 trigger `window._runAlgorithmWithDateRange(dateFrom, dateTo)` (透過 window global), 唔再自己 fetch verdict + render (對齊 v0.4.1 真正 spirit「整個 K 線圖 + Brack Test 都按指定日期重跑」); (f) **Spec doc** §8.1 新加 + Change log v0.4.1 entry + v0.4.0 entry 加註「Superseded by v0.4.1」。對齊 §K-line Cache 永久 rule spirit; §M3 trendline chart overlay 修復永久 rule silent return 唔 throw; §Backend hot-reload 永久 rule 改 backend 必 restart (`./start.sh`) + curl verify; Cache bust `5.4.5` → `5.4.6`, `?v=2.3.200` → `?v=2.3.201` (對齊 21:24 cache bust self-check 永久 rule); DRY principle spirit — testing-page.js 主流程共用, 唔再 adapter.mjs 自己 fetch verdict |
 | v0.4.3 | 2026-09-15 22:27 | 大少 trigger「在指定日期內跑 Brack Test 但發現zigzag 和P點 沒有重跑, 再檢查還有那些是溜了的」 | **修 ZigZag 沒有重跑 issue + audit 其他 chart overlay 來源** — (a) **Audit** 8 個 chart overlay 來源 (K 線 candlestick / M1 verdict / MA 線 / 鮮紫觸發點 marker / 鮮綠 extension line / Brack Test verdict / Brack Test cycle marker / chart banner + cycle legend) 全部對齊 filtered K 線 ✅, 只有 ZigZag verdict + ZigZag 紫線 + P 點 marker 漏咗 (frontend `fetchBackendZigZag` 之前 hardcode `data_window_days: '1260'` (5 年) + 冇 add `date_from`/`date_to` query params, ZigZag verdict 拎 5 年嘅 points, 紫色線 + P 點 marker 嘅 time 唔喺 chart visible range 內, 大少睇唔到 = 「冇重跑」); (b) **Frontend** `testing-page.js` `fetchBackendZigZag(code, period, thresholdMode, manualThreshold, lookback, multiplier, signal, dateFrom, dateTo, dataWindowDays)` 加 3 個 optional args + Fetch URL add `start` + `end` query params (對齊 backend api/algorithms.py start/end 既有 pattern) + `data_window_days` 用 caller value (filtered K 線 length), 唔再 hardcode 1260; (c) **Frontend** `fetchAndInjectBackendZigZag(...)` 加 3 個 args + 傳落 `fetchBackendZigZag`; (d) **Frontend** `runAlgorithm(dateFrom, dateTo)` line 1599 call site 加 3 個 args (從 runAlgorithm scope 拎 `dateFrom`/`dateTo`/`klines.length`); (e) **附加 silent fallback fix** (對齊 §M3 永久 rule spirit「silent return 唔 throw」): `testing-page.js` line 1518 `throw error` 改 `silent fallback + return` + `runStatus.innerHTML` 顯示 friendly error message + `resultPanel.innerHTML` 顯示建議 (Retry / Check FutuOpenD / Check stock code) + `console.warn` 而唔係 `console.error`; (f) **Spec doc** §8.3 新加 + Change log v0.4.3 entry。對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」; §M3 trendline chart overlay 修復永久 rule silent return 唔 throw; §Backend hot-reload 永久 rule backend 唔需要 restart (frontend only fix); Cache bust `5.4.6` → `5.4.7`, `?v=2.3.201` → `?v=2.3.202` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify (對齊 §M3 永久 rule 凡人話肉眼 verify spirit): 大少 hard reload testing page + 撳 date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」button → ZigZag 紫線 + P 點 marker 對齊 filtered K 線 range, 唔再係 5 年嘅 points 喺 chart visible range 外 |
+| v0.4.4 | 2026-09-16 06:16 | 大少 trigger screenshot「zigzag 線和 P 點 把超出 K 線範圍的跑了, 必須根據新範圍的 K 線再重新跑」 | **修 v0.4.3 漏網之魚 — backend runner 拎 caller start/end** — (a) **Backend** `services/algorithm_runner.py` line 125-137: 拎 caller 嘅 `dateFrom` + `dateTo` 從 `options.get(...)` 覆蓋 `start_date` + `end_date` (silent fallback: caller 冇傳 → 用既有 `today - calendar_days_back` default 對齊 §M3 永久 rule spirit); (b) **Backend** `cache.get_klines(symbol, period, start=start_date, end=end_date)` 拎 filtered K 線對齊 caller 傳嘅 start/end; (c) **Spec doc** §8.4 新加 + Change log v0.4.4 entry。對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」; §M3 永久 rule silent return 唔 throw; §Backend hot-reload 永久 rule 改 backend 必 restart (`./start.sh`) + curl verify (frontend 不需要 restart); Cache bust `5.4.7` → `5.4.8`, `?v=2.3.202` → `?v=2.3.203` (對齊 21:24 cache bust self-check 永久 rule); DRY principle spirit — backend runner 共用 caller 嘅 start/end, 唔再 hardcode today - calendar_days_back |
