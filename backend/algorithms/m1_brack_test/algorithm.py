@@ -37,7 +37,7 @@ Permanent rules (對齊 plan §對齊永久 rule checklist):
 """
 
 from collections import Counter
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from ..base import Algorithm, Verdict
 from ..registry import register
@@ -90,53 +90,9 @@ def _format_kline_date(kline: Dict[str, Any]) -> str:
     return ""
 
 
-# 大少 2026-09-15 21:05 trigger — Date range filter helpers (v0.4.0)
-# 凡人話: 拎 date_from / date_to (YYYY-MM-DD string) → 計 UTC timestamp (ms) 用嚟做 K 線 date 比較
-# - empty / 唔合法 → return None (silent fallback, 唔 throw) 對齊 §M3 trendline chart overlay 修復永久 rule spirit
-# - 對齊 §Cross-module 統一 date parsing 永久 rule (8月29日 22:35): YYYY-MM-DD UTC midnight 統一 date parsing
-def _parse_date_range(date_from: Optional[str], date_to: Optional[str]):
-    """大少 2026-09-15 21:05 trigger — Date range filter helper
-
-    凡人話: 拎 date_from / date_to YYYY-MM-DD string, return tuple (from_ts, to_ts) 拎嚟做 K 線 date 比較。
-    - date_from empty / 唔合法 → from_ts = None (silent fallback, 唔 throw)
-    - date_to empty / 唔合法 → to_ts = None (silent fallback, 唔 throw)
-    - date_to 加 1 日 (24*60*60*1000 ms) 包含 date_to 當日 (e.g. date_to=2026-09-15 包含 2026-09-15 hit)
-    """
-    from datetime import datetime, timezone
-    from_ts = None
-    to_ts = None
-    if date_from:
-        try:
-            from_ms = int(datetime.strptime(date_from, '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp() * 1000)
-            from_ts = from_ms
-        except (ValueError, TypeError):
-            pass  # silent fallback, 唔 throw
-    if date_to:
-        try:
-            to_ms = int(datetime.strptime(date_to, '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp() * 1000) + 24 * 60 * 60 * 1000
-            to_ts = to_ms
-        except (ValueError, TypeError):
-            pass  # silent fallback
-    return from_ts, to_ts
-
-
-def _kline_date_ts(kline: Dict[str, Any]) -> int:
-    """大少 2026-09-15 21:05 trigger — 拎 K 線 date UTC timestamp (ms) 用嚟比較 date_from/date_to 範圍
-
-    凡人話: 對齊 §Cross-module 統一 date parsing 永久 rule (8月29日 22:35 trigger), K 線 time field 統一 strip ' ' 拎 date-only + UTC midnight。
-    silent fallback return 0 (唔 throw) 對齊 §M3 trendline chart overlay 修復永久 rule spirit。
-    """
-    from datetime import datetime, timezone
-    try:
-        time_str = kline.get('time', '') or ''
-        # K 線 time 通常係 "YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM:SS" UTC, strip space 拎 date-only
-        date_only = time_str.split(' ')[0] if time_str else ''
-        if not date_only:
-            return 0
-        dt = datetime.strptime(date_only, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        return int(dt.timestamp() * 1000)
-    except (ValueError, TypeError):
-        return 0  # silent fallback
+# 大少 2026-09-15 21:37 trigger — v0.4.1 Revert v0.4.0 改動
+# 凡人話: v0.4.0 加咗 `_parse_date_range` + `_kline_date_ts` + loop date range filter 拎走, 因為 frontend testing-page.js fetch K 線嗰陣已經 add `start` + `end` query params (對齊 backend api/kline.py line 47 既有 pattern), KlineCache `get_or_fetch` 自然拎 filtered K 線, frontend 拎到嘅 klines 已經 filtered, algorithm 唔需要再 filter
+# 對齊 §K-line Cache 永久 rule (8月22日 23:20) — K 線 filtered 喺 K-line Cache layer, frontend 拎 data backend 拎 K 線
 
 
 # ============================================================
@@ -189,26 +145,8 @@ class M1BrackTestAlgorithm(Algorithm):
         total_runs = 0
         skipped_runs = 0
 
-        # 大少 2026-09-15 21:05 trigger — Brack Test 指定日期範圍跑功能 (v0.4.0)
-        # 凡人話: 拎 date_from / date_to 落 options (camelCase 對齊 dataWindowDays pattern), 算法內部拎 options.get("dateFrom") / options.get("dateTo")
-        # empty / 唔合法 → silent fallback 全跑 (對齊 §M3 trendline chart overlay 修復永久 rule spirit)
-        date_from = options.get("dateFrom")
-        date_to = options.get("dateTo")
-        date_from_ts, date_to_ts = _parse_date_range(date_from, date_to)
-
         for i in range(start_index, len(klines)):
             total_runs += 1
-
-            # 大少 2026-09-15 21:05 trigger — Filter K 線 by date range (date_from / date_to)
-            # 凡人話: 大少指定日期範圍嗰陣, 淨係 loop date_from_ts <= kline_date_ts < date_to_ts 範圍內嘅 K 線
-            # 對齊既有 trimmed = klines[:i + 1] pattern (M1 algorithm 用 trimmed K 線 run, 唔可以拎中間 skip 嘅 K 線)
-            if date_from_ts is not None or date_to_ts is not None:
-                kline_ts = _kline_date_ts(klines[i])
-                if date_from_ts is not None and kline_ts < date_from_ts:
-                    continue  # skip K 線 before date_from
-                if date_to_ts is not None and kline_ts >= date_to_ts:
-                    continue  # skip K 線 after date_to
-
             trimmed = klines[: i + 1]
 
             try:

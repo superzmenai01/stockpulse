@@ -6278,6 +6278,11 @@ window._brackTestRunHandler = async function(panelId, symbol) {
 // 凡人話: 大少喺「執行」button 撳之前, 應該拎 date inputs value (dateFrom + dateTo) → fetch backend 加 date_from/date_to query params → 共用 render helper _renderBrackTestVerdict
 // 對齊既有 _brackTestRunHandler (line 6177) pattern, 但加 date_from / date_to 兩個 query params
 // 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
+// 大少 2026-09-15 21:37 trigger — Brack Test 指定日期範圍完整重跑 handler (v0.4.1 修正 v0.4.0)
+// 凡人話: 大少 21:37 trigger「整個 K 線圖和 Brack Test 都按指定的日期內重新再跑」, 唔淨係 Brack Test verdict filter
+// v0.4.1 改用 testing-page.js 主流程 `_runAlgorithmWithDateRange` helper (fetch K 線 filtered + renderChart reset + fetch M1 verdict + fetch Brack Test verdict + render 全部), 對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」
+// v0.4.0 implementation (自己 fetch verdict + render) 唔對齊真正 spirit, v0.4.1 改成 trigger window global helper
+// 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
 window._brackTestRunDateRangeHandler = async function(panelId, symbol) {
   // 凡人話: 拎 date inputs value (對齊既有 _brackTestRunHandler 拎 activeCycle pattern)
   const panel = document.getElementById(panelId);
@@ -6299,25 +6304,13 @@ window._brackTestRunDateRangeHandler = async function(panelId, symbol) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 跑緊...'; }
 
   try {
-    // 凡人話: fetch backend 對齊既有 _brackTestRunHandler pattern + 加 date_from/date_to query params
-    const params = new URLSearchParams();
-    params.append('algo', 'm1_brack_test');
-    params.append('symbol', symbol);
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo) params.append('date_to', dateTo);
-
-    const url = `${window.BACKEND_URL || 'http://localhost:18792'}/api/algorithms/run?${params.toString()}`;
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+    // 大少 21:37 trigger — 透過 testing-page.js 主流程 `_runAlgorithmWithDateRange` helper 拎 K 線 (filtered) + renderChart reset + fetch M1 verdict + fetch Brack Test verdict + render
+    // 凡人話: testing-page.js 透過 window global 暴露 helper, adapter.mjs 直接 trigger
+    // 對齊 §K-line Cache 永久 rule (8月22日 23:20) — K 線 filtered 喺 K-line Cache layer, frontend testing-page.js 拎 data
+    if (typeof window._runAlgorithmWithDateRange !== 'function') {
+      throw new Error('testing-page.js 嘅 _runAlgorithmWithDateRange helper 尚未初始化, 請 reload testing page');
     }
-    const data = await resp.json();
-    if (!data.ok) {
-      throw new Error(data.error || 'Brack Test verdict 唔 ok');
-    }
-
-    // 凡人話: 共用既有 _brackTestRunHandler 嘅 render helper
-    _renderBrackTestVerdict(panel, data, symbol);
+    await window._runAlgorithmWithDateRange(dateFrom, dateTo);
 
     // Button 變返做「🔄 重跑」對齊 §Config UX 模式 (8月19日 13:03) — 可重跑
     if (btn) {
