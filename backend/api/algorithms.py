@@ -64,6 +64,17 @@ async def run_algo(
     #   08:00 大少 confirm 拎走放量 trigger, 放量變 confidence indicator
     #   08:00 拎走 disable_volume param (永久), meta.volumeConfirmed field 取代 (frontend 紅字提示)
     # 永久 rule (大少 2026-09-06 08:00): M1 強升/強跌 trigger 純睇技術面 (排列+斜率+P點), 唔 require 放量
+    # 大少 2026-09-15 21:05 trigger — Brack Test 指定日期範圍跑功能 (v0.4.0)
+    # 凡人話: 大少指定日期範圍 (e.g. 2026-09-01 ~ 2026-09-15) 拎 Brack Test verdict.points filtered, 唔拎全跑 5 年 verdict
+    # empty / 唔合法 → fallback 全跑 (對齊既有 default behaviour + §M3 trendline chart overlay 修復永久 rule silent return 唔 throw)
+    date_from: Optional[str] = Query(
+        None,
+        description="Brack Test 指定日期範圍 from (YYYY-MM-DD), 拎 verdict.points 喺 date_from <= hit.date 範圍內, empty = 全跑"
+    ),
+    date_to: Optional[str] = Query(
+        None,
+        description="Brack Test 指定日期範圍 to (YYYY-MM-DD), 拎 verdict.points 喺 hit.date <= date_to 範圍內, empty = 全跑"
+    ),
 ):
     """凡人話: 跑 algorithm (4.43.0 加 4 個 ZigZag 新 params + validation)
 
@@ -125,6 +136,13 @@ async def run_algo(
         options["threshold"] = float(manual_threshold)
     elif threshold is not None:
         options["threshold"] = float(threshold)
+    # 大少 2026-09-15 21:05 trigger — Brack Test 指定日期範圍跑功能 (v0.4.0)
+    # 凡人話: date_from / date_to 拎落 algorithm options (camelCase 對齊 dataWindowDays pattern), 算法內部拎 options.get("dateFrom") / options.get("dateTo")
+    # empty / 唔合法 → silent fallback 全跑 (對齊 §M3 trendline chart overlay 修復永久 rule spirit)
+    if date_from:
+        options["dateFrom"] = date_from
+    if date_to:
+        options["dateTo"] = date_to
 
     try:
         result = run_algorithm(

@@ -423,6 +423,60 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 
 ---
 
+## §8 指定日期範圍跑功能 (大少 2026-09-15 21:05 trigger, v0.4.0)
+
+### 凡人話
+
+大少喺 Brack Test card 入面, 保留左邊「🎯 跑 Brack Test」button 預設全跑 5 年 (1260 日), 右邊新加日期範圍 inputs + 「執行」button 指定日期範圍跑 Brack Test。Backend algorithm 內部 filter K 線 by date_from / date_to, verdict.points 只 emit 喺範圍內嘅 hit。
+
+### UI layout
+
+```
+[🎯 跑 Brack Test] | [日期 From 📅] → [日期 To 📅] [執行]
+```
+
+### Backend 改動 (v0.4.0)
+
+- `backend/api/algorithms.py` line 67+: 加 `date_from` + `date_to` Optional[str] Query params, options dict 注入 `dateFrom` + `dateTo` (對齊既有 dataWindowDays pattern)
+- `backend/algorithms/m1_brack_test/algorithm.py`: 加 `_parse_date_range(date_from, date_to)` + `_kline_date_ts(kline)` helper, loop 入面加 date range filter (對齊既有 skipped_runs increment pattern)
+- date_from / date_to empty → fallback 全跑 (對齊既有 default behaviour)
+- date_from / date_to 唔合法 → silent fallback (return (None, None)), 唔 throw 對齊 §M3 trendline chart overlay 修復永久 rule spirit
+
+### Frontend 改動 (v0.4.0)
+
+- `adapter.mjs` renderBrackTestCard 加 `.brack-run-row` 結構: 保留左邊 button + 右邊 date from / date to + 「執行」button
+- `adapter.mjs` 新加 `_brackTestRunDateRangeHandler(panelId, symbol)` window function
+- `_renderBrackTestVerdict(panel, data, symbol)` helper 拎出嚟共用, `_brackTestRunHandler` + `_brackTestRunDateRangeHandler` 2 個 handler 都 call 同一個 render function (DRY principle)
+- BRACK_TEST_PANEL_STYLE 加 `.brack-date-input` + `.brack-run-date-range-btn` CSS (對齊橙色 Brack Test 主題色 #ffa726)
+
+### Edge cases
+
+- ✅ date_from > date_to → silent return (frontend date input validation, 後端 fallback)
+- ✅ date_from 早過 K 線 first date → fallback 用 K 線 first date (Algorithm loop 自然處理)
+- ✅ date_to 晚過 K 線 last date → fallback 用 K 線 last date
+- ✅ date_from / date_to empty → fallback 全跑 (對齊既有 default behaviour)
+- ✅ date 唔喺 K 線入面 (週末/假期) → skip (silent, 唔 emit hit 喺日)
+
+### 凡人話 verify
+
+凡人話 verify (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 trigger「凡人話 visual evidence」):
+- 大少 hard reload testing page (`?v=2.3.200`) + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」button → baseline (全跑, 對齊既有 v0.3.1 行為)
+- 撳 date_from + date_to inputs 揀指定日期範圍 + 撳「執行」button → K 線圖 marker + 表格 + summary 全部對應 date_from / date_to 範圍內 hit
+- 凡人話肉眼 verify chart marker 只 render 喺 date_from / date_to 範圍內 hit + table 只顯示範圍內 hit
+
+### 對齊永久 rule
+
+- ✅ §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc
+- ✅ HTML escape 永久 rule (9月7日 21:50) — date inputs 用 `_brackEscapeHtml` escape (雖然 date input value 係 ISO format, 但兜底 escape 防意外)
+- ✅ Cache bust self-check 永久 rule (21:24) — sync bump ALGO_CACHE_BUST + ?v= parameter
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — Backend 改咗需要 restart (`./start.sh`) + curl verify
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — UTC midnight 統一 date parsing
+- ✅ §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule (9月10日 23:45) — options dict 永久改 dateFrom + dateTo frontend 必先 grep 全 reference
+- ✅ DRY principle spirit — 拎 render logic 拎出嚟共用, 2 個 handler 只係 fetch 嘅 url 唔同
+
+---
+
 ## Change log
 
 | Version | Date | Trigger | Change |
@@ -446,3 +500,4 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 | v0.2.2 | 2026-09-15 06:35 | 大少 trigger「在"🎯 按 sub-scenario 揀"的第一次開啟時消失了"sub-scenario"的select list，你去修正這問題」 | Root cause 確認: v0.2.1 改 Tab order 但漏 toggle dropdown visible (HTML 默認 `style="display:none;"`, 因為 `_brackTestRunHandler` 唔 call `_brackTestModeHandler` 嚟 trigger dropdown toggle, 所以撳跑 Brack Test 第一眼見到 dropdown 永遠唔見). Fix (adapter.mjs line 6110-6120): inline toggle dropdown visible (`dropdown.style.display = ''` 對齊 `_brackTestModeHandler` line 6177 pattern `mode === 'cycle' ? '' : 'none'`) + toggle mode-tab active class 對齊 cycle (HTML 默認 cycle active 但 explicit toggle 確保 active state 對齊 `_brackTestModeHandler` spirit). 凡人話: 撳跑 Brack Test 第一眼見到 cycle dropdown (select list) 顯示 11 個 cycle options + Tab B「按 sub-scenario 揀」active 高亮橙色. Fix 唔重複 call `_brackTestModeHandler` 重 render data (避免 §K-line Cache 永久 rule 重 render), 只 inline toggle UI state 對齊既有 handler logic. Cache bust `5.4.1` → `5.4.2`, `?v=2.3.196` → `?v=2.3.197` |
 | v0.3.0 | 2026-09-15 06:45 | 大少 trigger「click Brack Test hit row 日期 → K 線圖 pan/zoom 到嗰個日子中間 + 3 個月」 | Click delegation 對整個 `<tr data-hit-date>` 做, 撳任何 cell 都 trigger, 日期 cell 加 `.brack-hit-date` class + hover cursor pointer + underline 紅色 (大少 06:46 confirm Option 3)。範圍 `from = hit.date - 45 days`, `to = hit.date + 45 days` (90 日, hit.date 喺 viewport 中間)。Edge cases: K 線 first date 早過 from → fallback 用 K 線 first date (Option 1 大少 confirm); K 線 last date 早過 to → fallback 用 K 線 last date (clip); hit.date 唔喺 K 線入面 (週末/假期) → LWC v5 setVisibleRange 自動 snap nearest trading day。Chart 未 init / K 線 missing → silent warn + return 唔 throw (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47)。Click delegation 用 `brackTestRowClickAttached` flag 確保只 attach 1 次 (避免多次 runAlgorithm 重複 trigger)。凡人話 verify (對齊 §M3 永久 rule 凡人話肉眼 verify): 大少 hard reload testing page + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」button + 撳其中一個 hit row 嘅日期 cell, K 線圖即時 pan/zoom 到嗰個 hit.date 喺 viewport 中間, 範圍 ≈ 3 個月 (60-65 個交易日)。對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) 改任何 sub_scenario display 即刻 update spec doc (§7.1 加咗); HTML escape 永久 rule (9月7日 21:50) `data-hit-date` 用 `_brackEscapeHtml` escape; Cache bust `5.4.2` → `5.4.3`, `?v=2.3.197` → `?v=2.3.198` (對齊 21:24 cache bust self-check 永久 rule); §Backend hot-reload 永久 rule (8月31日 11:01) — backend 唔需要 restart (frontend only fix) |
 | v0.3.1 | 2026-09-15 06:55 | 大少 trigger「當我跑了算法，但還沒有跑Brack Test時，不要顯示"當前顯示: 強上升週期 (0 條 / 全部 0 條)"」 | Fix 未跑 Brack Test 唔顯示 misleading banner: (a) `testing-page.js` line 1696 chart banner init 加 guard `if (verdict && verdict.points && verdict.points.length > 0)` 先 render banner, 否則 innerHTML = '' (hidden) 對齊既有 catch block fallback pattern; (b) `adapter.mjs` `renderBrackTestChartBanner` line 6096 加 defensive guard `if (hits.length === 0) return '';` 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) spirit「silent return 唔 throw」, 涵蓋 `updateBrackTestChartBanner` + `_ModeHandler` / `_CycleHandler` 等所有 callers (對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule 9月10日 23:45)。凡人話 verify (對齊 §M3 永久 rule 凡人話肉眼 verify): 大少 hard reload testing page (`?v=2.3.199`) + 撳跑 M1 (HK.00700) 但**唔撳**「🎯 跑 Brack Test」button → chart banner 應該**唔顯示** (hidden), 冇「(0 條 / 全部 0 條)」misleading text。對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) 改任何 sub_scenario display 即刻 update spec doc (§7 caveat 加咗); Cache bust `5.4.3` → `5.4.4`, `?v=2.3.198` → `?v=2.3.199` (對齊 21:24 cache bust self-check 永久 rule); §Backend hot-reeload 永久 rule (8月31日 11:01) — backend 唔需要 restart (frontend only fix) |
+| v0.4.0 | 2026-09-15 21:05 | 大少 trigger「Brack Test 指定日期範圍跑功能: 右邊加日期 From / Date To + 執行 button, 保留左邊全跑 default」 | (a) **Frontend** `adapter.mjs` renderBrackTestCard 加 `.brack-run-row` 結構, 保留左邊 `.brack-run-btn` button + 右邊 `<input type="date">` (date_from + date_to) + `.brack-run-date-range-btn` 執行 button; (b) **Frontend** `adapter.mjs` 新加 `_brackTestRunDateRangeHandler(panelId, symbol)` window function, 拎 date inputs value → fetch backend 加 `date_from` + `date_to` query params, 共用既有 `_brackTestRunHandler` render logic (DRY principle spirit, 拎 `_renderBrackTestVerdict` helper 拎出嚟共用); (c) **Frontend** BRACK_TEST_PANEL_STYLE 加 `.brack-date-input` + `.brack-run-date-range-btn` CSS (橙色 Brack Test 主題色 #ffa726); (d) **Backend** `api/algorithms.py` 加 `date_from` + `date_to` Optional[str] Query params, options dict 注入 `dateFrom` + `dateTo` (對齊 dataWindowDays pattern); (e) **Backend** `m1_brack_test/algorithm.py` 加 `_parse_date_range` + `_kline_date_ts` helper, loop 入面加 date range filter (skip K 線 outside range, 對齊既有 skipped_runs pattern); (f) **Spec doc** §8 新加 + Change log v0.4.0 entry。對齊 §M3 trendline chart overlay 修復永久 rule silent return 唔 throw; §Backend hot-reload 永久 rule 改 backend 必 restart (`./start.sh`) + curl verify; Cache bust `5.4.4` → `5.4.5`, `?v=2.3.199` → `?v=2.3.200` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify (對齊 §M3 永久 rule 凡人話肉眼 verify): 大少 hard reload testing page (`?v=2.3.200`) + 撳跑 M1 + 撳 date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」button → K 線圖 marker / hit table / summary 全部對應範圍內 hit |

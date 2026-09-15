@@ -5761,6 +5761,13 @@ const BRACK_TEST_PANEL_STYLE = `
   .brack-test-card .brack-hit-table tr[data-hit-date]:hover { background:#ffe0b2; cursor:pointer; }
   .brack-test-card .brack-hit-table .brack-hit-date { cursor:pointer; }
   .brack-test-card .brack-hit-table .brack-hit-date:hover { text-decoration:underline; color:#d4380d; }
+  /* 大少 2026-09-15 21:05 trigger — Brack Test 指定日期範圍跑 (v0.4.0): date input + 「執行」button (右邊, 對齊橙色 Brack Test 主題色 #ffa726) */
+  .brack-test-card .brack-run-divider { color:#666; }
+  .brack-test-card .brack-date-input { padding:6px 10px; border:1px solid #ffa726; border-radius:4px; font-size:13px; margin:0 4px; }
+  .brack-test-card .brack-date-input:focus { outline:none; border-color:#ff9800; box-shadow:0 0 0 2px rgba(255,152,0,0.2); }
+  .brack-test-card .brack-run-date-range-btn { background:#ffa726; color:#fff; border:none; border-radius:4px; padding:6px 14px; font-size:13px; cursor:pointer; font-weight:600; margin-left:4px; }
+  .brack-test-card .brack-run-date-range-btn:hover { background:#ff9800; }
+  .brack-test-card .brack-run-date-range-btn:disabled { background:#ccc; cursor:not-allowed; }
 </style>`;
 
 function renderBrackTestCard(verdict) {
@@ -5780,6 +5787,15 @@ function renderBrackTestCard(verdict) {
         </p>
         <button class="brack-run-btn" onclick="window._brackTestRunHandler('${panelId}', '${symbol}')">
           🎯 跑 Brack Test
+        </button>
+        <!-- 大少 2026-09-15 21:05 trigger — Brack Test 指定日期範圍跑功能 (v0.4.0): 保留左邊「🎯 跑 Brack Test」button 預設全跑, 右邊新加 date from + date to + 「執行」button 指定日期範圍跑 -->
+        <!-- 對齊大少 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」, 但因為 date input value 係 ISO YYYY-MM-DD format (瀏覽器 native), 唔需要 _brackEscapeHtml escape -->
+        <span class="brack-run-divider" style="color:#666; font-size:13px; margin:0 4px;">|</span>
+        <input type="date" class="brack-date-from brack-date-input" data-panel="${panelId}" aria-label="日期 From" />
+        <span style="color:#666; font-size:13px;">→</span>
+        <input type="date" class="brack-date-to brack-date-input" data-panel="${panelId}" aria-label="日期 To" />
+        <button class="brack-run-date-range-btn" onclick="window._brackTestRunDateRangeHandler('${panelId}', '${symbol}')">
+          執行
         </button>
         <div class="mode-tabs" style="display:none;" data-when="loaded">
           <!-- 大少 2026-09-15 06:29 trigger — Tab 順序對調, 「🎯 按 sub-scenario 揀」做默認 active tab 對齊大少 trigger「我想先放"🎯 按 sub-scenario 揀", 之後才到"📅 按時間排", 預設是🎯 按 sub-scenario 揀」 -->
@@ -6158,8 +6174,67 @@ function renderBrackTestSummary(meta) {
 // Brack Test 全局 event handlers (onClick 撳 button / 切 tab / 揀 cycle)
 // 對齊 plan §Frontend 架構 大少 21:16 trigger: Brack Test card 喺 M1 verdict card 內加卡模式
 // ============================================================
+// 大少 2026-09-15 21:05 trigger — Brack Test verdict 共用 render helper (v0.4.0)
+// 凡人話: 大少 _brackTestRunHandler (全跑) + _brackTestRunDateRangeHandler (指定日期範圍跑) 都拎 verdict data + render 同一個 chart overlay / table / summary / chart banner
+// DRY principle spirit: 拎 render logic 拎出嚟共用, 2 個 handler 只係 fetch 嘅 url 唔同
+function _renderBrackTestVerdict(panel, data, symbol) {
+  // Store verdict 落 panel dataset 畀後續 mode toggle handler 用
+  panel._brackVerdict = data;
+
+  // 顯示 tab + table + summary section
+  panel.querySelectorAll('[data-when="loaded"]').forEach(el => el.style.display = '');
+
+  // Render summary + breakdown
+  const summaryEl = panel.querySelector('.brack-summary');
+  if (summaryEl) summaryEl.innerHTML = renderBrackTestSummary(data.meta);
+
+  // 大少 2026-09-15 06:29 trigger — 預設 activeCycle 由 'all' 改為 'strong_uptrend' (對齊大少 trigger「預設是🎯 按 sub-scenario 揀」+ 「按 sub-scenario 揀」Tab 默認 active + Dropdown selected 第一個 cycle「強上升」)
+  // 凡人話: 大少撳跑 Brack Test 第一眼見到一個 cycle 嘅 markers + banner, 而唔係 11 種顏色全部 marker
+  const defaultActiveCycle = 'strong_uptrend';
+
+  // Render default Mode B (按 sub-scenario 揀, 默認第一個 cycle「強上升」, 對齊大少 06:29 trigger)
+  const tbody = panel.querySelector('.brack-hit-rows');
+  if (tbody) tbody.innerHTML = renderBrackTestHitTable(data.points || [], symbol, defaultActiveCycle);
+  // 大少 22:20 trigger — filter info 顯示當前 cycle 揀咗幾多條 hit
+  const filterInfo = panel.querySelector('.brack-filter-info');
+  if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(data.points || [], defaultActiveCycle);
+
+  // 大少 2026-09-15 06:35 trigger — Toggle cycle dropdown visible (因為 Tab B「按 sub-scenario 揀」默認 active, 對齊 _brackTestModeHandler line 6165 `dropdown.style.display = mode === 'cycle' ? '' : 'none'` pattern)
+  // 凡人話: 撳跑 Brack Test 第一眼 (Tab B 默認 active), 大少應該見到 cycle dropdown (select list), 但之前 v0.2.1 改 Tab order 但漏 toggle dropdown 嘅 display, 因為 HTML 默認 `style="display:none;"`, 而 _brackTestRunHandler 唔 call _brackTestModeHandler, 所以 dropdown 永遠唔見
+  // Fix: inline toggle dropdown visible (避免重複 call _ModeHandler 重 render data), 對齊 _brackTestModeHandler line 6155-6166 pattern spirit (UI toggle only, 唔重 render data)
+  const dropdown = panel.querySelector('.cycle-dropdown');
+  if (dropdown) {
+    dropdown.style.display = '';  // mode='cycle' 默認 active → display=''
+  }
+  // 大少 06:35 trigger — Toggle mode-tab active class 對齊 cycle (HTML 默認 cycle active 但 explicit toggle 確保 active state 對齊 _brackTestModeHandler spirit)
+  panel.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.mode === 'cycle');
+  });
+
+  // Render chart markers (Mode B = 第一個 cycle「強上升」, 對齊大少 06:29 trigger「預設是🎯 按 sub-scenario 揀」)
+  const chartRefs = window.lastChartRefs;
+  const klines = window.lastKlines;
+  if (chartRefs && klines && klines.length) {
+    renderBrackTestChartOverlay(data, klines, chartRefs, defaultActiveCycle);
+  } else {
+    console.warn('[_renderBrackTestVerdict] lastChartRefs 或 lastKlines 缺失, skip chart overlay');
+  }
+
+  // 大少 2026-09-15 06:29 trigger — chart banner init (默認 activeCycle 第一個 cycle「強上升」, 對齊 Tab B 默認)
+  // 凡人話: 大少撳跑 Brack Test 第一眼見到 banner 顯示「🟢 強上升 (X / Y 條)」, 唔係 hidden
+  const brackChartBannerEl = panel.querySelector('.brack-chart-banner') || document.getElementById('brack-chart-banner');
+  if (brackChartBannerEl) {
+    try {
+      const html = renderBrackTestChartBanner(data, defaultActiveCycle);
+      brackChartBannerEl.innerHTML = html;
+    } catch (err) {
+      console.error('[_renderBrackTestVerdict] banner render failed:', err);
+    }
+  }
+}
+
 window._brackTestRunHandler = async function(panelId, symbol) {
-  // 凡人話: 大少撳「🎯 跑 Brack Test」button → fetch backend + render chart marker + 表格 + summary
+  // 凡人話: 大少撳「🎯 跑 Brack Test」button → fetch backend (全跑, 5 年) + 共用 render helper _renderBrackTestVerdict
   const panel = document.getElementById(panelId);
   if (!panel) return;
   const btn = panel.querySelector('.brack-run-btn');
@@ -6178,59 +6253,7 @@ window._brackTestRunHandler = async function(panelId, symbol) {
       throw new Error(data.error || 'Brack Test verdict 唔 ok');
     }
 
-    // Store verdict 落 panel dataset 畀後續 mode toggle handler 用
-    panel._brackVerdict = data;
-
-    // 顯示 tab + table + summary section
-    panel.querySelectorAll('[data-when="loaded"]').forEach(el => el.style.display = '');
-
-    // Render summary + breakdown
-    const summaryEl = panel.querySelector('.brack-summary');
-    if (summaryEl) summaryEl.innerHTML = renderBrackTestSummary(data.meta);
-
-    // 大少 2026-09-15 06:29 trigger — 預設 activeCycle 由 'all' 改為 'strong_uptrend' (對齊大少 trigger「預設是🎯 按 sub-scenario 揀」+ 「按 sub-scenario 揀」Tab 默認 active + Dropdown selected 第一個 cycle「強上升」)
-    // 凡人話: 大少撳跑 Brack Test 第一眼見到一個 cycle 嘅 markers + banner, 而唔係 11 種顏色全部 marker
-    const defaultActiveCycle = 'strong_uptrend';
-
-    // Render default Mode B (按 sub-scenario 揀, 默認第一個 cycle「強上升」, 對齊大少 06:29 trigger)
-    const tbody = panel.querySelector('.brack-hit-rows');
-    if (tbody) tbody.innerHTML = renderBrackTestHitTable(data.points || [], symbol, defaultActiveCycle);
-    // 大少 22:20 trigger — filter info 顯示當前 cycle 揀咗幾多條 hit
-    const filterInfo = panel.querySelector('.brack-filter-info');
-    if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(data.points || [], defaultActiveCycle);
-
-    // 大少 2026-09-15 06:35 trigger — Toggle cycle dropdown visible (因為 Tab B「按 sub-scenario 揀」默認 active, 對齊 _brackTestModeHandler line 6165 `dropdown.style.display = mode === 'cycle' ? '' : 'none'` pattern)
-    // 凡人話: 撳跑 Brack Test 第一眼 (Tab B 默認 active), 大少應該見到 cycle dropdown (select list), 但之前 v0.2.1 改 Tab order 但漏 toggle dropdown 嘅 display, 因為 HTML 默認 `style="display:none;"`, 而 _brackTestRunHandler 唔 call _brackTestModeHandler, 所以 dropdown 永遠唔見
-    // Fix: inline toggle dropdown visible (避免重複 call _ModeHandler 重 render data), 對齊 _brackTestModeHandler line 6155-6166 pattern spirit (UI toggle only, 唔重 render data)
-    const dropdown = panel.querySelector('.cycle-dropdown');
-    if (dropdown) {
-      dropdown.style.display = '';  // mode='cycle' 默認 active → display=''
-    }
-    // 大少 06:35 trigger — Toggle mode-tab active class 對齊 cycle (HTML 默認 cycle active 但 explicit toggle 確保 active state 對齊 _brackTestModeHandler spirit)
-    panel.querySelectorAll('.mode-tab').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.mode === 'cycle');
-    });
-
-    // Render chart markers (Mode B = 第一個 cycle「強上升」, 對齊大少 06:29 trigger「預設是🎯 按 sub-scenario 揀」)
-    const chartRefs = window.lastChartRefs;
-    const klines = window.lastKlines;
-    if (chartRefs && klines && klines.length) {
-      renderBrackTestChartOverlay(data, klines, chartRefs, defaultActiveCycle);
-    } else {
-      console.warn('[brackTestRunHandler] lastChartRefs 或 lastKlines 缺失, skip chart overlay');
-    }
-
-    // 大少 2026-09-15 06:29 trigger — chart banner init (默認 activeCycle 第一個 cycle「強上升」, 對齊 Tab B 默認)
-    // 凡人話: 大少撳跑 Brack Test 第一眼見到 banner 顯示「🟢 強上升 (X / Y 條)」, 唔係 hidden
-    const brackChartBannerEl = panel.querySelector('.brack-chart-banner') || document.getElementById('brack-chart-banner');
-    if (brackChartBannerEl) {
-      try {
-        const html = renderBrackTestChartBanner(data, defaultActiveCycle);
-        brackChartBannerEl.innerHTML = html;
-      } catch (err) {
-        console.error('[brackTestRunHandler] banner render failed:', err);
-      }
-    }
+    _renderBrackTestVerdict(panel, data, symbol);
 
     // Button 變返做「🔄 重跑」對齊 §Config UX 模式 (8月19日 13:03) — 可重跑
     if (btn) {
@@ -6247,6 +6270,70 @@ window._brackTestRunHandler = async function(panelId, symbol) {
     if (summaryEl) {
       summaryEl.style.display = '';
       summaryEl.innerHTML = `<div class="brack-error">⚠️ Brack Test 跑失敗: ${_brackEscapeHtml(e.message)}</div>`;
+    }
+  }
+};
+
+// 大少 2026-09-15 21:05 trigger — Brack Test 指定日期範圍跑 handler (v0.4.0)
+// 凡人話: 大少喺「執行」button 撳之前, 應該拎 date inputs value (dateFrom + dateTo) → fetch backend 加 date_from/date_to query params → 共用 render helper _renderBrackTestVerdict
+// 對齊既有 _brackTestRunHandler (line 6177) pattern, 但加 date_from / date_to 兩個 query params
+// 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
+window._brackTestRunDateRangeHandler = async function(panelId, symbol) {
+  // 凡人話: 拎 date inputs value (對齊既有 _brackTestRunHandler 拎 activeCycle pattern)
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const dateFromInput = panel.querySelector('.brack-date-from');
+  const dateToInput = panel.querySelector('.brack-date-to');
+  if (!dateFromInput || !dateToInput) return;
+  const dateFrom = dateFromInput.value;
+  const dateTo = dateToInput.value;
+
+  // 凡人話: date inputs 都係 empty → silent warn (frontend validation)
+  if (!dateFrom && !dateTo) {
+    console.warn('[Brack Test date range] 兩個 date 都係 empty, 請至少填一個 date');
+    return;
+  }
+
+  // 凡人話: 拎 btn 同 disable 避免 double-click
+  const btn = panel.querySelector('.brack-run-date-range-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 跑緊...'; }
+
+  try {
+    // 凡人話: fetch backend 對齊既有 _brackTestRunHandler pattern + 加 date_from/date_to query params
+    const params = new URLSearchParams();
+    params.append('algo', 'm1_brack_test');
+    params.append('symbol', symbol);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+
+    const url = `${window.BACKEND_URL || 'http://localhost:18792'}/api/algorithms/run?${params.toString()}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+    }
+    const data = await resp.json();
+    if (!data.ok) {
+      throw new Error(data.error || 'Brack Test verdict 唔 ok');
+    }
+
+    // 凡人話: 共用既有 _brackTestRunHandler 嘅 render helper
+    _renderBrackTestVerdict(panel, data, symbol);
+
+    // Button 變返做「🔄 重跑」對齊 §Config UX 模式 (8月19日 13:03) — 可重跑
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔄 重跑';
+    }
+  } catch (e) {
+    console.error('[brackTestRunDateRangeHandler] error:', e);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '執行';
+    }
+    const summaryEl = panel.querySelector('.brack-summary');
+    if (summaryEl) {
+      summaryEl.style.display = '';
+      summaryEl.innerHTML = `<div class="brack-error">⚠️ Brack Test (日期範圍) 跑失敗: ${_brackEscapeHtml(e.message)}</div>`;
     }
   }
 };
