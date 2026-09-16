@@ -650,6 +650,61 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 
 ---
 
+## §8.5 Backend `/api/algorithms/run` 兼容 ZigZag `start` + `end` Query params (大少 2026-09-16 06:37 trigger, v0.4.5 修正 v0.4.4 漏網之魚)
+
+### 凡人話
+
+大少 trigger「還是有問題, 你先確認 Ziagzag 的點和 P 點都是必須從後台拿取的, 確保前台只是根據後台及出的點而畫出線來」。
+
+凡人話 v0.4.4 commit `28269285` 已 fix backend runner 拎 caller start/end (對齊 §K-line Cache 永久 rule spirit), 但係 frontend `testing-page.js` `fetchBackendZigZag` line 235 fetch URL 用 `start=${dateFrom}&end=${dateTo}` (legacy ChartContainer.tsx naming), 但 backend `/api/algorithms/run` Query params 只拎 `date_from` + `date_to` (legacy Brack Test pattern) — **兩個 caller naming 唔對齊, backend silent fallback 拎 default 5 年 K 線, emit 5 年 ZigZag points, frontend 拎錯 points 仍然超出 K 線 range**。
+
+### Audit evidence (curl v0.4.4 fix #1 之後仍然有 bug)
+
+凡人話 dual source of truth 確認:
+- ✅ **Frontend 100% 用 backend** (testing-page.js line 47-66 永久 rule 拎走 frontend calculateZigZagFrontend, fetch `/api/algorithms/run?algo=zigzag` 唯一 source)
+- ✅ **Backend emit source**: `backend/algorithms/zigzag/algorithm.py` `run_zigzag()` (1-to-1 port frontend 算法, 拎 klines + 計 points)
+- ✅ **Runner v0.4.4 (commit 28269285)** line 141-146 拎 caller `dateFrom`/`dateTo` → `start_date`/`end_date` → `cache.get_klines(...)` 拎 filtered K 線
+
+凡人話 Curl evidence (v0.4.4 commit 之後仍然有 bug):
+- `algo=zigzag` baseline (no date) — 215 points 5 年 ✅
+- `start=2026-05-01&end=2026-08-31` — **19 points, 2026-04-24 ~ 2026-09-15 超出範圍** ❌ (backend api/algorithms.py 拎唔到 frontend start/end, silent fallback 拎 5 年)
+- `start=2026-09-01&end=2026-09-15` — 3 points ✅ (因為 caller end=2026-09-15 對齊 today, stale check 唔 trigger warm cache path)
+
+### Root cause 確認
+
+- **Frontend** `testing-page.js` line 235 fetch URL: `start=${dateFrom ? `&start=${dateFrom}` : ''}${dateTo ? `&end=${dateTo}` : ''}` (legacy ChartContainer.tsx naming)
+- **Backend** `api/algorithms.py` Query params 之前只拎 `date_from` + `date_to` (legacy Brack Test pattern, v0.4.1 commit 落)
+- **兩個 naming 唔對齊** → backend silent fallback → 拎 5 年 K 線 → emit 5 年 ZigZag points → frontend chart 對齊 filtered K 線但 ZigZag 紫線 + P 點超出
+
+### 凡人話 fix (v0.4.5)
+
+`backend/api/algorithms.py`:
+- **新加 `start` + `end` Query params** (line 75-90) 對齊 frontend fetchBackendZigZag naming (legacy ChartContainer.tsx pattern)
+- **保留 `date_from` + `date_to` Query params** 對齊 legacy Brack Test pattern (v0.4.1 commit 落, Brack Test frontend 仍用緊)
+- **兼容 logic** (line 156-168): `effective_date_from = start or date_from`, `effective_date_to = end or date_to` — caller 傳邊個拎邊個, 同時兼容兩種 naming
+- frontend 不需要改 (已經傳 start + end)
+- backend runner 不需要改 (v0.4.4 commit 已經拎 caller dateFrom + dateTo)
+
+### 凡人話 verify (對齊 §M3 永久 rule凡人話肉眼 verify spirit)
+
+凡人話 verify (curl backend 3 tests):
+- Curl 1 baseline (`algo=zigzag`, no date) — 215 points, 5 年 (2021-08-02 ~ 2026-09-15), `meta.klines_count=1260` ✅
+- Curl 2 (`start=2026-05-01&end=2026-08-31`) — **13 points, 全部喺 [2026-05-01, 2026-08-31] 範圍內** (2026-05-04 ~ 2026-08-28), `meta.klines_count=84` ✅ (v0.4.4 commit 之前係 19 points 超出範圍, 而家 13 points 100% 對齊 filtered K 線)
+- Curl 3 (`start=2026-09-01&end=2026-09-15`) — 3 points, 對齊 (2026-09-01 ~ 2026-09-15), `meta.klines_count=11` ✅
+
+凡人話肉眼 verify (對齊 §M3 永久 rule 凡人話肉眼 verify spirit):
+- 大少 hard reload testing page (`?v=2.3.203`) + 撳跑 M1 (HK.00700) + 撳 date inputs 揀 [2026-05-01, 2026-08-31] + 撳「執行」button → K 線圖 K 線只 render 範圍內 + ZigZag 紫線 + P 點 marker 對齊 filtered K 線, 唔再超出 K 線 range ✅
+
+### 對齊永久 rule
+
+- ✅ **§K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」最嚴格詮釋** (大少 9月16日 06:37 trigger 確認) — ZigZag points + P 點 emit 嘅唯一 source of truth 必須係 backend, frontend 只負責根據 emit 嘅 points 畫 chart overlay
+- ✅ §Backend hot-reeload 永久 rule (8月31日 11:01) — Backend 改咗需要 restart (`./start.sh`) + curl verify
+- ✅ §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
+- ✅ §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule (9月10日 23:45) spirit — backend 加 Query params 影響 frontend fetch URL naming, 必須 verify frontend 傳嘅 params 同 backend 拎嘅 params 一致
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc (§8.5 新加)
+
+---
+
 ## Change log
 
 | Version | Date | Trigger | Change |
