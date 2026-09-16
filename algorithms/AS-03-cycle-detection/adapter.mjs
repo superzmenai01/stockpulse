@@ -5768,6 +5768,10 @@ const BRACK_TEST_PANEL_STYLE = `
   .brack-test-card .brack-run-date-range-btn { background:#ffa726; color:#fff; border:none; border-radius:4px; padding:6px 14px; font-size:13px; cursor:pointer; font-weight:600; margin-left:4px; }
   .brack-test-card .brack-run-date-range-btn:hover { background:#ff9800; }
   .brack-test-card .brack-run-date-range-btn:disabled { background:#ccc; cursor:not-allowed; }
+  /* 大少 2026-09-16 17:23 trigger — Brack Test 指定日期 ±1 日快速調整 UI (v0.5.3): 「執行」制右邊加 2 個掣 (◀ -1 日 / +1 日 ▶), 撳完自動重新跑 K 線 + ZigZag + P 點 + Brack Test verdict, 對齊 §Config UX 模式 (2026-08-19 13:03) 「自動+手動+自動儲存更新圖表」 spirit, 共用 1 個 handler _brackTestShiftDateHandler (panelId, symbol, delta) DRY pattern */
+  .brack-test-card .brack-shift-date-btn { background:#ffa726; color:#fff; border:none; border-radius:4px; padding:6px 10px; font-size:13px; cursor:pointer; font-weight:600; margin-left:4px; }
+  .brack-test-card .brack-shift-date-btn:hover { background:#ff9800; }
+  .brack-test-card .brack-shift-date-btn:disabled { background:#ccc; cursor:not-allowed; }
 </style>`;
 
 function renderBrackTestCard(verdict) {
@@ -5797,6 +5801,13 @@ function renderBrackTestCard(verdict) {
         <input type="date" class="brack-date-to brack-date-input" data-panel="${panelId}" aria-label="日期 To" value="${lastBrackDateTo}" onchange="window._brackTestDateInputChange('to', this.value)" oninput="window._brackTestDateInputChange('to', this.value)" />
         <button class="brack-run-date-range-btn" onclick="window._brackTestRunDateRangeHandler('${panelId}', '${symbol}')">
           執行
+        </button>
+        <!-- 大少 2026-09-16 17:23 trigger — Brack Test 指定日期 ±1 日快速調整掣 (v0.5.3): 「執行」右邊加「◀ -1 日」+「+1 日 ▶」2 個功能制, 撳完之後將 date_from + date_to 都加 / 減一日, 自動重新跑 K 線 + ZigZag + P 點 + Brack Test verdict, 對齊 v0.5.2 pattern. DRY spirit — 共用 1 個 handler _brackTestShiftDateHandler (panelId, symbol, delta) 帶 delta param, 2 個 button onclick 帶 -1 / +1 -->
+        <button class="brack-shift-date-btn" onclick="window._brackTestShiftDateHandler('${panelId}', '${symbol}', -1)">
+          ◀ -1 日
+        </button>
+        <button class="brack-shift-date-btn" onclick="window._brackTestShiftDateHandler('${panelId}', '${symbol}', 1)">
+          +1 日 ▶
         </button>
         <div class="mode-tabs" style="display:none;" data-when="loaded">
           <!-- 大少 2026-09-15 06:29 trigger — Tab 順序對調, 「🎯 按 sub-scenario 揀」做默認 active tab 對齊大少 trigger「我想先放"🎯 按 sub-scenario 揀", 之後才到"📅 按時間排", 預設是🎯 按 sub-scenario 揀」 -->
@@ -6252,6 +6263,14 @@ window._brackTestDateInputChange = function(field, value) {
   }
 };
 
+// 大少 2026-09-16 17:23 trigger — Brack Test 指定日期 ±1 日快速調整 UI (v0.5.3): Date arithmetic helper
+// 凡人話: 將 ISO date (YYYY-MM-DD) 加 / 減 N 日, 對齊 §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — UTC midnight 統一, 避免 HKT 8 小時差
+function _brackShiftDate(isoDate, deltaDays) {
+  const date = new Date(isoDate + 'T00:00:00Z');
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);  // 返 "YYYY-MM-DD"
+}
+
 window._brackTestRunHandler = async function(panelId, symbol) {
   // 凡人話: 大少撳「🎯 跑 Brack Test」button → fetch backend (全跑, 5 年) + 共用 render helper _renderBrackTestVerdict
   const panel = document.getElementById(panelId);
@@ -6372,6 +6391,166 @@ window._brackTestRunDateRangeHandler = async function(panelId, symbol) {
     if (summaryEl) {
       summaryEl.style.display = '';
       summaryEl.innerHTML = `<div class="brack-error">⚠️ Brack Test (日期範圍) 跑失敗: ${_brackEscapeHtml(e.message)}</div>`;
+    }
+  }
+};
+
+// 大少 2026-09-16 17:23 trigger — Brack Test 指定日期 ±1 日快速調整 UI (v0.5.3)
+// 凡人話: 大少撳「◀ -1 日」/「+1 日 ▶」制 → 將 date_from + date_to 都加 / 減一日, 自動重新跑 K 線 + ZigZag + P 點 + Brack Test verdict
+// DRY spirit — 共用 1 個 handler _brackTestShiftDateHandler (panelId, symbol, delta) 帶 delta param (2 個 button onclick 帶 -1 / +1)
+// 對齊 v0.5.2 pattern (line 6334-6358 `_brackTestRunDateRangeHandler`): re-use `_runAlgorithmWithDateRange` + 自己 fetch Brack Test verdict
+// 對齊 §Config UX 模式 (2026-08-19 13:03) — 自動+手動+自動儲存更新圖表
+
+// 大少 2026-09-16 20:39 trigger — v0.5.4 boundary check 改 auto-clamp + 永遠 re-run (v0.5.3 改進)
+// 凡人話: 大少揀 date range 「2000-01-01 至 2026-08-07」, 但 K 線實際只有 「2021-06-23 至 2026-08-07」 (dataWindowDays=1260 default 5 年)。
+// v0.5.3 boundary check 越界 → silent warn + return (永遠唔 re-run), 大少撳 ±1 日都唔 trigger re-run, console log [Brack Test ±1 日] 撳完後 from (1999-12-31) 早過 K 線第一日 (2021-06-23), 唔 trigger。
+// 大少 trigger: 「這個問題在時間上是全錯了, 你要找回當時K線的時間Range 才可以做到加一日或減一日」
+// Fix: K 線 first date / last date 係 authoritative source, user 輸入越界 → auto-clamp 落 K 線範圍, ±1 日永遠 re-run。
+// Effect: 大少撳 -1 日如果 from 早過 K 線第一日, 自動將 from 拎返 K 線第一日 (earliest possible), 永遠 work。
+// 凡人話解: 大少撳 -1 日 → from auto-clamp 去 2021-06-23, 撳 +1 日 → to auto-clamp 去 2026-08-07, K 線永遠 work。
+// Edge case (b) from > to (極端 case: 兩個 date 都越界 clamp 落同一個 K 線 date) 保留 silent warn + return。
+
+// 大少 2026-09-16 20:50 trigger — v0.5.5 ±1 日制改單邊 modify (修正 v0.5.4)
+// 凡人話: 大少撳 「◀ -1 日」期望 extend left boundary (modify from only, to 唔變), 撳 「▶ +1 日」期望 extend right boundary (modify to only, from 唔變)。
+// v0.5.4 ±1 日制都係 from + to 雙邊 modify (整體移一日), 大少 feedback 「現在減一日是對的， 但加一日是錯的， 你是修改了 From Date， 應該是修改 To Date」：
+//   - 撳 ◀ -1 日 = `from - 1, to - 1` 雙邊 modify → 大少 accept (因為 from modify 行為啱 + to modify 效果細微)
+//   - 撳 ▶ +1 日 = `from + 1, to + 1` 雙邊 modify → 大少 reject (因為大少 expect 只 modify to, 唔應該 modify from)
+// Fix v0.5.5: Step 3 logic 改單邊 modify。
+//   - ◀ -1 日 → `newFrom = from - 1`, `newTo = to` (to 唔變), if from 越界 firstKlineDate → auto-clamp + re-run (v0.5.4 spirit)
+//   - ▶ +1 日 → `newTo = to + 1`, `newFrom = from` (from 唔變), if to 越界 lastKlineDate → auto-clamp + re-run (v0.5.4 spirit)
+// Edge case (a) 兩個 date 都 empty → silent warn + return (對齊 v0.5.3 spirit, 唔變)。
+// Edge case (b) from > to (極端 case: from 越界 firstKlineDate + to 越界 lastKlineDate 之後) → silent warn + return (唔變)。
+// Edge case (c) ±1 日制 date 唔合法 → silent warn + return (對齊 v0.5.3 spirit, 唔變)。
+// Edge case (d) -1 日 dateFrom empty / +1 日 dateTo empty → silent warn + return (新加, 因為單邊 modify 需要對應邊界有 value)。
+
+// 大少 2026-09-16 20:59 trigger — v0.5.6 簡化 v0.5.5 (大少 reject v0.5.5「你很差啊， 現在加一日和減一日都用不了， 其他可以簡單處理， 你只要吧 To Date 改變一日， 然後再跑一次就可以了」)
+// 凡人話: 大少話 v0.5.5 嘅單邊 modify (◀ modify from / ▶ modify to) 仲太複雜, 兩個制都唔 work (可能因為 dateFrom / dateTo empty trigger silent warn)。
+// 大少要嘅最簡單 logic: 兩個制 (◀ -1 日 / ▶ +1 日) 都係 modify to date 一日, from 永遠唔變, 然後 re-run。
+// Fix v0.5.6: Step 3 logic 簡化 — 只 require dateTo exist, 兩個制都用同一個 logic:
+//   - ◀ -1 日 → `newTo = to - 1`, `newFrom = from` (from 永遠唔變)
+//   - ▶ +1 日 → `newTo = to + 1`, `newFrom = from` (from 永遠唔變)
+// Edge case (a) 兩個 date 都 empty → silent warn + return (v0.5.3 spirit, 唔變)
+// Edge case (b) dateTo empty → silent warn + return (新加, ±1 日需要 to 存在, 因為簡化邏輯)
+// Edge case (c) dateTo 唔合法 → silent warn + return (v0.5.3 spirit, 唔變)
+// Edge case (d) newTo 越界 K 線範圍 → auto-clamp + 永遠 re-run (v0.5.4 spirit 保留)
+// Edge case (e) from > to (極端 case: from 越界 + newTo auto-clamp 之後 from 仲 > to) → silent warn + return (v0.5.4 spirit 保留)
+
+// 大少 2026-09-16 21:15 reject v0.5.6 — 「點解你改來改去做係有問題， 還是『多一日』的功能不能用」 + console log evidence 「from (2010-01-01) 早過 K 線第一日 (2021-06-22), auto-clamp → 2021-06-22」
+// 凡人話: v0.5.6 嘅 Step 3 已經係最簡單邏輯 (只 modify to), 但 v0.5.4 嘅 Step 5 auto-clamp logic 仲 trigger from modify (因為 user 輸入嘅 `2010-01-01` 越界 K 線 first `2021-06-22`).
+//   - 大少 case date `[2010-01-01, 2026-08-06]`, K 線 `[2021-06-22, 2026-08-06]`, 撳 ▶ +1 日 → Step 3 `newFrom = 2010-01-01` 唔變, `newTo = 2026-08-07` 越界 →
+//   - Step 5 auto-clamp 觸發 `from (2010-01-01) 早過 K 線第一日 (2021-06-22), auto-clamp → 2021-06-22` (❌ 大少 reject 因為 modify from)
+//   - + `to (2026-08-07) 遲過 K 線最後一日 (2026-08-06), auto-clamp → 2026-08-06` (❌ 大少 reject 因為 modify to)
+// Fix v0.5.7: 拎走 v0.5.4 嘅 Step 5 from + to auto-clamp logic. 兩個制都係 modify to date, from 永遠唔變, Backend KlineCache fetch K 線會自動用 K 線 actual range (越界 date 唔影響 verdict).
+// 對齊 §Config UX 模式 spirit (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留, 唔好 auto-clamp date input.
+// Edge case (b) from > to (用戶 input date range 錯咗, from 早過 to) → silent warn + return (保留).
+window._brackTestShiftDateHandler = async function(panelId, symbol, delta) {
+  // Step 1: 拎 panel + date inputs value (user 之前揀過嘅最新 value, 對齊 v0.5.0 module-level state pattern)
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const dateFromInput = panel.querySelector('.brack-date-from');
+  const dateToInput = panel.querySelector('.brack-date-to');
+  if (!dateFromInput || !dateToInput) return;
+  const dateFrom = dateFromInput.value;
+  const dateTo = dateToInput.value;
+
+  // Step 2: Edge case (a) — 兩個 date 都 empty → silent warn + return (對齊 §M3 silent return 唔 throw spirit)
+  if (!dateFrom && !dateTo) {
+    console.warn('[Brack Test ±1 日] 兩個 date 都係 empty, 請先揀 date range');
+    return;
+  }
+
+  // Step 3: Date arithmetic — 簡單邏輯 (大少 2026-09-16 20:59 trigger v0.5.6 簡化 v0.5.5「你只要吧 To Date 改變一日, 然後再跑一次就可以了」)
+  // 凡人話: 兩個制 (◀ -1 日 / ▶ +1 日) 都係 modify to date 一日, from 永遠唔變. 最簡單 logic.
+  // 對齊 §Cross-module 統一 date parsing 永久 rule 8月29日 22:35
+  let newFrom = dateFrom;  // from 永遠唔變
+  let newTo = '';
+  if (dateTo) {
+    try {
+      newTo = _brackShiftDate(dateTo, delta);
+    } catch (e) {
+      console.warn(`[Brack Test ±1 日] dateTo (${dateTo}) 唔合法, 唔 trigger:`, e);
+      return;
+    }
+  } else {
+    console.warn(`[Brack Test ±1 日] dateTo empty, 唔 trigger (±1 日需要 to 存在)`);
+    return;
+  }
+
+  // Step 4: 拎 K 線 first date + last date (從 window.lastKlines, 對齊 v0.5.2 pattern)
+  const klines = window.lastKlines || [];
+  if (klines.length === 0) {
+    console.warn('[Brack Test ±1 日] window.lastKlines 唔存在, 請先撳跑算法');
+    return;
+  }
+  const firstKlineDate = String(klines[0].date || klines[0].time).split('T')[0].split(' ')[0];
+  const lastKlineDate = String(klines[klines.length - 1].date || klines[klines.length - 1].time).split('T')[0].split(' ')[0];
+
+  // Step 5: 拎走 v0.5.4 嘅 from + to auto-clamp logic (大少 21:15 reject v0.5.6 嘅 from auto-clamp bug「你只要吧 To Date 改變一日, 然後再跑一次就可以了」)
+  // 凡人話: 大少要最簡單邏輯 — 兩個制都係 modify to date, from 永遠唔變. Backend KlineCache fetch K 線會自動用 K 線 actual range (越界 date 唔影響 verdict).
+  // 對齊 §Config UX 模式 spirit (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留, 唔好 auto-clamp date input (auto-clamp 改 user 揀過嘅 value 大少 reject).
+  // Edge case (b) — 用戶 input date range 已經 from > to (e.g. 揀錯), 撳 ±1 日之後 from 唔變 to +/- 1, 可能 from > to → silent warn + return
+  if (newFrom && newTo && newFrom > newTo) {
+    console.warn(`[Brack Test ±1 日] 撳完後 from (${newFrom}) > to (${newTo}) (用戶 input date range 錯咗, from 早過 to), 唔 trigger`);
+    return;
+  }
+  console.log(`[Brack Test ±1 日] re-run: new from=${newFrom}, new to=${newTo}`);
+
+  // Step 6: Sync state (對齊 v0.5.0 pattern line 6324-6325)
+  if (newFrom) lastBrackDateFrom = newFrom;
+  if (newTo) lastBrackDateTo = newTo;
+
+  // Step 7: Update input DOM 即時 visual feedback (對齊 §Config UX 模式 2026-08-19 13:03)
+  if (newFrom) dateFromInput.value = newFrom;
+  if (newTo) dateToInput.value = newTo;
+
+  // Step 8: Disable 3 個 button (-1 日 / +1 日 / 執行) 避免 double-click
+  const runDateRangeBtn = panel.querySelector('.brack-run-date-range-btn');
+  const shiftBtns = panel.querySelectorAll('.brack-shift-date-btn');
+  if (runDateRangeBtn) { runDateRangeBtn.disabled = true; runDateRangeBtn.textContent = '⏳ 跑緊...'; }
+  shiftBtns.forEach(b => { b.disabled = true; });
+
+  try {
+    // Step 9: 對齊 v0.5.2 pattern line 6334-6337 — trigger testing-page.js 主流程拎 K 線 (filtered) + renderChart reset + 重新 fetch M1 verdict
+    if (typeof window._runAlgorithmWithDateRange !== 'function') {
+      throw new Error('testing-page.js 嘅 _runAlgorithmWithDateRange helper 尚未初始化, 請 reload testing page');
+    }
+    await window._runAlgorithmWithDateRange(newFrom, newTo);
+
+    // Step 10: 對齊 v0.5.2 pattern line 6345-6358 — 自己 fetch Brack Test verdict (m1_brack_test algo) 帶 start + end query params
+    const filteredKlines = window.lastKlines || [];
+    const dataWindowDays = filteredKlines.length || 1260;
+    const dateRangeParams = `&start=${encodeURIComponent(newFrom)}&end=${encodeURIComponent(newTo)}`;
+    const brackUrl = `${window.BACKEND_URL || 'http://localhost:18792'}/api/algorithms/run?algo=m1_brack_test&symbol=${encodeURIComponent(symbol)}&data_window_days=${dataWindowDays}${dateRangeParams}`;
+    const brackResp = await fetch(brackUrl);
+    if (!brackResp.ok) {
+      throw new Error(`Brack Test fetch HTTP ${brackResp.status} ${brackResp.statusText}`);
+    }
+    const brackData = await brackResp.json();
+    if (!brackData.ok) {
+      throw new Error(brackData.error || 'Brack Test verdict 唔 ok');
+    }
+
+    // Step 11: 對齊 v0.5.2 — call `_renderBrackTestVerdict` 共用 render helper 寫入 panel
+    _renderBrackTestVerdict(panel, brackData, symbol);
+
+    // Step 12: Re-enable 3 個 button + 更新 button text (對齊 v0.5.0/v0.5.2 pattern)
+    if (runDateRangeBtn) {
+      runDateRangeBtn.disabled = false;
+      runDateRangeBtn.textContent = '🔄 重跑';
+    }
+    shiftBtns.forEach(b => { b.disabled = false; });
+  } catch (e) {
+    // Step 13: Silent fallback + console.warn + result panel 顯示 friendly error (對齊 v0.4.3 silent fallback fix pattern)
+    console.error('[brackTestShiftDateHandler] error:', e);
+    if (runDateRangeBtn) {
+      runDateRangeBtn.disabled = false;
+      runDateRangeBtn.textContent = '執行';
+    }
+    shiftBtns.forEach(b => { b.disabled = false; });
+    const summaryEl = panel.querySelector('.brack-summary');
+    if (summaryEl) {
+      summaryEl.style.display = '';
+      summaryEl.innerHTML = `<div class="brack-error">⚠️ Brack Test (±1 日) 跑失敗: ${_brackEscapeHtml(e.message)}</div>`;
     }
   }
 };

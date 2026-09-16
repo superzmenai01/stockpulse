@@ -705,6 +705,571 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 
 ---
 
+## §8.6 Brack Test 指定日期 date inputs 保留 user 揀過嘅 value (大少 2026-09-16 07:21 trigger, v0.5.0)
+
+### 凡人話
+
+大少 trigger「撳完 Brack Test 指定日期後,date inputs 嘅 value 會 reset 返做空,要保留我揀過嘅日期」。凡人話:大少揀咗 date_from + date_to 撳「執行」之後,adapter.mjs `renderBrackTestCard` 重新 render 個 panel → date input DOM 重新 create 冇 value → 大少揀過嘅日期消失咗,大少要再揀過先可以再撳「執行」。
+
+### Root cause
+
+`adapter.mjs` `renderBrackTestCard` 嘅 date inputs HTML 寫死 `value=""`,而 `runAlgorithm` 之後重新 call `renderBrackTestCard(verdict)` → 個 HTML template 重新 render → 個 input DOM 重新 create,新 DOM 冇 value → 大少揀過嘅日期永遠 reset。
+
+### 凡人話 fix (v0.5.0)
+
+`adapter.mjs`:
+- **module-level state** (line 6243-6244):`let lastBrackDateFrom = ''; let lastBrackDateTo = '';` 保留 user 揀過嘅 date
+- **`_brackTestDateInputChange(field, value)` window function** (line 6258+):大少改 date input 即時 sync 落 state,等下次 `renderBrackTestCard` 重新 render 嗰陣 restore 返
+- **`renderBrackTestCard` date inputs** (line 5795-5797):加 `value="${lastBrackDateFrom}"` + `value="${lastBrackDateTo}"` + `onchange="window._brackTestDateInputChange('from', this.value)"` + `oninput="window._brackTestDateInputChange('from', this.value)"` 即時 sync
+- **`_brackTestRunDateRangeHandler`** (line 6324-6325):撳「執行」之前同步 `lastBrackDateFrom = dateFrom || ''; lastBrackDateTo = dateTo || '';`
+
+對齊 §Config UX 模式 (2026-08-19 13:03)「自動+手動+自動儲存更新圖表」— user 揀過嘅 value 永遠要保留,唔好因為 re-render 失。
+
+### 凡人話 verify
+
+大少 hard reload testing page (`?v=2.3.204`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」 → 肉眼 verify date inputs 仲係 [2026-09-01, 2026-09-15] (唔 reset)。再撳「🎯 跑 Brack Test」button (左邊全跑) → Brack Test card re-render → date inputs 仲係 [2026-09-01, 2026-09-15]。
+
+### 對齊永久 rule
+
+- ✅ §Config UX 模式 (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+
+---
+
+## §8.7 Frontend button event-leak bug fix (大少 2026-09-16 07:27 trigger, v0.5.1)
+
+### 凡人話
+
+大少 trigger「撳完指定日期後再撳『跑算法』撞 PointerEvent error」。凡人話:之前 commit `f0b0af91` 同 commit `760f28ba` 嘅 v0.5.0 fix 入面,撳「跑算法」button 之後 backend log 印 `start=[object PointerEvent]`,前端 verdict 唔 render 因為 backend 拎唔到 K 線。
+
+### Root cause
+
+`testing-page.js` 嘅 `runBtn.addEventListener('click', runAlgorithm)` 寫法,event listener 默認傳 `(event)` 做 first arg,`runAlgorithm` signature 第一個 param `dateFrom = PointerEvent` (truthy object),`dateRangeParams` 變咗 `&start=[object PointerEvent]`,backend silent fail 因為「format of code is wrong」類似嘅 fallback error。
+
+### 凡人話 fix (v0.5.1)
+
+`testing-page.js`:
+- **3 個 addEventListener 改用 arrow function wrap** (對齊 DRY + 安全):
+  - `runBtn.addEventListener('click', () => runAlgorithm())` (line 2081)
+  - `runFullChainBtn.addEventListener('click', () => runFullChain())` (line 2889)
+  - `addTradeJournalEntry btn.addEventListener('click', () => addTradeJournalEntry())` (line 3436)
+- arrow function `() => runAlgorithm()` wrap 避免 PointerEvent event-leak
+
+對齊 §M3 silent return 唔 throw spirit — silent fallback fix,v0.5.1 之後 backend log 唔再印 `start=[object PointerEvent]`。
+
+### 凡人話 verify
+
+大少 hard reload testing page (`?v=2.3.205`) + 撳跑 M1 (HK.00700) + 撳 Brack Test 指定日期跑 → 撳「執行」OK → 撳返「跑算法」button → verdict 正常 render (之前 backend log 印 `start=[object PointerEvent]` + 返 0 條 K 線)。
+
+### 對齊永久 rule
+
+- ✅ §M3 silent return 唔 throw spirit — silent fallback + console.warn 而唔係 console.error
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+- ✅ 新永久 rule (對齊 §M3 trendline chart overlay 修復永久 rule spirit) —「Frontend button event listener 永遠 wrap arrow function 避免 event object 漏入 function args」
+
+---
+
+## §8.8 Brack Test 指定日期範圍 Brack Test verdict render fix (大少 2026-09-16 17:08 trigger, v0.5.2)
+
+### 凡人話
+
+大少 trigger「修改,現在只有 K 線圖和 Zigzag,但沒有 Brack Test,在指定的日期內跑是要包括 Brack Test」。凡人話:之前 v0.5.0/v0.5.1 commit 修咗 date inputs 保留 + PointerEvent event-leak,但指定日期範圍跑嗰陣 `_runAlgorithmWithDateRange` 只 fetch M1 verdict (ma_alignment),testing-page.js line 1699-1702 render Brack Test card 用 M1 verdict 但 M1 verdict.points 空 → Brack Test hit table / summary / chart banner 全部 empty,大少睇唔到指定日期範圍嘅 Brack Test verdict。
+
+### Root cause
+
+`testing-page.js` line 1699-1702 嘅 render Brack Test card panel skeleton 用 M1 verdict (空 points) display,因為 `_runAlgorithmWithDateRange` 只 fetch M1 verdict,唔 fetch Brack Test verdict。
+
+### 凡人話 fix (v0.5.2)
+
+`adapter.mjs` `_brackTestRunDateRangeHandler` (line 6345-6358):
+- **自己 fetch Brack Test verdict** (對齊 `_brackTestRunHandler` 全跑 line 6262-6275 pattern):喺 `_runAlgorithmWithDateRange` 之後 fetch `m1_brack_test` algo 帶 `start + end` query params
+- **call `_renderBrackTestVerdict` 共用 render helper** 寫入 panel
+- 對齊 §K-line Cache 永久 rule (8月22日 23:20) — K 線 filtered 喺 KlineCache layer, frontend testing-page.js 拎 data,backend runner 拎 options.get("dateFrom") / options.get("dateTo") 落 start_date / end_date
+
+### 凡人話 verify
+
+大少 hard reload testing page (`?v=2.3.206`) + 撳跑 M1 (HK.00700) + 撳 date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」 → Brack Test verdict re-fetched,hit table / summary / chart banner 全部對齊 filtered range。
+
+### 對齊永久 rule
+
+- ✅ §K-line Cache 永久 rule (8月22日 23:20) — Frontend 拎 data, Backend 拎 K 線
+- ✅ §M3 silent return 唔 throw spirit — silent fallback + console.warn
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+
+---
+
+## §8.9 Brack Test 指定日期 ±1 日快速調整 UI (大少 2026-09-16 17:23 trigger, v0.5.3)
+
+### 凡人話
+
+大少 trigger「在指定日期 Brack Test 的『執行』制右邊,加上兩個功能制,第一個是把現在的 Brack Test 減一日,第二個是把現在的 Brack Test 加一日,同樣地要把正個 K 線圖, Zigzag 線, P 點, Brack Test, 都要再重新跑一編」。
+
+凡人話:大少揀咗一個 date range 睇緊 Brack Test 結果,想快速睇前後一日嘅 Brack Test 結果,而唔需要再手動改 date inputs,符合 §Config UX 模式 (2026-08-19 13:03)「自動+手動+自動儲存更新圖表」spirit — ±1 日制就係「手動」嘅快捷掣。
+
+### UI layout
+
+```
+[🎯 跑 Brack Test] | [日期 From 📅] → [日期 To 📅] [執行] [◀ -1 日] [+1 日 ▶]
+```
+
+6 個元素順序排成 1 行,2 個 ±1 日制喺「執行」右邊,用 ◀ ▶ 視覺 hint。
+
+### 凡人話 fix (v0.5.3)
+
+`adapter.mjs`:
+- **新加 CSS class `.brack-shift-date-btn`** (`BRACK_TEST_PANEL_STYLE` line 5771+):橙色主題色 #ffa726 對齊 `.brack-run-date-range-btn` spirit,hover #ff9800 + disabled #ccc
+- **renderBrackTestCard date row** (line 5802+):加 2 個 `<button class="brack-shift-date-btn">`,onclick 帶 `delta=-1` / `delta=+1` 參數,text 為 `◀ -1 日` / `+1 日 ▶`
+- **新加 `_brackShiftDate(isoDate, deltaDays)` helper** (line 6268+):UTC midnight 統一 (對齊 §Cross-module 統一 date parsing 永久 rule 8月29日 22:35) — `new Date(isoDate + 'T00:00:00Z').setUTCDate(getUTCDate() + delta)` → `toISOString().slice(0, 10)`
+- **新加 `window._brackTestShiftDateHandler(panelId, symbol, delta)`** (line 6401+):DRY spirit — 共用 1 個 handler,2 個 button 帶不同 `delta` param,完整 13 個 steps:
+  1. 拎 date inputs value (即係 user 之前揀過嘅最新 value,對齊 v0.5.0 module-level state pattern)
+  2. 兩個 empty → console.warn + return (edge case a)
+  3. Date arithmetic: newFrom/newTo = _brackShiftDate(dateFrom/dateTo, delta)
+  4. 拎 K 線 first date + last date (從 `window.lastKlines` 拎,對齊 v0.5.2 pattern)
+  5. Boundary check: newFrom < K-line first date / newTo > K-line last date / newFrom > newTo → console.warn + return
+  6. Sync state `lastBrackDateFrom/To = newFrom/newTo` (對齊 v0.5.0 pattern line 6324-6325)
+  7. Update input DOM `input.value = newFrom/newTo` (即時 visual feedback)
+  8. Disable 3 個 button (`-1 日` / `+1 日` / `執行`) 避免 double-click
+  9. Trigger `window._runAlgorithmWithDateRange(newFrom, newTo)` (對齊 v0.5.2 pattern line 6334-6337)
+  10. Fetch Brack Test verdict (對齊 v0.5.2 line 6345-6358):`/api/algorithms/run?algo=m1_brack_test&symbol=${symbol}&data_window_days=${dataWindowDays}&start=${newFrom}&end=${newTo}`
+  11. Call `_renderBrackTestVerdict(panel, data, symbol)` 共用 render helper
+  12. Re-enable 3 個 button + 更新 text
+  13. Catch error: silent fallback + console.warn + result panel innerHTML 顯示 friendly error
+
+`testing-page.js`:
+- `ALGO_CACHE_BUST` bump `5.4.11` → `5.4.12`
+
+`testing-page/index.html`:
+- `?v=2.3.206` → `?v=2.3.207`
+
+### Backend 改動 (v0.5.3)
+
+無。Frontend only fix,backend algorithm / API / runner 完全唔改。
+
+### Edge cases (凡人話 UX)
+
+| Case | Trigger | 行為 |
+|------|---------|------|
+| 兩個 date 都 empty | Fresh page load + 撳 ±1 日 | console.warn + return + 唔 trigger (date inputs 唔變) |
+| 撳 -1 越過 K 線 first date | newFrom < K-line first date | console.warn + return + 唔 trigger |
+| 撳 +1 越過 K 線 last date | newTo > K-line last date | console.warn + return + 唔 trigger |
+| 撳 -1 之後 from > to | newFrom > newTo | console.warn + return + 唔 trigger (e.g. K 線 first date = 2021-08-02, date range = [2021-08-03, 2021-08-05], 撳 -1 → [2021-08-02, 2021-08-04], 再撳 -1 → [2021-08-01, 2021-08-03] 越界) |
+| Network error / backend error | Fetch fail / verdict.ok = false | try/catch + console.warn + result panel 顯示 friendly error (對齊 v0.4.3 silent fallback fix) |
+
+### 凡人話 verify
+
+凡人話 manual verify:
+- 大少 hard reload testing page (`?v=2.3.207`) + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」→ baseline 5 年 hit
+- Date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」 → K 線 + ZigZag + P 點 + Brack Test 全部 reset 對齊
+- 撳「◀ -1 日」制 → date inputs 變 [2026-08-31, 2026-09-14],K 線 + ZigZag + P 點 + Brack Test verdict 全部 re-fetched 對齊新 range
+- 撳「+1 日 ▶」制 → date inputs 變 [2026-09-01, 2026-09-15] (返到之前)
+- Edge case: K 線 first date = 2021-08-02,date range = [2021-08-03, 2021-08-05],撳「◀ -1 日」2 次,第 2 次 console.warn + 唔 trigger
+
+Curl backend verify: `curl 'http://localhost:18792/api/algorithms/run?algo=m1_brack_test&symbol=HK.00700&start=2026-08-31&end=2026-09-14'` → verdict.points 對齊 [2026-08-31, 2026-09-14] 範圍 (對齊 v0.4.5 line 75-90 Query params)。
+
+### 對齊永久 rule
+
+- ✅ §Config UX 模式 (2026-08-19 13:03) — 自動+手動+自動儲存更新圖表
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — YYYY-MM-DD format + UTC midnight
+- ✅ §K-line Cache 永久 rule (8月22日 23:20) — Frontend 拎 data, Backend 拎 K 線
+- ✅ §M3 trendline silent return 唔 throw spirit — edge case silent warn
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+- ✅ DRY principle spirit — 共用 1 個 handler `_brackTestShiftDateHandler(panelId, symbol, delta)`,2 個 button 帶不同 `delta` param
+- ✅ Re-use `_runAlgorithmWithDateRange` (v0.5.2 已實證 work 嘅 helper) — 對齊 testing-page.js 主流程共用 spirit
+
+---
+
+## §8.10 Brack Test ±1 日制 boundary check 改 auto-clamp + 永遠 re-run (大少 2026-09-16 20:39 trigger, v0.5.4 修正 v0.5.3 漏網之魚)
+
+### 凡人話
+
+大少 trigger「我指定的 Bracktest 日期是 2000-1-1 至 2026-8-7，但 console log: [Brack Test ±1 日] 撳完後 from (1999-12-31) 早過 K 線第一日 (2021-06-23), 唔 trigger. 這個問題在時間上是全錯了，你要找回當時 K 線的時間 Range 才可以做到加一日或減一日」。
+
+凡人話:大少揀咗一個 date range 但係越界實際 K 線範圍(例如揀 `2000-01-01` 但 K 線 first date 係 `2021-06-23` 因為 `dataWindowDays=1260` default 5 年)。v0.5.3 boundary check 越界就 silent warn + return 唔 trigger re-run,所以大少撳 ±1 日制永遠都唔 work,console 永遠印「唔 trigger」。
+
+### Root cause 確認
+
+- v0.5.3 `window._brackTestShiftDateHandler` line 6448-6460 boundary check 用「越界 → silent warn + return」邏輯
+- 大少 date range `[2000-01-01, 2026-08-07]` 但 K 線 actual range `[2021-06-23, 2026-08-07]`(因 `dataWindowDays=1260` default 5 年)
+- 撳 `-1` 日 → `newFrom = 1999-12-31` < K 線 first `2021-06-23` → silent warn + return(永遠唔 trigger)
+- 撳 `+1` 日 → `newFrom = 2000-01-02` < K 線 first → silent warn + return(永遠唔 trigger)
+- 大少 console log: `[Brack Test ±1 日] 撳完後 from (1999-12-31) 早過 K 線第一日 (2021-06-23), 唔 trigger` ×6 次
+
+### 凡人話 fix (v0.5.4)
+
+**Root cause** v0.5.3 假設 user 輸入 date range 永遠喺 K 線範圍內,但實際 user 可能揀越界 date(特別係 stale state 留低嘅 date 輸入)。
+
+**Fix** v0.5.4 boundary check 改為「auto-clamp + 永遠 re-run」:
+- K 線 first date / last date 係 authoritative source (對齊 §K-line Cache 永久 rule spirit)
+- 如果 `newFrom < K 線 first date` → auto-clamp `newFrom = K 線 first date` + console.log 提示「已 auto-clamp from 落 K 線 first date」
+- 如果 `newTo > K 線 last date` → auto-clamp `newTo = K 線 last date` + console.log 提示「已 auto-clamp to 落 K 線 last date」
+- 永遠 trigger `_runAlgorithmWithDateRange(newFrom, newTo)` + fetch Brack Test verdict + re-enable button
+- Edge case (b) `newFrom > newTo`(極端 case: 兩個 date 都越界 clamp 落同一個 K 線 date)保留 silent warn + return
+
+`adapter.mjs` `window._brackTestShiftDateHandler` line 6448+ 改 auto-clamp 邏輯(凡人話):
+
+```js
+// Step 5: Auto-clamp date 落 K 線範圍 (大少 2026-09-16 trigger — K 線 range 永遠係 authoritative source)
+let autoClamped = false;
+if (newFrom && newFrom < firstKlineDate) {
+  console.log(`[Brack Test ±1 日] from (${newFrom}) 早過 K 線第一日 (${firstKlineDate}), auto-clamp → ${firstKlineDate}`);
+  newFrom = firstKlineDate;
+  autoClamped = true;
+}
+if (newTo && newTo > lastKlineDate) {
+  console.log(`[Brack Test ±1 日] to (${newTo}) 遲過 K 線最後一日 (${lastKlineDate}), auto-clamp → ${lastKlineDate}`);
+  newTo = lastKlineDate;
+  autoClamped = true;
+}
+// Edge case (b) — from > to (極端 case) → silent warn + return
+if (newFrom && newTo && newFrom > newTo) {
+  console.warn(`[Brack Test ±1 日] 撳完後 from (${newFrom}) > to (${newTo}), 唔 trigger`);
+  return;
+}
+if (autoClamped) {
+  console.log(`[Brack Test ±1 日] auto-clamp 完, new from=${newFrom}, new to=${newTo}, re-run K 線 + ZigZag + P 點 + Brack Test verdict`);
+}
+```
+
+### Backend 改動 (v0.5.4)
+
+無。Frontend only fix,backend algorithm / API / runner 完全唔改。
+
+### Edge cases (凡人話 UX) — v0.5.4 改進
+
+| Case | Trigger | v0.5.3 行為 | v0.5.4 行為 (改進) |
+|------|---------|------------|-------------------|
+| 兩個 date 都 empty | Fresh page load + 撳 ±1 日 | console.warn + return | 唔變(console.warn + return) |
+| 撳 -1 越過 K 線 first date | newFrom < K-line first date | console.warn + return + 唔 trigger | **auto-clamp newFrom = K 線 first date + console.log + re-run** ✅ |
+| 撳 +1 越過 K 線 last date | newTo > K-line last date | console.warn + return + 唔 trigger | **auto-clamp newTo = K 線 last date + console.log + re-run** ✅ |
+| 撳 -1 之後 from > to | 兩個 date 都越界 clamp 落同一個 K 線 date | n/a (之前邊界已 silent warn return) | 保留 silent warn + return(邏輯錯誤) |
+| Network error / backend error | Fetch fail / verdict.ok = false | try/catch + console.warn + result panel 顯示 friendly error | 唔變 |
+
+### 凡人話 verify (v0.5.4)
+
+凡人話 manual verify:
+- 大少 hard reload testing page (`?v=2.3.208`) + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」→ baseline 5 年 hit
+- Date inputs 揀 [2000-01-01, 2026-08-07](越界 K 線 first date `2021-06-23`) + 撳「執行」→ re-fetch OK
+- 撳「◀ -1 日」制 → console.log 印 `[Brack Test ±1 日] from (1999-12-31) 早過 K 線第一日 (2021-06-23), auto-clamp → 2021-06-23` + date input 變 `2021-06-23` + re-run K 線 + ZigZag + P 點 + Brack Test verdict
+- 撳「+1 日 ▶」制 → console.log 印 `[Brack Test ±1 日] from (2000-01-02) 早過 K 線第一日 (2021-06-23), auto-clamp → 2021-06-23` + `[Brack Test ±1 日] to (2026-08-08) 遲過 K 線最後一日 (2026-08-07), auto-clamp → 2026-08-07` + date inputs 變 [2021-06-23, 2026-08-07] + re-run
+
+Curl backend verify: `curl 'http://localhost:18792/api/algorithms/run?algo=m1_brack_test&symbol=HK.00700&start=2021-06-23&end=2026-08-07&data_window_days=1260'` → verdict.points 對齊 [2021-06-23, 2026-08-07] 範圍 (對齊 v0.4.5 line 75-90 Query params)。
+
+### 對齊永久 rule
+
+- ✅ §Config UX 模式 (2026-08-19 13:03) — 自動+手動+自動儲存更新圖表(±1 日制永遠 work,即使 date 越界都 auto-clamp 落 K 線範圍)
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — YYYY-MM-DD format + UTC midnight
+- ✅ §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source
+- ✅ §M3 silent return 唔 throw spirit — extreme edge case (from > to) 保留 silent warn
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+- ✅ DRY principle spirit — 共用 1 個 handler `_brackTestShiftDateHandler(panelId, symbol, delta)`,2 個 button 帶不同 `delta` param
+- ✅ Re-use `_runAlgorithmWithDateRange` (v0.5.2 已實證 work 嘅 helper)
+
+---
+
+## §8.11 Brack Test ±1 日制 改單邊 modify (大少 2026-09-16 20:50 trigger, v0.5.5 修正 v0.5.4)
+
+### 凡人話
+
+大少 trigger「現在減一日是對的,但加一日是錯的,你是修改了 From Date,應該是修改 To Date」。
+
+凡人話:大少撳「◀ -1 日」期望 extend left boundary(修改 from 而 to 唔變),撳「▶ +1 日」期望 extend right boundary(修改 to 而 from 唔變)。v0.5.4 ±1 日制都係 from + to 雙邊 modify(整體移一日),大少 accept ◀ -1 日 但 reject ▶ +1 日(因為大少 expect +1 只 modify to,唔應該 modify from)。
+
+### Root cause 確認
+
+- v0.5.4 `window._brackTestShiftDateHandler` Step 3 line 6428-6446 用「from + to 雙邊 modify」邏輯:
+  - 撳「◀ -1 日」:`newFrom = from - 1`,`newTo = to - 1`(from + to 都 -1,整體向前移一日)
+  - 撳「▶ +1 日」:`newFrom = from + 1`,`newTo = to + 1`(from + to 都 +1,整體向後移一日)
+- 大少 case date [2000-01-01, 2026-08-07],K 線 [2021-06-23, 2026-08-07]:
+  - 撳「◀ -1 日」:`newFrom = 1999-12-31 → auto-clamp → 2021-06-23`,`newTo = 2026-08-06`(from auto-clamp + to -1 仲喺範圍)→ date range [2021-06-23, 2026-08-06](向前移一日) ✅
+  - 撳「▶ +1 日」:`newFrom = 2000-01-02 → auto-clamp → 2021-06-23`,`newTo = 2026-08-08 → auto-clamp → 2026-08-07`(from + to 都 auto-clamp)→ date range 仲係 [2021-06-23, 2026-08-07](完全冇 effect,因為 from + to 都已經喺 K 線邊界)❌ 大少 reject
+- 大少 feedback:「+1 應該修改 to date」,即係 +1 日只 modify to,from 唔變。
+
+### 凡人話 fix (v0.5.5)
+
+**Fix** v0.5.5 Step 3 logic 改**單邊 modify**:
+- ◀ -1 日 → `newFrom = from - 1`,`newTo = to`(to 唔變),if `newFrom < K 線 first date` → auto-clamp + re-run (v0.5.4 spirit 保留)
+- ▶ +1 日 → `newTo = to + 1`,`newFrom = from`(from 唔變),if `newTo > K 線 last date` → auto-clamp + re-run (v0.5.4 spirit 保留)
+
+`adapter.mjs` `window._brackTestShiftDateHandler` Step 3 改單邊 modify 邏輯(凡人話):
+
+```js
+// Step 3: Date arithmetic — 單邊 modify (大少 2026-09-16 20:50 trigger v0.5.5)
+let newFrom = '';
+let newTo = '';
+if (delta < 0) {
+  // ◀ -1 日 — extend left boundary (modify from only)
+  if (dateFrom) {
+    try {
+      newFrom = _brackShiftDate(dateFrom, delta);
+      newTo = dateTo;  // to 唔變
+    } catch (e) {
+      console.warn(`[Brack Test ±1 日] dateFrom (${dateFrom}) 唔合法, 唔 trigger:`, e);
+      return;
+    }
+  } else {
+    console.warn(`[Brack Test ±1 日] dateFrom empty, 唔 trigger (-1 日需要 from 存在)`);
+    return;
+  }
+} else if (delta > 0) {
+  // ▶ +1 日 — extend right boundary (modify to only)
+  if (dateTo) {
+    try {
+      newTo = _brackShiftDate(dateTo, delta);
+      newFrom = dateFrom;  // from 唔變
+    } catch (e) {
+      console.warn(`[Brack Test ±1 日] dateTo (${dateTo}) 唔合法, 唔 trigger:`, e);
+      return;
+    }
+  } else {
+    console.warn(`[Brack Test ±1 日] dateTo empty, 唔 trigger (+1 日需要 to 存在)`);
+    return;
+  }
+}
+```
+
+Step 5 auto-clamp 邏輯 v0.5.4 spirit 保留(對齊 §K-line Cache 永久 rule spirit):
+- 如果 `newFrom < K 線 first date` → auto-clamp `newFrom = K 線 first date` + console.log 提示
+- 如果 `newTo > K 線 last date` → auto-clamp `newTo = K 線 last date` + console.log 提示
+- 永遠 trigger `_runAlgorithmWithDateRange(newFrom, newTo)` + fetch Brack Test verdict + re-enable button
+
+### Backend 改動 (v0.5.5)
+
+無。Frontend only fix,backend algorithm / API / runner 完全唔改。
+
+### Edge cases (凡人話 UX) — v0.5.5 改進
+
+| Case | Trigger | v0.5.4 行為 | v0.5.5 行為 (改進) |
+|------|---------|------------|-------------------|
+| 兩個 date 都 empty | Fresh page load + 撳 ±1 日 | console.warn + return | 唔變(console.warn + return) |
+| 撳 ◀ -1 日 dateFrom empty | Fresh page load + 撳 ◀ -1 日 | -1 日修改 empty from → newFrom = '', silent fail | console.warn `dateFrom empty, 唔 trigger (-1 日需要 from 存在)` + return |
+| 撳 ▶ +1 日 dateTo empty | Fresh page load + 撳 ▶ +1 日 | +1 日修改 empty to → newTo = '', silent fail | console.warn `dateTo empty, 唔 trigger (+1 日需要 to 存在)` + return |
+| 撳 ◀ -1 日 dateFrom 越界 firstKlineDate | dateFrom < K-line first date | auto-clamp + re-run | 唔變(auto-clamp `newFrom = K 線 first date` + console.log + re-run) ✅ |
+| 撳 ▶ +1 日 dateTo 越界 lastKlineDate | dateTo > K-line last date | auto-clamp + re-run | 唔變(auto-clamp `newTo = K 線 last date` + console.log + re-run) ✅ |
+| 撳 ±1 日之後 from > to | 兩個 date 都越界 | 保留 silent warn + return | 唔變 |
+
+### 凡人話 verify (v0.5.5)
+
+凡人話 manual verify:
+- 大少 hard reload testing page (`?v=2.3.209`) + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」→ baseline 5 年 hit
+- date inputs 揀 [2000-01-01, 2026-08-07](越界 K 線 first date `2021-06-23`) + 撳「執行」→ re-fetch OK
+- 撳「◀ -1 日」制 → console.log 印 `[Brack Test ±1 日] from (1999-12-31) 早過 K 線第一日 (2021-06-23), auto-clamp → 2021-06-23` + date input from 變 `2021-06-23` + date input to 仲係 `2026-08-07` + re-run K 線 + ZigZag + P 點 + Brack Test verdict
+- 撳「▶ +1 日 ▶」制 → console.log 印 `[Brack Test ±1 日] to (2026-08-08) 遲過 K 線最後一日 (2026-08-07), auto-clamp → 2026-08-07` + date input from 仲係 `2021-06-23` + date input to 仲係 `2026-08-07` + re-run
+- date inputs 揀 [2026-09-01, 2026-09-15](from 喺 K 線範圍內,to 越界 lastKlineDate) + 撳「執行」→ re-fetch OK
+- 撳「◀ -1 日」制 → `newFrom = 2026-08-31`(from - 1, 唔越界 firstKlineDate),`newTo = 2026-09-15`(to 唔變)→ re-run
+- 撳「▶ +1 日 ▶」制 → `newFrom = 2026-08-31`(from 唔變),`newTo = 2026-09-16` > `lastKlineDate` → auto-clamp `newTo = 2026-08-07` + console.log + re-run
+
+### 對齊永久 rule
+
+- ✅ §Config UX 模式 (2026-08-19 13:03) — ±1 日制單邊 extend date range(◀ extend left,▶ extend right)
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — YYYY-MM-DD format + UTC midnight
+- ✅ §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source (v0.5.4 auto-clamp spirit 保留)
+- ✅ §M3 silent return 唔 throw spirit — extreme edge case (from > to / date 唔合法 / date empty) 保留 silent warn
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+- ✅ DRY principle spirit — 共用 1 個 handler `_brackTestShiftDateHandler(panelId, symbol, delta)`,2 個 button 帶不同 `delta` param
+- ✅ Re-use `_runAlgorithmWithDateRange` (v0.5.2 已實證 work 嘅 helper)
+
+---
+
+## §8.12 Brack Test ±1 日制 簡化邏輯 (大少 2026-09-16 20:59 trigger, v0.5.6 簡化 v0.5.5)
+
+### 凡人話
+
+大少 reject v0.5.5 trigger「你很差啊,現在加一日和減一日都用不了,其他可以簡單處理,你只要吧 To Date 改變一日,然後再跑一次就可以了」。
+
+凡人話:v0.5.5 嘅單邊 modify(◀ modify from / ▶ modify to)太複雜,兩個制都唔 work(可能 dateFrom / dateTo empty trigger silent warn,或者 date 唔合法,或者 from > to 邊界 case)。大少要最簡單 logic:兩個制(◀ -1 日 / ▶ +1 日)都係 modify to date 一日,from 永遠唔變,然後 re-run。
+
+### Root cause 確認
+
+- v0.5.5 `_brackTestShiftDateHandler` Step 3 line 6441-6474 用「單邊 modify」邏輯:
+  - ◀ -1 日 → `newFrom = from - 1`, `newTo = to`(to 唔變),if dateFrom empty → silent warn + return
+  - ▶ +1 日 → `newTo = to + 1`, `newFrom = from`(from 唔變),if dateTo empty → silent warn + return
+- 大少 case date [2000-01-01, 2026-08-07]:
+  - 撳 ◀ -1 日 → `newFrom = 1999-12-31 → auto-clamp → 2021-06-23`,`newTo = 2026-08-06`,date range 變 [2021-06-23, 2026-08-06](from auto-clamp + to -1 仲喺範圍)→ 應該 work
+  - 撳 ▶ +1 日 → `newFrom = 2000-01-02 → auto-clamp → 2021-06-23`,`newTo = 2026-08-08 → auto-clamp → 2026-08-07`,date range 仲係 [2021-06-23, 2026-08-07](完全冇 effect)→ 但 date input from 由 2000-01-01 變 2021-06-23(visible)
+- 大少 feedback:「現在加一日和減一日都用不了」 — 唔 work 嘅可能原因:
+  1. dateFrom / dateTo empty(因為 user 之前 session 留低 stale state)
+  2. date 唔合法
+  3. from > to 邊界 case
+  4. console error / network error
+
+### 凡人話 fix (v0.5.6)
+
+**Fix** v0.5.6 Step 3 logic **簡化** — 兩個制都用同一個 modify to date logic:
+- ◀ -1 日 → `newTo = to - 1`, `newFrom = from`(from 永遠唔變)
+- ▶ +1 日 → `newTo = to + 1`, `newFrom = from`(from 永遠唔變)
+- 永遠 trigger `_runAlgorithmWithDateRange(newFrom, newTo)` + fetch Brack Test verdict + re-enable button
+
+`adapter.mjs` `window._brackTestShiftDateHandler` Step 3 簡化邏輯(凡人話):
+
+```js
+// Step 3: Date arithmetic — 簡單邏輯 (大少 20:59 trigger v0.5.6 簡化 v0.5.5)
+let newFrom = dateFrom;  // from 永遠唔變
+let newTo = '';
+if (dateTo) {
+  try {
+    newTo = _brackShiftDate(dateTo, delta);
+  } catch (e) {
+    console.warn(`[Brack Test ±1 日] dateTo (${dateTo}) 唔合法, 唔 trigger:`, e);
+    return;
+  }
+} else {
+  console.warn(`[Brack Test ±1 日] dateTo empty, 唔 trigger (±1 日需要 to 存在)`);
+  return;
+}
+```
+
+Step 5 auto-clamp 邏輯 v0.5.4 spirit 保留(對齊 §K-line Cache 永久 rule spirit):
+- 如果 `newTo < K 線 first date` → auto-clamp `newTo = K 線 first date` + console.log 提示
+- 如果 `newTo > K 線 last date` → auto-clamp `newTo = K 線 last date` + console.log 提示
+- 永遠 trigger `_runAlgorithmWithDateRange(newFrom, newTo)` + fetch Brack Test verdict + re-enable button
+
+### Backend 改動 (v0.5.6)
+
+無。Frontend only fix,backend algorithm / API / runner 完全唔改。
+
+### Edge cases (凡人話 UX) — v0.5.6 簡化
+
+| Case | Trigger | v0.5.5 行為 | v0.5.6 行為 (簡化) |
+|------|---------|------------|-------------------|
+| 兩個 date 都 empty | Fresh page load + 撳 ±1 日 | console.warn + return | 唔變(console.warn + return) |
+| dateTo empty | Fresh page load + 撳 ±1 日(只 dateFrom 有 value) | -1 日要 dateFrom, +1 日要 dateTo → 兩種 silent warn | 統一 silent warn `dateTo empty, 唔 trigger (±1 日需要 to 存在)` + return ✅ |
+| dateTo 唔合法 | dateTo format 唔啱 | console.warn + return | 唔變(console.warn + return) |
+| newTo 越界 firstKlineDate | dateTo < K-line first date | auto-clamp + re-run | 唔變(auto-clamp `newTo = K 線 first date` + console.log + re-run) ✅ |
+| newTo 越界 lastKlineDate | dateTo > K-line last date | auto-clamp + re-run | 唔變(auto-clamp `newTo = K 線 last date` + console.log + re-run) ✅ |
+| from > to | 兩個 date 都越界 | 保留 silent warn + return | 唔變(silent warn + return) |
+| Network error / backend error | Fetch fail / verdict.ok = false | try/catch + console.warn + result panel 顯示 friendly error | 唔變 |
+
+### 凡人話 verify (v0.5.6)
+
+凡人話 manual verify:
+- 大少 hard reload testing page (`?v=2.3.210`) + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」→ baseline 5 年 hit
+- date inputs 揀 [2000-01-01, 2026-08-07](越界 K 線 first date `2021-06-23`) + 撳「執行」→ re-fetch OK
+- 撳「◀ -1 日」制 → `newTo = 2026-08-06`(to - 1),`newFrom = 2000-01-01`(from 唔變)+ date input to 變 `2026-08-06`, date input from 仲係 `2000-01-01` + re-run K 線 + ZigZag + P 點 + Brack Test verdict ✅
+- 撳「▶ +1 日 ▶」制 → `newTo = 2026-08-08 → auto-clamp → 2026-08-07`,`newFrom = 2000-01-01`(from 唔變)+ date input to 仲係 `2026-08-07`, date input from 仲係 `2000-01-01` + re-run ✅
+- date inputs 揀 [2026-09-01, 2026-09-15](from 喺 K 線範圍內,to 越界 lastKlineDate) + 撳「執行」→ re-fetch OK
+- 撳「◀ -1 日」制 → `newTo = 2026-09-14`(to - 1, 越界 lastKlineDate) → auto-clamp → `2026-08-07` + console.log + re-run
+- 撳「▶ +1 日 ▶」制 → `newTo = 2026-09-16` > `lastKlineDate` → auto-clamp → `2026-08-07` + console.log + re-run
+
+### 對齊永久 rule
+
+- ✅ §Config UX 模式 (2026-08-19 13:03) — ±1 日制最簡單 logic(兩個制都 modify to date)
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — YYYY-MM-DD format + UTC midnight
+- ✅ §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source (v0.5.4 auto-clamp spirit 保留)
+- ✅ §M3 silent return 唔 throw spirit — edge case (empty / 唔合法 / from > to) 保留 silent warn
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+- ✅ DRY principle spirit — 共用 1 個 handler `_brackTestShiftDateHandler(panelId, symbol, delta)`,2 個 button 帶不同 `delta` param
+- ✅ Re-use `_runAlgorithmWithDateRange` (v0.5.2 已實證 work 嘅 helper)
+
+---
+
+## §8.13 Brack Test ±1 日制 拎走 v0.5.4 auto-clamp logic (大少 2026-09-16 21:15 reject v0.5.6, v0.5.7 修正 v0.5.6 嘅 from auto-clamp bug)
+
+### 凡人話
+
+大少 reject v0.5.6 trigger「點解你改來改去做係有問題,還是『多一日』的功能不能用」+ console log evidence `[Brack Test ±1 日] from (2010-01-01) 早過 K 線第一日 (2021-06-22), auto-clamp → 2021-06-22`。
+
+凡人話:v0.5.6 嘅 Step 3 已經係最簡單邏輯(只 modify to,from 唔變),但 v0.5.4 嘅 Step 5 auto-clamp logic 仲 trigger from modify(因為 user 輸入嘅 `2010-01-01` 越界 K 線 first `2021-06-22`)。大少要嘅最簡單邏輯:**拎走 from + to auto-clamp**,只 modify to date + re-run,Backend KlineCache fetch K 線會自動用 K 線 actual range。
+
+大少 trigger「改好了後要做測試,無問題才交給我」—所以 v0.5.7 fix 完之後必先自己 verify,先交畀大少(對齊 9月10日 23:06「自己行」永久 rule spirit)。
+
+### Root cause 確認
+
+- v0.5.6 `_brackTestShiftDateHandler` Step 3 line 6441-6456 已是最簡單邏輯:
+  - `newFrom = dateFrom`(from 唔變)
+  - `newTo = _brackShiftDate(dateTo, delta)`(兩個制都 modify to)
+- 但 v0.5.4 Step 5 line 6479-6499 嘅 auto-clamp logic 仲 trigger from modify:
+  ```js
+  if (newFrom && newFrom < firstKlineDate) {
+    newFrom = firstKlineDate;  // ❌ 修改 from
+    autoClamped = true;
+  }
+  if (newTo && newTo > lastKlineDate) {
+    newTo = lastKlineDate;  // ❌ 修改 to
+    autoClamped = true;
+  }
+  ```
+- 大少 case date `[2010-01-01, 2026-08-06]`,K 線 `[2021-06-22, 2026-08-06]`,撳 ▶ +1 日:
+  - Step 3:`newFrom = 2010-01-01`(唔變),`newTo = 2026-08-07`(to + 1,越界 lastKlineDate)
+  - Step 5 auto-clamp 觸發:
+    - `from (2010-01-01) < K 線 first (2021-06-22)` → auto-clamp `newFrom = 2021-06-22`(❌ 大少 reject 因為 modify from)
+    - `to (2026-08-07) > K 線 last (2026-08-06)` → auto-clamp `newTo = 2026-08-06`(❌ 大少 reject 因為 modify to)
+  - date range 變 `[2021-06-22, 2026-08-06]`,date input from 由 `2010-01-01` 變 `2021-06-22`(visible 修改)
+- 大少 feedback:「你只要吧 To Date 改變一日,然後再跑一次就可以了」+「改好了後要做測試,無問題才交給我」
+
+### 凡人話 fix (v0.5.7)
+
+**Fix** v0.5.7 Step 5 logic **拎走 from + to auto-clamp**:
+- 兩個制(◀ -1 日 / ▶ +1 日)都係 modify to date,from 永遠唔變
+- Backend KlineCache fetch K 線會自動用 K 線 actual range(越界 date 唔影響 verdict,因為 KlineCache layer 已經 handle `start` + `end` query params)
+- 對齊 §Config UX 模式 spirit (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留,唔好 auto-clamp date input
+
+`adapter.mjs` `window._brackTestShiftDateHandler` Step 5 拎走 auto-clamp 邏輯(凡人話):
+
+```js
+// Step 5: 拎走 v0.5.4 嘅 from + to auto-clamp logic (大少 21:15 reject v0.5.6)
+// 凡人話: 兩個制都係 modify to date, from 永遠唔變. Backend KlineCache fetch K 線會自動用 K 線 actual range.
+if (newFrom && newTo && newFrom > newTo) {
+  console.warn(`[Brack Test ±1 日] 撳完後 from (${newFrom}) > to (${newTo}) (用戶 input date range 錯咗), 唔 trigger`);
+  return;
+}
+console.log(`[Brack Test ±1 日] re-run: new from=${newFrom}, new to=${newTo}`);
+```
+
+### Backend 改動 (v0.5.7)
+
+無。Frontend only fix,backend algorithm / API / runner 完全唔改。Backend KlineCache fetch K 線已經 handle 越界 date。
+
+### Edge cases (凡人話 UX) — v0.5.7 簡化
+
+| Case | Trigger | v0.5.6 行為 | v0.5.7 行為 (簡化) |
+|------|---------|------------|-------------------|
+| 兩個 date 都 empty | Fresh page load + 撳 ±1 日 | console.warn + return | 唔變(console.warn + return) |
+| dateTo empty | Fresh page load + 撳 ±1 日 | console.warn + return | 唔變(console.warn + return) |
+| dateTo 唔合法 | dateTo format 唔啱 | console.warn + return | 唔變(console.warn + return) |
+| from 越界 K 線 first date | user input from < K-line first date | auto-clamp `newFrom = K 線 first date` + console.log + re-run (modify from) ❌ | **唔變, 拎走 auto-clamp** (user input value 保留, Backend KlineCache handle) ✅ |
+| to 越界 K 線 last date | user input to > K-line last date | auto-clamp `newTo = K 線 last date` + console.log + re-run (modify to) ❌ | **唔變, 拎走 auto-clamp** (user input value 保留, Backend KlineCache handle) ✅ |
+| from > to | 用戶 input date range 錯咗 | silent warn + return | 唔變(silent warn + return) |
+| Network error / backend error | Fetch fail / verdict.ok = false | try/catch + console.warn + result panel 顯示 friendly error | 唔變 |
+
+### 凡人話 verify (v0.5.7) — 大少 trigger「無問題才交給我」
+
+Mavis 自己測試 scope (對齊 9月10日 23:06「自己行」永久 rule):
+
+**凡人話 manual verify**:
+- 大少 hard reload testing page (`?v=2.3.211`) + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」→ baseline 5 年 hit
+- date inputs 揀 [2010-01-01, 2026-08-06](from 越界 K 線 first date `2021-06-22`)+ 撳「執行」→ re-fetch OK
+- 撳「◀ -1 日」制 → console.log 印 `[Brack Test ±1 日] re-run: new from=2010-01-01, new to=2026-08-05` + date input to 變 `2026-08-05`, from 仲係 `2010-01-01` (唔變) + re-run K 線 + ZigZag + P 點 + Brack Test verdict ✅
+- 撳「▶ +1 日 ▶」制 → console.log 印 `[Brack Test ±1 日] re-run: new from=2010-01-01, new to=2026-08-07` + date input to 變 `2026-08-07`, from 仲係 `2010-01-01` (唔變) + re-run ✅
+
+**Backend curl verify**: `curl 'http://localhost:18792/api/algorithms/run?algo=m1_brack_test&symbol=HK.00700&start=2010-01-01&end=2026-08-07&data_window_days=1260'` → verdict.points 對齊 K 線 actual range `[2021-06-22, 2026-08-06]` (Backend KlineCache 自動 clamp 落 K 線 actual range, 即使 user input 越界 date)。
+
+**凡人話解**:兩個制都係 modify to date,from 永遠唔變,唔再 auto-clamp(對齊 §Config UX 模式 spirit「user 揀過嘅 value 永遠要保留」)。Backend KlineCache fetch K 線自動用 K 線 actual range,越界 date 唔影響 verdict。
+
+### 對齊永久 rule
+
+- ✅ §Config UX 模式 (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留, 唔好 auto-clamp date input
+- ✅ §Cross-module 統一 date parsing 永久 rule (8月29日 22:35) — YYYY-MM-DD format + UTC midnight
+- ✅ §K-line Cache 永久 rule (8月22日 23:20) — Backend KlineCache fetch K 線自動用 K 線 actual range (越界 date 唔影響 verdict)
+- ✅ §M3 silent return 唔 throw spirit — edge case (empty / 唔合法 / from > to) 保留 silent warn
+- ✅ §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart
+- ✅ §M1 sub-scenario 永久 rule (8月16日 19:21) — 改任何 sub_scenario display 即刻 update spec doc
+- ✅ cache bust self-check 永久 rule 21:24 — sync bump ALGO_CACHE_BUST + ?v=2.3.X
+- ✅ DRY principle spirit — 共用 1 個 handler `_brackTestShiftDateHandler(panelId, symbol, delta)`,2 個 button 帶不同 `delta` param
+- ✅ Re-use `_runAlgorithmWithDateRange` (v0.5.2 已實證 work 嘅 helper)
+
+---
+
 ## Change log
 
 | Version | Date | Trigger | Change |
@@ -732,3 +1297,11 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 | v0.4.1 | 2026-09-15 21:37 | 大少 trigger「修正, 這個Brack Test指定日期不只是重跑Brack Test, 那是整個K線圖和Brack Test都按指定的日期內重新再跑」 | **修正 v0.4.0 (淨改 Brack Test verdict filter 唔對齊 spirit)** — (a) **Backend** `api/kline.py` line 47 已經有 `start` + `end` Query params + KlineCache `get_or_fetch` line 144-145 已經 support 拎 filtered K 線 (凡人話 v0.4.1 唔需要新加 backend endpoint); (b) **Backend** `m1_brack_test/algorithm.py` **Revert v0.4.0 改動** (拎走 `_parse_date_range` + `_kline_date_ts` + loop date range filter, 因為 frontend testing-page.js fetch K 線嗰陣已經 add `start` + `end` query params, KlineCache 自然拎 filtered K 線, frontend 拎到嘅 klines 已經 filtered, algorithm 唔需要再 filter — 對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」); (c) **Backend** `api/algorithms.py` 保留 v0.4.0 `date_from` + `date_to` Query params (algorithm 入面拎 `options.get("dateFrom")` 等於 None 嘅時候 fallback 全跑, silent return 對齊 §M3 永久 rule spirit); (d) **Frontend** `testing-page.js` Refactor `runAlgorithm()` → `runAlgorithm(dateFrom, dateTo)` 拎 optional args + fetch K 線嗰陣 add `start` + `end` query params + expose `window._runAlgorithmWithDateRange = function(dateFrom, dateTo) { return runAlgorithm(dateFrom, dateTo); }`; (e) **Frontend** `adapter.mjs` `_brackTestRunDateRangeHandler` 重寫成 trigger `window._runAlgorithmWithDateRange(dateFrom, dateTo)` (透過 window global), 唔再自己 fetch verdict + render (對齊 v0.4.1 真正 spirit「整個 K 線圖 + Brack Test 都按指定日期重跑」); (f) **Spec doc** §8.1 新加 + Change log v0.4.1 entry + v0.4.0 entry 加註「Superseded by v0.4.1」。對齊 §K-line Cache 永久 rule spirit; §M3 trendline chart overlay 修復永久 rule silent return 唔 throw; §Backend hot-reload 永久 rule 改 backend 必 restart (`./start.sh`) + curl verify; Cache bust `5.4.5` → `5.4.6`, `?v=2.3.200` → `?v=2.3.201` (對齊 21:24 cache bust self-check 永久 rule); DRY principle spirit — testing-page.js 主流程共用, 唔再 adapter.mjs 自己 fetch verdict |
 | v0.4.3 | 2026-09-15 22:27 | 大少 trigger「在指定日期內跑 Brack Test 但發現zigzag 和P點 沒有重跑, 再檢查還有那些是溜了的」 | **修 ZigZag 沒有重跑 issue + audit 其他 chart overlay 來源** — (a) **Audit** 8 個 chart overlay 來源 (K 線 candlestick / M1 verdict / MA 線 / 鮮紫觸發點 marker / 鮮綠 extension line / Brack Test verdict / Brack Test cycle marker / chart banner + cycle legend) 全部對齊 filtered K 線 ✅, 只有 ZigZag verdict + ZigZag 紫線 + P 點 marker 漏咗 (frontend `fetchBackendZigZag` 之前 hardcode `data_window_days: '1260'` (5 年) + 冇 add `date_from`/`date_to` query params, ZigZag verdict 拎 5 年嘅 points, 紫色線 + P 點 marker 嘅 time 唔喺 chart visible range 內, 大少睇唔到 = 「冇重跑」); (b) **Frontend** `testing-page.js` `fetchBackendZigZag(code, period, thresholdMode, manualThreshold, lookback, multiplier, signal, dateFrom, dateTo, dataWindowDays)` 加 3 個 optional args + Fetch URL add `start` + `end` query params (對齊 backend api/algorithms.py start/end 既有 pattern) + `data_window_days` 用 caller value (filtered K 線 length), 唔再 hardcode 1260; (c) **Frontend** `fetchAndInjectBackendZigZag(...)` 加 3 個 args + 傳落 `fetchBackendZigZag`; (d) **Frontend** `runAlgorithm(dateFrom, dateTo)` line 1599 call site 加 3 個 args (從 runAlgorithm scope 拎 `dateFrom`/`dateTo`/`klines.length`); (e) **附加 silent fallback fix** (對齊 §M3 永久 rule spirit「silent return 唔 throw」): `testing-page.js` line 1518 `throw error` 改 `silent fallback + return` + `runStatus.innerHTML` 顯示 friendly error message + `resultPanel.innerHTML` 顯示建議 (Retry / Check FutuOpenD / Check stock code) + `console.warn` 而唔係 `console.error`; (f) **Spec doc** §8.3 新加 + Change log v0.4.3 entry。對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」; §M3 trendline chart overlay 修復永久 rule silent return 唔 throw; §Backend hot-reload 永久 rule backend 唔需要 restart (frontend only fix); Cache bust `5.4.6` → `5.4.7`, `?v=2.3.201` → `?v=2.3.202` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify (對齊 §M3 永久 rule 凡人話肉眼 verify spirit): 大少 hard reload testing page + 撳 date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」button → ZigZag 紫線 + P 點 marker 對齊 filtered K 線 range, 唔再係 5 年嘅 points 喺 chart visible range 外 |
 | v0.4.4 | 2026-09-16 06:16 | 大少 trigger screenshot「zigzag 線和 P 點 把超出 K 線範圍的跑了, 必須根據新範圍的 K 線再重新跑」 | **修 v0.4.3 漏網之魚 — backend runner 拎 caller start/end** — (a) **Backend** `services/algorithm_runner.py` line 125-137: 拎 caller 嘅 `dateFrom` + `dateTo` 從 `options.get(...)` 覆蓋 `start_date` + `end_date` (silent fallback: caller 冇傳 → 用既有 `today - calendar_days_back` default 對齊 §M3 永久 rule spirit); (b) **Backend** `cache.get_klines(symbol, period, start=start_date, end=end_date)` 拎 filtered K 線對齊 caller 傳嘅 start/end; (c) **Spec doc** §8.4 新加 + Change log v0.4.4 entry。對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」; §M3 永久 rule silent return 唔 throw; §Backend hot-reload 永久 rule 改 backend 必 restart (`./start.sh`) + curl verify (frontend 不需要 restart); Cache bust `5.4.7` → `5.4.8`, `?v=2.3.202` → `?v=2.3.203` (對齊 21:24 cache bust self-check 永久 rule); DRY principle spirit — backend runner 共用 caller 嘅 start/end, 唔再 hardcode today - calendar_days_back |
+| v0.5.0 | 2026-09-16 07:21 | 大少 trigger「撳完指定日期後, date inputs 嘅 value 會 reset 返做空, 要保留我揀過嘅日期」 | **Brack Test date inputs 保留 user 揀過嘅 value (對齊 §Config UX 模式)** — (a) **Frontend** `adapter.mjs` module 加 `lastBrackDateFrom` / `lastBrackDateTo` state (line 6243-6244) + `_brackTestDateInputChange(field, value)` window handler (line 6258+) 即時 sync state; (b) **Frontend** `adapter.mjs` `renderBrackTestCard` date inputs (line 5795-5797) 加 `value="${lastBrackDateFrom}"` + `value="${lastBrackDateTo}"` + `onchange` / `oninput` 即時 sync; (c) **Frontend** `adapter.mjs` `_brackTestRunDateRangeHandler` 撳「執行」之前同步 state (line 6324-6325); (d) **Spec doc** §8.6 新加 + Change log v0.5.0 entry。對齊 §Config UX 模式 (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.8` → `5.4.9`, `?v=2.3.203` → `?v=2.3.204` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.204`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」 → 肉眼 verify date inputs 仲係 [2026-09-01, 2026-09-15] (唔 reset) |
+| v0.5.1 | 2026-09-16 07:27 | 大少 trigger「撳完指定日期後再撳『跑算法』撞 PointerEvent error」 | **Frontend button event-leak bug fix** — (a) **Frontend** `testing-page.js` 3 個 addEventListener 改用 arrow function wrap: `runBtn` line 2081, `runFullChainBtn` line 2889, `addTradeJournalEntry btn` line 3436 — 改 `() => runAlgorithm()` / `() => runFullChain()` / `() => addTradeJournalEntry()` 避免 PointerEvent 漏入 function 嘅 first arg; (b) **Root cause** (curl + backend log evidence): `runBtn.addEventListener('click', runAlgorithm)` 撳 button 嗰陣 event listener 默認傳 `(event)` 做 first arg, `runAlgorithm(dateFrom, dateTo)` signature 第一個 param `dateFrom = PointerEvent` (truthy object), backend log 印 `start=[object PointerEvent]` silent fail; (c) **Spec doc** §8.7 新加 + Change log v0.5.1 entry。對齊 §M3 silent return 唔 throw spirit — silent fallback + console.warn; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.9` → `5.4.10`, `?v=2.3.204` → `?v=2.3.205` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page + 撳 M1 + 撳 Brack Test 指定日期跑 → 撳「執行」OK → 撳返「跑算法」button → verdict 正常 render (之前 backend log 印 `start=[object PointerEvent]` + 返 0 條 K 線); 新永久 rule (新加 AGENTS.md) — 「Frontend button event listener 永遠 wrap arrow function 避免 event object 漏入 function args」 |
+| v0.5.2 | 2026-09-16 17:08 | 大少 trigger「修改, 現在只有 K 線圖和 Zigzag, 但沒有 Brack Test, 在指定的日期內跑是要包括 Brack Test」 | **Brack Test 指定日期範圍 Brack Test verdict render fix** — (a) **Frontend** `adapter.mjs` `_brackTestRunDateRangeHandler` 喺 `_runAlgorithmWithDateRange` 之後自己 fetch Brack Test verdict (m1_brack_test algo) 帶 `start + end` query params (對齊 backend api/algorithms.py line 83-89 Query params); (b) call `_renderBrackTestVerdict(panel, data, symbol)` 共用 render helper 寫入 panel; (c) **Spec doc** §8.8 新加 + Change log v0.5.2 entry。對齊 §K-line Cache 永久 rule spirit「Frontend 拎 data, Backend 拎 K 線」 — K 線 filtered 喺 KlineCache layer, frontend testing-page.js 拎 data, backend runner 拎 options.get("dateFrom") / options.get("dateTo") 落 start_date / end_date; §M3 silent return 唔 throw spirit — silent fallback + console.warn; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.10` → `5.4.11`, `?v=2.3.205` → `?v=2.3.206` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.206`) + 撳跑 M1 (HK.00700) + 撳 date inputs 揀 [2026-09-01, 2026-09-15] + 撳「執行」 → Brack Test verdict re-fetched, hit table / summary / chart banner 全部對齊 filtered range |
+| v0.5.3 | 2026-09-16 17:23 | 大少 trigger「在指定日期 Brack Test 的『執行』制右邊, 加上兩個功能制, 第一個是把現在的 Brack Test 減一日, 第二個是把現在的 Brack Test 加一日, 同樣地要把正個 K 線圖, Zigzag 線, P 點, Brack Test, 都要再重新跑一編」 | **Brack Test 指定日期 ±1 日快速調整 UI** — (a) **Frontend** `adapter.mjs` `BRACK_TEST_PANEL_STYLE` (line 5771+) 加 `.brack-shift-date-btn` CSS (橙色主題色 #ffa726 + hover #ff9800 + disabled #ccc); (b) **Frontend** `adapter.mjs` `renderBrackTestCard` (line 5802+) date row 加 2 個 `<button class="brack-shift-date-btn">` (「◀ -1 日」/「+1 日 ▶」), onclick 帶 `delta=-1` / `delta=+1` 參數; (c) **Frontend** `adapter.mjs` 新加 `_brackShiftDate(isoDate, deltaDays)` helper (line 6268+) — UTC midnight 統一 (對齊 §Cross-module 統一 date parsing 永久 rule 8月29日 22:35) — `new Date(isoDate + 'T00:00:00Z').setUTCDate(getUTCDate() + delta)` → `toISOString().slice(0, 10)`; (d) **Frontend** `adapter.mjs` 新加 `window._brackTestShiftDateHandler(panelId, symbol, delta)` handler (line 6401+) — DRY spirit 共用 1 個 handler 帶 delta param, 完整 13 個 steps: 拎 date inputs value + edge case empty + date arithmetic + 拎 K 線 first/last date + boundary check (3 個 case: 越界 / from > to) + sync state + update input DOM + disable 3 button + trigger `_runAlgorithmWithDateRange` + fetch Brack Test verdict + call `_renderBrackTestVerdict` + re-enable 3 button + catch error silent fallback; (e) **Spec doc** §8.9 新加 + Change log v0.5.3 entry。對齊 §Config UX 模式 (2026-08-19 13:03) — 自動+手動+自動儲存更新圖表 ±1 日制快捷掣; §Cross-module 統一 date parsing 永久 rule (8月29日 22:35); §K-line Cache 永久 rule (8月22日 23:20) — Frontend 拎 data; §M3 silent return 唔 throw spirit — edge case silent warn; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix; cache bust self-check 永久 rule 21:24 — sync bump `5.4.11` → `5.4.12` + `?v=2.3.206` → `?v=2.3.207`; DRY principle spirit — 共用 1 個 handler `_brackTestShiftDateHandler(panelId, symbol, delta)`, 2 個 button 帶不同 `delta` param; Re-use `_runAlgorithmWithDateRange` (v0.5.2 已實證 work 嘅 helper); 新永久 rule (新加 AGENTS.md) — 「Brack Test 指定日期 ±1 日快速調整 UI 永久 rule」 |
+| v0.5.4 | 2026-09-16 20:39 | 大少 trigger「我指定的 Bracktest 日期是 2000-1-1 至 2026-8-7, 但 console log: [Brack Test ±1 日] 撳完後 from (1999-12-31) 早過 K 線第一日 (2021-06-23), 唔 trigger. 這個問題在時間上是全錯了, 你要找回當時 K 線的時間 Range 才可以做到加一日或減一日」 | **Brack Test ±1 日制 boundary check 改 auto-clamp + 永遠 re-run (修正 v0.5.3 漏網之魚)** — (a) **Root cause** v0.5.3 `_brackTestShiftDateHandler` line 6448-6460 boundary check 用「越界 → silent warn + return」邏輯, 大少 date range `[2000-01-01, 2026-08-07]` 但 K 線 actual range `[2021-06-23, 2026-08-07]` (因 `dataWindowDays=1260` default 5 年), 撳 ±1 日永遠 trigger「撳完後 from 早過 K 線第一日, 唔 trigger」console.warn, 永遠唔 re-run; (b) **Frontend** `adapter.mjs` `window._brackTestShiftDateHandler` line 6448+ 改 auto-clamp 邏輯 — K 線 first date / last date 係 authoritative source (對齊 §K-line Cache 永久 rule spirit), 如果 `newFrom < K 線 first date` → auto-clamp `newFrom = K 線 first date` + console.log 提示, 如果 `newTo > K 線 last date` → auto-clamp `newTo = K 線 last date` + console.log 提示, 永遠 trigger `_runAlgorithmWithDateRange` + fetch Brack Test verdict + re-enable button. Edge case (b) `newFrom > newTo` (極端 case: 兩個 date 都越界 clamp 落同一個 K 線 date) 保留 silent warn + return; (c) **Spec doc** §8.10 新加 + Change log v0.5.4 entry。對齊 §Config UX 模式 (2026-08-19 13:03) — ±1 日制永遠 work, 即使 date 越界都 auto-clamp 落 K 線範圍; §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source; §M3 silent return 唔 throw spirit — extreme edge case (from > to) 保留 silent warn; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.12` → `5.4.13`, `?v=2.3.207` → `?v=2.3.208` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.208`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2000-01-01, 2026-08-07] (越界 K 線 first date `2021-06-23`) + 撳「執行」→ 撳「◀ -1 日」制 → console.log 印 `[Brack Test ±1 日] from (1999-12-31) 早過 K 線第一日 (2021-06-23), auto-clamp → 2021-06-23` + date input 變 `2021-06-23` + re-run K 線 + ZigZag + P 點 + Brack Test verdict. 凡人話解: K 線 first / last date 永遠係 authoritative source, ±1 日制永遠 work, date 越界就 auto-clamp; AGENTS.md 永久 rule update (v0.5.3 → v0.5.4: boundary check 改 auto-clamp + 永遠 re-run) |
+| v0.5.5 | 2026-09-16 20:50 | 大少 trigger「現在減一日是對的, 但加一日是錯的, 你是修改了 From Date, 應該是修改 To Date」 | **Brack Test ±1 日制 改單邊 modify (修正 v0.5.4)** — (a) **Root cause** v0.5.4 `_brackTestShiftDateHandler` Step 3 line 6428-6446 用「from + to 雙邊 modify」邏輯, 大少 case date `[2000-01-01, 2026-08-07]`, K 線 `[2021-06-23, 2026-08-07]`, 撳 ◀ -1 日雙邊 modify 對齊大少 accept(因為 from auto-clamp + to -1 仲喺範圍), 撳 ▶ +1 日雙邊 modify 大少 reject(因為 from auto-clamp + to auto-clamp → date range 仲係 [2021-06-23, 2026-08-07] 完全冇 effect, 大少 expect +1 只 modify to). 大少 feedback「+1 應該修改 to date」 — 即係 ◀ -1 日 = extend left (modify from only), ▶ +1 日 = extend right (modify to only); (b) **Frontend** `adapter.mjs` `window._brackTestShiftDateHandler` Step 3 line 6428-6456 改**單邊 modify** 邏輯 — `delta < 0` (◀ -1 日): `newFrom = _brackShiftDate(dateFrom, -1)`, `newTo = dateTo` (to 唔變), `delta > 0` (▶ +1 日): `newTo = _brackShiftDate(dateTo, +1)`, `newFrom = dateFrom` (from 唔變). Edge case (d) -1 日 dateFrom empty / +1 日 dateTo empty → silent warn + return. Step 5 auto-clamp v0.5.4 spirit 保留: `newFrom < K 線 first date` → auto-clamp + re-run, `newTo > K 線 last date` → auto-clamp + re-run. Edge case (b) from > to 保留 silent warn + return; (c) **Spec doc** §8.11 新加 + Change log v0.5.5 entry。對齊 §Config UX 模式 (2026-08-19 13:03) — ±1 日制單邊 extend date range (◀ extend left, ▶ extend right); §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source (v0.5.4 auto-clamp spirit 保留); §M3 silent return 唔 throw spirit — edge case 保留 silent warn; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.13` → `5.4.14`, `?v=2.3.208` → `?v=2.3.209` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.209`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2000-01-01, 2026-08-07] (越界 K 線 first date `2021-06-23`) + 撳「執行」→ 撳 ◀ -1 日 → console.log 印 `from (1999-12-31) 早過 K 線第一日 (2021-06-23), auto-clamp → 2021-06-23` + date input from 變 `2021-06-23` + date input to 仲係 `2026-08-07` + re-run K 線 + ZigZag + P 點 + Brack Test verdict; 撳 ▶ +1 日 → console.log 印 `to (2026-08-08) 遲過 K 線最後一日 (2026-08-07), auto-clamp → 2026-08-07` + date input from 仲係 `2021-06-23` + date input to 仲係 `2026-08-07` + re-run. 凡人話解: ◀ -1 日 = extend left (modify from only), ▶ +1 日 = extend right (modify to only); AGENTS.md 永久 rule update (v0.5.4 → v0.5.5: 單邊 modify logic) |
+| v0.5.6 | 2026-09-16 20:59 | 大少 reject v0.5.5 trigger「你很差啊， 現在加一日和減一日都用不了， 其他可以簡單處理， 你只要吧 To Date 改變一日， 然後再跑一次就可以了」 | **Brack Test ±1 日制 簡化 (修正 v0.5.5 太複雜)** — (a) **Root cause** v0.5.5 `_brackTestShiftDateHandler` Step 3 line 6441-6474 用「單邊 modify」邏輯 (◀ modify from only / ▶ modify to only), 但大少 reject 因為「現在加一日和減一日都用不了」 — 可能因為 dateFrom / dateTo empty trigger silent warn + return, 或者 date 唔合法, 或者 from > to 邊界 case. 大少要最簡單 logic: 兩個制都係 modify to date, from 永遠唔變; (b) **Frontend** `adapter.mjs` `window._brackTestShiftDateHandler` Step 3 line 6441-6457 簡化邏輯 — `newFrom = dateFrom` (from 永遠唔變), `newTo = _brackShiftDate(dateTo, delta)` (兩個制都用同一個 modify to date logic). Edge case (b) dateTo empty → silent warn + return (新加, ±1 日需要 to 存在). v0.5.4 auto-clamp spirit 保留: `newTo < K 線 first date` → auto-clamp + re-run, `newTo > K 線 last date` → auto-clamp + re-run. Edge case (e) from > to (極端 case: auto-clamp 之後 from 仲大過 to) → silent warn + return; (c) **Spec doc** §8.12 新加 + Change log v0.5.6 entry。對齊 §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source (v0.5.4 auto-clamp spirit 保留); §M3 silent return 唔 throw spirit — edge case 保留 silent warn; §Backend hot-reeload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.14` → `5.4.15`, `?v=2.3.209` → `?v=2.3.210` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.210`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2000-01-01, 2026-08-07] + 撳「執行」→ 撳 ◀ -1 日 → date input to 變 `2026-08-06`, from 仲係 `2000-01-01`, re-run K 線 + ZigZag + P 點 + Brack Test verdict; 撳 ▶ +1 日 → console.log 印 `to (2026-08-08) 遲過 K 線最後一日 (2026-08-07), auto-clamp → 2026-08-07` + date input to 仲係 `2026-08-07`, from 仲係 `2000-01-01`, re-run. 凡人話解: 兩個制都係 modify to date, from 永遠唔變, 最簡單 logic; AGENTS.md 永久 rule update (v0.5.5 → v0.5.6: 簡化邏輯) |
+| v0.5.7 | 2026-09-16 21:15 | 大少 reject v0.5.6 trigger「點解你改來改去做係有問題， 還是『多一日』的功能不能用」 + console log evidence `[Brack Test ±1 日] from (2010-01-01) 早過 K 線第一日 (2021-06-22), auto-clamp → 2021-06-22` | **Brack Test ±1 日制 拎走 v0.5.4 auto-clamp logic (修正 v0.5.6 嘅 from auto-clamp bug)** — (a) **Root cause** v0.5.6 嘅 Step 3 已經係最簡單邏輯 (`newFrom = dateFrom`, `newTo = _brackShiftDate(dateTo, delta)`, 兩個制都 modify to, from 唔變), 但 v0.5.4 嘅 Step 5 auto-clamp logic 仲 trigger from modify (因為 user 輸入嘅 `2010-01-01` 越界 K 線 first `2021-06-22`). 大少 case date `[2010-01-01, 2026-08-06]`, K 線 `[2021-06-22, 2026-08-06]`, 撳 ▶ +1 日 → Step 3 `newFrom = 2010-01-01` 唔變, `newTo = 2026-08-07` 越界 → Step 5 auto-clamp 觸發 `from (2010-01-01) 早過 K 線第一日 (2021-06-22), auto-clamp → 2021-06-22` (❌ 大少 reject 因為 modify from) + `to (2026-08-07) 遲過 K 線最後一日 (2026-08-06), auto-clamp → 2026-08-06` (❌ 大少 reject 因為 modify to). 大少 feedback「改好了後要做測試， 無問題才交給我」; (b) **Frontend** `adapter.mjs` `window._brackTestShiftDateHandler` Step 5 line 6479+ 拎走 v0.5.4 嘅 from + to auto-clamp logic — `if (newFrom < K 線 first date) auto-clamp` 同 `if (newTo > K 線 last date) auto-clamp` 兩段拎走. 兩個制都係 modify to date, from 永遠唔變. Backend KlineCache fetch K 線會自動用 K 線 actual range (越界 date 唔影響 verdict, 因為 KlineCache layer 已經 handle `start` + `end` query params). 對齊 §Config UX 模式 (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留, 唔好 auto-clamp date input. Edge case (b) from > to (用戶 input date range 錯咗, from 早過 to) 保留 silent warn + return; (c) **Spec doc** §8.13 新加 + Change log v0.5.7 entry。對齊 §Config UX 模式 (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.15` → `5.4.16`, `?v=2.3.210` → `?v=2.3.211` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.211`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2010-01-01, 2026-08-06] + 撳「執行」→ 撳 ▶ +1 日 → console.log 印 `re-run: new from=2010-01-01, new to=2026-08-07` + date input to 變 `2026-08-07`, from 仲係 `2010-01-01` (唔變, 因為 v0.5.7 拎走 auto-clamp) + re-run K 線 + ZigZag + P 點 + Brack Test verdict; 撳 ◀ -1 日 → console.log 印 `re-run: new from=2010-01-01, new to=2026-08-05` + date input to 變 `2026-08-05`, from 仲係 `2010-01-01` + re-run. 凡人話解: 兩個制都係 modify to date, from 永遠唔變, 唔再 auto-clamp (auto-clamp 違反 §Config UX 模式 spirit); AGENTS.md 永久 rule update (v0.5.6 → v0.5.7: 拎走 auto-clamp) |

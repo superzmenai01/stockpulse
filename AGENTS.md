@@ -134,6 +134,41 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: d663ef01 (fix) + 09ea4c21 (feat)
 
+### Brack Test 指定日期 ±1 日快速調整 UI 永久 rule (大少 2026-09-16 17:23 confirm, v0.5.3 → 2026-09-16 20:39 v0.5.4 → 2026-09-16 20:50 v0.5.5 → 2026-09-16 20:59 v0.5.6 → 2026-09-16 21:15 v0.5.7 update)
+
+**凡人話**: Brack Test card 指定日期範圍「執行」制右邊永遠有「◀ -1 日」+「+1 日 ▶」2 個功能制,撳完之後自動重新跑 K 線 + ZigZag + P 點 + Brack Test verdict。
+
+**永久 rule checklist**:
+- ✅ Brack Test 指定日期範圍「執行」制右邊永遠有 2 個 ±1 日功能制 (DRY spirit — 共用 1 個 handler `_brackTestShiftDateHandler(panelId, symbol, delta)`,2 個 button 帶不同 `delta` param)
+- ✅ Date arithmetic 永遠用 UTC midnight (對齊 §Cross-module 統一 date parsing 永久 rule 8月29日 22:35): `new Date(isoDate + 'T00:00:00Z').setUTCDate(getUTCDate() + delta)` → `toISOString().slice(0, 10)`
+- ✅ **最簡單 modify logic** (v0.5.7 update — 大少 21:15 trigger「改好了後要做測試, 無問題才交給我」):
+  - ◀ -1 日 → `newTo = to - 1`, `newFrom = from` (from 永遠唔變)
+  - ▶ +1 日 → `newTo = to + 1`, `newFrom = from` (from 永遠唔變)
+  - 凡人話:兩個制都係 modify to date 一日, from 永遠唔變, 最簡單 logic
+- ✅ **唔好 auto-clamp date input** (v0.5.7 update — 大少 21:15 reject v0.5.6 嘅 from auto-clamp bug, 對齊 §Config UX 模式 spirit 2026-08-19 13:03「user 揀過嘅 value 永遠要保留」):
+  - ❌ 拎走 v0.5.4 嘅 from + to auto-clamp logic
+  - ✅ Backend KlineCache fetch K 線會自動用 K 線 actual range (越界 date 唔影響 verdict)
+- ✅ Edge case 永遠 silent warn + return 唔 throw (對齊 §M3 trendline chart overlay 修復永久 rule spirit「silent return 唔 throw」):
+  - (a) 兩個 date 都 empty → 保留 silent warn + return
+  - (b) 撳完後 from > to (極端 case: 用戶 input date range 錯咗, from 早過 to) → 保留 silent warn + return
+  - (c) v0.5.6 新加 — dateTo empty → silent warn + return (±1 日需要 to 存在, 因為最簡單 logic 只 modify to)
+  - (d) dateTo 唔合法 → 保留 silent warn + return
+- ✅ 撳完之後 re-use `_runAlgorithmWithDateRange` + 自己 fetch Brack Test verdict (完全對齊 v0.5.2 `_brackTestRunDateRangeHandler` line 6334-6358 pattern)
+- ✅ Disable 期間 disable 3 個 button (`-1 日` / `+1 日` / `執行`) 避免 double-click
+- ✅ Update input DOM 即時 visual feedback (對齊 §Config UX 模式 2026-08-19 13:03) — modify to date 完即時更新 date input 顯示新 to date, from 唔變
+- ✅ Backend 唔需要改 (frontend only fix, 對齊 §Backend hot-reload 永久 rule 8月31日 11:01)
+- ✅ 改 adapter.mjs 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (cache bust self-check 永久 rule 21:24)
+- ✅ **改好後必先自己 verify 完先交畀大少** (大少 21:15 trigger「改好了後要做測試, 無問題才交給我」, 對齊 9月10日 23:06「Mavis 自己行」永久 rule spirit)
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5771+ 嘅 `.brack-shift-date-btn` CSS
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5802+ 嘅 date row 加 2 個 `<button class="brack-shift-date-btn">`
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 6268+ 嘅 `_brackShiftDate` helper
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 6401+ 嘅 `_brackTestShiftDateHandler` handler (v0.5.4 改 Step 5 boundary check 邏輯由 silent warn + return → auto-clamp + 永遠 re-run; v0.5.6 簡化 Step 3 logic 由 v0.5.5 嘅單邊 modify 改為「兩個制都只 modify to date, from 唔變」最簡單 logic; **v0.5.7 拎走 Step 5 v0.5.4 嘅 from + to auto-clamp logic**, 因為 user input value 永遠要保留, Backend KlineCache handle 越界 date)
+- `docs/research/AS-03-cycle-detection/MODULE-BRACK-TEST.md` §8.9 v0.5.3 + §8.10 v0.5.4 + §8.11 v0.5.5 + §8.12 v0.5.6 + §8.13 v0.5.7 spec sections + Change log v0.5.3 + v0.5.4 + v0.5.5 + v0.5.6 + v0.5.7 entries
+
+對應 commit: 即將 push (Spec Sync v0.5.3 + v0.5.4 + v0.5.5 + v0.5.6 + v0.5.7)
+
 ### M3 A+B special rule + dataWindowDays backend 對齊 永久 rule (大少 2026-09-07 00:02 confirm)
 
 **凡人話**: M3 (趨勢線法) algorithm `_derive_trendline_state` 之前直接 `A in ids → return UP`, 冇處理 spec doc §5 line 109-111 嘅特殊規則「A + B 同時 fire (支撐升 + 壓力降) → 收斂三角形 = SIDEWAYS」, 影響 HK.00700 ['A','B','D','I','J'] 同 US.GOOGL ['A','B','C','D','I','J'] 返 UP 0.9 (錯, 應該 SIDEWAYS). 之前 frontend 舊版 (backups/zigzag-frontend-2026-08-20/adapter.mjs line 5386) 同 backend Python port (algorithm.py line 196-216) 都冇, 從來冇人 implement 落 code. 大少 9月7日 00:02 trigger「撳 M3 跑 00700 結果是上升加信心 90% 肯定有問題」揭發.
