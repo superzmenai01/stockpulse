@@ -5791,9 +5791,10 @@ function renderBrackTestCard(verdict) {
         <!-- 大少 2026-09-15 21:05 trigger — Brack Test 指定日期範圍跑功能 (v0.4.0): 保留左邊「🎯 跑 Brack Test」button 預設全跑, 右邊新加 date from + date to + 「執行」button 指定日期範圍跑 -->
         <!-- 對齊大少 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」, 但因為 date input value 係 ISO YYYY-MM-DD format (瀏覽器 native), 唔需要 _brackEscapeHtml escape -->
         <span class="brack-run-divider" style="color:#666; font-size:13px; margin:0 4px;">|</span>
-        <input type="date" class="brack-date-from brack-date-input" data-panel="${panelId}" aria-label="日期 From" />
+        <!-- 大少 2026-09-16 07:21 trigger (v0.5.0): 加 value="${lastBrackDateFrom}" restore 大少之前揀過嘅 date, 加 onchange 即時 sync 落 module-level state (runAlgorithm 之後 renderBrackTestCard 重新 render 個 panel 唔再 reset date inputs) -->
+        <input type="date" class="brack-date-from brack-date-input" data-panel="${panelId}" aria-label="日期 From" value="${lastBrackDateFrom}" onchange="window._brackTestDateInputChange('from', this.value)" oninput="window._brackTestDateInputChange('from', this.value)" />
         <span style="color:#666; font-size:13px;">→</span>
-        <input type="date" class="brack-date-to brack-date-input" data-panel="${panelId}" aria-label="日期 To" />
+        <input type="date" class="brack-date-to brack-date-input" data-panel="${panelId}" aria-label="日期 To" value="${lastBrackDateTo}" onchange="window._brackTestDateInputChange('to', this.value)" oninput="window._brackTestDateInputChange('to', this.value)" />
         <button class="brack-run-date-range-btn" onclick="window._brackTestRunDateRangeHandler('${panelId}', '${symbol}')">
           執行
         </button>
@@ -6233,6 +6234,24 @@ function _renderBrackTestVerdict(panel, data, symbol) {
   }
 }
 
+// 大少 2026-09-16 07:21 trigger — Brack Test 指定日期範圍 date inputs 保留 user 揀過嘅 value (v0.5.0)
+// 凡人話: 大少撳「執行」button 之前揀咗 date_from + date_to, 跑完 runAlgorithm 之後 renderBrackTestCard 重新 render 個 panel
+//   → input DOM 重新 create 冇 value → 大少揀過嘅日期消失咗
+// Fix: module-level state 保留 user 揀過嘅 date (對齊 testing-page.js `lastBrackChartBannerVerdict` pattern line 783),
+//   renderBrackTestCard 入面 restore input.value + 加 onchange handler 即時 sync 落 state
+// 對齊永久 rule §Config UX 模式 (2026-08-19 13:03) 「自動+手動+自動儲存更新圖表」 — user 揀咗嘅 value 永遠要保留, 唔好因為 re-render 失
+let lastBrackDateFrom = '';
+let lastBrackDateTo = '';
+
+// 凡人話: 大少改 date input 即時 sync 落 module-level state, 等下次 renderBrackTestCard 重新 render 嗰陣 restore 返
+window._brackTestDateInputChange = function(field, value) {
+  if (field === 'from') {
+    lastBrackDateFrom = value || '';
+  } else if (field === 'to') {
+    lastBrackDateTo = value || '';
+  }
+};
+
 window._brackTestRunHandler = async function(panelId, symbol) {
   // 凡人話: 大少撳「🎯 跑 Brack Test」button → fetch backend (全跑, 5 年) + 共用 render helper _renderBrackTestVerdict
   const panel = document.getElementById(panelId);
@@ -6299,18 +6318,44 @@ window._brackTestRunDateRangeHandler = async function(panelId, symbol) {
     return;
   }
 
+  // 大少 2026-09-16 07:21 trigger (v0.5.0): 撳「執行」之前同步 user 揀過嘅 date 落 module-level state
+  // 凡人話: runAlgorithm 完成後 renderBrackTestCard 會重新 render 個 panel → input DOM 重新 create → module-level state 保留大少揀過嘅 date, 重新 render 嗰陣 restore 返 (value="${lastBrackDateFrom}")
+  // 對齊永久 rule §Config UX 模式 (2026-08-19 13:03) 「自動+手動+自動儲存更新圖表」 — user 揀咗嘅 value 永遠要保留
+  lastBrackDateFrom = dateFrom || '';
+  lastBrackDateTo = dateTo || '';
+
   // 凡人話: 拎 btn 同 disable 避免 double-click
   const btn = panel.querySelector('.brack-run-date-range-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 跑緊...'; }
 
   try {
-    // 大少 21:37 trigger — 透過 testing-page.js 主流程 `_runAlgorithmWithDateRange` helper 拎 K 線 (filtered) + renderChart reset + fetch M1 verdict + fetch Brack Test verdict + render
+    // 大少 21:37 trigger — 透過 testing-page.js 主流程 `_runAlgorithmWithDateRange` helper 拎 K 線 (filtered) + renderChart reset + fetch M1 verdict + render M1 verdict card (對齊 §K-line Cache 永久 rule 8月22日 23:20 spirit「Frontend 拎 data, Backend 拎 K 線」)
     // 凡人話: testing-page.js 透過 window global 暴露 helper, adapter.mjs 直接 trigger
-    // 對齊 §K-line Cache 永久 rule (8月22日 23:20) — K 線 filtered 喺 K-line Cache layer, frontend testing-page.js 拎 data
     if (typeof window._runAlgorithmWithDateRange !== 'function') {
       throw new Error('testing-page.js 嘅 _runAlgorithmWithDateRange helper 尚未初始化, 請 reload testing page');
     }
     await window._runAlgorithmWithDateRange(dateFrom, dateTo);
+
+    // 大少 2026-09-16 17:08 trigger (v0.5.2 fix): 撳「執行」之後 fetch Brack Test verdict (m1_brack_test algo) + render 入 panel
+    // 凡人話: `_runAlgorithmWithDateRange` 只 fetch M1 verdict (ma_alignment), testing-page.js line 1699-1702 render Brack Test card 用 M1 verdict 但 M1 verdict.points 空 → Brack Test hit table / summary / chart banner 全部 empty
+    // Fix (對齊 `_brackTestRunHandler` 全跑 line 6262-6275 pattern): 喺 `_runAlgorithmWithDateRange` 之後自己 fetch Brack Test verdict (帶 start + end query params 對齊 backend api/algorithms.py line 83-89 Query params), call `_renderBrackTestVerdict` 共用 render helper 寫入 panel
+    // 對齊 §K-line Cache 永久 rule (8月22日 23:20) — K 線 filtered 喺 KlineCache layer, frontend testing-page.js 拎 data, backend runner 拎 options.get("dateFrom") / options.get("dateTo") 落 start_date / end_date (對齊 backend services/algorithm_runner.py line 137-144 永久 rule)
+    // 對齊 §M3 trendline凡人話肉眼 verify (9月6日 16:47) — 大少 reload testing page + 撳 Brack Test 跑指定日期 → Brack Test 結果 render 落 panel (hit table / summary / chart banner / cycle legend 全部對齊 filtered K 線 range)
+    // data_window_days 用 caller 嘅 filtered K 線 length (對齊之前 v0.4.3 fix spirit line 651 commit comment)
+    const filteredKlines = window.lastKlines || [];
+    const dataWindowDays = filteredKlines.length || 1260;
+    const dateRangeParams = `&start=${encodeURIComponent(dateFrom || '')}&end=${encodeURIComponent(dateTo || '')}`;
+    const brackUrl = `${window.BACKEND_URL || 'http://localhost:18792'}/api/algorithms/run?algo=m1_brack_test&symbol=${encodeURIComponent(symbol)}&data_window_days=${dataWindowDays}${dateRangeParams}`;
+    const brackResp = await fetch(brackUrl);
+    if (!brackResp.ok) {
+      throw new Error(`Brack Test fetch HTTP ${brackResp.status} ${brackResp.statusText}`);
+    }
+    const brackData = await brackResp.json();
+    if (!brackData.ok) {
+      throw new Error(brackData.error || 'Brack Test verdict 唔 ok');
+    }
+
+    _renderBrackTestVerdict(panel, brackData, symbol);
 
     // Button 變返做「🔄 重跑」對齊 §Config UX 模式 (8月19日 13:03) — 可重跑
     if (btn) {

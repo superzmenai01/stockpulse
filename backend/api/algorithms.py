@@ -75,6 +75,19 @@ async def run_algo(
         None,
         description="Brack Test 指定日期範圍 to (YYYY-MM-DD), 拎 verdict.points 喺 hit.date <= date_to 範圍內, empty = 全跑"
     ),
+    # 大少 2026-09-16 06:35 trigger — ZigZag fetchBackendZigZag 傳 start + end Query params (對齊 backend api/kline.py line 47 pattern + ChartContainer.tsx legacy pattern)
+    # 凡人話: 大少 trigger「還是有問題, 你先確認 Ziagzag 的點和 P 點都是必須從後台拿取的, 確保前台只是根據後台及出的點而畫出線來」
+    # Root cause: v0.4.3 commit (e2aad32f) frontend fetchBackendZigZag 加 date_from / date_to params (對齊既有 pattern) 但寫成 start / end (legacy ChartContainer.tsx naming)
+    # backend api/algorithms.py 對齊拎 date_from / date_to, 完全拎唔到 frontend 嘅 start / end, silent fallback 拎 default 5 年 1260 條 K 線 → emit 215 個 5 年 ZigZag points (frontend 完全拎錯 points, 紫線 + P 點超出 K 線 range)
+    # Fix: 加 start + end Query params (對齊 frontend naming), 同時兼容 date_from + date_to legacy Brack Test pattern (caller 傳邊個拎邊個)
+    start: Optional[str] = Query(
+        None,
+        description="ZigZag 指定日期範圍 from (YYYY-MM-DD), 拎 K 線 filtered 對齊 caller range, 對齊 frontend testing page fetchBackendZigZag 傳 start Query param. empty = 全跑"
+    ),
+    end: Optional[str] = Query(
+        None,
+        description="ZigZag 指定日期範圍 to (YYYY-MM-DD), 拎 K 線 filtered 對齊 caller range, 對齊 frontend testing page fetchBackendZigZag 傳 end Query param. empty = 全跑"
+    ),
 ):
     """凡人話: 跑 algorithm (4.43.0 加 4 個 ZigZag 新 params + validation)
 
@@ -143,6 +156,16 @@ async def run_algo(
         options["dateFrom"] = date_from
     if date_to:
         options["dateTo"] = date_to
+    # 大少 2026-09-16 06:35 trigger (v0.4.5 fix #1) — 加 start + end 兼容 (對齊 frontend fetchBackendZigZag naming)
+    # 凡人話: caller 傳 start + end (frontend ZigZag testing page naming) OR date_from + date_to (legacy Brack Test pattern), 邊個 caller 傳用邊個, 同時兼容兩者
+    # silent fallback: caller 冇傳 → 拎既有 today - calendar_days_back default 對齊 §M3 永久 rule spirit
+    # 對齊 §K-line Cache 永久 rule spirit (8月22日 23:20)「Frontend 拎 data, Backend 拎 K 線」, K 線 filtered 喺 KlineCache layer
+    effective_date_from = start or date_from
+    effective_date_to = end or date_to
+    if effective_date_from and not options.get("dateFrom"):
+        options["dateFrom"] = effective_date_from
+    if effective_date_to and not options.get("dateTo"):
+        options["dateTo"] = effective_date_to
 
     try:
         result = run_algorithm(
