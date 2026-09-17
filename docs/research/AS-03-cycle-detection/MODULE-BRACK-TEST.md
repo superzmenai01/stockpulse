@@ -214,15 +214,28 @@ return Verdict(
 - 凡人話: filtered view 入面第 1 row = Index 1 (該 cycle 最新嗰個 hit), 第 2 row = Index 2, ..., 第 M row = Index M
 - 對齊大少 trigger「不論 Brack Test 怎樣排列, 最上的第一個就是 Index 1」
 
-**凡人話 consistency check**: 大少講「Index 第幾個」時, Mavis 即刻知:
-- Mode A (全部): 第 N row = backend `hit.displayIndex = N` (global sort)
-- Mode B (揀 cycle X): 第 N row = filtered view 內第 N 個 = 該 cycle X 第 N 新 hit
+**Chart overlay marker label 規則** (大少 2026-09-17 13:38 trigger, v0.8.0) — `renderBrackTestChartOverlay` (adapter.mjs line 5871+) 嘅 `#N` 永遠對齊例表 Index:
+- Mode A (activeCycle='all'): 用 backend global `hit.displayIndex` (1..N, 對齊例表 Index 1..N)
+- Mode B (activeCycle='cycle X'): 用 frontend local `viewIdx + 1` (1..M, 對齊例表 Index 1..M)
+- 凡人話: 圖中「強上升週期 #208」= Mode A global 第 208 個 hit, Mode B 應該係「強上升 #1」= filtered 第 1 個 (該 cycle 最新嗰個 hit)
+- 對齊 `renderBrackTestHitTable` line 5986 一樣嘅 `isFiltered ? (viewIdx + 1) : (h.displayIndex ?? (viewIdx + 1))` pattern, 兩處 source of truth 統一
+- 對齊 §Backend 永久改 emit field name 永久 rule 9月10日 23:45 spirit:frontend 唔可以假設 backend global field 直接 render 落 filter view,必先 check filter state (`isFiltered`)
 
-Frontend `renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle)` (adapter.mjs line 5806) 拎 `verdict.points` array, 每個 hit 對應 1 個 marker:
+**凡人話 consistency check**: 大少講「Index 第幾個」時, Mavis 即刻知:
+- Mode A (全部): 第 N row = backend `hit.displayIndex = N` (global sort),chart marker label 都係 `#N`
+- Mode B (揀 cycle X): 第 N row = filtered view 內第 N 個 = 該 cycle X 第 N 新 hit,chart marker label 都係 `#N`
+- 凡人話 verify scope (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 凡人話肉眼 verify spirit):大少肉眼 verify chart marker #N 對應例表 row N 嘅日期 ✅
+
+Frontend `renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle)` (adapter.mjs line 5871) 拎 `verdict.points` array, 每個 hit 對應 1 個 marker:
 
 ```javascript
-const markers = filteredHits.map(h => {
+// 大少 2026-09-17 13:38 trigger v0.8.0 — chart marker label #N 對齊例表 Index
+const isFilteredChart = activeCycle && activeCycle !== 'all';
+const markers = filteredHits.map((h, viewIdx) => {
     const time = _brackHitToLwcTime(h);  // 統一 UTC parse (對齊 8月29日 22:35 永久 rule)
+    const markerIndex = isFilteredChart
+      ? (viewIdx + 1)
+      : (h.displayIndex != null ? h.displayIndex : (viewIdx + 1));  // 對齊 renderBrackTestHitTable line 5986 pattern
     return {
         time,
         position: h.state === 'UP' ? 'belowBar' : h.state === 'DOWN' ? 'aboveBar' : 'inBar',
@@ -232,7 +245,7 @@ const markers = filteredHits.map(h => {
              : h.cycle === 'decelerating_up' ? 'arrowDown'
              : h.cycle === 'decelerating_down' ? 'arrowUp'
              : 'circle',
-        text: h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle,
+        text: (h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle) + ` #${markerIndex}`,  // 大少 2026-09-17 13:38 trigger — 用 markerIndex 對齊例表 Index
     };
 });
 
@@ -255,6 +268,57 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 | decelerating_down | `#2980B9` 藍 |
 | bearish_initial_rise | `#E6B0AA` 淡紅 (跌勢初升) |
 | bullish_initial_decline | `#D5F5E3` 淡綠 (升勢初跌) |
+
+---
+
+### §4.2 Chart marker label 對齊例表 Index (大少 2026-09-17 13:38 trigger, v0.8.0)
+
+**凡人話**: 大少睇到圖中「強上升週期 #208」嗰個 #208 應該要對應返 BrackTest 結果例表入面嘅 Index, 即係 Mode B (揀 cycle) 嗰陣 #N = filtered view 第 N 個 (該 cycle 最新嗰個 hit 排第 1)。
+
+**Root cause**: `adapter.mjs` `renderBrackTestChartOverlay` line 5909 (改之前) 用 backend emit 嘅 `h.displayIndex` (1..N global sort by date_desc) 顯示 chart marker text label, **無處理 mode B 揀 cycle filter 嘅 case**。Mode B 嗰陣 filtered view 嘅 Index 應該係 frontend local enumerate `viewIdx + 1` (1..M filtered), 但 chart overlay 而家仲係用 backend global index (`displayIndex`), 完全對唔上例表 Index。
+
+凡人話對齊情況:
+- ✅ Mode A (Tab A「按時間排」):Backend global `displayIndex` = 例表 Index = chart marker #N → 已對齊
+- ❌ Mode B (Tab B「按 sub-scenario 揀」):Backend global `displayIndex` ≠ 例表 Index = chart marker #N → **未對齊**(大少 trigger 揭發)
+
+**凡人話 fix** (frontend only, v0.8.0):
+1. **改 `renderBrackTestChartOverlay`** line 5871+:`filteredHits.map(h => ...)` 改為 `filteredHits.map((h, viewIdx) => ...)` + 加 `isFilteredChart = activeCycle && activeCycle !== 'all'` + `markerIndex = isFilteredChart ? (viewIdx + 1) : (h.displayIndex ?? (viewIdx + 1))` + text 公式用 `markerIndex`(對齊 `renderBrackTestHitTable` line 5986 一樣 pattern, DRY spirit 兩處 source of truth 統一)
+2. **加 console.log 凡人話 visual evidence** (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 spirit):log 頭尾 marker 嘅 text + `isFiltered` flag, 等大少肉眼 verify chart marker #N 對齊例表 row N 嘅日期
+3. **Spec doc** §4.1 consistency check rule 段加返 chart label 對齊(之前寫 consistency check 只覆蓋例表 Index, 漏咗 chart label)
+4. **Cache bust sync bump**:`5.4.18` → `5.4.19` + `?v=2.3.213` → `?v=2.3.214`
+
+**Backend 唔需要改** — backend emit 嘅 `displayIndex` (global) 同 frontend 處理好 filter, 對齊 §Backend 永久改 emit field name 永久 rule 9月10日 23:45 spirit:frontend 唔可以假設 backend global field 直接 render 落 filter view, 必先 check filter state (`isFiltered`)
+
+**凡人話 verify scope** (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 凡人話肉眼 verify spirit):
+1. Hard reload testing page (`?v=2.3.214`)
+2. 撳跑 M1 (HK.00700 騰訊 or any stock)
+3. 撳「🎯 跑 Brack Test」
+4. 預設 Mode B (Tab B「按 sub-scenario 揀」), activeCycle = 'strong_uptrend'
+5. **肉眼 verify chart 上嘅 cycle marker text**:應該見到「強上升週期 #1」、「強上升週期 #2」...「強上升週期 #M」(M = 強上升 filtered 數量), 每個 #N 對應例表入面第 N row 嘅日期 ✅
+6. 切去 Mode A (Tab A「按時間排」):應該見到「強上升週期 #208」、「下跌反彈週期 #209」(backend global index), 每個 #N 對應例表入面第 N row 嘅日期 ✅
+7. 切去 Mode B + 揀另一個 cycle (e.g. 「初升」):應該見「初升週期 #1」、「初升週期 #2」...「初升週期 #M」(M = 初升 filtered 數量)
+8. 撳例表 row 5 (Index 5) → chart 自動 scroll 到嗰個 marker date (對齊既有 `_brackTestRowClickHandler`) ✅
+9. Backend curl evidence: `curl -s 'http://localhost:18792/api/algorithms/run?algo=m1_brack_test&symbol=HK.00700&data_window_days=1260' | jq '.points[] | select(.cycle == "strong_uptrend") | {date, displayIndex}' | head -5` → 第 1 row (date 最新) 嘅 displayIndex = global 排第 N (大數字, e.g. 208)
+
+**永久 rule 對齊**:
+- ✅ §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 — chart overlay 凡人話肉眼 verify scope
+- ✅ §M1 sub-scenario 永久 rule 8月16日 19:21 — 改任何 sub_scenario / display / UI 必 update spec doc (本段 §4.2 已加)
+- ✅ §Backend 永久改 emit field name 永久 rule 9月10日 23:45 spirit — frontend 必先 grep 所有 reference 對齊, frontend UI categorize 永遠拎 backend emit field 優先
+- ✅ §Backend hot-reload 永久 rule 8月31日 11:01 — frontend only fix, backend 唔需要 restart
+- ✅ Cache bust self-check 永久 rule 21:24 — 改 adapter.mjs 必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X`
+- ✅ §Mavis 自己行 9月10日 23:06 — 自己 plan + 做 + check, 有問題先問
+- ✅ §凡人話 workflow 9月14日 12:10 — 凡人話解釋 trigger 條件 + verify
+
+**對應 commit message** (待大少 trigger):
+```
+fix(brack-test): chart marker label #N 對齊 BrackTest 結果例表 Index (v0.8.0, 對齊大少 9月17日 13:38 trigger)
+
+- renderBrackTestChartOverlay line 5884-5925 text formula 改用 isFiltered viewIdx+1 pattern, 對齊 renderBrackTestHitTable line 5986
+- Mode A 用 backend global displayIndex, Mode B 用 frontend local viewIdx+1
+- Backend 唔需要改 (frontend only fix)
+- Spec doc §4.2 加 v0.8.0 entry + consistency check 段
+- Cache bust sync bump: 5.4.18 → 5.4.19 + ?v=2.3.213 → ?v=2.3.214
+```
 
 ---
 
@@ -364,6 +428,7 @@ const handle = LightweightCharts.createSeriesMarkers(candleSeries, markers);
 - ✅ Stock 永遠指 stockpulse.db (9月8日 17:16) — Brack Test 對齊
 - ✅ §M1 card 加卡模式 (大少 2026-09-14 21:16 confirm, 22:04 移到 K線圖框內最下邊) — testing page REGISTRY 唔加新 entry, Brack Test card 對齊 §M6 dashboard panel pattern (testing-page.js line 1555-1574), 撳跑 M1 之後 testing-page.js conditional populate `#brack-test-panel` (chart-section 入面, m6-dashboard-panel 之後, result section 之前), 視線一離開 chart 即刻見到 Brack Test 入口
 - ✅ **Banner init guard (大少 2026-09-15 06:55 trigger, v0.3.1)** — 撳跑 M1 但**仲未撳**「🎯 跑 Brack Test」button 嗰陣, chart banner 唔 render (hidden), 唔顯示 misleading text「(0 條 / 全部 0 條)」。Root cause: `renderBrackTestChartBanner` 拎 `hits = (verdict && verdict.points) || []`, 撳跑 M1 嗰陣 M1 verdict.points 唔存在 → empty array → filteredCount=0 + totalCount=0 → misleading banner。Fix 2 個地方: (a) `testing-page.js` line 1696 chart banner init 加 guard `if (verdict && verdict.points && verdict.points.length > 0)` 先 render banner, 否則 innerHTML = '' (hidden); (b) `adapter.mjs` `renderBrackTestChartBanner` line 6096 加 defensive guard `if (hits.length === 0) return '';` 對齊 §M3 trendline chart overlay 修復永久 rule spirit「silent return 唔 throw」, 涵蓋 `updateBrackTestChartBanner` + `_ModeHandler` / `_CycleHandler` 等所有 callers
+- ✅ **Cycle tooltip 改直接簡單算法條件 (大少 2026-09-17 08:30 trigger, v0.7.0)** — Brack Test cycle banner 嘅 ⓘ icon tooltip 內容由抽象嘅「Zmen X rule (A 連續 5 日 MA5 > MA60 等) + Layer 2 全部 MA 同方向 → mid_stage, 典型多頭排列確認」寫法, 改為直接列出 backend `ma_alignment/algorithm.py` line 477-680 嘅 11 個 elif trigger 條件 (排列 / 斜率正負 / P 點方向 / 拎幾多個 P 點 / spread ≥ thresholdPct 等)。凡人話: 大少撳 banner ⓘ icon 嗰陣即刻見到呢個 cycle 嘅 trigger 條件 (e.g. 「強上升 trigger: 排列 bull (MA5 > MA10 > MA60) + 全部 MA 斜率正 + P1 > P3 (峰頂抬高) + P2 > P4 (谷底抬高) + P1/P3.type = Peak + P2/P4.type = Trough + 拎到 4 個 P 點」), 等佢可以拎呢啲直接簡單算法條件去微調 algorithm. 改動 scope: `adapter.mjs` line 6108-6130 嘅 `BRACK_TEST_CYCLE_EXPLANATIONS` 11 個 entry string 改寫 (audit backend `ma_alignment/algorithm.py` line 477-680 嘅 11 個 elif trigger 條件, 對齊真實 algorithm 行為). Backend 唔需要改 (純 frontend display string 改動). 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) sub_scenario display 改動即 update spec doc (§7 加 v0.7.0 entry + Change log v0.7.0 entry). 對齊 §Backend hot-reload 永久 rule 8月31日 11:01 — frontend only fix, backend 唔需要 restart. 對齊 cache bust self-check 永久 rule 21:24 (5.4.16 → 5.4.17 + ?v=2.3.211 → 2.3.212). 凡人話 verify scope 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 凡人話肉眼 verify spirit (大少 hard reload testing page `?v=2.3.212` + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」+ 撳 banner ⓘ icon → tooltip panel 應該見到 11 個 cycle 嘅直接簡單算法 trigger 條件). ⚠️ 條件 key (排列 / 斜率正負 / P 點方向) 唔可以隨意調, 改咗要同步改 backend `ma_alignment/algorithm.py` 同 spec doc `M1-V22-RESEARCH.md` §3-§5
 
 ---
 
@@ -1305,3 +1370,4 @@ Mavis 自己測試 scope (對齊 9月10日 23:06「自己行」永久 rule):
 | v0.5.5 | 2026-09-16 20:50 | 大少 trigger「現在減一日是對的, 但加一日是錯的, 你是修改了 From Date, 應該是修改 To Date」 | **Brack Test ±1 日制 改單邊 modify (修正 v0.5.4)** — (a) **Root cause** v0.5.4 `_brackTestShiftDateHandler` Step 3 line 6428-6446 用「from + to 雙邊 modify」邏輯, 大少 case date `[2000-01-01, 2026-08-07]`, K 線 `[2021-06-23, 2026-08-07]`, 撳 ◀ -1 日雙邊 modify 對齊大少 accept(因為 from auto-clamp + to -1 仲喺範圍), 撳 ▶ +1 日雙邊 modify 大少 reject(因為 from auto-clamp + to auto-clamp → date range 仲係 [2021-06-23, 2026-08-07] 完全冇 effect, 大少 expect +1 只 modify to). 大少 feedback「+1 應該修改 to date」 — 即係 ◀ -1 日 = extend left (modify from only), ▶ +1 日 = extend right (modify to only); (b) **Frontend** `adapter.mjs` `window._brackTestShiftDateHandler` Step 3 line 6428-6456 改**單邊 modify** 邏輯 — `delta < 0` (◀ -1 日): `newFrom = _brackShiftDate(dateFrom, -1)`, `newTo = dateTo` (to 唔變), `delta > 0` (▶ +1 日): `newTo = _brackShiftDate(dateTo, +1)`, `newFrom = dateFrom` (from 唔變). Edge case (d) -1 日 dateFrom empty / +1 日 dateTo empty → silent warn + return. Step 5 auto-clamp v0.5.4 spirit 保留: `newFrom < K 線 first date` → auto-clamp + re-run, `newTo > K 線 last date` → auto-clamp + re-run. Edge case (b) from > to 保留 silent warn + return; (c) **Spec doc** §8.11 新加 + Change log v0.5.5 entry。對齊 §Config UX 模式 (2026-08-19 13:03) — ±1 日制單邊 extend date range (◀ extend left, ▶ extend right); §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source (v0.5.4 auto-clamp spirit 保留); §M3 silent return 唔 throw spirit — edge case 保留 silent warn; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.13` → `5.4.14`, `?v=2.3.208` → `?v=2.3.209` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.209`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2000-01-01, 2026-08-07] (越界 K 線 first date `2021-06-23`) + 撳「執行」→ 撳 ◀ -1 日 → console.log 印 `from (1999-12-31) 早過 K 線第一日 (2021-06-23), auto-clamp → 2021-06-23` + date input from 變 `2021-06-23` + date input to 仲係 `2026-08-07` + re-run K 線 + ZigZag + P 點 + Brack Test verdict; 撳 ▶ +1 日 → console.log 印 `to (2026-08-08) 遲過 K 線最後一日 (2026-08-07), auto-clamp → 2026-08-07` + date input from 仲係 `2021-06-23` + date input to 仲係 `2026-08-07` + re-run. 凡人話解: ◀ -1 日 = extend left (modify from only), ▶ +1 日 = extend right (modify to only); AGENTS.md 永久 rule update (v0.5.4 → v0.5.5: 單邊 modify logic) |
 | v0.5.6 | 2026-09-16 20:59 | 大少 reject v0.5.5 trigger「你很差啊， 現在加一日和減一日都用不了， 其他可以簡單處理， 你只要吧 To Date 改變一日， 然後再跑一次就可以了」 | **Brack Test ±1 日制 簡化 (修正 v0.5.5 太複雜)** — (a) **Root cause** v0.5.5 `_brackTestShiftDateHandler` Step 3 line 6441-6474 用「單邊 modify」邏輯 (◀ modify from only / ▶ modify to only), 但大少 reject 因為「現在加一日和減一日都用不了」 — 可能因為 dateFrom / dateTo empty trigger silent warn + return, 或者 date 唔合法, 或者 from > to 邊界 case. 大少要最簡單 logic: 兩個制都係 modify to date, from 永遠唔變; (b) **Frontend** `adapter.mjs` `window._brackTestShiftDateHandler` Step 3 line 6441-6457 簡化邏輯 — `newFrom = dateFrom` (from 永遠唔變), `newTo = _brackShiftDate(dateTo, delta)` (兩個制都用同一個 modify to date logic). Edge case (b) dateTo empty → silent warn + return (新加, ±1 日需要 to 存在). v0.5.4 auto-clamp spirit 保留: `newTo < K 線 first date` → auto-clamp + re-run, `newTo > K 線 last date` → auto-clamp + re-run. Edge case (e) from > to (極端 case: auto-clamp 之後 from 仲大過 to) → silent warn + return; (c) **Spec doc** §8.12 新加 + Change log v0.5.6 entry。對齊 §K-line Cache 永久 rule (8月22日 23:20) — K 線 first/last date 係 authoritative source (v0.5.4 auto-clamp spirit 保留); §M3 silent return 唔 throw spirit — edge case 保留 silent warn; §Backend hot-reeload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.14` → `5.4.15`, `?v=2.3.209` → `?v=2.3.210` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.210`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2000-01-01, 2026-08-07] + 撳「執行」→ 撳 ◀ -1 日 → date input to 變 `2026-08-06`, from 仲係 `2000-01-01`, re-run K 線 + ZigZag + P 點 + Brack Test verdict; 撳 ▶ +1 日 → console.log 印 `to (2026-08-08) 遲過 K 線最後一日 (2026-08-07), auto-clamp → 2026-08-07` + date input to 仲係 `2026-08-07`, from 仲係 `2000-01-01`, re-run. 凡人話解: 兩個制都係 modify to date, from 永遠唔變, 最簡單 logic; AGENTS.md 永久 rule update (v0.5.5 → v0.5.6: 簡化邏輯) |
 | v0.5.7 | 2026-09-16 21:15 | 大少 reject v0.5.6 trigger「點解你改來改去做係有問題， 還是『多一日』的功能不能用」 + console log evidence `[Brack Test ±1 日] from (2010-01-01) 早過 K 線第一日 (2021-06-22), auto-clamp → 2021-06-22` | **Brack Test ±1 日制 拎走 v0.5.4 auto-clamp logic (修正 v0.5.6 嘅 from auto-clamp bug)** — (a) **Root cause** v0.5.6 嘅 Step 3 已經係最簡單邏輯 (`newFrom = dateFrom`, `newTo = _brackShiftDate(dateTo, delta)`, 兩個制都 modify to, from 唔變), 但 v0.5.4 嘅 Step 5 auto-clamp logic 仲 trigger from modify (因為 user 輸入嘅 `2010-01-01` 越界 K 線 first `2021-06-22`). 大少 case date `[2010-01-01, 2026-08-06]`, K 線 `[2021-06-22, 2026-08-06]`, 撳 ▶ +1 日 → Step 3 `newFrom = 2010-01-01` 唔變, `newTo = 2026-08-07` 越界 → Step 5 auto-clamp 觸發 `from (2010-01-01) 早過 K 線第一日 (2021-06-22), auto-clamp → 2021-06-22` (❌ 大少 reject 因為 modify from) + `to (2026-08-07) 遲過 K 線最後一日 (2026-08-06), auto-clamp → 2026-08-06` (❌ 大少 reject 因為 modify to). 大少 feedback「改好了後要做測試， 無問題才交給我」; (b) **Frontend** `adapter.mjs` `window._brackTestShiftDateHandler` Step 5 line 6479+ 拎走 v0.5.4 嘅 from + to auto-clamp logic — `if (newFrom < K 線 first date) auto-clamp` 同 `if (newTo > K 線 last date) auto-clamp` 兩段拎走. 兩個制都係 modify to date, from 永遠唔變. Backend KlineCache fetch K 線會自動用 K 線 actual range (越界 date 唔影響 verdict, 因為 KlineCache layer 已經 handle `start` + `end` query params). 對齊 §Config UX 模式 (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留, 唔好 auto-clamp date input. Edge case (b) from > to (用戶 input date range 錯咗, from 早過 to) 保留 silent warn + return; (c) **Spec doc** §8.13 新加 + Change log v0.5.7 entry。對齊 §Config UX 模式 (2026-08-19 13:03) — user 揀過嘅 value 永遠要保留; §Backend hot-reload 永久 rule (8月31日 11:01) — frontend only fix, backend 唔需要 restart; Cache bust `5.4.15` → `5.4.16`, `?v=2.3.210` → `?v=2.3.211` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify: 大少 hard reload testing page (`?v=2.3.211`) + 撳跑 M1 (HK.00700) + date inputs 揀 [2010-01-01, 2026-08-06] + 撳「執行」→ 撳 ▶ +1 日 → console.log 印 `re-run: new from=2010-01-01, new to=2026-08-07` + date input to 變 `2026-08-07`, from 仲係 `2010-01-01` (唔變, 因為 v0.5.7 拎走 auto-clamp) + re-run K 線 + ZigZag + P 點 + Brack Test verdict; 撳 ◀ -1 日 → console.log 印 `re-run: new from=2010-01-01, new to=2026-08-05` + date input to 變 `2026-08-05`, from 仲係 `2010-01-01` + re-run. 凡人話解: 兩個制都係 modify to date, from 永遠唔變, 唔再 auto-clamp (auto-clamp 違反 §Config UX 模式 spirit); AGENTS.md 永久 rule update (v0.5.6 → v0.5.7: 拎走 auto-clamp) |
+| v0.7.0 | 2026-09-17 08:30 | 大少 trigger「在K線圖上方有一個Bracktest 提示"當前顯示: 強上升週期 (101 條 / 全部 614 條)" 裡邊有一個Popup提示是講這個sub-scenraio 是用什麼算法，但現在這個寫法不夠全面，請修改這個提示，我想要是直接的簡單算法，因為我要參考這些簡單算法去作出微調」 | **Brack Test cycle banner ⓘ tooltip 改寫成「直接簡單算法」trigger 條件** — (a) **Root cause** 而家 banner ⓘ tooltip 入面嘅 cycle 中文解釋用抽象嘅「Zmen X rule (A 連續 5 日 MA5 > MA60 等) + Layer 2 全部 MA 同方向 → mid_stage, 典型多頭排列確認」寫法, 大少睇唔到呢個 cycle 嘅實際 trigger 條件, 拎唔去參考微調 algorithm; (b) **Frontend** `adapter.mjs` line 6108-6130 嘅 `BRACK_TEST_CYCLE_EXPLANATIONS` 11 個 entry string 改寫, 由抽象嘅「Zmen X rule + Layer 2 Y」寫法改為直接列出 backend `ma_alignment/algorithm.py` line 477-680 嘅 11 個 elif trigger 條件 — (排列 bull/bear / 斜率正負 / P 點方向 + type / 拎幾多個 P 點 / spread ≥ thresholdPct 等). 大少撳 banner ⓘ icon 嗰陣即刻見到呢個 cycle 嘅 trigger 條件 (e.g.「強上升 trigger: 排列 bull (MA5 > MA10 > MA60) + 全部 MA 斜率正 + P1 > P3 (峰頂抬高) + P2 > P4 (谷底抬高) + P1/P3.type = Peak + P2/P4.type = Trough + 拎到 4 個 P 點」), 等佢可以拎呢啲直接簡單算法條件去微調 algorithm; (c) **Spec doc** §7 對齊永久 rule checklist 加返 v0.7.0 entry + Change log v0.7.0 entry。對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) sub_scenario display 改動即 update spec doc; §Backend hot-reload 永久 rule (8月31日 11:01) — backend 唔需要改 (純 frontend display string 改動); Cache bust `5.4.16` → `5.4.17`, `?v=2.3.211` → `?v=2.3.212` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify scope 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 凡人話肉眼 verify spirit (大少 hard reload testing page `?v=2.3.212` + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」 + 撳 banner ⓘ icon → tooltip panel 應該見到 11 個 cycle 嘅直接簡單算法 trigger 條件, 而唔係抽象嘅「Zmen X rule + Layer 2 Y」寫法). ⚠️ 條件 key (排列 / 斜率正負 / P 點方向) 唔可以隨意調, 改咗要同步改 backend `ma_alignment/algorithm.py` 同 spec doc `M1-V22-RESEARCH.md` §3-§5 || v0.8.0 | 2026-09-17 13:38 | 大少 trigger「圖中你會見到強上升週期 #208 這個 #208 應該要對應返在 bracktest 結果例表裡的 Index. 你研究一下可以怎樣做」 | **Brack Test chart marker label #N 對齊結果例表 Index** — (a) **Root cause** `adapter.mjs` `renderBrackTestChartOverlay` line 5909 (改之前) 用 backend emit 嘅 `h.displayIndex` (1..N global sort by date_desc) 顯示 chart marker text label, **無處理 mode B 揀 cycle filter 嘅 case**. 凡人話: 大少睇到圖中「強上升週期 #208」其實係 backend global 第 208 個 hit, 但例表第 1 個「強上升」hit 係 Index 1, 兩者完全對唔上. Mode A (activeCycle='all') backend global Index 同例表 Index 對齊 ✅, 但 Mode B (activeCycle='cycle X') 例表用 frontend local `viewIdx + 1` filtered Index, chart marker 卻用 backend global ❌; (b) **Frontend** `adapter.mjs` `renderBrackTestChartOverlay` line 5871+ 改 text 公式 — `filteredHits.map((h, viewIdx) => { ... })` 加 viewIdx + `isFilteredChart = activeCycle && activeCycle !== 'all'` + `markerIndex = isFilteredChart ? (viewIdx + 1) : (h.displayIndex ?? (viewIdx + 1))` + text 用 `markerIndex` 對齊例表 Index, 對齊 `renderBrackTestHitTable` line 5986 一樣嘅 pattern (DRY spirit 兩處 source of truth 統一); (c) **Frontend** 加 console.log 凡人話 visual evidence (對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 spirit) — log 頭尾 marker 嘅 text + `isFiltered` flag, 等大少肉眼 verify chart marker #N 對齊例表 row N 嘅日期; (d) **Spec doc** §4.1 Frontend 規則段加 chart overlay marker label 規則 + consistency check rule 段加 chart label 對齊 + 新加 §4.2 v0.8.0 section (大少 13:38 trigger 永久記錄)。對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 — chart overlay 凡人話肉眼 verify scope; §M1 sub-scenario 永久 rule 8月16日 19:21 — 改任何 sub_scenario / display / UI 必 update spec doc (本段 §4.2 已加); §Backend 永久改 emit field name 永久 rule 9月10日 23:45 spirit — frontend 唔可以假設 backend global field 直接 render 落 filter view, 必先 check filter state (`isFiltered`); §Backend hot-reload 永久 rule 8月31日 11:01 — frontend only fix, backend 唔需要 restart (Backend `m1_brack_test/algorithm.py` 唔需要改, `displayIndex` global emit 仍然 work); Cache bust `5.4.18` → `5.4.19`, `?v=2.3.213` → `?v=2.3.214` (對齊 21:24 cache bust self-check 永久 rule); 凡人話 verify scope 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 凡人話肉眼 verify spirit (大少 hard reload testing page `?v=2.3.214` + 撳跑 M1 (HK.00700) + 撳「🎯 跑 Brack Test」→ 預設 Mode B (Tab B「按 sub-scenario 揀」, activeCycle='strong_uptrend') → 肉眼 verify chart 上面 marker text 應該見「強上升週期 #1」、「強上升週期 #2」...「強上升週期 #M」(M = 強上升 filtered 數量), 每個 #N 對應例表入面第 N row 嘅日期 ✅; 切去 Mode A (Tab A「按時間排」) → 肉眼 verify chart 上面 marker text 應該見「強上升週期 #208」、「下跌反彈週期 #209」(backend global index), 每個 #N 對應例表入面第 N row 嘅日期 ✅). Backend curl evidence: `curl -s 'http://localhost:18792/api/algorithms/run?algo=m1_brack_test&symbol=HK.00700&data_window_days=1260' | jq '.points[] | select(.cycle == "strong_uptrend") | {date, displayIndex}' | head -5` → 第 1 row (date 最新) 嘅 displayIndex = global 排第 N (大數字, e.g. 208) |

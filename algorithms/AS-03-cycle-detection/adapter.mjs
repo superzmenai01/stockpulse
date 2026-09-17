@@ -1669,13 +1669,13 @@ function renderStrategyAdviceMA(verdict) {
   const layer2Cycle = verdict.meta?.cycle;
   const layer2ConsecutiveDays = verdict.meta?.consecutiveDays || 0;
   const ZMEN_V10_STRATEGY_ADVICE = {
-    strong_uptrend: `<div class="strategy-strong-up"><h4>🟢 強上升 (Layer 1 強升 rule + Layer 2 全部 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>順勢持倉, 可考慮持有 / 逢回調加倉</p><p><strong>訊號確認:</strong>A rule (連續 5 日 MA5 > MA60) + Layer 2 全部 MA 同方向, 典型多頭排列確認</p><p><strong>風險管理:</strong>留意 H-reverse-down (7 日內由升轉跌), 呢個係見頂警號</p><p><strong>止損位:</strong>最近 5 日 low 跌穿 MA5 × 0.98 (I rule 失效)</p><p><strong>進場策略:</strong>等回調到 MA5/MA10 附近再反彈, 低吸</p></div>`,
+    strong_uptrend: `<div class="strategy-strong-up"><h4>🟢 強上升 (Layer 1 強升 rule + Layer 2 全部 MA 同方向 + K 線 high/low 確認) · 策略建議</h4><p><strong>基本動作:</strong>順勢持倉, 可考慮持有 / 逢回調加倉</p><p><strong>訊號確認:</strong>排列 bull (MA5 > MA10 > MA60) + 全部 MA 斜率正 + P1 > P3 (峰頂抬高) + P2 > P4 (谷底抬高) + P1/P3.type = Peak + P2/P4.type = Trough + 今日 high > 昨日 high + 今日 low > 昨日 low (v2.7.0 新加)</p><p><strong>風險管理:</strong>留意 H-reverse-down (7 日內由升轉跌), 呢個係見頂警號</p><p><strong>止損位:</strong>最近 5 日 low 跌穿 MA5 × 0.98 (I rule 失效)</p><p><strong>進場策略:</strong>等回調到 MA5/MA10 附近再反彈, 低吸</p></div>`,
     weak_uptrend: `<div class="strategy-weak-up"><h4>🟡 初升 (Layer 1 部分升 rule + Layer 2 P 點剛起步) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等峰頂突破前高再入場</p><p><strong>訊號確認:</strong>部分升 rule 觸發 (F 升勢調整) + M1 P 點形態 (谷底抬高 + 峰頂未突破), 上升趨勢剛起步</p><p><strong>風險管理:</strong>留意 P 點峰頂跌穿前低 (P1<P3) = 升勢見頂警號</p><p><strong>止損位:</strong>MA5 跌穿 MA60 + 連續 2 日 (Layer 2 初升失效)</p><p><strong>進場策略:</strong>等峰頂突破前高 (P1>P3) + 放量確認先入場, 唔好強行加倉</p></div>`,
     uptrend_correction: `<div class="strategy-correction"><h4>🟢 上升回調中 (Layer 1 F rule + Layer 2 短期急跌但長期仲升) · 策略建議</h4><p><strong>基本動作:</strong>如已持有可續持, 等 MA5 跌到 MA20 附近見支持再考慮加倉</p><p><strong>訊號確認:</strong>F rule (升勢調整向下) + 短期 MA 急跌但長期仲升, 屬於上升趨勢中嘅正常回調</p><p><strong>風險管理:</strong>確認 M2 HL Structure 有冇破壞 HH / HL 結構, 破壞就唔再係上升回調</p><p><strong>止損位:</strong>MA5 跌穿 MA60 + 連續 3 日 (Layer 2 回調失效)</p><p><strong>進場策略:</strong>等 MA5 跌到 MA20 附近見支持再加倉, 唔好見急跌就沽</p></div>`,
     sideways: `<div class="strategy-sideways"><h4>🟡 橫行 (Layer 1 C/D rule + Layer 2 排列亂) · 策略建議</h4><p><strong>基本動作:</strong>等待突破方向, 唔好喺橫行期間強行入市</p><p><strong>訊號確認:</strong>C/D rule 觸發, Layer 2 MA 排列亂, 短中期 MA 交叉, 冇明確方向</p><p><strong>風險管理:</strong>配合 M6 Volatility Squeeze 訊號可以捕捉突破時機</p><p><strong>進場策略:</strong>等 MA5 突破 MA60 先做 (向上 = 升 / 向下 = 跌)</p><p><strong>觀察重點:</strong>留意 H-reverse rule, 出現就係轉勢先兆</p></div>`,
     downtrend_bounce: `<div class="strategy-bounce"><h4>🔴 下跌反彈中 (Layer 1 G rule + Layer 2 短期急升但長期仲跌) · 策略建議</h4><p><strong>基本動作:</strong>如已持貨可考慮喺反彈高位減倉</p><p><strong>訊號確認:</strong>G rule (跌勢調整向上) + 短期 MA 急升但長期仲跌, 屬於下跌趨勢中嘅短暫反彈</p><p><strong>風險管理:</strong>確認 M2 HL Structure 有冇破壞 LL / LH 結構, 唔好因為短暫反彈就以為見底</p><p><strong>止損位:</strong>MA5 升穿 MA60 + 連續 3 日 (Layer 2 反彈失效)</p><p><strong>進場策略:</strong>等長期均線 (MA60) 斜率轉正先信, 唔好撈底</p></div>`,
     weak_downtrend: `<div class="strategy-weak-down"><h4>🟡 初跌 (Layer 1 部分跌 rule + Layer 2 P 點剛起步) · 策略建議</h4><p><strong>基本動作:</strong>觀察多幾日, 等谷底跌穿前低再行動, 唔好急住撈底</p><p><strong>訊號確認:</strong>部分跌 rule 觸發 (G 跌勢調整) + M1 P 點形態 (峰頂降底 + 谷底未跌穿), 下跌趨勢剛起步</p><p><strong>風險管理:</strong>留意 P 點谷底升穿前高 (P1>P3) = 跌勢見底警號</p><p><strong>止損位:</strong>MA5 升穿 MA60 + 連續 2 日 (Layer 2 初跌失效)</p><p><strong>進場策略:</strong>等谷底跌穿前低 (P1<P3) + 放量確認先行動, 唔好撈底</p></div>`,
-    strong_downtrend: `<div class="strategy-strong-down"><h4>🔴 強下跌 (Layer 1 強跌 rule + Layer 2 全部 MA 同方向) · 策略建議</h4><p><strong>基本動作:</strong>觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀</p><p><strong>訊號確認:</strong>B rule (連續 5 日 MA5 < MA60) + Layer 2 全部 MA 同方向, 典型空頭排列確認</p><p><strong>風險管理:</strong>留意 H-reverse-up (7 日內由跌轉升), 呢個係見底警號</p><p><strong>止損位:</strong>最近 5 日 high 升穿 MA5 × 1.02 (J rule 失效)</p><p><strong>進場策略:</strong>反彈到 MA5/MA10 附近再回落, 做空</p></div>`,
+    strong_downtrend: `<div class="strategy-strong-down"><h4>🔴 強下跌 (Layer 1 強跌 rule + Layer 2 全部 MA 同方向 + K 線 high/low 確認) · 策略建議</h4><p><strong>基本動作:</strong>觀望 / 減倉, 等長期均線斜率轉正先考慮撈底, 唔好接刀</p><p><strong>訊號確認:</strong>排列 bear (MA5 < MA10 < MA60) + 全部 MA 斜率負 + P1 < P3 (谷底降底) + P2 < P4 (峰頂降底) + P1/P3.type = Trough + P2/P4.type = Peak + 今日 high < 昨日 high + 今日 low < 昨日 low (v2.7.0 新加)</p><p><strong>風險管理:</strong>留意 H-reverse-up (7 日內由跌轉升), 呢個係見底警號</p><p><strong>止損位:</strong>最近 5 日 high 升穿 MA5 × 1.02 (J rule 失效)</p><p><strong>進場策略:</strong>反彈到 MA5/MA10 附近再回落, 做空</p></div>`,
     decelerating_up: `<div class="strategy-dec-up"><h4>🟣 到頂轉勢中 (Layer 1 H-reverse-down + Layer 2 連跌 ${layer2ConsecutiveDays} 日) · 策略建議</h4><p><strong>基本動作:</strong>如已持貨應考慮喺反彈時減倉 / 止賺, 唔好博佢返上去</p><p><strong>訊號確認:</strong>H-reverse-down rule (升勢轉跌勢) + 短期 MA 急跌 3%+ + 連跌 ${layer2ConsecutiveDays} 日, 見頂跡象明顯</p><p><strong>風險管理:</strong>確認 M2 HL Structure (LH = 見頂確認) + M4 Indicators RSI 背馳</p><p><strong>止損位:</strong>短期 MA5 升穿 MA10 + 連續 2 日 (Layer 2 到頂失效)</p><p><strong>進場策略:</strong>等確認見頂後先做空, 唔好搶跑</p></div>`,
     decelerating_down: `<div class="strategy-dec-down"><h4>🔵 到底轉勢中 (Layer 1 H-reverse-up + Layer 2 連升 ${layer2ConsecutiveDays} 日) · 策略建議</h4><p><strong>基本動作:</strong>如想撈底要等確認: M2 HL Structure 出現 HH (見底確認) + M4 Indicators RSI 唔再背馳</p><p><strong>訊號確認:</strong>H-reverse-up rule (跌勢轉升勢) + 短期 MA 急升 3%+ + 連升 ${layer2ConsecutiveDays} 日, 見底跡象明顯</p><p><strong>風險管理:</strong>先小注試單, 唔好一次過 all-in</p><p><strong>止損位:</strong>短期 MA5 跌穿 MA10 + 連續 2 日 (Layer 2 到底失效)</p><p><strong>進場策略:</strong>等確認見底後先撈底, 唔好搶跑</p></div>`,
   };
@@ -5884,8 +5884,15 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
   const filteredHits = activeCycle && activeCycle !== 'all'
     ? verdict.points.filter(h => h.cycle === activeCycle)
     : verdict.points;
+  // 大少 2026-09-17 13:38 trigger — chart marker label #N 對齊 BrackTest 結果例表 Index
+  // 對齊 renderBrackTestHitTable line 5986 pattern:
+  //   Mode A (activeCycle='all') → 用 backend global displayIndex (1..N sort by date_desc)
+  //   Mode B (activeCycle='cycle X') → 用 frontend local viewIdx + 1 (1..M filtered)
+  // 凡人話: 圖中「強上升週期 #208」而家係 backend global #208, 但例表第 1 個「強上升」hit 係 Index 1, 兩者對唔上
+  // Fix: 統一兩處 source of truth, chart marker label 同例表 Index 1:1 對齊
+  const isFilteredChart = activeCycle && activeCycle !== 'all';
 
-  const markers = filteredHits.map(h => {
+  const markers = filteredHits.map((h, viewIdx) => {
     const time = _brackHitToLwcTime(h);
     if (time == null) return null;
     // 對齊 BRACK_TEST_CYCLE_COLOR_MAP (Brack Test 模塊內, 內容 = ZMEN_SCENARIO_COLOR_MAP line 1398-1411)
@@ -5893,7 +5900,13 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
     // 大少 2026-09-14 23:38 trigger — 加強 marker visibility:
     //   (a) size 1 → 2 (LWC v5 medium, 預設 1 太細搵唔到)
     //   (b) borderColor '#000' + borderWidth 1 (testing page chart background 係白色 #ffffff, 大少 chart-config line 1797 確認, 淡紅色 marker 對比白底會溶入, 加黑色 outline 對比清楚)
-    //   (c) text 顯示 cycle 中文 label + displayIndex (大少肉眼掃 reference point, e.g. 「下跌反彈 #42」)
+    //   (c) text 顯示 cycle 中文 label + markerIndex (大少肉眼掃 reference point, e.g. 「下跌反彈 #42」)
+    // 大少 2026-09-17 13:38 trigger — markerIndex 對齊例表 Index (line 5986 pattern):
+    //   Mode A → backend global displayIndex
+    //   Mode B → frontend local viewIdx + 1
+    const markerIndex = isFilteredChart
+      ? (viewIdx + 1)
+      : (h.displayIndex != null ? h.displayIndex : (viewIdx + 1));
     return {
       time,
       position: h.state === 'UP' ? 'belowBar' : h.state === 'DOWN' ? 'aboveBar' : 'inBar',
@@ -5906,7 +5919,8 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
            : h.cycle === 'decelerating_up' ? 'arrowDown'
            : h.cycle === 'decelerating_down' ? 'arrowUp'
            : 'circle',
-      text: (h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle) + (h.displayIndex != null ? ` #${h.displayIndex}` : ''),
+      // 大少 2026-09-17 13:38 trigger — chart label 用 markerIndex 對齊例表 Index, 唔再用 backend global displayIndex
+      text: (h.cycleLabel || BRACK_TEST_CYCLE_LABELS[h.cycle] || h.cycle) + ` #${markerIndex}`,
     };
   }).filter(Boolean);
 
@@ -5921,6 +5935,14 @@ function renderBrackTestChartOverlay(verdict, klines, chartRefs, activeCycle) {
 
   // 大少 23:38 trigger — 凡人話 visual evidence: log markers 真係有 add 落 chart (證實 handle 真係 set 落 markers, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
   console.log(`[renderBrackTestChartOverlay] markers=${markers.length}, sample[0]=${JSON.stringify(markers[0] || null)}, activeCycle=${activeCycle || 'all'}`);
+
+  // 大少 2026-09-17 13:38 trigger — 凡人話 visual evidence: log 頭尾 marker 嘅 text + Index 對齊例表 evidence (對齊 §M3 trendline chart overlay 修復永久 rule spirit)
+  // 凡人話: 大少肉眼 verify chart marker #N 對齊例表 row N 嘅日期
+  if (markers.length > 0) {
+    const sampleTextHead = markers[0].text;
+    const sampleTextTail = markers[markers.length - 1].text;
+    console.log(`[renderBrackTestChartOverlay] v0.8.0 chart label 對齊例表 Index: head marker text="${sampleTextHead}" (應該 = 例表 row 1 嘅 cycle label), tail marker text="${sampleTextTail}" (應該 = 例表 row M 嘅 cycle label), isFiltered=${isFilteredChart}`);
+  }
 
   // 大少 23:38 trigger — 凡人話 visual evidence: log markers 真係有 add 落 chart (證實 handle 真係 set 落 markers, 對齊 §M3 trendline chart overlay 修復永久 rule「testing page chart overlay 視覺 verify」spirit)
   console.log(`[renderBrackTestChartOverlay] markers=${markers.length}, sample[0]=${JSON.stringify(markers[0] || null)}, activeCycle=${activeCycle || 'all'}`);
@@ -6105,18 +6127,23 @@ function renderBrackTestFilterInfo(hits, activeCycle) {
 //   凡人話: 大少撳 banner ⓘ icon 嗰陣顯示對應 cycle 中文解釋 (對齊 §M3 trendline chart overlay 修復永久 rule spirit「凡人話 visual evidence」)
 //   ✅ 11 個 cycle 全部有對應解釋 (對齊 §M1 sub-scenario 永久 rule)
 //   ✅ 用 `_brackEscapeHtml` 對齊 9月7日 21:50 永久 rule「凡新加 render function 必 escape HTML」
+// 大少 2026-09-17 08:30 trigger — Cycle tooltip 改寫成「直接簡單算法」trigger 條件 (對齊 backend algorithm.py elif 條件)
+// 凡人話: 大少撳 banner ⓘ icon 嗰陣顯示對應 cycle 嘅 trigger 條件 (MA / 斜率 / P 點), 等大少可以拎去參考微調 algorithm
+// 對齊 backend `backend/algorithms/ma_alignment/algorithm.py` line 477-680 嘅 11 個 elif trigger 條件
+// 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) — sub_scenario display 改動即 update spec doc
+// ⚠️ 條件 key (排列 / 斜率正負 / P 點方向) 唔可以隨意調, 改咗要同步改 backend algorithm.py 同 spec doc
 const BRACK_TEST_CYCLE_EXPLANATIONS = {
-  strong_uptrend: '強上升: Zmen 強升 rule (A 連續 5 日 MA5 > MA60 等) + Layer 2 全部 MA 同方向 → mid_stage, 典型多頭排列確認, 股價穩步上升, 連續創新高',
-  weak_uptrend: '弱上升: 股價上升但動能減弱, 高點可能唔再破前高, 留意見頂信號, 短期均線仲喺長期均線上面但斜率收窄',
-  uptrend_correction: '升勢調整: 升勢中嘅短暫回調, 通常唔會破壞長期上升趨勢, 屬於健康調整 (Zmen D 規則, MA5 跌穿 MA10 但仍然 MA10 > MA60)',
-  sideways: '橫行: 股價喺一個範圍內震盪, 高低點都唔破前高前低, 短期均線圍繞長期均線等待方向突破',
-  downtrend_bounce: '下跌反彈中: Zmen G rule (跌勢調整向上) + Layer 2 短期 MA 急升但長期仲跌 → bounce_in_progress, 屬於下跌趨勢中嘅短暫反彈',
-  weak_downtrend: '弱下跌: 股價下跌但動能減弱, 低點可能唔再破前低, 留意見底信號, 短期均線仲喺長期均線下面但斜率收窄',
-  strong_downtrend: '強下跌: Zmen 強跌 rule (B 連續 5 日 MA5 < MA60 等) + Layer 2 全部 MA 同方向, 典型空頭排列確認, 股價穩步下跌, 連續創新低',
-  decelerating_up: '動能減弱上升: 上升動能減弱, 高點唔再擴大, 留意見頂信號 (Zmen F 規則, 升勢調整向下), 短期均線斜率轉負',
-  decelerating_down: '動能減弱下跌: 下跌動能減弱, 低點唔再擴大, 留意見底信號 (Zmen G 規則反向), 短期均線斜率轉正',
-  bearish_initial_rise: '跌勢初升: 跌勢初期嘅短暫反彈, 通常 1-3 日, 屬於假突破, 反彈完通常繼續跌',
-  bullish_initial_decline: '升勢初跌: 升勢初期嘅短暫回調, 通常 1-3 日, 屬於健康調整, 回調完通常繼續升',
+  strong_uptrend: '強上升 trigger: 排列 bull (MA5 > MA10 > MA60) + 全部 MA 斜率正 (MA5/MA10/MA20/MA60) + P1 > P3 (峰頂抬高) + P2 > P4 (谷底抬高) + P1/P3.type = Peak + P2/P4.type = Trough + 今日 high > 昨日 high (v2.7.0 新加) + 今日 low > 昨日 low (v2.7.0 新加) + 拎到 4 個 P 點',
+  weak_uptrend: '初升 trigger: MA60 斜率 > 0 + MA5 斜率 > 0 + P2.type = Trough + P1 <= P3 (峰頂未突破) + P2 > P4 (谷底抬高) + 拎到 4 個 P 點',
+  bearish_initial_rise: '跌勢初升 trigger: MA60 斜率 < 0 + MA5 斜率 > 0 + P1 > P3 (短期反彈衝破前高) + P2.type = Trough + 拎到 4 個 P 點',
+  strong_downtrend: '強下跌 trigger: 排列 bear (MA5 < MA10 < MA60) + 全部 MA 斜率負 (MA5/MA10/MA20/MA60) + P1 < P3 (谷底降底) + P2 < P4 (峰頂降底) + P1/P3.type = Trough + P2/P4.type = Peak + 今日 high < 昨日 high (v2.7.0 新加) + 今日 low < 昨日 low (v2.7.0 新加) + 拎到 4 個 P 點',
+  weak_downtrend: '初跌 trigger: MA60 斜率 < 0 + MA5 斜率 < 0 + P2.type = Peak + P1 >= P3 (谷底未跌穿) + P2 < P4 (峰頂降底) + 拎到 4 個 P 點',
+  bullish_initial_decline: '升勢初跌 trigger: MA60 斜率 > 0 + MA5 斜率 < 0 + P1 < P3 (短期回調跌穿前低) + P2.type = Peak + 拎到 4 個 P 點',
+  uptrend_correction: '上升回調 trigger: P2.type = Peak + P1 > P3 (谷底抬高) + P2 > P4 (峰頂抬高) + MA60 斜率 > 0 (長期仲升) + MA5 斜率 < 0 (短期急跌) + spread ≥ thresholdPct (防 MA noise) + 拎到 4 個 P 點',
+  downtrend_bounce: '下跌反彈 trigger: P2.type = Trough + P1 < P3 (峰頂降底) + P2 < P4 (谷底降底) + MA60 斜率 < 0 (長期仲跌) + MA5 斜率 > 0 (短期急升) + spread ≥ thresholdPct (防 MA noise) + 拎到 4 個 P 點',
+  decelerating_up: '到頂轉勢 trigger: MA60 斜率 > 0 + close < MA5 < MA20 (急跌穿短中線) + P1 < P3 (跌穿前低) + P2 < P4 (峰頂降底) + P2.type = Peak + P4 > P6 (再之前峰頂抬高) + P5 > P7 (再之前谷底抬高) + MA5 斜率 < -1% + 拎到 7 個 P 點',
+  decelerating_down: '到底轉勢 trigger: MA60 斜率 < 0 + close > MA5 > MA20 (急升穿短中線) + P1 > P3 (升穿前高) + P2 > P4 (谷底抬高) + P2.type = Trough + P4 < P6 (再之前峰頂降底) + P5 < P7 (再之前谷底降底) + MA5 斜率 > +1% + 拎到 7 個 P 點',
+  sideways: '橫行 trigger: 其他所有情況 (排列唔 clear / 其他 10 個 sub_scenario trigger 都唔 fire) → fallback',
 };
 
 function renderBrackTestChartBanner(verdict, activeCycle) {

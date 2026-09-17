@@ -525,6 +525,8 @@ class MAAlignmentV2Algorithm(Algorithm):
         # 強升原 trigger: 排列 bull + 全部斜率正 + 放量
         # 強升新 trigger (大少 9月4日 10:34): 加 峰頂抬高 (P1>P3 + P1.type=P3.type=Peak) + 谷底抬高 (P2>P4 + P2.type=P4.type=Trough)
         # 凡人話: 確認上升趨勢真係延續緊, 唔係「排列對但峰頂已經唔再抬高」嘅假強升
+        # 🆕 v2.7.0 (大少 2026-09-17 13:21 trigger) 加 K 線 high/low 確認
+        # 凡人話: 今日最高高過昨日最高 + 今日最低高過昨日最低 → 真係上升趨勢, 唔係「昨日升但今日反轉」嘅假強升
         # Fallback: 拎唔夠 4 個 P 點 (新股 / Z 點太短) → 條件 skip, fall through 去初升
         elif (
             is_bullish
@@ -540,11 +542,14 @@ class MAAlignmentV2Algorithm(Algorithm):
             # 峰頂抬高 + 谷底抬高
             and p1_value > p3_value
             and p2_value > p4_value
+            # 🆕 v2.7.0 加 K 線 high/low 確認 (今日 vs 昨日),對齊大少 9月17日 13:21 trigger
+            and float(klines[-1]["high"]) > float(klines[-2]["high"])  # 今日 high > 昨日 high
+            and float(klines[-1]["low"])  > float(klines[-2]["low"])   # 今日 low > 昨日 low
         ):
             sub_scenario = "strong_uptrend"
             cycle_position = "mid_stage"
             adjustment_log.append(
-                f"強上升跡象 (大少 2026-09-04 10:34 trigger + 2026-09-06 拎走放量 v2.3.0): 排列 bull + 全部均線斜率正, 加上 P 點趨勢確認 (峰頂抬高 P1={p1_value:.2f}>P3={p3_value:.2f} + 谷底抬高 P2={p2_value:.2f}>P4={p4_value:.2f}, P1/P3.type=Peak + P2/P4.type=Trough) → 上升趨勢真係延續緊"
+                f"強上升跡象 (大少 2026-09-04 10:34 trigger + 2026-09-06 拎走放量 v2.3.0 + 2026-09-17 加 K 線 high/low 確認 v2.7.0): 排列 bull + 全部均線斜率正 + P 點趨勢確認 (峰頂抬高 P1={p1_value:.2f}>P3={p3_value:.2f} + 谷底抬高 P2={p2_value:.2f}>P4={p4_value:.2f}, P1/P3.type=Peak + P2/P4.type=Trough) + K 線 high/low 確認 (今日 high={float(klines[-1]['high']):.2f}>昨日 high={float(klines[-2]['high']):.2f} + 今日 low={float(klines[-1]['low']):.2f}>昨日 low={float(klines[-2]['low']):.2f}) → 上升趨勢真係延續緊"
             )
         # Priority 2.5: 初升 (大少 9月4日 17:12 trigger, 拎走舊 fall through 初升, 改用獨立 trigger)
         # 條件: MA60 正 + MA5 正 + P2=Trough + P1<=P3 + P2>P4
@@ -588,6 +593,8 @@ class MAAlignmentV2Algorithm(Algorithm):
         # 強跌原 trigger: 排列 bear + 全部斜率負 + 放量
         # 強跌新 trigger (大少 9月4日 10:34): 加 谷底降底 (P1<P3 + P1.type=P3.type=Trough) + 峰頂降底 (P2<P4 + P2.type=P4.type=Peak)
         # 凡人話: 確認下跌趨勢真係延續緊, 唔係「排列對但峰頂已經唔再降底」嘅假強跌
+        # 🆕 v2.7.0 (大少 2026-09-17 13:21 trigger) 加 K 線 high/low 確認 (對稱強升)
+        # 凡人話: 今日最高低過昨日最高 + 今日最低低過昨日最低 → 真係下跌趨勢, 唔係「昨日跌但今日反轉」嘅假強跌
         # Fallback: 拎唔夠 4 個 P 點 → 條件 skip, fall through 去初跌
         elif (
             is_bearish
@@ -601,11 +608,14 @@ class MAAlignmentV2Algorithm(Algorithm):
             # 谷底降底 + 峰頂降底
             and p1_value < p3_value
             and p2_value < p4_value
+            # 🆕 v2.7.0 加 K 線 high/low 確認 (今日 vs 昨日),對齊大少 9月17日 13:21 trigger 對稱強升
+            and float(klines[-1]["high"]) < float(klines[-2]["high"])  # 今日 high < 昨日 high
+            and float(klines[-1]["low"])  < float(klines[-2]["low"])   # 今日 low < 昨日 low
         ):
             sub_scenario = "strong_downtrend"
             cycle_position = "mid_stage"
             adjustment_log.append(
-                f"強下跌跡象 (大少 2026-09-04 10:34 trigger + 2026-09-06 拎走放量 v2.3.0): 排列 bear + 全部均線斜率負, 加上 P 點趨勢確認 (谷底降底 P1={p1_value:.2f}<P3={p3_value:.2f} + 峰頂降底 P2={p2_value:.2f}<P4={p4_value:.2f}, P1/P3.type=Trough + P2/P4.type=Peak) → 下跌趨勢真係延續緊"
+                f"強下跌跡象 (大少 2026-09-04 10:34 trigger + 2026-09-06 拎走放量 v2.3.0 + 2026-09-17 加 K 線 high/low 確認 v2.7.0): 排列 bear + 全部均線斜率負 + P 點趨勢確認 (谷底降底 P1={p1_value:.2f}<P3={p3_value:.2f} + 峰頂降底 P2={p2_value:.2f}<P4={p4_value:.2f}, P1/P3.type=Trough + P2/P4.type=Peak) + K 線 high/low 確認 (今日 high={float(klines[-1]['high']):.2f}<昨日 high={float(klines[-2]['high']):.2f} + 今日 low={float(klines[-1]['low']):.2f}<昨日 low={float(klines[-2]['low']):.2f}) → 下跌趨勢真係延續緊"
             )
         # Priority 3.5: 初跌 (大少 9月4日 17:12 trigger, 拎走舊 fall through 初跌, 改用獨立 trigger, 對稱初升)
         # 條件: MA60 負 + MA5 負 + P2=Peak + P1>=P3 + P2<P4

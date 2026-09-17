@@ -169,6 +169,58 @@ OpenClaw 之後做 memory keeper + tools bridge (Kimi WebBridge / NAS / cron)。
 
 對應 commit: 即將 push (Spec Sync v0.5.3 + v0.5.4 + v0.5.5 + v0.5.6 + v0.5.7)
 
+### Brack Test cycle banner ⓘ tooltip 寫「直接簡單算法」trigger 條件 永久 rule (大少 2026-09-17 08:30 trigger, v0.7.0)
+
+**凡人話**: Brack Test card chart top banner「🎯 當前顯示: 🟢 強上升 (X / Y 條)」嗰個 ⓘ icon 撳落去嘅 popup tooltip, 入面寫嘅係呢個 cycle 嘅 trigger 條件 (排列 / 斜率 / P 點), 而唔係抽象嘅「Zmen X rule + Layer 2 Y」寫法。等大少撳落去即刻拎到呢個 cycle 嘅直接簡單算法, 等佢可以拎去參考微調 algorithm。
+
+**永久 rule checklist**:
+- ✅ Brack Test cycle banner ⓘ tooltip 永遠寫「直接簡單算法 trigger 條件」(對齊 backend `ma_alignment/algorithm.py` line 477-680 嘅 11 個 elif trigger 條件), 唔好寫抽象嘅 algorithm rule 名 (e.g.「Zmen 強升 rule (A 連續 5 日 MA5 > MA60 等) + Layer 2 全部 MA 同方向 → mid_stage」呢啲大少拎唔去微調)
+- ✅ Tooltip 內容必須對齊 backend algorithm.py 嘅真實 trigger 條件: 排列 bull/bear / 斜率正負 / P 點方向 (P1>P3, P2>P4 等) + P 點 type (Peak/Trough) / 拎幾多個 P 點 (zz_ok_4 vs zz_ok 7) / spread ≥ thresholdPct (防 MA noise) — 大少睇到即可拎去對齊 backend 微調
+- ✅ 凡人話 trigger 條件寫法: 「cycle trigger: 條件 1 + 條件 2 + ...」(e.g.「強上升 trigger: 排列 bull (MA5 > MA10 > MA60) + 全部 MA 斜率正 + P1 > P3 (峰頂抬高) + P2 > P4 (谷底抬高) + P1/P3.type = Peak + P2/P4.type = Trough + 拎到 4 個 P 點」)
+- ✅ ⚠️ 條件 key (排列 / 斜率正負 / P 點方向) 唔可以隨意調, 改咗要同步改 backend `ma_alignment/algorithm.py` 同 spec doc `M1-V22-RESEARCH.md` §3-§5
+- ✅ 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) — sub_scenario display 改動即 update spec doc
+- ✅ 對齊 §Backend hot-reload 永久 rule (8月31日 11:01) — 純 frontend display string 改動, backend 唔需要 restart
+- ✅ 對齊 cache bust self-check 永久 rule (21:24) — 改 adapter.mjs 之後必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X`
+- ✅ 對齊 §Module Warning v1.1.0 — `category: "system"` 因為 verdict 可能唔可信 (tooltip 唔屬於 warning, 純凡人話解釋, 對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule 9月10日 23:45 spirit — 唔好將 tooltip 內容同 warning 內容混)
+- ✅ 凡人話 verify scope 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 凡人話肉眼 verify spirit (大少 hard reload testing page + 撳跑 M1 + 撳「🎯 跑 Brack Test」 + 撳 banner ⓘ icon → tooltip panel 應該見到 11 個 cycle 嘅直接簡單算法 trigger 條件, 而唔係抽象嘅「Zmen X rule + Layer 2 Y」寫法)
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 6108-6130 嘅 `BRACK_TEST_CYCLE_EXPLANATIONS` dict 11 個 entry (對齊 backend `ma_alignment/algorithm.py` line 477-680 嘅 11 個 elif trigger 條件)
+- `docs/research/AS-03-cycle-detection/MODULE-BRACK-TEST.md` §7 對齊永久 rule checklist 加 v0.7.0 entry + Change log v0.7.0 entry
+
+對應 commit: 即將 push (Spec Sync v0.7.0)
+
+### Brack Test chart marker label #N 對齊結果例表 Index 永久 rule (大少 2026-09-17 13:38 trigger, v0.8.0)
+
+**凡人話**: Brack Test card chart 上嘅 cycle marker text label (e.g.「強上升週期 #208」) 嗰個 #208 / #N 永遠要對齊返 BrackTest 結果例表入面嘅 Index。Mode A (activeCycle='all') 用 backend global `displayIndex` (1..N),Mode B (activeCycle='cycle X') 用 frontend local `viewIdx + 1` (1..M filtered)。凡人話對齊 §4.1 Index 規則 spirit + consistency check rule — 大少講「Index 第幾個」時, Mavis 即刻知點計 chart marker label。
+
+**Root cause 確認 (大少 9月17日 13:38 trigger, 凡人話 curl evidence)**:
+- 大少睇到圖中「強上升週期 #208」嗰個 #208 應該要對應返 BrackTest 結果例表入面嘅 Index
+- Backend `m1_brack_test/algorithm.py` line 195-203 emit `displayIndex` (1..N global sort by date_desc, 1 = 最新)
+- Frontend `renderBrackTestHitTable` line 5986 已經對齊: Mode A 用 `h.displayIndex` (global), Mode B 用 `viewIdx + 1` (filtered)
+- **但** Frontend `renderBrackTestChartOverlay` line 5909 (改之前) 永遠用 `h.displayIndex` (backend global), **無處理 mode B 揀 cycle filter 嘅 case** — Mode B 嗰陣 chart marker #N 同例表 Index 對唔上
+- 凡人話:M2 嘅 verdict card 同 M3 嘅 chart overlay 都係「同一個 display 但唔同 source of truth」嘅 fix 模式, 對齊 §M7 v2.0.1 Fix D spirit + §M3 trendline chart overlay 修復永久 rule 拎 path spirit
+
+**永久 rule checklist**:
+- ✅ Chart overlay text formula 永遠用 `markerIndex = isFiltered ? (viewIdx + 1) : (h.displayIndex ?? (viewIdx + 1))` pattern, 對齊 `renderBrackTestHitTable` line 5986 一樣嘅 source of truth (DRY spirit, 兩處唔可以 fork)
+- ✅ 凡 frontend 拎 backend emit field (`h.displayIndex`) 必先 check filter state (`isFiltered`), 對齊 §M7 v2.0.1 Fix D spirit + §M3 trendline chart overlay 修復永久 rule 拎 path spirit — frontend 唔可以假設 backend global field 直接 render 落 filter view
+- ✅ 凡 mode A (activeCycle='all') 用 backend global `displayIndex`, Mode B (activeCycle='cycle X') 用 frontend local `viewIdx + 1` (對齊 §4.1 consistency check rule)
+- ✅ 凡 chart overlay 凡人話肉眼 verify scope 對齊 §M3 trendline chart overlay 修復永久 rule 9月6日 16:47 — 大少 hard reload + 撳跑 M1 + 撳「🎯 跑 Brack Test」+ 肉眼 verify chart marker #N 對應例表 row N 嘅日期 ✅
+- ✅ 凡改 chart overlay text formula 必須同時 update spec doc `MODULE-BRACK-TEST.md` §4.1 consistency check rule 段 (之前 v0.7.0 trigger 嗰陣 consistency check 只覆蓋例表 Index, 漏咗 chart label, v0.8.0 補返)
+- ✅ 對齊 §Backend 永久改 emit field name 永久 rule 9月10日 23:45 spirit — frontend 唔可以假設 backend global field 直接 render 落 filter view, 必先 check filter state (`isFiltered`)
+- ✅ 對齊 §M1 sub-scenario 永久 rule 8月16日 19:21 — 改任何 sub_scenario / display / UI 必 update spec doc (`MODULE-BRACK-TEST.md` §4.1 + §4.2 已加)
+- ✅ 對齊 §Backend hot-reload 永久 rule 8月31日 11:01 — frontend only fix, backend `m1_brack_test/algorithm.py` 唔需要改 (Backend `displayIndex` global emit 仍然 work, frontend 自己 filter + enumerate 落 local index)
+- ✅ 對齊 cache bust self-check 永久 rule 21:24 — 改 adapter.mjs 必同步 bump `ALGO_CACHE_BUST` + `?v=2.3.X` (`5.4.18` → `5.4.19` + `?v=2.3.213` → `?v=2.3.214`)
+- ✅ 對齊 §Mavis 自己行 9月10日 23:06 — 自己 plan + 做 + check, 有問題先問
+- ✅ 對齊 §凡人話 workflow 9月14日 12:10 — 凡人話解釋 trigger 條件 + verify
+
+**對應文件**:
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5871-5925 嘅 `renderBrackTestChartOverlay` — `filteredHits.map((h, viewIdx) => { ... })` + `isFilteredChart = activeCycle && activeCycle !== 'all'` + `markerIndex = isFilteredChart ? (viewIdx + 1) : (h.displayIndex ?? (viewIdx + 1))` + text 用 `markerIndex` 對齊例表 Index
+- `algorithms/AS-03-cycle-detection/adapter.mjs` line 5936-5942 嘅 v0.8.0 console.log 凡人話 visual evidence (對齊 §M3 trendline chart overlay 修復永久 rule spirit)
+- `docs/research/AS-03-cycle-detection/MODULE-BRACK-TEST.md` §4.1 Frontend 規則段加 chart overlay marker label 規則 + consistency check rule 段加 chart label 對齊 + 新加 §4.2 v0.8.0 section (大少 13:38 trigger 永久記錄) + Change log v0.8.0 entry
+
+對應 commit: 即將 push (Spec Sync v0.8.0)
+
 ### M3 A+B special rule + dataWindowDays backend 對齊 永久 rule (大少 2026-09-07 00:02 confirm)
 
 **凡人話**: M3 (趨勢線法) algorithm `_derive_trendline_state` 之前直接 `A in ids → return UP`, 冇處理 spec doc §5 line 109-111 嘅特殊規則「A + B 同時 fire (支撐升 + 壓力降) → 收斂三角形 = SIDEWAYS」, 影響 HK.00700 ['A','B','D','I','J'] 同 US.GOOGL ['A','B','C','D','I','J'] 返 UP 0.9 (錯, 應該 SIDEWAYS). 之前 frontend 舊版 (backups/zigzag-frontend-2026-08-20/adapter.mjs line 5386) 同 backend Python port (algorithm.py line 196-216) 都冇, 從來冇人 implement 落 code. 大少 9月7日 00:02 trigger「撳 M3 跑 00700 結果是上升加信心 90% 肯定有問題」揭發.
