@@ -5751,8 +5751,14 @@ const BRACK_TEST_PANEL_STYLE = `
   .brack-test-card .cycle-color-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
   .brack-test-card .brack-loading { padding:20px; text-align:center; color:#666; font-style:italic; }
   .brack-test-card .brack-error { padding:12px; background:#ffebee; border:1px solid #ef5350; border-radius:4px; color:#c62828; margin-top:8px; }
-  .brack-test-card .breakdown-mini { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:6px; margin-top:8px; font-size:12px; }
-  .brack-test-card .breakdown-mini-item { background:#fff; padding:6px 8px; border-radius:4px; border:1px solid #ffcc80; }
+  /* 大少 2026-09-18 00:14 trigger — Brack Test card 補回 State 分佈 + cycle breakdown 6 個獨立 box grid (對齊 image 2 紅框內嘅 6 個獨立 box 排版) */
+  /* 凡人話: 拎走 v0.2.1 嘅 breakdown-mini inline 寫法, 改用 brack-breakdown-grid grid layout (1 個 State 分佈 box + 5 個 cycle 獨立 box) */
+  /* 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) — cycle breakdown display 改動即 update spec doc */
+  /* 對齊 §Config UX 模式 (2026-08-19 13:03) — auto-fill grid responsive, 大少 hard reload testing page 即刻睇到 6 個 box 排 grid */
+  /* ⚠️ 凡人話警告: 呢段 CSS 喺 BRACK_TEST_PANEL_STYLE template literal (line 5730 用 backtick 包), 唔可以用 backtick 字入 comment (會 close template literal → ReferenceError) */
+  .brack-test-card .brack-breakdown-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:8px; margin-top:8px; font-size:13px; }
+  .brack-test-card .brack-breakdown-box { background:#fff3e0; border:1px solid #ffcc80; border-radius:6px; padding:8px 12px; font-size:13px; }
+  .brack-test-card .brack-breakdown-state { grid-column:span 2; }  /* State 分佈 box 跨 2 column 對齊 image 2 排版 */
   /* 大少 2026-09-14 23:18 trigger — Chart top banner (圖表上方顯示當前揀緊嘅 sub-scenario, 用 cycle 顏色 background + 白字, 對齊 Futu health banner style spirit) */
   .brack-chart-banner { padding: 10px 16px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
   /* 大少 9月14日 23:34 trigger — banner dot 跟返 chart marker circle (改用 inline style: background=cycle color + 白色 border 對比 banner background), 唔再用 default background:#fff */
@@ -6173,22 +6179,38 @@ function updateBrackTestChartBanner(verdict, activeCycle) {
 }
 
 function renderBrackTestSummary(meta) {
-  // 凡人話: 顯示 totalRuns / totalHits / hitRatePct + breakdown
+  // 凡人話: 顯示 totalRuns / totalHits / hitRatePct 文字
+  if (!meta) return '';
+  return `
+    跑了 <strong>${meta.totalRuns}</strong> 次 M1
+    (由第 ${(meta.startIndex || 65) + 1} 日到第 ${meta.totalRuns + (meta.startIndex || 65)} 日),
+    觸發 <strong>${meta.totalHits}</strong> 次 sub_scenario (<strong>${meta.hitRatePct}</strong>)
+    ${meta.skippedRuns > 0 ? ` · skip <strong>${meta.skippedRuns}</strong> 次 (M1 verdict 唔 ok)` : ''}
+  `;
+}
+
+// 大少 2026-09-18 00:14 trigger — Brack Test card 補回 State 分佈 + cycle breakdown 6 個獨立 box grid (對齊 image 2 紅框內嘅 6 個獨立 box 排版)
+// 凡人話: 拎走 v0.2.1 嘅 `.breakdown-mini` inline 寫法, 改用 `.brack-breakdown-grid` grid layout (1 個 State 分佈 box + 5 個 cycle 獨立 box)
+// 對齊 image 2 紅框內嘅 6 個獨立 box 排版 (1 個 State 分佈 box 跨 2 column + 5 個 cycle box)
+// 對齊 §Array 邏輯必先 curl evidence 確認排法 永久 rule (8月31日 13:14) — backend `m1_brack_test/algorithm.py` emit 11 個 cycle count, filter value 0 + sideways 拎返 5 個 cycle (對齊 image 2 紅框內嘅 5 個 cycle box display)
+// 對齊 §M1 sub-scenario 永久 rule (8月16日 19:21) — cycle breakdown display 改動即 update spec doc `MODULE-BRACK-TEST.md`
+function renderBrackTestBreakdownGrid(meta) {
   if (!meta) return '';
   const breakdownByCycle = meta.breakdownByCycle || {};
   const breakdownByState = meta.breakdownByState || {};
 
-  // Top 5 cycle breakdown (sort by count desc)
+  // Top 5 cycle breakdown (sort by count desc, exclude sideways + value 0)
   const cycleEntries = Object.entries(breakdownByCycle)
-    .filter(([k, v]) => k !== 'sideways' && v > 0)  // 拎走 sideways 0 + 拎走 value 0
+    .filter(([k, v]) => k !== 'sideways' && v > 0)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  const cycleMiniHtml = cycleEntries.map(([cycle, count]) => {
+  // 凡人話: 5 個 cycle box, 拎 cycle 嘅 color 做左 border, 內含 cycle label + count
+  const cycleBoxesHtml = cycleEntries.map(([cycle, count]) => {
     const color = BRACK_TEST_CYCLE_COLOR_MAP[cycle] || '#666';
     const label = BRACK_TEST_CYCLE_LABELS[cycle] || cycle;
     return `
-      <div class="breakdown-mini-item">
+      <div class="brack-breakdown-box brack-breakdown-cycle" style="border-left: 4px solid ${color};">
         <span class="cycle-color-dot" style="background:${color};"></span>
         <strong>${_brackEscapeHtml(label)}</strong>: ${count}
       </div>
@@ -6196,15 +6218,11 @@ function renderBrackTestSummary(meta) {
   }).join('');
 
   return `
-    <div class="brack-summary">
-      跑了 <strong>${meta.totalRuns}</strong> 次 M1
-      (由第 ${(meta.startIndex || 65) + 1} 日到第 ${meta.totalRuns + (meta.startIndex || 65)} 日),
-      觸發 <strong>${meta.totalHits}</strong> 次 sub_scenario (<strong>${meta.hitRatePct}</strong>)
-      ${meta.skippedRuns > 0 ? ` · skip <strong>${meta.skippedRuns}</strong> 次 (M1 verdict 唔 ok)` : ''}
-    </div>
-    <div class="breakdown-mini">
-      <div class="breakdown-mini-item">📊 <strong>State 分布</strong>: UP=${breakdownByState.UP || 0} / DOWN=${breakdownByState.DOWN || 0} / SIDEWAYS=${breakdownByState.SIDEWAYS || 0} / TRANSITION=${breakdownByState.TRANSITION || 0}</div>
-      ${cycleMiniHtml}
+    <div class="brack-breakdown-grid">
+      <div class="brack-breakdown-box brack-breakdown-state">
+        📊 <strong>State 分佈</strong>: UP=${breakdownByState.UP || 0} / DOWN=${breakdownByState.DOWN || 0} / SIDEWAYS=${breakdownByState.SIDEWAYS || 0} / TRANSITION=${breakdownByState.TRANSITION || 0}
+      </div>
+      ${cycleBoxesHtml}
     </div>
   `;
 }
@@ -6216,16 +6234,68 @@ function renderBrackTestSummary(meta) {
 // 大少 2026-09-15 21:05 trigger — Brack Test verdict 共用 render helper (v0.4.0)
 // 凡人話: 大少 _brackTestRunHandler (全跑) + _brackTestRunDateRangeHandler (指定日期範圍跑) 都拎 verdict data + render 同一個 chart overlay / table / summary / chart banner
 // DRY principle spirit: 拎 render logic 拎出嚟共用, 2 個 handler 只係 fetch 嘅 url 唔同
+
+// 大少 2026-09-18 00:58 trigger — Brack Test A/B 對比 testing evidence (v0.9.0 fix):
+//   - 全跑「🎯 跑 Brack Test」_brackTestRunHandler: 直接 fetch + render, panel 冇被 rebuild → ✅ render
+//   - 指定日期「執行」_brackTestRunDateRangeHandler: 先 trigger `_runAlgorithmWithDateRange` → testing-page.js runAlgorithm line 1702 `brackTestPanel.innerHTML = renderBrackTestCard(verdict)` rebuild inner HTML (用 Math.random() 新 panelId)
+//     → handler 拎返舊 panel reference (`brack-test-panel-OLDID`) 已經 detached → render 落 detached element → user 睇唔到 ❌
+// Fix: 喺 _renderBrackTestVerdict 入面 detect detached panel, fallback 去 query `#brack-test-panel` 固定 container 嘅 latest `.brack-test-card`
+//   對齊 DRY spirit (唔需要改 runAlgorithm 嘅 logic, runAlgorithm 嘅 rebuild 對全跑 user flow 仍然 work)
+//   對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw, 凡人話肉眼 verify
 function _renderBrackTestVerdict(panel, data, symbol) {
+  // 大少 2026-09-18 00:58 trigger — detached panel fallback (v0.9.0 fix)
+  // 凡人話: panel 可能已經 detached (例如 date range handler trigger runAlgorithm 重新 render 之後), 用 isConnected + container fallback 拎返 active panel
+  let activePanel = panel;
+  if (!panel || !panel.isConnected) {
+    const container = document.getElementById('brack-test-panel');
+    if (container) {
+      activePanel = container.querySelector('.brack-test-card');
+      console.log(`[_renderBrackTestVerdict] ⚠️ panel detached (isConnected=${panel?.isConnected}), fallback 去 container latest .brack-test-card, newId=${activePanel?.id}`);
+    }
+  }
+  if (!activePanel || !activePanel.isConnected) {
+    console.warn('[_renderBrackTestVerdict] ❌ panel 拎 null / container empty, abort render');
+    return;
+  }
+  panel = activePanel;  // 用 activePanel 取代 panel, 後續 code 用 panel reference 一致
+
   // Store verdict 落 panel dataset 畀後續 mode toggle handler 用
   panel._brackVerdict = data;
 
-  // 顯示 tab + table + summary section
-  panel.querySelectorAll('[data-when="loaded"]').forEach(el => el.style.display = '');
+  // 大少 2026-09-18 00:27 forward console log 揭發 summary/breakdown/hit table/filter info 唔 render 嘅 evidence
+  // 凡人話 debug — 拎 panel 嘅 innerHTML head + 拎 [data-when="loaded"] element count
+  console.log(`[_renderBrackTestVerdict] panel.id=${panel.id} tagName=${panel.tagName} className=${panel.className}`);
+  console.log(`[_renderBrackTestVerdict] panel innerHTML head (first 500 chars): ${panel.outerHTML.slice(0, 500)}`);
+  console.log(`[_renderBrackTestVerdict] panel.querySelectorAll('[data-when="loaded"]').length = ${panel.querySelectorAll('[data-when="loaded"]').length}`);
+  console.log(`[_renderBrackTestVerdict] panel.querySelectorAll('.brack-summary, .brack-breakdown, .brack-hit-rows, .brack-filter-info, .brack-chart-banner').length = ${panel.querySelectorAll('.brack-summary, .brack-breakdown, .brack-hit-rows, .brack-filter-info, .brack-chart-banner').length}`);
 
-  // Render summary + breakdown
+  // 顯示 tab + table + summary section
+  // 大少 2026-09-18 00:50 forward console log 揭發 `el.style.display = ''` 唔拎走 HTML attribute `style="display:none;"`, element 仍 visible=false (因為 browser parse HTML attribute 之後 inline style property 拎返 `display:none`)
+  // 凡人話 fix: 用 `el.removeAttribute('style')` 拎走成個 style attribute (HTML markup), 而不是用 `el.style.display = ''` reset inline style property (因為 attribute 仍然 set `display:none`)
+  // 對齊 §M3 trendline chart overlay 修復永久 rule (9月6日 16:47) — silent return 唔 throw 凡人話肉眼 verify scope (拎返 evidence 確認 attribute parsing bug)
+  panel.querySelectorAll('[data-when="loaded"]').forEach(el => el.removeAttribute('style'));
+
+  // Render summary 文字 (對齊 §Brack Test card 補回 State 分佈 + cycle breakdown 永久 rule 2026-09-18 00:14 trigger)
   const summaryEl = panel.querySelector('.brack-summary');
-  if (summaryEl) summaryEl.innerHTML = renderBrackTestSummary(data.meta);
+  if (summaryEl) {
+    const summaryHtml = renderBrackTestSummary(data.meta);
+    console.log(`[_renderBrackTestVerdict] summaryEl.innerHTML = ${summaryHtml.length} chars, first 200: ${summaryHtml.slice(0, 200)}`);
+    summaryEl.innerHTML = summaryHtml;
+    console.log(`[_renderBrackTestVerdict] summaryEl after innerHTML, display=${window.getComputedStyle(summaryEl).display}, parentDisplay=${summaryEl.parentElement ? window.getComputedStyle(summaryEl.parentElement).display : 'no-parent'}, outerHTML head: ${summaryEl.outerHTML.slice(0, 300)}`);
+  } else {
+    console.warn('[_renderBrackTestVerdict] summaryEl 拎 null!');
+  }
+
+  // 大少 2026-09-18 00:14 trigger — Brack Test card 補回 State 分佈 + cycle breakdown 6 個獨立 box grid (對齊 image 2 紅框內嘅 6 個獨立 box 排版)
+  // 凡人話: 拎走 v0.2.1 嘅 `.breakdown-mini` inline 寫法, 改用 `.brack-breakdown-grid` grid layout, 拎返 `.brack-breakdown` element 拎返 grid HTML (對齊 §Backend 永久改 emit field name 之後 frontend 必先 grep 全 reference 對齊永久 rule 9月10日 23:45 spirit — frontend 拎 backend emit field 優先)
+  const breakdownEl = panel.querySelector('.brack-breakdown');
+  if (breakdownEl) {
+    const breakdownHtml = renderBrackTestBreakdownGrid(data.meta);
+    console.log(`[_renderBrackTestVerdict] breakdownEl.innerHTML = ${breakdownHtml.length} chars`);
+    breakdownEl.innerHTML = breakdownHtml;
+  } else {
+    console.warn('[_renderBrackTestVerdict] breakdownEl 拎 null!');
+  }
 
   // 大少 2026-09-15 06:29 trigger — 預設 activeCycle 由 'all' 改為 'strong_uptrend' (對齊大少 trigger「預設是🎯 按 sub-scenario 揀」+ 「按 sub-scenario 揀」Tab 默認 active + Dropdown selected 第一個 cycle「強上升」)
   // 凡人話: 大少撳跑 Brack Test 第一眼見到一個 cycle 嘅 markers + banner, 而唔係 11 種顏色全部 marker
@@ -6233,10 +6303,22 @@ function _renderBrackTestVerdict(panel, data, symbol) {
 
   // Render default Mode B (按 sub-scenario 揀, 默認第一個 cycle「強上升」, 對齊大少 06:29 trigger)
   const tbody = panel.querySelector('.brack-hit-rows');
-  if (tbody) tbody.innerHTML = renderBrackTestHitTable(data.points || [], symbol, defaultActiveCycle);
+  if (tbody) {
+    const tbodyHtml = renderBrackTestHitTable(data.points || [], symbol, defaultActiveCycle);
+    console.log(`[_renderBrackTestVerdict] tbody.innerHTML = ${tbodyHtml.length} chars, points=${(data.points || []).length}`);
+    tbody.innerHTML = tbodyHtml;
+  } else {
+    console.warn('[_renderBrackTestVerdict] tbody 拎 null!');
+  }
   // 大少 22:20 trigger — filter info 顯示當前 cycle 揀咗幾多條 hit
   const filterInfo = panel.querySelector('.brack-filter-info');
-  if (filterInfo) filterInfo.innerHTML = renderBrackTestFilterInfo(data.points || [], defaultActiveCycle);
+  if (filterInfo) {
+    const filterHtml = renderBrackTestFilterInfo(data.points || [], defaultActiveCycle);
+    console.log(`[_renderBrackTestVerdict] filterInfo.innerHTML = ${filterHtml.length} chars`);
+    filterInfo.innerHTML = filterHtml;
+  } else {
+    console.warn('[_renderBrackTestVerdict] filterInfo 拎 null!');
+  }
 
   // 大少 2026-09-15 06:35 trigger — Toggle cycle dropdown visible (因為 Tab B「按 sub-scenario 揀」默認 active, 對齊 _brackTestModeHandler line 6165 `dropdown.style.display = mode === 'cycle' ? '' : 'none'` pattern)
   // 凡人話: 撳跑 Brack Test 第一眼 (Tab B 默認 active), 大少應該見到 cycle dropdown (select list), 但之前 v0.2.1 改 Tab order 但漏 toggle dropdown 嘅 display, 因為 HTML 默認 `style="display:none;"`, 而 _brackTestRunHandler 唔 call _brackTestModeHandler, 所以 dropdown 永遠唔見
